@@ -60,6 +60,18 @@ func resolveCacheModeSignature(modelName, thinkingText, rawSignature string) str
 
 func resolveCacheModeSignatureRequired(ctx context.Context, modelName, thinkingText, rawSignature string) (string, error) {
 	targetProvider := sigcompat.SignatureProviderFromModelName(modelName)
+
+	// 1. Check client-carried provider-native (or legacy prefixed) signature first.
+	// If the client provided a signature that is incompatible or invalid, do not
+	// fall back to recovery cache.
+	if rawSignature != "" {
+		if signature := resolveProviderCompatibleSignature(targetProvider, rawSignature, sigcompat.SignatureBlockKindUnknown); signature != "" {
+			return signature, nil
+		}
+		return "", nil
+	}
+
+	// 2. Recovery cache only when client omitted signature (rawSignature == "").
 	if thinkingText != "" {
 		cachedSig, errCachedSig := cache.GetCachedSignatureRequired(ctx, modelName, thinkingText)
 		if errCachedSig != nil {
@@ -75,28 +87,6 @@ func resolveCacheModeSignatureRequired(ctx context.Context, modelName, thinkingT
 			}
 			return cachedSig, nil
 		}
-	}
-
-	if rawSignature == "" {
-		return "", nil
-	}
-
-	clientSignature := ""
-	arrayClientSignatures := strings.SplitN(rawSignature, "#", 2)
-	if len(arrayClientSignatures) == 2 {
-		if cache.GetModelGroup(modelName) == arrayClientSignatures[0] {
-			clientSignature = arrayClientSignatures[1]
-		}
-	}
-	if cache.HasValidSignature(modelName, clientSignature) {
-		if targetProvider == sigcompat.SignatureProviderClaude {
-			signature, ok := sigcompat.CompatibleAntigravityClaudeThinkingSignature(clientSignature)
-			if !ok {
-				return "", nil
-			}
-			return signature, nil
-		}
-		return clientSignature, nil
 	}
 
 	return "", nil
