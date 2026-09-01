@@ -728,6 +728,26 @@ func TestConvertClaudeRequestToAntigravity_DropsMismatchedMarkedNonEmptyCarrier(
 	}
 }
 
+func TestConvertClaudeRequestToAntigravity_GeminiThoughtTextWithFollowingPreviousCarrierRoundTrip(t *testing.T) {
+	validSignature := testGeminiEPrefixSignature(t)
+	validCarrier := encodeGeminiClaudeCarrierSignature(validSignature, geminiClaudeCarrierPrevious, geminiClaudeCarrierText)
+	inputJSON := []byte(`{"model":"gemini-3.1-pro-preview","messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"let me think","signature":""},{"type":"text","text":"answer text"},{"type":"thinking","thinking":"","signature":"` + validCarrier + `"}]},{"role":"user","content":[{"type":"text","text":"continue"}]}]}`)
+
+	inputJSON = StripInvalidGeminiSignatureThinkingBlocks(inputJSON)
+	output := ConvertClaudeRequestToAntigravity("gemini-3.1-pro-preview", inputJSON, false)
+
+	parts := gjson.GetBytes(output, "request.contents.0.parts").Array()
+	if len(parts) != 2 {
+		t.Fatalf("parts count = %d, want 2; output=%s", len(parts), output)
+	}
+	if !parts[0].Get("thought").Bool() || parts[0].Get("text").String() != "let me think" {
+		t.Fatalf("part[0] is not thought text; got: %s", parts[0].Raw)
+	}
+	if parts[1].Get("text").String() != "answer text" || parts[1].Get("thoughtSignature").String() != validSignature {
+		t.Fatalf("part[1] is not text with signature; got: %s", parts[1].Raw)
+	}
+}
+
 func TestConvertClaudeRequestToAntigravity_GeminiThinkingSignatureTargetsFollowingTool(t *testing.T) {
 	geminiSig := testGeminiEPrefixSignature(t)
 	inputJSON := []byte(`{
