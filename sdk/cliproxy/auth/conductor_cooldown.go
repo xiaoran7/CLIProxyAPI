@@ -36,6 +36,16 @@ func SetTransientErrorCooldownSeconds(seconds int) {
 	transientErrorCooldownSeconds.Store(int64(seconds))
 }
 
+// QuotaCooldownDisabledForAuth returns whether cooling is disabled for the auth under global settings.
+func QuotaCooldownDisabledForAuth(auth *Auth) bool {
+	return quotaCooldownDisabledForAuth(auth)
+}
+
+// QuotaCooldownDisabledForAuthWithConfig returns whether cooling is disabled for the auth with the given config.
+func QuotaCooldownDisabledForAuthWithConfig(auth *Auth, cfg *internalconfig.Config) bool {
+	return quotaCooldownDisabledForAuthWithConfig(auth, cfg)
+}
+
 func quotaCooldownDisabledForAuth(auth *Auth) bool {
 	return quotaCooldownDisabledForAuthWithConfig(auth, nil)
 }
