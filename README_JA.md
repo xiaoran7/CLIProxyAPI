@@ -95,6 +95,10 @@ PackyCodeは当ソフトウェアのユーザーに特別割引を提供して�
 <td width="180"><a href="https://www.axisnow.io/zh"><img src="./assets/axisnow.png" alt="AxisNow" width="150"></a></td>
 <td>中国本土と世界各地の双方からのアクセス体験に配慮しながら、WebサイトとAPIを保護・高速化します。さらにクライアントSDKを通じて、高速化とセキュリティの機能をネイティブ／モバイルアプリにも拡張します — <b>セルフホスト型プライベートCDN｜サブスクリプション型DDoS防御CDN｜自律的に制御でき、柔軟に組み合わせられるCDNネットワーク。</b></td>
 </tr>
+<tr>
+<td width="180"><a href="https://www.swiftproxy.net/?code=PR67S9A95"><img src="./assets/swiftproxy.png" alt="Swiftproxy" width="150"></a></td>
+<td>Swiftproxyは、世界220以上の国と地域をカバーする9,000万以上のクリーンな住宅IPを提供し、HTTP(S)/SOCKS5、IPローテーション、Sticky Session、詳細な地域指定に対応しています。AI APIツールや自動化ワークフローが異なる地域からオンラインサービスへ安定してアクセスできるよう支援し、APIリクエスト、Webアクセス、データ収集、地域別テストなどに最適です。住宅プロキシは&#36;0.7/GBから利用でき、無料テストにも対応しています。割引コードPROXY90の使用で10%割引になります。<a href="https://www.swiftproxy.net/?code=PR67S9A95">今すぐSwiftproxyを試す</a></td>
+</tr>
 </tbody>
 </table>
 
