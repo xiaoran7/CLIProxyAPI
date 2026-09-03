@@ -149,6 +149,18 @@ func (w *responsesWebsocketWriter) closeWithoutError() (bool, error) {
 	return true, w.conn.Close()
 }
 
+func (w *responsesWebsocketWriter) writePing() error {
+	if w == nil || w.conn == nil {
+		return errors.New("responses websocket: writer is nil")
+	}
+	w.writeMu.Lock()
+	defer w.writeMu.Unlock()
+	if w.closing.Load() {
+		return websocket.ErrCloseSent
+	}
+	return w.conn.WriteControl(websocket.PingMessage, nil, time.Time{})
+}
+
 func (w *responsesWebsocketWriter) closeWithPayload(payload []byte) (bool, error) {
 	if w == nil || w.conn == nil {
 		return false, nil

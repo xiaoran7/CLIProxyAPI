@@ -74,7 +74,8 @@ type ClaudeCodeConfig struct {
 
 // StreamingConfig holds server streaming behavior configuration.
 type StreamingConfig struct {
-	// KeepAliveSeconds controls how often the server emits SSE heartbeats (": keep-alive\n\n").
+	// KeepAliveSeconds controls how often the server emits SSE heartbeats (": keep-alive\n\n")
+	// or WebSocket Ping control frames.
 	// <= 0 disables keep-alives. Default is 0.
 	KeepAliveSeconds int `yaml:"keepalive-seconds,omitempty" json:"keepalive-seconds,omitempty"`
 
