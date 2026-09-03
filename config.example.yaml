@@ -229,6 +229,13 @@ routing:
   session-affinity: false # default: false
   # How long session-to-auth bindings are retained. Default: 1h
   session-affinity-ttl: "1h"
+  # When true (default), subagents (child sessions with parent references) inherit and bind
+  # to the parent's upstream credential across all providers (Claude, Codex, Antigravity, Gemini),
+  # maximizing Prompt/KV Cache reuse and minimizing TTFT.
+  # When false, subagents are distributed across the credential pool via the fallback selector
+  # for maximum parallel concurrency.
+  # Ignored when routing.session-affinity is false.
+  session-affinity-subagents: true
 
 # Codex provider behavior.
 codex:
