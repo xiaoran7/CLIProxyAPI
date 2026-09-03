@@ -458,3 +458,38 @@ func TestCodexClientModelsResponseMapsMaxCompletionTokensToMaxTokens(t *testing.
 		}
 	}
 }
+
+func TestCodexClientModelsResponseUsesProvidedCapabilitiesForNewHomeModel(t *testing.T) {
+	const modelID = "gemini-new-home-model-test"
+	const wantContextWindow = 1048576
+
+	resp := BuildResponse([]map[string]any{{
+		"id":             modelID,
+		"context_length": wantContextWindow,
+		"thinking": &registry.ThinkingSupport{
+			Levels: []string{"low", "medium", "high"},
+		},
+	}}, nil, false)
+	models, ok := resp["models"].([]map[string]any)
+	if !ok || len(models) != 1 {
+		t.Fatalf("models = %#v, want one model", resp["models"])
+	}
+	model := models[0]
+	if got := intModelValue(model, "context_window"); got != wantContextWindow {
+		t.Fatalf("context_window = %d, want %d", got, wantContextWindow)
+	}
+	if got := intModelValue(model, "max_context_window"); got != wantContextWindow {
+		t.Fatalf("max_context_window = %d, want %d", got, wantContextWindow)
+	}
+
+	rawLevels, ok := model["supported_reasoning_levels"].([]any)
+	if !ok || len(rawLevels) != 3 {
+		t.Fatalf("supported_reasoning_levels = %#v, want low/medium/high", model["supported_reasoning_levels"])
+	}
+	for index, want := range []string{"low", "medium", "high"} {
+		level, ok := rawLevels[index].(map[string]any)
+		if !ok || stringModelValue(level, "effort") != want {
+			t.Fatalf("supported_reasoning_levels[%d] = %#v, want %q", index, rawLevels[index], want)
+		}
+	}
+}
