@@ -493,3 +493,56 @@ func TestCodexClientModelsResponseUsesProvidedCapabilitiesForNewHomeModel(t *tes
 		}
 	}
 }
+
+func TestCodexClientModelsResponseDoesNotInheritUnsupportedReasoningLevels(t *testing.T) {
+	tests := []struct {
+		name        string
+		version     string
+		levels      []string
+		wantEfforts []string
+		wantDefault string
+	}{
+		{name: "modern client", version: "0.144.0", levels: []string{"max", "ultra"}, wantEfforts: []string{"max", "ultra"}, wantDefault: "max"},
+		{name: "legacy client with no compatible level", version: "0.143.9", levels: []string{"max", "ultra"}},
+		{name: "legacy client with one compatible level", version: "0.143.9", levels: []string{"high", "max"}, wantEfforts: []string{"high"}, wantDefault: "high"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := BuildResponseForClient([]map[string]any{{
+				"id": "home-extended-reasoning-model-test",
+				"thinking": &registry.ThinkingSupport{
+					Levels: tt.levels,
+				},
+			}}, nil, false, tt.version)
+			models, ok := resp["models"].([]map[string]any)
+			if !ok || len(models) != 1 {
+				t.Fatalf("models = %#v, want one model", resp["models"])
+			}
+			model := models[0]
+			if len(tt.wantEfforts) == 0 {
+				if _, exists := model["supported_reasoning_levels"]; exists {
+					t.Fatalf("supported_reasoning_levels = %#v, want absent", model["supported_reasoning_levels"])
+				}
+				if _, exists := model["default_reasoning_level"]; exists {
+					t.Fatalf("default_reasoning_level = %#v, want absent", model["default_reasoning_level"])
+				}
+				return
+			}
+
+			rawLevels, ok := model["supported_reasoning_levels"].([]any)
+			if !ok || len(rawLevels) != len(tt.wantEfforts) {
+				t.Fatalf("supported_reasoning_levels = %#v, want %v", model["supported_reasoning_levels"], tt.wantEfforts)
+			}
+			for index, want := range tt.wantEfforts {
+				level, ok := rawLevels[index].(map[string]any)
+				if !ok || stringModelValue(level, "effort") != want {
+					t.Fatalf("supported_reasoning_levels[%d] = %#v, want %q", index, rawLevels[index], want)
+				}
+			}
+			if got := stringModelValue(model, "default_reasoning_level"); got != tt.wantDefault {
+				t.Fatalf("default_reasoning_level = %q, want %q", got, tt.wantDefault)
+			}
+		})
+	}
+}
