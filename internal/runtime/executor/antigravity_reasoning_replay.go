@@ -1297,7 +1297,7 @@ func degradeAntigravityClaudeToolProvenanceIDs(payload []byte) ([]byte, int) {
 	out := make([]byte, 0, outputSize)
 	last := 0
 	for _, replacement := range replacements {
-		if replacement.start < last || replacement.end > len(payload) {
+		if replacement.start <= last || replacement.end > len(payload) {
 			return payload, 0
 		}
 		out = append(out, payload[last:replacement.start]...)
