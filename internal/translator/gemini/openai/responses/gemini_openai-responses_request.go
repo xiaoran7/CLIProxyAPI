@@ -142,6 +142,10 @@ func ConvertOpenAIResponsesRequestToGemini(modelName string, inputRawJSON []byte
 
 				hasEncounteredConversation = true
 				if _, isAssistantOutput := openAIResponsesAssistantVisibleText(item); !isAssistantOutput {
+					if len(pendingDeveloperParts) > 0 {
+						contentItems = append(contentItems, geminiContent("user", pendingDeveloperParts))
+						pendingDeveloperParts = nil
+					}
 					pendingFunctionCallIDs = nil
 				}
 

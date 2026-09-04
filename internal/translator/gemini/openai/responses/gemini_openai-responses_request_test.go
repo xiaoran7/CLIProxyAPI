@@ -1218,6 +1218,67 @@ func TestConvertOpenAIResponsesRequestToGemini_InterveningDeveloperMessagePreser
 	}
 }
 
+func TestConvertOpenAIResponsesRequestToGemini_InterveningDeveloperAndUserMessageFlushesInOrder(t *testing.T) {
+	inputJSON := `{
+		"model": "gemini-3.5-flash",
+		"instructions": "Be a helpful assistant",
+		"input": [
+			{
+				"type": "function_call",
+				"call_id": "call-1",
+				"name": "run_command",
+				"arguments": "{\"command\":\"test\"}"
+			},
+			{
+				"type": "message",
+				"role": "developer",
+				"content": "<permissions instructions>\nApproved: test\n</permissions instructions>"
+			},
+			{
+				"type": "message",
+				"role": "user",
+				"content": [
+					{"type": "input_text", "text": "Wait, also check this"}
+				]
+			},
+			{
+				"type": "function_call_output",
+				"call_id": "call-1",
+				"output": "done"
+			}
+		]
+	}`
+
+	output := ConvertOpenAIResponsesRequestToGemini("gemini-3.5-flash", []byte(inputJSON), false)
+	result := gjson.ParseBytes(output)
+
+	// Pairing should be valid
+	if errPair := internalsignature.ValidateGeminiFunctionCallPairing(output); errPair != nil {
+		t.Fatalf("ValidateGeminiFunctionCallPairing failed: %v; output=%s", errPair, output)
+	}
+
+	contents := result.Get("contents").Array()
+	if len(contents) != 3 {
+		t.Fatalf("contents count = %d, want 3; output=%s", len(contents), output)
+	}
+	if contents[0].Get("role").String() != "model" {
+		t.Fatalf("turn 0 role = %q, want model", contents[0].Get("role").String())
+	}
+	midParts := contents[1].Get("parts").Array()
+	if len(midParts) != 2 {
+		t.Fatalf("turn 1 parts count = %d, want 2; output=%s", len(midParts), output)
+	}
+	if !strings.Contains(midParts[0].Get("text").String(), "permissions instructions") {
+		t.Fatalf("turn 1 part 0 should be developer notice; got %s", midParts[0].Raw)
+	}
+	if midParts[1].Get("text").String() != "Wait, also check this" {
+		t.Fatalf("turn 1 part 1 should be user text; got %s", midParts[1].Raw)
+	}
+	if !contents[2].Get("parts.0.functionResponse").Exists() {
+		t.Fatalf("turn 2 should be functionResponse; got %s", contents[2].Raw)
+	}
+}
+
 func TestConvertOpenAIResponsesRequestToGeminiCleansToolSchemaRequiredFields(t *testing.T) {
 	inputJSON := `{
 		"model": "gemini-2.0-flash",
