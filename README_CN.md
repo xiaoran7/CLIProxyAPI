@@ -101,7 +101,7 @@ PackyCode 为本软件用户提供了特别优惠：使用<a href="https://www.p
 </tr>
 <tr>
 <td width="180"><a href="https://aiberm.com?ref=cpa"><img src="./assets/aiberm.png" alt="Aiberm" width="150"></a></td>
-<td>本项目由 Aiberm 赞助——为开发者提供统一且优惠的 AI API。通过一个端点即可访问 Claude、GPT、Grok、DeepSeek、GLM、Kimi 和 MiniMax：Claude 优惠 85–90%，GPT 优惠 90%，Grok 优惠 80%。同时支持图片生成，包括 GPT Image 2 和 Nano Banana。</td>
+<td>本项目由 Aiberm 赞助——为开发者提供统一且优惠的 AI API。通过一个端点即可访问 Claude、GPT、Grok、DeepSeek、GLM、Kimi 和 MiniMax：Claude 优惠 85–90%，GPT 优惠 90%，Grok 优惠 80%。同时支持图片生成，包括 GPT Image 2 和 Nano Banana。<a href="https://aiberm.com?ref=cpa">访问 Aiberm</a>。</td>
 </tr>
 </tbody>
 </table>
