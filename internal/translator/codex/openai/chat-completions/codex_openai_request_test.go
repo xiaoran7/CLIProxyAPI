@@ -1404,3 +1404,56 @@ func TestToolsDefinitionTranslated(t *testing.T) {
 		t.Errorf("tool 'search' not found in output tools: %s", gjson.Get(result, "tools").Raw)
 	}
 }
+
+func TestFunctionToolStrictDefaultsToFalse(t *testing.T) {
+	input := []byte(`{
+		"model": "gpt-5.6-sol",
+		"messages": [
+			{"role": "user", "content": "Hi"}
+		],
+		"tools": [
+			{
+				"type": "function",
+				"function": {
+					"name": "omitted",
+					"parameters": {"type": "object", "properties": {"query": {"type": "string"}}}
+				}
+			},
+			{
+				"type": "function",
+				"function": {
+					"name": "explicit_true",
+					"strict": true,
+					"parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"], "additionalProperties": false}
+				}
+			},
+			{
+				"type": "function",
+				"function": {
+					"name": "explicit_false",
+					"strict": false,
+					"parameters": {"type": "object", "properties": {"query": {"type": "string"}}}
+				}
+			}
+		]
+	}`)
+
+	out := ConvertOpenAIRequestToCodex("gpt-5.6-sol", input, true)
+	tools := gjson.GetBytes(out, "tools").Array()
+	if len(tools) != 3 {
+		t.Fatalf("expected 3 tools, got %d: %s", len(tools), gjson.GetBytes(out, "tools").Raw)
+	}
+
+	expected := map[string]bool{"omitted": false, "explicit_true": true, "explicit_false": false}
+	for _, tool := range tools {
+		name := tool.Get("name").String()
+		strict := tool.Get("strict")
+		if !strict.Exists() {
+			t.Errorf("tool %q: strict missing in output: %s", name, tool.Raw)
+			continue
+		}
+		if strict.Bool() != expected[name] {
+			t.Errorf("tool %q: strict = %v, want %v", name, strict.Bool(), expected[name])
+		}
+	}
+}

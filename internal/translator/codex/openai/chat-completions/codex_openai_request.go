@@ -467,6 +467,10 @@ func ConvertOpenAIRequestToCodex(modelName string, inputRawJSON []byte, stream b
 					}
 					if v := fn.Get("strict"); v.Exists() {
 						item, _ = sjson.SetBytes(item, "strict", v.Value())
+					} else {
+						// Chat Completions defaults strict to false while the Responses API
+						// defaults it to true, so an omitted value must be forwarded explicitly.
+						item, _ = sjson.SetBytes(item, "strict", false)
 					}
 				}
 				toolItems = append(toolItems, item)
