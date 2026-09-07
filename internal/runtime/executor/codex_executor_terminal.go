@@ -30,6 +30,21 @@ func (codexIncompleteStreamError) IsRequestScoped() bool {
 	return true
 }
 
+type codexEmptyIncompleteStreamError struct {
+	statusErr
+}
+
+func newCodexEmptyIncompleteStreamError() codexEmptyIncompleteStreamError {
+	return codexEmptyIncompleteStreamError{statusErr: statusErr{
+		code: http.StatusBadGateway,
+		msg:  helps.CodexEmptyIncompleteStreamMessage,
+	}}
+}
+
+func (codexEmptyIncompleteStreamError) IsRequestScoped() bool {
+	return true
+}
+
 // Streamed Codex responses may emit response.output_item.done events while leaving
 // response.completed.response.output empty. Keep the stream path aligned with the
 // already-patched non-stream path by reconstructing response.output from those items.
