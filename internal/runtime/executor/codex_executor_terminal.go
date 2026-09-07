@@ -468,10 +468,16 @@ func newCodexBootstrapOverloadErr(body []byte) statusErr {
 func isCodexOverloadBootstrapFailure(body []byte) bool {
 	errorType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "error.type").String()))
 	errorCode := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "error.code").String()))
+	errorMessage := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "error.message").String()))
+	if errorMessage == "" {
+		errorMessage = strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "message").String()))
+	}
 	switch {
 	case errorType == "service_unavailable_error", errorCode == "server_is_overloaded":
 		return true
 	case errorType == "rate_limit_error", errorCode == "rate_limit_exceeded":
+		return true
+	case (errorType == "server_error" || errorCode == "server_error") && strings.Contains(errorMessage, "you can retry your request"):
 		return true
 	default:
 		return false
