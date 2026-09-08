@@ -32,6 +32,8 @@ import (
 	coreusage "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
 	sdkconfig "github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
+	log "github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 	"gopkg.in/yaml.v3"
 )
 
@@ -664,6 +666,48 @@ func TestHealthz(t *testing.T) {
 			t.Fatalf("expected empty body for HEAD request, got %q", rr.Body.String())
 		}
 	})
+}
+
+func TestHealthzSkipsAccessLogging(t *testing.T) {
+	server := newTestServer(t)
+	logger := log.StandardLogger()
+	previousHooks := logger.ReplaceHooks(make(log.LevelHooks))
+	previousLevel := logger.GetLevel()
+	hook := logtest.NewLocal(logger)
+	logger.SetLevel(log.InfoLevel)
+	t.Cleanup(func() {
+		logger.ReplaceHooks(previousHooks)
+		logger.SetLevel(previousLevel)
+	})
+
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			hook.Reset()
+			recorder := httptest.NewRecorder()
+			server.engine.ServeHTTP(recorder, httptest.NewRequest(method, "/healthz", nil))
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("health probe status = %d, want 200", recorder.Code)
+			}
+			for _, entry := range hook.AllEntries() {
+				if _, isAccessLog := entry.Data["request_id"]; isAccessLog && strings.Contains(entry.Message, `"/healthz"`) {
+					t.Errorf("health probe emitted an access log: %s", entry.Message)
+				}
+			}
+
+			hook.Reset()
+			ordinary := httptest.NewRecorder()
+			server.engine.ServeHTTP(ordinary, httptest.NewRequest(http.MethodGet, "/healthz-access-log-control", nil))
+			if ordinary.Code != http.StatusNotFound {
+				t.Fatalf("control status = %d, want 404", ordinary.Code)
+			}
+			for _, entry := range hook.AllEntries() {
+				if _, isAccessLog := entry.Data["request_id"]; isAccessLog && strings.Contains(entry.Message, `"/healthz-access-log-control"`) {
+					return
+				}
+			}
+			t.Error("ordinary request did not emit an access log after health probe")
+		})
+	}
 }
 
 func TestCodexLiveRoutesRequireAuthAndAreRegistered(t *testing.T) {

@@ -48,8 +48,8 @@ func (s *Server) setupRoutes() {
 
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	}
-	s.engine.GET("/healthz", healthzHandler)
-	s.engine.HEAD("/healthz", healthzHandler)
+	s.engine.GET("/healthz", logging.SkipGinRequestLogging, healthzHandler)
+	s.engine.HEAD("/healthz", logging.SkipGinRequestLogging, healthzHandler)
 
 	s.engine.GET("/management.html", s.serveManagementControlPanel)
 	openaiHandlers := openai.NewOpenAIAPIHandler(s.handlers)
