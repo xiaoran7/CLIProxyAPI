@@ -42,8 +42,13 @@ type canonicalPart struct {
 
 var canonicalUUIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
+// knownSessionPrefixes tracks legacy protocol-specific session prefixes that need to be
+// unwrapped before projecting to canonical UUIDv8.
+// Deprecated: This transitional table and string-stripping mechanism are scheduled to be
+// removed once session extraction directly produces canonical UUIDv8s at ingress.
 var knownSessionPrefixes = []string{
 	"lcp:v1:", "lcp:",
+	"ctx:v1:", "ctx:",
 	"codex:", "claude:", "header:", "session:",
 	"affinity:", "slot:", "task:", "conv:",
 	"thread:", "clientreq:", "geminicache:",
@@ -54,8 +59,8 @@ var knownSessionPrefixes = []string{
 // canonical 36-character lowercase UUID (RFC 4122 / RFC 9562 compliant):
 //  1. If rawID (or rawID without known protocol prefix) is already a standard UUID (e.g. Codex UUIDv7,
 //     Claude UUIDv4, Header UUID), it strips the prefix and returns the lowercase UUID.
-//  2. If rawID has a known protocol prefix but the remainder is not a UUID (e.g. custom task strings),
-//     the known prefix is stripped and the remaining identifier is deterministically projected.
+//  2. If rawID has known protocol prefixes, they are stripped iteratively (supporting chained
+//     wrappers such as "derived:ctx:v1:"). If no identifier remains after stripping, it returns empty.
 //  3. If rawID is not a standard UUID (e.g. LCP 64-hex hash, subagent hierarchy, or custom string),
 //     it deterministically projects it to an RFC 9562 UUIDv8 using SHA-256 with domain separation.
 //  4. Idempotent: NormalizeToCanonicalUUID(NormalizeToCanonicalUUID(x)) == NormalizeToCanonicalUUID(x).
@@ -70,14 +75,28 @@ func NormalizeToCanonicalUUID(rawID string) string {
 		return strings.ToLower(clean)
 	}
 
-	// 2. Strip known protocol prefix and check if remainder is a UUID
-	for _, p := range knownSessionPrefixes {
-		if strings.HasPrefix(clean, p) {
-			clean = strings.TrimPrefix(clean, p)
+	// 2. Strip known protocol prefixes iteratively to unwrap layered prefixes (e.g., "derived:ctx:v1:...").
+	// TODO: Deprecate and remove this legacy prefix stripping once all session extractors
+	// natively emit canonical UUIDv8 at the protocol ingress boundary.
+	for {
+		stripped := false
+		for _, p := range knownSessionPrefixes {
+			if strings.HasPrefix(clean, p) {
+				clean = strings.TrimPrefix(clean, p)
+				clean = strings.TrimSpace(clean)
+				stripped = true
+				break
+			}
+		}
+		if !stripped {
 			break
 		}
 	}
-	clean = strings.TrimSpace(clean)
+	// If only prefix was provided without an identifier body (e.g. "slot:", "task:"), return empty
+	// rather than projecting empty string into a shared ghost UUIDv8.
+	if clean == "" {
+		return ""
+	}
 	if canonicalUUIDPattern.MatchString(clean) {
 		return strings.ToLower(clean)
 	}

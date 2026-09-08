@@ -482,12 +482,29 @@ func TestEnrich_MetadataOnlyCanonicalAndParentSessionPreserved(t *testing.T) {
 func TestNormalizeToCanonicalUUID(t *testing.T) {
 	t.Parallel()
 
-	// 1. Empty and whitespace
+	// 1. Empty, whitespace, and bare/empty prefixes
 	if got := NormalizeToCanonicalUUID(""); got != "" {
 		t.Fatalf("NormalizeToCanonicalUUID(\"\") = %q, want empty", got)
 	}
 	if got := NormalizeToCanonicalUUID("   "); got != "" {
 		t.Fatalf("NormalizeToCanonicalUUID(\"   \") = %q, want empty", got)
+	}
+	emptyPrefixCases := []string{
+		"lcp:v1:", "lcp:",
+		"ctx:v1:", "ctx:",
+		"codex:", "claude:", "header:", "session:",
+		"affinity:", "slot:", "task:", "conv:",
+		"thread:", "clientreq:", "geminicache:",
+		"pck:", "user:", "execution:", "agy:", "derived:",
+		"slot:   ",
+		"task:   ",
+		"derived:ctx:v1:",
+		"derived:slot:   ",
+	}
+	for _, input := range emptyPrefixCases {
+		if got := NormalizeToCanonicalUUID(input); got != "" {
+			t.Fatalf("NormalizeToCanonicalUUID(%q) = %q, want empty", input, got)
+		}
 	}
 
 	// 2. Native UUIDs (v4 and v7, various casings)
@@ -572,5 +589,35 @@ func TestNormalizeToCanonicalUUID(t *testing.T) {
 	if NormalizeToCanonicalUUID(lcpPrefixed) != NormalizeToCanonicalUUID(lcpBare) {
 		t.Fatalf("lcp prefixed (%q) and bare (%q) produced different UUIDs",
 			NormalizeToCanonicalUUID(lcpPrefixed), NormalizeToCanonicalUUID(lcpBare))
+	}
+
+	// 7. Same content with or without "ctx:v1:" / "ctx:" prefix produces identical UUID
+	ctxV1Prefixed := "ctx:v1:c28621bab78eacdb3ae128c0f6aaa0147842f063fda10ae9dc5473cc81d58985"
+	ctxShortPrefixed := "ctx:c28621bab78eacdb3ae128c0f6aaa0147842f063fda10ae9dc5473cc81d58985"
+	if NormalizeToCanonicalUUID(ctxV1Prefixed) != NormalizeToCanonicalUUID(lcpBare) {
+		t.Fatalf("ctx:v1: prefixed (%q) and bare (%q) produced different UUIDs: %q vs %q",
+			ctxV1Prefixed, lcpBare, NormalizeToCanonicalUUID(ctxV1Prefixed), NormalizeToCanonicalUUID(lcpBare))
+	}
+	if NormalizeToCanonicalUUID(ctxShortPrefixed) != NormalizeToCanonicalUUID(lcpBare) {
+		t.Fatalf("ctx: prefixed (%q) and bare (%q) produced different UUIDs: %q vs %q",
+			ctxShortPrefixed, lcpBare, NormalizeToCanonicalUUID(ctxShortPrefixed), NormalizeToCanonicalUUID(lcpBare))
+	}
+	// Fixed Golden UUIDv8 check
+	const wantGoldenUUID = "2ad1939c-98ca-81da-8b69-3d084d5614c4"
+	if got := NormalizeToCanonicalUUID(lcpBare); got != wantGoldenUUID {
+		t.Fatalf("NormalizeToCanonicalUUID(lcpBare) = %q, want golden %q", got, wantGoldenUUID)
+	}
+
+	// 8. Chained prefixes (e.g. "derived:ctx:v1:") are stripped iteratively
+	derivedCtxPrefixed := "derived:ctx:v1:c28621bab78eacdb3ae128c0f6aaa0147842f063fda10ae9dc5473cc81d58985"
+	if got := NormalizeToCanonicalUUID(derivedCtxPrefixed); got != NormalizeToCanonicalUUID(lcpBare) {
+		t.Fatalf("derived:ctx:v1: prefixed (%q) produced %q, want %q",
+			derivedCtxPrefixed, got, NormalizeToCanonicalUUID(lcpBare))
+	}
+
+	// 9. Chained prefixes with standard UUID
+	derivedUUID := "derived:ctx:v1:01a07e72-c84d-7fd3-8207-d217b41cc649"
+	if got := NormalizeToCanonicalUUID(derivedUUID); got != "01a07e72-c84d-7fd3-8207-d217b41cc649" {
+		t.Fatalf("NormalizeToCanonicalUUID(%q) = %q, want 01a07e72-c84d-7fd3-8207-d217b41cc649", derivedUUID, got)
 	}
 }
