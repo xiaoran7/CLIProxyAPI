@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
@@ -40,6 +42,7 @@ type pluginStoreSourceErr struct {
 	SourceName string `json:"source_name"`
 	SourceURL  string `json:"source_url"`
 	Message    string `json:"message"`
+	cause      error
 }
 
 type pluginStoreListEntry struct {
@@ -274,6 +277,9 @@ func (h *Handler) installPluginFromStore(c *gin.Context, goos, goarch string) {
 		return
 	}
 	if errInstall != nil {
+		if writePluginStoreRateLimit(c, errInstall) {
+			return
+		}
 		if errors.Is(errInstall, pluginstore.ErrLoadedPluginLocked) {
 			c.JSON(http.StatusConflict, gin.H{
 				"error":            "plugin_update_requires_restart",
@@ -390,9 +396,29 @@ func installPluginStoreGitHubRelease(ctx context.Context, client pluginstore.Cli
 		if errInstall == nil {
 			return result, nil
 		}
+		var rateLimit *pluginstore.RateLimitError
+		if errors.As(errInstall, &rateLimit) || ctx.Err() != nil {
+			return pluginstore.InstallResult{}, errInstall
+		}
 		errs = append(errs, fmt.Errorf("%s: %w", tag, errInstall))
 	}
 	return pluginstore.InstallResult{}, fmt.Errorf("install release by tag: %w", errors.Join(errs...))
+}
+
+func writePluginStoreRateLimit(c *gin.Context, err error) bool {
+	var rateLimit *pluginstore.RateLimitError
+	if !errors.As(err, &rateLimit) {
+		return false
+	}
+	retryAfter := rateLimit.RetryAfterSeconds(time.Now())
+	c.Header("Retry-After", strconv.FormatInt(retryAfter, 10))
+	c.JSON(http.StatusTooManyRequests, gin.H{
+		"error":       "plugin_store_rate_limited",
+		"message":     rateLimit.Error(),
+		"retry_after": retryAfter,
+		"retry_at":    rateLimit.RetryAt.UTC().Format(time.RFC3339),
+	})
+	return true
 }
 
 func pluginStoreManifestForInstall(source pluginstore.Source, plugin pluginstore.Plugin, result pluginstore.InstallResult) (pluginstore.Manifest, error) {
@@ -521,20 +547,22 @@ func (h *Handler) pluginStoreSources(sourceConfigs []string) ([]pluginstore.Sour
 func (h *Handler) newPluginStoreClient(proxyURL string, registryURL string, storeAuth []pluginstore.AuthConfig) pluginstore.Client {
 	registryURL = strings.TrimSpace(registryURL)
 	var httpClient pluginstore.HTTPDoer
+	var limiter *pluginstore.GitHubRateLimiter
 	if h != nil {
 		httpClient = h.pluginStoreHTTPClient
+		limiter = h.pluginStoreRateLimiter
 	}
 	if registryURL == "" {
 		registryURL = pluginstore.DefaultRegistryURL
 	}
 	if httpClient != nil {
-		return pluginstore.Client{HTTPClient: httpClient, NetworkScope: strings.TrimSpace(proxyURL), RegistryURL: registryURL, Auth: storeAuth}
+		return pluginstore.Client{HTTPClient: httpClient, NetworkScope: strings.TrimSpace(proxyURL), RateLimiter: limiter, RegistryURL: registryURL, Auth: storeAuth}
 	}
 	client := &http.Client{}
 	if strings.TrimSpace(proxyURL) != "" {
 		util.SetProxy(&sdkconfig.SDKConfig{ProxyURL: strings.TrimSpace(proxyURL)}, client)
 	}
-	return pluginstore.Client{HTTPClient: client, NetworkScope: strings.TrimSpace(proxyURL), RegistryURL: registryURL, Auth: storeAuth}
+	return pluginstore.Client{HTTPClient: client, NetworkScope: strings.TrimSpace(proxyURL), RateLimiter: limiter, RegistryURL: registryURL, Auth: storeAuth}
 }
 
 func (h *Handler) fetchSourcedPlugins(ctx context.Context, proxyURL string, storeAuth []pluginstore.AuthConfig, sources []pluginstore.Source) ([]sourcedPlugin, []pluginStoreSourceErr) {
@@ -549,6 +577,7 @@ func (h *Handler) fetchSourcedPlugins(ctx context.Context, proxyURL string, stor
 				SourceName: source.Name,
 				SourceURL:  source.URL,
 				Message:    errRegistry.Error(),
+				cause:      errRegistry,
 			})
 			continue
 		}
@@ -569,6 +598,9 @@ func (h *Handler) findPluginStoreInstallTarget(ctx context.Context, proxyURL str
 			client := h.newPluginStoreClient(proxyURL, source.URL, storeAuth)
 			registry, errRegistry := client.FetchRegistry(ctx)
 			if errRegistry != nil {
+				if writePluginStoreRateLimit(c, errRegistry) {
+					return pluginstore.Source{}, pluginstore.Plugin{}, pluginstore.Client{}, false
+				}
 				c.JSON(http.StatusBadGateway, gin.H{"error": "plugin_store_registry_failed", "message": errRegistry.Error()})
 				return pluginstore.Source{}, pluginstore.Plugin{}, pluginstore.Client{}, false
 			}
@@ -592,6 +624,9 @@ func (h *Handler) findPluginStoreInstallTarget(ctx context.Context, proxyURL str
 	}
 	if len(matches) == 0 {
 		if len(plugins) == 0 && len(sourceErrors) > 0 {
+			if writePluginStoreRateLimit(c, sourceErrors[0].cause) {
+				return pluginstore.Source{}, pluginstore.Plugin{}, pluginstore.Client{}, false
+			}
 			c.JSON(http.StatusBadGateway, gin.H{"error": "plugin_store_registry_failed", "message": sourceErrors[0].Message})
 			return pluginstore.Source{}, pluginstore.Plugin{}, pluginstore.Client{}, false
 		}

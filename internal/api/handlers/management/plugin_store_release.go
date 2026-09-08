@@ -2,6 +2,7 @@ package management
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -145,6 +146,10 @@ func (h *Handler) latestPluginVersion(ctx context.Context, client pluginstore.Cl
 				}
 				// Start the TTL when the lookup finishes, not when it was queued.
 				entry.nextCheckAt = cache.now().Add(ttl)
+				var rateLimit *pluginstore.RateLimitError
+				if errors.As(errRelease, &rateLimit) {
+					entry.nextCheckAt = rateLimit.RetryAt
+				}
 			}
 		}
 		<-cache.slots

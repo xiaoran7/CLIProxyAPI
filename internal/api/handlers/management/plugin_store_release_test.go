@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -325,6 +326,128 @@ func TestPluginReleaseCacheSeparatesCredentialsAndEgress(t *testing.T) {
 		if strings.Contains(key, "token-") {
 			t.Fatalf("cache key contains credential: %q", key)
 		}
+	}
+}
+
+func TestPluginReleaseChecksStopQueuedRequestsDuringCooldown(t *testing.T) {
+	t.Parallel()
+	started, release := make(chan struct{}, 10), make(chan struct{})
+	var calls atomic.Int32
+	reset := time.Now().Add(time.Hour).Truncate(time.Second)
+	h := &Handler{pluginStoreRateLimiter: &pluginstore.GitHubRateLimiter{}}
+	h.pluginStoreHTTPClient = pluginReleaseDoerFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		started <- struct{}{}
+		<-release
+		headers := make(http.Header)
+		headers.Set("X-RateLimit-Remaining", "0")
+		headers.Set("X-RateLimit-Reset", strconv.FormatInt(reset.Unix(), 10))
+		return &http.Response{StatusCode: 403, Header: headers, Body: io.NopCloser(strings.NewReader("limited"))}, nil
+	})
+	client := h.newPluginStoreClient("", "", nil)
+	plugins := make([]pluginstore.Plugin, 10)
+	h.pluginReleases.entries = make(map[string]pluginReleaseCacheEntry)
+	for index := range plugins {
+		plugins[index] = pluginstore.Plugin{ID: fmt.Sprintf("plugin-%d", index), Repository: fmt.Sprintf("https://github.com/owner/plugin-%d", index)}
+		h.pluginReleases.entries[pluginReleaseKey(client, plugins[index])] = pluginReleaseCacheEntry{version: "1.0.0"}
+	}
+	result := make(chan []string, 1)
+	go func() { result <- h.latestPluginVersions(context.Background(), client, plugins) }()
+	for range pluginReleaseConcurrency {
+		<-started
+	}
+	close(release)
+	for _, version := range <-result {
+		if version != "1.0.0" {
+			t.Fatalf("cooldown discarded previous version: %q", version)
+		}
+	}
+	if calls.Load() != pluginReleaseConcurrency {
+		t.Fatalf("requests=%d, want only the %d already in flight", calls.Load(), pluginReleaseConcurrency)
+	}
+	for _, entry := range h.pluginReleases.entries {
+		if !entry.nextCheckAt.Equal(reset) {
+			t.Fatalf("next check=%s, want GitHub reset %s", entry.nextCheckAt, reset)
+		}
+	}
+}
+
+func TestPluginStoreListingCooldownAlsoBlocksInstallation(t *testing.T) {
+	t.Parallel()
+	var apiCalls atomic.Int32
+	h := &Handler{
+		cfg:                    &config.Config{Plugins: config.PluginsConfig{Dir: writeManagementPluginFile(t, "sample-provider")}},
+		pluginStoreRateLimiter: &pluginstore.GitHubRateLimiter{},
+		pluginStoreHTTPClient: pluginReleaseDoerFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Host != "api.github.com" {
+				return fakePluginStoreHTTPClient{pluginstore.DefaultRegistryURL: registryJSON(t)}.Do(req)
+			}
+			apiCalls.Add(1)
+			headers := make(http.Header)
+			headers.Set("Retry-After", "3600")
+			return &http.Response{StatusCode: 429, Header: headers, Body: io.NopCloser(strings.NewReader("limited"))}, nil
+		}),
+	}
+	body := listPluginStoreForTest(t, h)
+	if len(body.Plugins) != 1 || body.Plugins[0].Version != "0.1.0" {
+		t.Fatalf("listing failed to fall back during cooldown: %#v", body)
+	}
+	for _, query := range []string{"", "?version=0.2.0"} {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Params = gin.Params{{Key: "id", Value: "sample-provider"}}
+		c.Request = httptest.NewRequest(http.MethodPost, "/v0/management/plugin-store/sample-provider/install"+query, nil)
+		h.InstallPluginFromStore(c)
+		if rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "plugin_store_rate_limited") || !strings.Contains(rec.Body.String(), "retry_at") {
+			t.Fatalf("install status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		retryAfter, errRetry := strconv.Atoi(rec.Header().Get("Retry-After"))
+		if errRetry != nil || retryAfter <= 0 {
+			t.Fatalf("Retry-After=%q", rec.Header().Get("Retry-After"))
+		}
+	}
+	if apiCalls.Load() != 1 {
+		t.Fatalf("cooldown installation made more requests: %d", apiCalls.Load())
+	}
+}
+
+func TestPluginStoreInstallationPropagatesRegistryRateLimit(t *testing.T) {
+	t.Parallel()
+	h := &Handler{
+		cfg:                    &config.Config{Plugins: config.PluginsConfig{Dir: t.TempDir()}},
+		pluginStoreRegistryURL: "https://api.github.com/repos/owner/store/contents/registry.json",
+		pluginStoreRateLimiter: &pluginstore.GitHubRateLimiter{},
+		pluginStoreHTTPClient: pluginReleaseDoerFunc(func(*http.Request) (*http.Response, error) {
+			headers := make(http.Header)
+			headers.Set("Retry-After", "3600")
+			return &http.Response{StatusCode: 429, Header: headers, Body: io.NopCloser(strings.NewReader("limited"))}, nil
+		}),
+	}
+	for _, query := range []string{"", "?source=official"} {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Params = gin.Params{{Key: "id", Value: "sample-provider"}}
+		c.Request = httptest.NewRequest(http.MethodPost, "/v0/management/plugin-store/sample-provider/install"+query, nil)
+		h.InstallPluginFromStore(c)
+		if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
+			t.Fatalf("install status=%d body=%s", rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestPluginStoreTagInstallationStopsOnRateLimitError(t *testing.T) {
+	t.Parallel()
+	calls := 0
+	client := pluginstore.Client{HTTPClient: pluginReleaseDoerFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return nil, &pluginstore.RateLimitError{StatusCode: 429, RetryAt: time.Now().Add(time.Hour)}
+	})}
+	_, errInstall := installPluginStoreGitHubRelease(context.Background(), client, pluginstore.Plugin{
+		ID: "sample-provider", Name: "Sample", Description: "Test plugin", Author: "owner", Repository: "https://github.com/owner/repo",
+	}, "1.0.0", pluginstore.InstallOptions{PluginsDir: t.TempDir(), GOOS: "linux", GOARCH: "amd64"})
+	var rateLimit *pluginstore.RateLimitError
+	if !errors.As(errInstall, &rateLimit) || calls != 1 {
+		t.Fatalf("error=%v calls=%d, want immediate rate-limit failure without alternate tag", errInstall, calls)
 	}
 }
 
