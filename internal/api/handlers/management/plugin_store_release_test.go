@@ -1,11 +1,18 @@
 package management
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
@@ -93,5 +100,243 @@ func TestListPluginStoreSkipsInstalledDirectRelease(t *testing.T) {
 	defer httpClient.mu.Unlock()
 	if len(httpClient.counts) != 1 {
 		t.Fatalf("requests = %v, want registry request only", httpClient.counts)
+	}
+}
+
+type pluginReleaseDoerFunc func(*http.Request) (*http.Response, error)
+
+func (f pluginReleaseDoerFunc) Do(req *http.Request) (*http.Response, error) { return f(req) }
+
+func pluginReleaseResponse(tag string) *http.Response {
+	return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"tag_name":"` + tag + `"}`))}
+}
+
+func TestPluginReleaseCacheRetainsSuccessAndUsesCompletionTime(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	h := &Handler{pluginReleases: pluginReleaseCache{nowFunc: func() time.Time { return now }}}
+	plugin := pluginstore.Plugin{Repository: "https://github.com/test/plugin"}
+	calls := 0
+	client := pluginstore.Client{HTTPClient: pluginReleaseDoerFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		now = now.Add(time.Minute)
+		switch calls {
+		case 1:
+			return pluginReleaseResponse("v1.0.0"), nil
+		case 2:
+			return nil, errors.New("offline")
+		case 3:
+			return pluginReleaseResponse("invalid-tag"), nil
+		default:
+			return pluginReleaseResponse("v2.0.0"), nil
+		}
+	})}
+	check := func(want string, wantCalls int) {
+		t.Helper()
+		if got := h.latestPluginVersion(context.Background(), client, plugin); got != want || calls != wantCalls {
+			t.Fatalf("version=%q calls=%d, want %q/%d", got, calls, want, wantCalls)
+		}
+	}
+	check("1.0.0", 1)
+	now = now.Add(pluginReleaseCacheTTL - time.Second)
+	check("1.0.0", 1)
+	now = now.Add(time.Second)
+	check("1.0.0", 2)
+	check("1.0.0", 2)
+	now = now.Add(pluginReleaseFailureCacheTTL)
+	check("1.0.0", 3)
+	now = now.Add(pluginReleaseFailureCacheTTL)
+	check("2.0.0", 4)
+}
+
+// Done reports that a caller reached a cancelable wait, without relying on sleeps.
+type pluginReleaseWaitContext struct {
+	context.Context
+	waiting chan struct{}
+	once    sync.Once
+}
+
+func (ctx *pluginReleaseWaitContext) Done() <-chan struct{} {
+	ctx.once.Do(func() { close(ctx.waiting) })
+	return ctx.Context.Done()
+}
+
+func TestPluginReleaseCacheCoalescesConcurrentLookups(t *testing.T) {
+	t.Parallel()
+	started, release := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	client := pluginstore.Client{HTTPClient: pluginReleaseDoerFunc(func(*http.Request) (*http.Response, error) {
+		if calls.Add(1) == 1 {
+			close(started)
+		}
+		<-release
+		return pluginReleaseResponse("v1.0.0"), nil
+	})}
+	h := &Handler{}
+	plugin := pluginstore.Plugin{Repository: "https://github.com/test/plugin"}
+	results := make(chan string, 21)
+	go func() { results <- h.latestPluginVersion(context.Background(), client, plugin) }()
+	<-started
+	for range 20 {
+		ctx := &pluginReleaseWaitContext{Context: context.Background(), waiting: make(chan struct{})}
+		go func() { results <- h.latestPluginVersion(ctx, client, plugin) }()
+		<-ctx.waiting
+	}
+	close(release)
+	for range 21 {
+		if got := <-results; got != "1.0.0" {
+			t.Fatalf("version = %q", got)
+		}
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls = %d, want 1", calls.Load())
+	}
+}
+
+func TestPluginReleaseCacheCanceledLeaderHandsOffToFollower(t *testing.T) {
+	t.Parallel()
+	started := make(chan struct{})
+	var calls atomic.Int32
+	client := pluginstore.Client{HTTPClient: pluginReleaseDoerFunc(func(req *http.Request) (*http.Response, error) {
+		if calls.Add(1) == 1 {
+			close(started)
+			<-req.Context().Done()
+			return nil, req.Context().Err()
+		}
+		return pluginReleaseResponse("v1.0.0"), nil
+	})}
+	h := &Handler{}
+	plugin := pluginstore.Plugin{Repository: "https://github.com/test/plugin"}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	leaderResult := make(chan string, 1)
+	go func() { leaderResult <- h.latestPluginVersion(ctx, client, plugin) }()
+	<-started
+	waitCtx := &pluginReleaseWaitContext{Context: context.Background(), waiting: make(chan struct{})}
+	followerResult := make(chan string, 1)
+	go func() { followerResult <- h.latestPluginVersion(waitCtx, client, plugin) }()
+	<-waitCtx.waiting
+	cancel()
+	if got := <-leaderResult; got != "" {
+		t.Fatalf("canceled leader version = %q", got)
+	}
+	if got := <-followerResult; got != "1.0.0" || calls.Load() != 2 {
+		t.Fatalf("handoff version=%q calls=%d, want 1.0.0 and canceled + successful request", got, calls.Load())
+	}
+}
+
+func TestPluginReleaseCacheCanceledFollowerDoesNotCancelLeader(t *testing.T) {
+	t.Parallel()
+	started, release := make(chan struct{}), make(chan struct{})
+	client := pluginstore.Client{HTTPClient: pluginReleaseDoerFunc(func(*http.Request) (*http.Response, error) {
+		close(started)
+		<-release
+		return pluginReleaseResponse("v1.0.0"), nil
+	})}
+	h := &Handler{}
+	plugin := pluginstore.Plugin{Repository: "https://github.com/test/plugin"}
+	leaderResult := make(chan string, 1)
+	go func() { leaderResult <- h.latestPluginVersion(context.Background(), client, plugin) }()
+	<-started
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	waitCtx := &pluginReleaseWaitContext{Context: ctx, waiting: make(chan struct{})}
+	followerResult := make(chan string, 1)
+	go func() { followerResult <- h.latestPluginVersion(waitCtx, client, plugin) }()
+	<-waitCtx.waiting
+	cancel()
+	if got := <-followerResult; got != "" {
+		t.Fatalf("canceled follower version = %q", got)
+	}
+	close(release)
+	if got := <-leaderResult; got != "1.0.0" {
+		t.Fatalf("leader version = %q", got)
+	}
+}
+
+func TestPluginReleaseCacheSharesConcurrencyAndCancelsQueuedLookup(t *testing.T) {
+	t.Parallel()
+	started, release := make(chan struct{}, 10), make(chan struct{})
+	var calls atomic.Int32
+	client := pluginstore.Client{HTTPClient: pluginReleaseDoerFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		started <- struct{}{}
+		<-release
+		return pluginReleaseResponse("v1.0.0"), nil
+	})}
+	h := &Handler{}
+	results := make(chan string, pluginReleaseConcurrency)
+	for index := range pluginReleaseConcurrency {
+		go func() {
+			results <- h.latestPluginVersion(context.Background(), client, pluginstore.Plugin{Repository: fmt.Sprintf("https://github.com/test/plugin-%d", index)})
+		}()
+	}
+	for range pluginReleaseConcurrency {
+		<-started
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	waitCtx := &pluginReleaseWaitContext{Context: ctx, waiting: make(chan struct{})}
+	queuedResult := make(chan string, 1)
+	plugin := pluginstore.Plugin{Repository: "https://github.com/test/queued"}
+	go func() { queuedResult <- h.latestPluginVersion(waitCtx, client, plugin) }()
+	<-waitCtx.waiting
+	cancel()
+	if got := <-queuedResult; got != "" || calls.Load() != pluginReleaseConcurrency {
+		t.Fatalf("queued version=%q calls=%d", got, calls.Load())
+	}
+	close(release)
+	for range pluginReleaseConcurrency {
+		<-results
+	}
+	if got := h.latestPluginVersion(context.Background(), client, plugin); got != "1.0.0" || calls.Load() != pluginReleaseConcurrency+1 {
+		t.Fatalf("canceled lookup was negatively cached: version=%q calls=%d", got, calls.Load())
+	}
+}
+
+func TestPluginReleaseCacheSeparatesCredentialsAndEgress(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	client := pluginstore.Client{HTTPClient: pluginReleaseDoerFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return pluginReleaseResponse("v1.0.0"), nil
+	})}
+	h := &Handler{}
+	plugin := pluginstore.Plugin{Repository: "https://github.com/test/plugin"}
+	for _, token := range []string{"", "token-a", "token-b", "token-a"} {
+		client.ResolvedAuth = nil
+		if token != "" {
+			client.ResolvedAuth = []pluginstore.ResolvedAuthConfig{{Match: "https://api.github.com/", Type: pluginstore.AuthTypeGitHubToken, Token: pluginstore.Secret(token)}}
+			client.ResolvedAuthExpiresAt = time.Now().Add(time.Hour)
+		}
+		if got := h.latestPluginVersion(context.Background(), client, plugin); got != "1.0.0" {
+			t.Fatalf("version = %q", got)
+		}
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("calls = %d, want 3", calls.Load())
+	}
+	client.NetworkScope = "other-proxy"
+	h.latestPluginVersion(context.Background(), client, plugin)
+	if calls.Load() != 4 {
+		t.Fatalf("calls after proxy change = %d, want 4", calls.Load())
+	}
+	for key := range h.pluginReleases.entries {
+		if strings.Contains(key, "token-") {
+			t.Fatalf("cache key contains credential: %q", key)
+		}
+	}
+}
+
+func TestListPluginStoreUsesCachedUninstalledVersionWithoutRefresh(t *testing.T) {
+	t.Parallel()
+	httpClient := &countingPluginStoreHTTPClient{responses: fakePluginStoreHTTPClient{pluginstore.DefaultRegistryURL: registryJSON(t)}}
+	h := &Handler{cfg: &config.Config{Plugins: config.PluginsConfig{Dir: t.TempDir()}}, pluginStoreHTTPClient: httpClient}
+	plugin := pluginstore.Plugin{Repository: "https://github.com/author-name/cliproxy-sample-provider-plugin"}
+	key := pluginReleaseKey(h.newPluginStoreClient("", "", nil), plugin)
+	h.pluginReleases.entries = map[string]pluginReleaseCacheEntry{key: {version: "2.0.0"}}
+	body := listPluginStoreForTest(t, h)
+	if body.Plugins[0].Version != "2.0.0" || len(httpClient.counts) != 1 {
+		t.Fatalf("plugins=%#v requests=%v", body.Plugins, httpClient.counts)
 	}
 }
