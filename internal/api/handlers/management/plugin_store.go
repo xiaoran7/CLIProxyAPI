@@ -153,16 +153,23 @@ func (h *Handler) ListPluginStore(c *gin.Context) {
 		return
 	}
 
-	latestInput := make([]pluginstore.Plugin, 0, len(plugins))
-	for _, item := range plugins {
-		latestInput = append(latestInput, item.plugin)
-	}
-	client := h.newPluginStoreClient(proxyURL, "", storeAuth)
-	latestVersions := h.latestPluginVersions(c.Request.Context(), client, latestInput)
 	pluginSourceCounts := make(map[string]int, len(plugins))
 	for _, item := range plugins {
 		pluginSourceCounts[item.plugin.ID]++
 	}
+	// Browsing the catalog must not spend API quota on uninstalled plugins or
+	// on sources that cannot update the installed plugin. Keep positional
+	// placeholders so release versions still align with the catalog entries.
+	latestInput := make([]pluginstore.Plugin, len(plugins))
+	for index, item := range plugins {
+		status := statuses[item.plugin.ID]
+		_, _, sourceAllowsUpdate := pluginStoreInstallSourceStatus(status, sources, item.source.ID, pluginSourceCounts[item.plugin.ID])
+		if status.Installed && sourceAllowsUpdate {
+			latestInput[index] = item.plugin
+		}
+	}
+	client := h.newPluginStoreClient(proxyURL, "", storeAuth)
+	latestVersions := h.latestPluginVersions(c.Request.Context(), client, latestInput)
 
 	entries := make([]pluginStoreListEntry, 0, len(plugins))
 	for index, item := range plugins {
