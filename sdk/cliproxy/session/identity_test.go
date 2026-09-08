@@ -478,3 +478,99 @@ func TestEnrich_MetadataOnlyCanonicalAndParentSessionPreserved(t *testing.T) {
 		t.Fatalf("self-loop parent was not eliminated in metadata-only mode")
 	}
 }
+
+func TestNormalizeToCanonicalUUID(t *testing.T) {
+	t.Parallel()
+
+	// 1. Empty and whitespace
+	if got := NormalizeToCanonicalUUID(""); got != "" {
+		t.Fatalf("NormalizeToCanonicalUUID(\"\") = %q, want empty", got)
+	}
+	if got := NormalizeToCanonicalUUID("   "); got != "" {
+		t.Fatalf("NormalizeToCanonicalUUID(\"   \") = %q, want empty", got)
+	}
+
+	// 2. Native UUIDs (v4 and v7, various casings)
+	rawUUIDv4 := "b2839f64-668d-4dc3-a42a-64da829d1e33"
+	if got := NormalizeToCanonicalUUID(rawUUIDv4); got != rawUUIDv4 {
+		t.Fatalf("NormalizeToCanonicalUUID(rawUUIDv4) = %q, want %q", got, rawUUIDv4)
+	}
+	upperUUID := "B2839F64-668D-4DC3-A42A-64DA829D1E33"
+	if got := NormalizeToCanonicalUUID(upperUUID); got != rawUUIDv4 {
+		t.Fatalf("NormalizeToCanonicalUUID(upperUUID) = %q, want %q", got, rawUUIDv4)
+	}
+	rawUUIDv7 := "01a07e72-c84d-7fd3-8207-d217b41cc649"
+	if got := NormalizeToCanonicalUUID(rawUUIDv7); got != rawUUIDv7 {
+		t.Fatalf("NormalizeToCanonicalUUID(rawUUIDv7) = %q, want %q", got, rawUUIDv7)
+	}
+
+	// 3. Known prefixes with UUIDs
+	prefixedCases := map[string]string{
+		"codex:01a07e72-c84d-7fd3-8207-d217b41cc649":         "01a07e72-c84d-7fd3-8207-d217b41cc649",
+		"claude:b2839f64-668d-4dc3-a42a-64da829d1e33":        "b2839f64-668d-4dc3-a42a-64da829d1e33",
+		"header:7a8b9c0d-1111-2222-3333-444455556666":        "7a8b9c0d-1111-2222-3333-444455556666",
+		"session:b2839f64-668d-4dc3-a42a-64da829d1e33":       "b2839f64-668d-4dc3-a42a-64da829d1e33",
+		"thread:01a07e72-c84d-7fd3-8207-d217b41cc649":        "01a07e72-c84d-7fd3-8207-d217b41cc649",
+		"custom-prefix:01a07e72-c84d-7fd3-8207-d217b41cc649": "01a07e72-c84d-7fd3-8207-d217b41cc649",
+	}
+	for input, want := range prefixedCases {
+		got := NormalizeToCanonicalUUID(input)
+		if got != want {
+			t.Errorf("NormalizeToCanonicalUUID(%q) = %q, want %q", input, got, want)
+		}
+	}
+
+	// 4. LCP 64-hex and non-UUID inputs projected to RFC 9562 UUIDv8
+	nonUUIDCases := []string{
+		"lcp:v1:c28621bab78eacdb3ae128c0f6aaa0147842f063fda10ae9dc5473cc81d58985",
+		"lcp:c28621bab78eacdb3ae128c0f6aaa0147842f063fda10ae9dc5473cc81d58985",
+		"c28621bab78eacdb3ae128c0f6aaa0147842f063fda10ae9dc5473cc81d58985",
+		"claude:b2839f64-668d-4dc3-a42a-64da829d1e33:agent:worker-reviewer",
+		"task:task-abc-1",
+		"slot:pi-slot-789",
+		"ses_f8189891effeCLIq0MasUgMQsC",
+		"my-custom-test-task",
+	}
+
+	for _, input := range nonUUIDCases {
+		got := NormalizeToCanonicalUUID(input)
+		if len(got) != 36 {
+			t.Errorf("NormalizeToCanonicalUUID(%q) length = %d, want 36", input, len(got))
+		}
+		if !canonicalUUIDPattern.MatchString(got) {
+			t.Errorf("NormalizeToCanonicalUUID(%q) = %q, does not match UUID pattern", input, got)
+		}
+		// Verify RFC 9562 Version 8 (13th char is '8', index 14)
+		if got[14] != '8' {
+			t.Errorf("NormalizeToCanonicalUUID(%q) = %q, version char is %c, want '8'", input, got, got[14])
+		}
+		// Verify RFC 4122 Variant (17th char is '8', '9', 'a', or 'b', index 19)
+		variantChar := got[19]
+		if variantChar != '8' && variantChar != '9' && variantChar != 'a' && variantChar != 'b' {
+			t.Errorf("NormalizeToCanonicalUUID(%q) = %q, variant char is %c, want 8/9/a/b", input, got, variantChar)
+		}
+		// Verify Idempotency
+		if reGot := NormalizeToCanonicalUUID(got); reGot != got {
+			t.Errorf("NormalizeToCanonicalUUID is not idempotent: first=%q, second=%q", got, reGot)
+		}
+	}
+
+	// 5. Uniqueness and determinism
+	id1 := NormalizeToCanonicalUUID("lcp:v1:hash-A")
+	id1Again := NormalizeToCanonicalUUID("lcp:v1:hash-A")
+	id2 := NormalizeToCanonicalUUID("lcp:v1:hash-B")
+	if id1 != id1Again {
+		t.Fatalf("NormalizeToCanonicalUUID is non-deterministic: %q != %q", id1, id1Again)
+	}
+	if id1 == id2 {
+		t.Fatalf("NormalizeToCanonicalUUID collided for different inputs: %q == %q", id1, id2)
+	}
+
+	// 6. Same content with or without "lcp:v1:" prefix produces identical UUID
+	lcpPrefixed := "lcp:v1:c28621bab78eacdb3ae128c0f6aaa0147842f063fda10ae9dc5473cc81d58985"
+	lcpBare := "c28621bab78eacdb3ae128c0f6aaa0147842f063fda10ae9dc5473cc81d58985"
+	if NormalizeToCanonicalUUID(lcpPrefixed) != NormalizeToCanonicalUUID(lcpBare) {
+		t.Fatalf("lcp prefixed (%q) and bare (%q) produced different UUIDs",
+			NormalizeToCanonicalUUID(lcpPrefixed), NormalizeToCanonicalUUID(lcpBare))
+	}
+}
