@@ -19,6 +19,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/thinking"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
 	coresession "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/session"
@@ -230,12 +231,14 @@ func EnrichContextWithSessionHierarchy(ctx context.Context, headers http.Header,
 		if meta.SessionID != "" && meta.SessionID == meta.ParentSessionID {
 			meta.ParentSessionID = ""
 		}
-		return logging.WithClientRequestMetadata(ctx, meta)
+		ctx = logging.WithClientRequestMetadata(ctx, meta)
+		return util.WithSessionID(ctx, meta.SessionID)
 	}
-	if meta.SessionID != "" || meta.ParentSessionID != "" {
+	if meta.SessionID != "" || meta.ParentSessionID != "" || util.SessionIDFromContext(ctx) != "" {
 		meta.SessionID = ""
 		meta.ParentSessionID = ""
-		return logging.WithClientRequestMetadata(ctx, meta)
+		ctx = logging.WithClientRequestMetadata(ctx, meta)
+		return util.WithSessionID(ctx, "")
 	}
 	return ctx
 }
