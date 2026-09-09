@@ -726,7 +726,21 @@ func stripDialectKeywordsFromSchema(v any) {
 			delete(schema, "pattern")
 		}
 
+		// Inspect regex keys under patternProperties
+		if patternProps, ok := schema["patternProperties"].(map[string]any); ok {
+			for patternKey, subSchema := range patternProps {
+				if util.HasUnsupportedUnicodePropertyEscape(patternKey) {
+					delete(patternProps, patternKey)
+				} else {
+					stripDialectKeywordsFromSchema(subSchema)
+				}
+			}
+		}
+
 		for _, mapKey := range codexSchemaMapKeywords {
+			if mapKey == "patternProperties" {
+				continue
+			}
 			if subMap, ok := schema[mapKey].(map[string]any); ok {
 				for _, subSchema := range subMap {
 					stripDialectKeywordsFromSchema(subSchema)

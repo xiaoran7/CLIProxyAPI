@@ -392,7 +392,21 @@ func normalizeObjectSchemaProperties(schema any) any {
 			delete(value, "pattern")
 		}
 
+		// Inspect regex keys under patternProperties
+		if patternProps, ok := value["patternProperties"].(map[string]any); ok {
+			for patternKey, subSchema := range patternProps {
+				if util.HasUnsupportedUnicodePropertyEscape(patternKey) {
+					delete(patternProps, patternKey)
+				} else {
+					patternProps[patternKey] = normalizeObjectSchemaProperties(subSchema)
+				}
+			}
+		}
+
 		for _, mapKey := range util.SchemaMapKeywords {
+			if mapKey == "patternProperties" {
+				continue
+			}
 			if subMap, ok := value[mapKey].(map[string]any); ok {
 				for subKey, subSchema := range subMap {
 					subMap[subKey] = normalizeObjectSchemaProperties(subSchema)

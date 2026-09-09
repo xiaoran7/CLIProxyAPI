@@ -689,3 +689,88 @@ func TestNormalizeCodexToolSchemas_MalformedOrEmptyParametersFallback(t *testing
 		}
 	}
 }
+
+func TestNormalizeCodexToolSchemas_JSONUnicodeEscapeBypassPrevention(t *testing.T) {
+	// Patterns encoded using JSON Unicode escapes (e.g. \u005c for '\' or \u0070 for 'p')
+	// decode to \p{...} / \P{...} and must not be skipped by the fast-path check.
+	input := []byte(`{
+		"model": "gpt-5.6",
+		"tools": [{
+			"type": "function",
+			"name": "escape_bypass_tool",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"p1": {
+						"type": "string",
+						"pattern": "\u005c\u0070{L}+"
+					},
+					"p2": {
+						"type": "string",
+						"pattern": "\u005cp{Cc}"
+					},
+					"p3": {
+						"type": "string",
+						"pattern": "\u005c\u0050{N}+"
+					},
+					"valid": {
+						"type": "string",
+						"pattern": "^[0-9a-f]{32}$"
+					}
+				}
+			}
+		}]
+	}`)
+
+	out := NormalizeCodexToolSchemas(input)
+	tool := gjson.GetBytes(out, "tools.0")
+	params := tool.Get("parameters")
+
+	if params.Get("properties.p1.pattern").Exists() {
+		t.Errorf("expected properties.p1.pattern (\\u0070) to be removed, got: %s", params.Get("properties.p1.pattern").Raw)
+	}
+	if params.Get("properties.p2.pattern").Exists() {
+		t.Errorf("expected properties.p2.pattern (\\u005c) to be removed, got: %s", params.Get("properties.p2.pattern").Raw)
+	}
+	if params.Get("properties.p3.pattern").Exists() {
+		t.Errorf("expected properties.p3.pattern (\\u0050) to be removed, got: %s", params.Get("properties.p3.pattern").Raw)
+	}
+	if got := params.Get("properties.valid.pattern").String(); got != "^[0-9a-f]{32}$" {
+		t.Errorf("expected valid.pattern to be preserved, got %q", got)
+	}
+}
+
+func TestNormalizeCodexToolSchemas_PatternPropertiesKeySanitization(t *testing.T) {
+	input := []byte(`{
+		"model": "gpt-5.6",
+		"tools": [{
+			"type": "function",
+			"name": "pattern_props_tool",
+			"parameters": {
+				"type": "object",
+				"patternProperties": {
+					"^\\\\p{L}+$": {
+						"type": "string"
+					},
+					"^[a-z]+$": {
+						"type": "number"
+					}
+				}
+			}
+		}]
+	}`)
+
+	out := NormalizeCodexToolSchemas(input)
+	tool := gjson.GetBytes(out, "tools.0")
+	params := tool.Get("parameters")
+
+	// Key with \p{L}+ must be removed
+	patternProps := params.Get("patternProperties").Map()
+	if _, exists := patternProps[`^\p{L}+$`]; exists {
+		t.Errorf("expected patternProperties key '^\\\\p{L}+$' to be removed, got: %s", params.Get("patternProperties").Raw)
+	}
+	// Safe key must be preserved
+	if _, exists := patternProps[`^[a-z]+$`]; !exists {
+		t.Errorf("expected patternProperties key '^[a-z]+$' to be preserved, got: %s", params.Get("patternProperties").Raw)
+	}
+}

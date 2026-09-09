@@ -132,7 +132,7 @@ func normalizeCodexParameters(params gjson.Result) ([]byte, bool) {
 // preventing accidental deletion of 'pattern' keys inside user data (e.g. description, default, enum).
 func stripIncompatiblePatternsFromJSON(raw []byte) ([]byte, bool) {
 	rawStr := string(raw)
-	if !strings.Contains(rawStr, `\p{`) && !strings.Contains(rawStr, `\P{`) {
+	if !strings.Contains(rawStr, `\p{`) && !strings.Contains(rawStr, `\P{`) && !strings.Contains(rawStr, `\u`) {
 		return raw, false
 	}
 	var root any
@@ -167,7 +167,22 @@ func stripIncompatiblePatterns(v any) bool {
 			changed = true
 		}
 
+		// Inspect regex keys under patternProperties
+		if patternProps, ok := schema["patternProperties"].(map[string]any); ok {
+			for patternKey, subSchema := range patternProps {
+				if util.HasUnsupportedUnicodePropertyEscape(patternKey) {
+					delete(patternProps, patternKey)
+					changed = true
+				} else if stripIncompatiblePatterns(subSchema) {
+					changed = true
+				}
+			}
+		}
+
 		for _, mapKey := range util.SchemaMapKeywords {
+			if mapKey == "patternProperties" {
+				continue
+			}
 			if subMap, ok := schema[mapKey].(map[string]any); ok {
 				for _, subSchema := range subMap {
 					if stripIncompatiblePatterns(subSchema) {
