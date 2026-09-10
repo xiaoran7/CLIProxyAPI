@@ -221,6 +221,9 @@ func codexTerminalFailureBody(eventData []byte) ([]byte, bool) {
 	if len(body) == 0 {
 		body = []byte(`{"error":{"message":"upstream stream failed without error details"}}`)
 	}
+	if seq := gjson.GetBytes(eventData, "sequence_number"); seq.Exists() {
+		body, _ = sjson.SetBytes(body, "sequence_number", seq.Int())
+	}
 	return body, true
 }
 
