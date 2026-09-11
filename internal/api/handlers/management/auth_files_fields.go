@@ -20,6 +20,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/watcher/synthesizer"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v7/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
+	log "github.com/sirupsen/logrus"
 )
 
 // PatchAuthFileStatus toggles the disabled state of an auth file
@@ -49,6 +50,9 @@ func (h *Handler) PatchAuthFileStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "disabled is required"})
 		return
 	}
+
+	h.authStatusMu.Lock()
+	defer h.authStatusMu.Unlock()
 
 	ctx := c.Request.Context()
 
@@ -108,9 +112,21 @@ func (h *Handler) PatchAuthFileStatus(c *gin.Context) {
 	}
 
 	applyAuthDisabledState(targetAuth, *req.Disabled)
-	if _, err := h.authManager.Update(ctx, targetAuth); err != nil {
+	updatedAuth, err := h.authManager.Update(ctx, targetAuth)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to update auth: %v", err)})
 		return
+	}
+	if h.postAuthPersistHook != nil {
+		hookAuth := updatedAuth
+		if hookAuth == nil {
+			hookAuth = targetAuth
+		}
+		if errHook := h.postAuthPersistHook(ctx, hookAuth); errHook != nil {
+			log.Errorf("post-auth persist hook failed for status update on %s: %v", targetAuth.ID, errHook)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to synchronize auth runtime: %v", errHook)})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "disabled": *req.Disabled})
@@ -146,8 +162,19 @@ func (h *Handler) patchPluginVirtualSourceStatus(ctx context.Context, targetAuth
 		}
 		applyAuthDisabledState(auth, disabled)
 		auth.UpdatedAt = now
-		if _, errUpdate := h.authManager.Update(ctx, auth); errUpdate != nil {
+		updated, errUpdate := h.authManager.Update(ctx, auth)
+		if errUpdate != nil {
 			return fmt.Errorf("failed to update auth %s: %w", auth.ID, errUpdate)
+		}
+		if h.postAuthPersistHook != nil {
+			hookAuth := updated
+			if hookAuth == nil {
+				hookAuth = auth
+			}
+			if errHook := h.postAuthPersistHook(ctx, hookAuth); errHook != nil {
+				log.Errorf("post-auth persist hook failed for plugin virtual auth %s: %v", auth.ID, errHook)
+				return fmt.Errorf("failed to synchronize plugin virtual auth %s: %w", auth.ID, errHook)
+			}
 		}
 	}
 	return nil
