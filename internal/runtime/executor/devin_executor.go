@@ -820,7 +820,28 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 	interactionID := fmt.Sprintf("interaction_%s", uuid.New().String()[:12])
 	var textParts []string
 	var thinkingParts []string
-	var toolCalls []helps.DevinToolCall
+	type devinToolCallBuilder struct {
+		id   string
+		name string
+		args strings.Builder
+	}
+	var toolBuilders []devinToolCallBuilder
+
+	getToolCalls := func() []helps.DevinToolCall {
+		if len(toolBuilders) == 0 {
+			return nil
+		}
+		res := make([]helps.DevinToolCall, len(toolBuilders))
+		for i := range toolBuilders {
+			res[i] = helps.DevinToolCall{
+				ID:        toolBuilders[i].id,
+				Name:      toolBuilders[i].name,
+				Arguments: toolBuilders[i].args.String(),
+			}
+		}
+		return res
+	}
+
 	var finalUsage *helps.DevinUsage
 	var accumulatedSignature []byte
 	var signatureType string
@@ -842,7 +863,7 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 				Thinking:      strings.Join(thinkingParts, ""),
 				Signature:     string(accumulatedSignature),
 				SignatureType: signatureType,
-				ToolCalls:     toolCalls,
+				ToolCalls:     getToolCalls(),
 				Usage:         finalUsage,
 				UnknownFields: unknownFields,
 			}
@@ -860,7 +881,7 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 					Thinking:      strings.Join(thinkingParts, ""),
 					Signature:     string(accumulatedSignature),
 					SignatureType: signatureType,
-					ToolCalls:     toolCalls,
+					ToolCalls:     getToolCalls(),
 					Usage:         finalUsage,
 					UnknownFields: unknownFields,
 				}
@@ -903,20 +924,22 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 				log.Warnf("devin executor: tool call index %d out of bounds (max %d), dropping", idx, maxDevinToolCalls)
 				continue
 			}
-			for len(toolCalls) <= idx {
-				toolCalls = append(toolCalls, helps.DevinToolCall{})
+			for len(toolBuilders) <= idx {
+				toolBuilders = append(toolBuilders, devinToolCallBuilder{})
 			}
 			if tc.ID != "" {
-				toolCalls[idx].ID = tc.ID
+				toolBuilders[idx].id = tc.ID
 			}
 			if tc.Name != "" {
-				toolCalls[idx].Name = tc.Name
+				toolBuilders[idx].name = tc.Name
 			}
 			if tc.Arguments != "" {
-				toolCalls[idx].Arguments += tc.Arguments
+				toolBuilders[idx].args.WriteString(tc.Arguments)
 			}
 		}
 	}
+
+	toolCalls := getToolCalls()
 
 	if !sawEOS {
 		truncErr := fmt.Errorf("devin upstream stream terminated prematurely before EOS trailer")
