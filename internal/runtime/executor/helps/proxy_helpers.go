@@ -61,22 +61,41 @@ func NewProxyAwareHTTPClient(ctx context.Context, cfg *config.Config, auth *clip
 	return httpClient
 }
 
+var devinTransportCache = NewTransportCache[string](DefaultTransportCacheCapacity)
+
 // NewDevinHTTPClient creates an HTTP client customized for Devin Connect-RPC upstream.
-// Suppresses automatic Accept-Encoding: gzip while preserving robust HTTP/2 streaming.
+// Suppresses automatic Accept-Encoding: gzip while preserving connection reuse across requests.
 func NewDevinHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, timeout time.Duration) *http.Client {
-	httpClient := NewProxyAwareHTTPClient(ctx, cfg, auth, timeout)
-	if httpClient.Transport == nil {
-		if dt, ok := http.DefaultTransport.(*http.Transport); ok {
-			httpClient.Transport = dt.Clone()
+	proxyURL := ""
+	if auth != nil && strings.TrimSpace(auth.ProxyURL) != "" {
+		proxyURL = strings.TrimSpace(auth.ProxyURL)
+	} else if cfg != nil && strings.TrimSpace(cfg.ProxyURL) != "" {
+		proxyURL = strings.TrimSpace(cfg.ProxyURL)
+	}
+
+	tr, err := devinTransportCache.Get(proxyURL, func() (*http.Transport, error) {
+		var base *http.Transport
+		if proxyURL != "" {
+			base = buildProxyTransport(proxyURL)
 		}
-	} else if tr, ok := httpClient.Transport.(*http.Transport); ok {
-		// Clone transport to avoid mutating a shared or cached roundtripper
-		httpClient.Transport = tr.Clone()
+		if base == nil {
+			if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+				base = dt.Clone()
+			} else {
+				base = &http.Transport{}
+			}
+		}
+		base.DisableCompression = true
+		return base, nil
+	})
+	if err != nil || tr == nil {
+		tr = &http.Transport{DisableCompression: true}
 	}
-	if tr, ok := httpClient.Transport.(*http.Transport); ok {
-		tr.DisableCompression = true
+
+	return &http.Client{
+		Transport: tr,
+		Timeout:   timeout,
 	}
-	return httpClient
 }
 
 // buildProxyTransport creates an HTTP transport configured for the given proxy URL.
