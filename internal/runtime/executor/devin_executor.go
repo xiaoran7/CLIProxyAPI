@@ -549,6 +549,7 @@ func (e *DevinExecutor) streamDevinFrames(
 
 	thoughtStepIndex := -1
 	var streamErr error
+	sawEOS := false
 
 	// 2. Consume streaming Connect-proto frames
 	for {
@@ -574,6 +575,7 @@ func (e *DevinExecutor) streamDevinFrames(
 				_ = emitInteractionsEvent(failedEvent)
 				return
 			}
+			sawEOS = true
 			break
 		}
 
@@ -743,6 +745,16 @@ func (e *DevinExecutor) streamDevinFrames(
 		return
 	}
 
+	// In Connect-RPC, the stream must cleanly terminate with an EOS trailer frame.
+	// If the upstream connection dropped before sending EOS without caller cancellation, reject as truncated.
+	if !sawEOS && ctx.Err() == nil {
+		truncErr := fmt.Errorf("devin stream terminated prematurely before EOS trailer")
+		helps.RecordAPIResponseError(ctx, e.cfg, truncErr)
+		failedEvent, _ := sjson.SetBytes([]byte(`{"event_type":"response.failed","error":{"message":"devin stream terminated prematurely before EOS trailer","code":"stream_truncated"}}`), "error.message", truncErr.Error())
+		_ = emitInteractionsEvent(failedEvent)
+		return
+	}
+
 	// 5. Emit interaction.completed with final usage
 	completedEvent := []byte(`{"event_type":"interaction.completed","interaction":{"id":"","model":"","status":"completed","usage":{"total_input_tokens":0,"total_output_tokens":0,"total_cached_tokens":0}}}`)
 	completedEvent, _ = sjson.SetBytes(completedEvent, "interaction.id", interactionID)
@@ -815,6 +827,7 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 	var unknownFields []int
 	seenUnknown := make(map[int]bool)
 	framesCount := 0
+	sawEOS := false
 
 	for {
 		flag, payload, errRead := helps.ReadConnectFrame(body)
@@ -853,6 +866,7 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 				}
 				return nil, respLog, statusErr{code: code, msg: errTrailer.Error()}
 			}
+			sawEOS = true
 			break
 		}
 
@@ -902,6 +916,22 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 				toolCalls[idx].Arguments += tc.Arguments
 			}
 		}
+	}
+
+	if !sawEOS {
+		truncErr := fmt.Errorf("devin upstream stream terminated prematurely before EOS trailer")
+		respLog := &helps.DevinUpstreamResponseLog{
+			Status:        "premature_eof_before_eos",
+			FramesCount:   framesCount,
+			Content:       strings.Join(textParts, ""),
+			Thinking:      strings.Join(thinkingParts, ""),
+			Signature:     string(accumulatedSignature),
+			SignatureType: signatureType,
+			ToolCalls:     toolCalls,
+			Usage:         finalUsage,
+			UnknownFields: unknownFields,
+		}
+		return nil, respLog, truncErr
 	}
 
 	out := []byte(`{"id":"","model":"","status":"completed","steps":[],"usage":{"total_input_tokens":0,"total_output_tokens":0,"total_cached_tokens":0}}`)

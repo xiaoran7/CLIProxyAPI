@@ -202,6 +202,9 @@ func ReadConnectFrame(r io.Reader) (flag byte, payload []byte, err error) {
 		return 0, nil, err
 	}
 	flag = header[0]
+	if flag != ConnectFlagData && flag != ConnectFlagCompressed && flag != ConnectFlagEndStream && flag != (ConnectFlagCompressed|ConnectFlagEndStream) {
+		return flag, nil, fmt.Errorf("invalid connect frame flag: 0x%02x", flag)
+	}
 	length := binary.BigEndian.Uint32(header[1:5])
 	if length > maxConnectFrameSize {
 		return flag, nil, fmt.Errorf("connect frame length %d exceeds maximum limit (%d)", length, maxConnectFrameSize)
@@ -635,7 +638,7 @@ func parseDevinToolCallDelta(data []byte) (DevinToolCallDelta, error) {
 	for pos < len(data) {
 		num, typ, n := protowire.ConsumeTag(data[pos:])
 		if n <= 0 {
-			break
+			return tc, protowire.ParseError(n)
 		}
 		pos += n
 
@@ -643,7 +646,7 @@ func parseDevinToolCallDelta(data []byte) (DevinToolCallDelta, error) {
 		case protowire.VarintType:
 			v, vn := protowire.ConsumeVarint(data[pos:])
 			if vn <= 0 {
-				return tc, nil
+				return tc, protowire.ParseError(vn)
 			}
 			pos += vn
 			if num == 4 {
@@ -652,7 +655,7 @@ func parseDevinToolCallDelta(data []byte) (DevinToolCallDelta, error) {
 		case protowire.BytesType:
 			val, bn := protowire.ConsumeBytes(data[pos:])
 			if bn <= 0 {
-				return tc, nil
+				return tc, protowire.ParseError(bn)
 			}
 			pos += bn
 			switch num {
@@ -664,7 +667,11 @@ func parseDevinToolCallDelta(data []byte) (DevinToolCallDelta, error) {
 				tc.Arguments = string(val)
 			}
 		default:
-			return tc, nil
+			nSkip := protowire.ConsumeFieldValue(num, typ, data[pos:])
+			if nSkip <= 0 {
+				return tc, protowire.ParseError(nSkip)
+			}
+			pos += nSkip
 		}
 	}
 	return tc, nil

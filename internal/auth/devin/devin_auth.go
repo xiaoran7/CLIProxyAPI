@@ -262,12 +262,22 @@ func (s *OAuthServer) Stop(ctx context.Context) error {
 
 // WaitForCallback waits for the browser redirect or times out.
 func (s *OAuthServer) WaitForCallback(timeout time.Duration) (*OAuthResult, error) {
+	return s.WaitForCallbackWithContext(context.Background(), timeout)
+}
+
+// WaitForCallbackWithContext waits for the browser redirect, context cancellation, or times out.
+func (s *OAuthServer) WaitForCallbackWithContext(ctx context.Context, timeout time.Duration) (*OAuthResult, error) {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
 	select {
 	case res := <-s.resultChan:
 		return res, nil
 	case err := <-s.errorChan:
 		return nil, err
-	case <-time.After(timeout):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
 		return nil, errors.New("devin authentication timed out")
 	}
 }

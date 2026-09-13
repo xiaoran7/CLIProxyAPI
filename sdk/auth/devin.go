@@ -101,7 +101,7 @@ func (a *DevinAuthenticator) Login(ctx context.Context, cfg *config.Config, opts
 	callbackErrCh := make(chan error, 1)
 
 	go func() {
-		result, errWait := oauthServer.WaitForCallback(5 * time.Minute)
+		result, errWait := oauthServer.WaitForCallbackWithContext(ctx, 5*time.Minute)
 		if errWait != nil {
 			callbackErrCh <- errWait
 			return
