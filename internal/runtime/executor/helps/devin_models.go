@@ -150,6 +150,10 @@ func ResolveDevinChatModelUID(rawModel string, thinkingLevel string, budgetToken
 		}
 		return "glm-5-2"
 
+	case strings.Contains(lowerBase, "glm-5-3-flash") || strings.Contains(lowerBase, "glm-5.3-flash"):
+		clamped := clampEffort(effort, glm53Efforts, "high")
+		return "glm-5-3-flash-" + clamped
+
 	case strings.Contains(lowerBase, "glm-5-3") || strings.Contains(lowerBase, "glm-5.3"):
 		clamped := clampEffort(effort, glm53Efforts, "high")
 		return "glm-5-3-" + clamped
@@ -176,7 +180,7 @@ func ResolveDevinChatModelUID(rawModel string, thinkingLevel string, budgetToken
 
 	default:
 		// Default generic fallback: append effort if present, else return base
-		if effort != "" && effort != "none" {
+		if effort != "" {
 			return baseModel + "-" + effort
 		}
 		return baseModel

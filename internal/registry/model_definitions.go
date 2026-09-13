@@ -137,9 +137,31 @@ var staticDevinModels = []*ModelInfo{
 		OwnedBy:             "zhipu",
 		DisplayName:         "GLM-5.3",
 		ContextLength:       1048576,
-		MaxCompletionTokens: 64000,
+		MaxCompletionTokens: 128000,
 		Thinking: &ThinkingSupport{
 			Levels: []string{"low", "high", "max"},
+		},
+	},
+	{
+		ID:                  "devin/glm-5-3-flash",
+		Type:                "devin",
+		OwnedBy:             "zhipu",
+		DisplayName:         "GLM-5.3 Flash",
+		ContextLength:       1000000,
+		MaxCompletionTokens: 128000,
+		Thinking: &ThinkingSupport{
+			Levels: []string{"low", "high", "max"},
+		},
+	},
+	{
+		ID:                  "devin/gpt-5-6-sol",
+		Type:                "devin",
+		OwnedBy:             "openai",
+		DisplayName:         "GPT-5.6 Sol",
+		ContextLength:       1000000,
+		MaxCompletionTokens: 128000,
+		Thinking: &ThinkingSupport{
+			Levels: []string{"none", "low", "medium", "high", "xhigh", "max"},
 		},
 	},
 	{

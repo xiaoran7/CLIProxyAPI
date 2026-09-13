@@ -606,11 +606,11 @@ func TestDevinExecutor_Refresh(t *testing.T) {
 	if updated.Metadata["user_name"] != "refreshuser" {
 		t.Errorf("expected user_name refreshuser, got %v", updated.Metadata["user_name"])
 	}
-	if updated.Metadata["daily_quota_remaining_percent"] != int64(95) {
-		t.Errorf("expected daily quota 95, got %v", updated.Metadata["daily_quota_remaining_percent"])
+	if updated.Metadata["daily_quota_remaining_percent"] != nil {
+		t.Errorf("expected daily quota to not be in metadata, got %v", updated.Metadata["daily_quota_remaining_percent"])
 	}
-	if updated.Metadata["weekly_quota_remaining_percent"] != int64(45) {
-		t.Errorf("expected weekly quota 45, got %v", updated.Metadata["weekly_quota_remaining_percent"])
+	if updated.Metadata["weekly_quota_remaining_percent"] != nil {
+		t.Errorf("expected weekly quota to not be in metadata, got %v", updated.Metadata["weekly_quota_remaining_percent"])
 	}
 	if updated.Quota.Signals["daily_quota_remaining_percent"] != "95%" {
 		t.Errorf("expected quota signal 95%%, got %q", updated.Quota.Signals["daily_quota_remaining_percent"])

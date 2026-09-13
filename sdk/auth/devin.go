@@ -289,23 +289,19 @@ waitForResult:
 		quotaSignals["plan"] = plan
 	}
 	if userStatus != nil {
-		metadata["daily_quota_remaining_percent"] = userStatus.DailyQuotaRemainingPercent
-		metadata["weekly_quota_remaining_percent"] = userStatus.WeeklyQuotaRemainingPercent
 		quotaSignals["daily_quota_remaining_percent"] = fmt.Sprintf("%d%%", userStatus.DailyQuotaRemainingPercent)
 		quotaSignals["weekly_quota_remaining_percent"] = fmt.Sprintf("%d%%", userStatus.WeeklyQuotaRemainingPercent)
 		if !userStatus.DailyQuotaResetAt.IsZero() {
-			metadata["daily_quota_reset_at"] = userStatus.DailyQuotaResetAt.Format(time.RFC3339)
 			quotaSignals["daily_quota_reset_at"] = userStatus.DailyQuotaResetAt.Format(time.RFC3339)
 		}
 		if !userStatus.WeeklyQuotaResetAt.IsZero() {
-			metadata["weekly_quota_reset_at"] = userStatus.WeeklyQuotaResetAt.Format(time.RFC3339)
 			quotaSignals["weekly_quota_reset_at"] = userStatus.WeeklyQuotaResetAt.Format(time.RFC3339)
 		}
 		if !userStatus.PlanStart.IsZero() {
-			metadata["plan_start"] = userStatus.PlanStart.Format(time.RFC3339)
+			quotaSignals["plan_start"] = userStatus.PlanStart.Format(time.RFC3339)
 		}
 		if !userStatus.PlanEnd.IsZero() {
-			metadata["plan_end"] = userStatus.PlanEnd.Format(time.RFC3339)
+			quotaSignals["plan_end"] = userStatus.PlanEnd.Format(time.RFC3339)
 		}
 	}
 

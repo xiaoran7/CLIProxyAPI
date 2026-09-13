@@ -220,21 +220,6 @@ func (e *DevinExecutor) Refresh(ctx context.Context, auth *cliproxyauth.Auth) (*
 		updated.Attributes["org_name"] = status.OrgName
 	}
 
-	updated.Metadata["daily_quota_remaining_percent"] = status.DailyQuotaRemainingPercent
-	updated.Metadata["weekly_quota_remaining_percent"] = status.WeeklyQuotaRemainingPercent
-	if !status.DailyQuotaResetAt.IsZero() {
-		updated.Metadata["daily_quota_reset_at"] = status.DailyQuotaResetAt.Format(time.RFC3339)
-	}
-	if !status.WeeklyQuotaResetAt.IsZero() {
-		updated.Metadata["weekly_quota_reset_at"] = status.WeeklyQuotaResetAt.Format(time.RFC3339)
-	}
-	if !status.PlanStart.IsZero() {
-		updated.Metadata["plan_start"] = status.PlanStart.Format(time.RFC3339)
-	}
-	if !status.PlanEnd.IsZero() {
-		updated.Metadata["plan_end"] = status.PlanEnd.Format(time.RFC3339)
-	}
-
 	// Quota observation signals for management UI and conductor
 	if updated.Quota.Signals == nil {
 		updated.Quota.Signals = make(map[string]string)
@@ -249,6 +234,12 @@ func (e *DevinExecutor) Refresh(ctx context.Context, auth *cliproxyauth.Auth) (*
 	}
 	if !status.WeeklyQuotaResetAt.IsZero() {
 		updated.Quota.Signals["weekly_quota_reset_at"] = status.WeeklyQuotaResetAt.Format(time.RFC3339)
+	}
+	if !status.PlanStart.IsZero() {
+		updated.Quota.Signals["plan_start"] = status.PlanStart.Format(time.RFC3339)
+	}
+	if !status.PlanEnd.IsZero() {
+		updated.Quota.Signals["plan_end"] = status.PlanEnd.Format(time.RFC3339)
 	}
 	updated.Quota.ObservedAt = time.Now()
 	updated.LastRefreshedAt = time.Now()

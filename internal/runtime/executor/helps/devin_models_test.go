@@ -89,6 +89,48 @@ func TestResolveDevinChatModelUID(t *testing.T) {
 			want:          "glm-5-3-high",
 		},
 		{
+			name:          "devin prefix glm-5-3-flash default high",
+			rawModel:      "devin/glm-5-3-flash",
+			thinkingLevel: "",
+			want:          "glm-5-3-flash-high",
+		},
+		{
+			name:          "devin prefix glm-5-3-flash with low suffix",
+			rawModel:      "devin/glm-5-3-flash:low",
+			thinkingLevel: "",
+			want:          "glm-5-3-flash-low",
+		},
+		{
+			name:          "devin prefix glm-5-3-flash with max suffix",
+			rawModel:      "devin/glm-5-3-flash(max)",
+			thinkingLevel: "",
+			want:          "glm-5-3-flash-max",
+		},
+		{
+			name:          "devin prefix gpt-5-6-sol with none suffix",
+			rawModel:      "devin/gpt-5-6-sol:none",
+			thinkingLevel: "",
+			want:          "gpt-5-6-sol-none",
+		},
+		{
+			name:          "devin prefix gpt-5-6-sol with body none effort",
+			rawModel:      "devin/gpt-5-6-sol",
+			thinkingLevel: "none",
+			want:          "gpt-5-6-sol-none",
+		},
+		{
+			name:          "devin prefix gpt-5-6-terra with none suffix",
+			rawModel:      "devin/gpt-5-6-terra:none",
+			thinkingLevel: "",
+			want:          "gpt-5-6-terra-none",
+		},
+		{
+			name:          "devin prefix nemotron-3-ultra with none suffix",
+			rawModel:      "devin/nemotron-3-ultra:none",
+			thinkingLevel: "",
+			want:          "nemotron-3-ultra-none",
+		},
+		{
 			name:          "glm-5-2 default maps to glm-5-2",
 			rawModel:      "devin/glm-5-2",
 			thinkingLevel: "high",
