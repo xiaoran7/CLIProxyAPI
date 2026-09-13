@@ -20,6 +20,7 @@ var (
 
 // knownDevinSuffixes lists recognized model uid suffixes.
 var knownDevinSuffixes = []string{
+	"-none",
 	"-low",
 	"-medium",
 	"-high",

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -289,7 +290,7 @@ func (s *OAuthServer) handleCallback(w http.ResponseWriter, r *http.Request) {
 			errMsg = "missing authorization code"
 		}
 		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(fmt.Sprintf(loginFailureHTML, errMsg)))
+		_, _ = w.Write([]byte(fmt.Sprintf(loginFailureHTML, html.EscapeString(errMsg))))
 		select {
 		case s.resultChan <- &OAuthResult{Error: errMsg}:
 		default:

@@ -2,6 +2,7 @@ package devin
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -40,9 +41,15 @@ type DevinUserStatus struct {
 	PlanEnd                     time.Time `json:"plan_end,omitempty"`
 }
 
-// GenerateDeviceFingerprint generates a stable 732-character hex device fingerprint.
+// GenerateDeviceFingerprint generates a 732-character hex device fingerprint.
+// When seed is empty, it generates a cryptographically random 732-character hex string per request.
+// When seed is provided, it derives a deterministic 732-character hex fingerprint.
 func GenerateDeviceFingerprint(seed string) string {
 	if seed == "" {
+		var b [devinFingerprintHexLen / 2]byte
+		if _, err := rand.Read(b[:]); err == nil {
+			return hex.EncodeToString(b[:])
+		}
 		seed = uuid.New().String()
 	}
 	var sb strings.Builder
@@ -346,6 +353,8 @@ func (s *DevinAuthService) FetchUserStatus(ctx context.Context, sessionToken, de
 	req.Header.Set("Authorization", fmt.Sprintf("Basic %s-%s", sessionToken, sessionToken))
 	req.Header.Set("Connect-Protocol-Version", "1")
 	req.Header.Set("Content-Type", "application/proto")
+	req.Header.Set("Accept", "*/*")
+	req.Header["User-Agent"] = []string{""}
 
 	resp, errDo := s.client.Do(req)
 	if errDo != nil {

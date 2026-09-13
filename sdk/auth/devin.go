@@ -132,7 +132,7 @@ waitForResult:
 			if res.Error != "" {
 				return nil, fmt.Errorf("devin oauth error: %s", res.Error)
 			}
-			if state != "" && res.State != "" && res.State != state {
+			if state != "" && res.State != state {
 				return nil, fmt.Errorf("devin oauth state mismatch (possible CSRF)")
 			}
 			authCode = res.Code
@@ -180,7 +180,7 @@ waitForResult:
 			// 2. Full callback redirect URL
 			parsed, errParse := misc.ParseOAuthCallback(trimmed)
 			if errParse == nil && parsed != nil && parsed.Code != "" {
-				if state != "" && parsed.State != "" && parsed.State != state {
+				if state != "" && parsed.State != state {
 					return nil, fmt.Errorf("devin oauth state mismatch (possible CSRF)")
 				}
 				authCode = parsed.Code

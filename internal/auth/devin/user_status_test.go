@@ -193,6 +193,9 @@ func TestFetchUserStatusLiveMock(t *testing.T) {
 }
 
 func TestLiveDevinUserStatus(t *testing.T) {
+	if os.Getenv("CPA_LIVE_TEST") != "true" {
+		t.Skip("skipping live test; set CPA_LIVE_TEST=true to run")
+	}
 	authPath := "../../../auths/devin-cli.json"
 	data, err := os.ReadFile(authPath)
 	if err != nil {

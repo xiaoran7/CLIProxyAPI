@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 func TestConnectEnvelopeFraming(t *testing.T) {
@@ -255,10 +258,10 @@ func TestParseDevinTrailerError(t *testing.T) {
 
 func TestUTF8SplitBuffer(t *testing.T) {
 	buf := &UTF8SplitBuffer{}
-	// "你好" in UTF-8: \xe4\xbd\xa0 \xe5\xa5\xbd (3 bytes each)
-	chunk1 := []byte{0xe4, 0xbd}       // first 2 bytes of 你
-	chunk2 := []byte{0xa0, 0xe5, 0xa5} // last 1 byte of 你, first 2 bytes of 好
-	chunk3 := []byte{0xbd}             // last 1 byte of 好
+	// Multi-byte UTF-8 test: \xe4\xbd\xa0 \xe5\xa5\xbd (3 bytes each)
+	chunk1 := []byte{0xe4, 0xbd}       // first 2 bytes of char 1
+	chunk2 := []byte{0xa0, 0xe5, 0xa5} // last 1 byte of char 1, first 2 bytes of char 2
+	chunk3 := []byte{0xbd}             // last 1 byte of char 2
 
 	s1 := buf.Feed(chunk1)
 	if s1 != "" {
@@ -373,4 +376,179 @@ func TestBuildDevinUpstreamLogBody(t *testing.T) {
 	if !strings.Contains(bodyDirectStr, `"model": "swe-2-high"`) {
 		t.Errorf("expected direct body to contain model UID")
 	}
+}
+
+func TestGenerateDevinSentryTrace(t *testing.T) {
+	st1 := GenerateDevinSentryTrace()
+	st2 := GenerateDevinSentryTrace()
+	if st1 == st2 {
+		t.Fatalf("traces should be randomly generated: %s == %s", st1, st2)
+	}
+	parts := strings.Split(st1, "-")
+	if len(parts) != 3 {
+		t.Fatalf("sentry-trace should have 3 parts separated by hyphen, got %q", st1)
+	}
+	if len(parts[0]) != 32 {
+		t.Errorf("traceID len = %d, want 32", len(parts[0]))
+	}
+	if len(parts[1]) != 16 {
+		t.Errorf("spanID len = %d, want 16", len(parts[1]))
+	}
+	if parts[2] != "1" {
+		t.Errorf("sampled = %q, want 1", parts[2])
+	}
+}
+
+func TestBuildDevinGetChatMessageRequest_Field15TurnIndex(t *testing.T) {
+	sessID0 := "sess-turn0-" + uuid.New().String()
+	defer ResetDevinSessionTurnIndex(sessID0)
+
+	// 1. Turn 0 with user prompt: turnIndex=0 (omitted), 15.4=14 emitted on user boundary
+	promptsTurn0 := []DevinPrompt{
+		{MessageID: "u1", Source: 1, Content: "hello"},
+	}
+	req0 := BuildDevinGetChatMessageRequest("tok", "seed", "swe-2-high", "", promptsTurn0, nil, nil, 1000, sessID0, "casc-turn0", nil)
+	gotSess0, f15Sub0 := extractField15Subfields(t, req0)
+	if gotSess0 != sessID0 {
+		t.Errorf("Field 1 sessionID = %q, want %q", gotSess0, sessID0)
+	}
+	if _, hasF2 := f15Sub0[2]; hasF2 {
+		t.Errorf("turn 0 should omit Field 2, got %v", f15Sub0[2])
+	}
+	if f15Sub0[3] != 4 {
+		t.Errorf("Field 3 = %d, want 4", f15Sub0[3])
+	}
+	if f15Sub0[4] != 14 {
+		t.Errorf("Field 4 = %d, want 14 on user turn boundary", f15Sub0[4])
+	}
+
+	sessIDTool := "sess-tool-" + uuid.New().String()
+	defer ResetDevinSessionTurnIndex(sessIDTool)
+
+	// 2. Tool-result continuation (source=4): 15.4 should be omitted
+	promptsTool := []DevinPrompt{
+		{MessageID: "u1", Source: 1, Content: "read file"},
+		{MessageID: "a1", Source: 2, Content: "calling tool"},
+		{MessageID: "t1", Source: 4, Content: "file content", ToolCallID: "call_1"},
+	}
+	reqTool := BuildDevinGetChatMessageRequest("tok", "seed", "swe-2-high", "", promptsTool, nil, nil, 1000, sessIDTool, "casc-tool", nil)
+	_, f15SubTool := extractField15Subfields(t, reqTool)
+	if _, hasF4 := f15SubTool[4]; hasF4 {
+		t.Errorf("Field 4 should be omitted on tool result continuation, got %v", f15SubTool[4])
+	}
+}
+
+func TestBuildDevinGetChatMessageRequest_Field15SequentialCounter(t *testing.T) {
+	sessionID := "sess-sequential-test-" + uuid.New().String()
+	defer ResetDevinSessionTurnIndex(sessionID)
+
+	prompts := []DevinPrompt{
+		{MessageID: "u1", Source: 1, Content: "hi"},
+	}
+
+	// Request 1: fresh session -> turnIndex 0 (omitted from wire)
+	req1 := BuildDevinGetChatMessageRequest("tok", "seed", "swe-2-high", "", prompts, nil, nil, 1000, sessionID, "casc-1", nil)
+	_, sub1 := extractField15Subfields(t, req1)
+	if _, hasF2 := sub1[2]; hasF2 {
+		t.Errorf("Request 1 in fresh session should omit 15.2, got %v", sub1[2])
+	}
+
+	// Request 2: turnIndex 1
+	req2 := BuildDevinGetChatMessageRequest("tok", "seed", "swe-2-high", "", prompts, nil, nil, 1000, sessionID, "casc-1", nil)
+	_, sub2 := extractField15Subfields(t, req2)
+	if sub2[2] != 1 {
+		t.Errorf("Request 2 should have 15.2 = 1, got %v", sub2[2])
+	}
+
+	// Request 3: turnIndex 2
+	req3 := BuildDevinGetChatMessageRequest("tok", "seed", "swe-2-high", "", prompts, nil, nil, 1000, sessionID, "casc-1", nil)
+	_, sub3 := extractField15Subfields(t, req3)
+	if sub3[2] != 2 {
+		t.Errorf("Request 3 should have 15.2 = 2, got %v", sub3[2])
+	}
+}
+
+func TestGenerateDevinDeviceFingerprint_RandomWhenEmptySeed(t *testing.T) {
+	fp1 := GenerateDevinDeviceFingerprint("")
+	fp2 := GenerateDevinDeviceFingerprint("")
+	if len(fp1) != DevinFingerprintHexLen {
+		t.Fatalf("fp1 len = %d, want %d", len(fp1), DevinFingerprintHexLen)
+	}
+	if len(fp2) != DevinFingerprintHexLen {
+		t.Fatalf("fp2 len = %d, want %d", len(fp2), DevinFingerprintHexLen)
+	}
+	if fp1 == fp2 {
+		t.Fatalf("fingerprints without explicit seed must be unique per call: %q == %q", fp1, fp2)
+	}
+
+	// With explicit seed, it must be deterministic
+	seeded1 := GenerateDevinDeviceFingerprint("my-stable-seed")
+	seeded2 := GenerateDevinDeviceFingerprint("my-stable-seed")
+	if seeded1 != seeded2 {
+		t.Fatalf("seeded fingerprints must be identical: %q != %q", seeded1, seeded2)
+	}
+}
+
+func extractField15Subfields(t *testing.T, reqBytes []byte) (string, map[int]uint64) {
+	t.Helper()
+	b := reqBytes
+	var f15Bytes []byte
+	for len(b) > 0 {
+		num, typ, n := protowire.ConsumeTag(b)
+		if n < 0 {
+			break
+		}
+		b = b[n:]
+		if num == 15 && typ == protowire.BytesType {
+			sub, m := protowire.ConsumeBytes(b)
+			if m < 0 {
+				t.Fatalf("failed to consume field 15 bytes")
+			}
+			f15Bytes = sub
+			break
+		}
+		m := protowire.ConsumeFieldValue(num, typ, b)
+		if m < 0 {
+			break
+		}
+		b = b[m:]
+	}
+	if len(f15Bytes) == 0 {
+		t.Fatalf("field 15 not found in request")
+	}
+
+	var sessionID string
+	subfields := make(map[int]uint64)
+	sb := f15Bytes
+	for len(sb) > 0 {
+		num, typ, n := protowire.ConsumeTag(sb)
+		if n < 0 {
+			break
+		}
+		sb = sb[n:]
+		if typ == protowire.VarintType {
+			val, m := protowire.ConsumeVarint(sb)
+			if m < 0 {
+				break
+			}
+			subfields[int(num)] = val
+			sb = sb[m:]
+		} else if typ == protowire.BytesType {
+			val, m := protowire.ConsumeBytes(sb)
+			if m < 0 {
+				break
+			}
+			if num == 1 {
+				sessionID = string(val)
+			}
+			sb = sb[m:]
+		} else {
+			m := protowire.ConsumeFieldValue(num, typ, sb)
+			if m < 0 {
+				break
+			}
+			sb = sb[m:]
+		}
+	}
+	return sessionID, subfields
 }

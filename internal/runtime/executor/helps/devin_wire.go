@@ -3,6 +3,7 @@ package helps
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
@@ -14,9 +15,11 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/cache"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -117,9 +120,15 @@ type DevinFrameResult struct {
 	UnknownFieldNumbers     []int
 }
 
-// GenerateDevinDeviceFingerprint generates a stable 732-character hex device fingerprint.
+// GenerateDevinDeviceFingerprint generates a 732-character hex device fingerprint.
+// When seed is empty, it generates a cryptographically random 732-character hex string per request (matching native devin-cli).
+// When seed is provided, it derives a deterministic 732-character hex fingerprint.
 func GenerateDevinDeviceFingerprint(seed string) string {
 	if seed == "" {
+		var b [DevinFingerprintHexLen / 2]byte
+		if _, err := rand.Read(b[:]); err == nil {
+			return hex.EncodeToString(b[:])
+		}
 		seed = uuid.New().String()
 	}
 	var sb strings.Builder
@@ -131,6 +140,45 @@ func GenerateDevinDeviceFingerprint(seed string) string {
 	}
 	// Truncate to exact 732 chars (11 full 64-char sha256 hex blocks + 28 chars of the 12th block) to match Devin CLI.
 	return sb.String()[:DevinFingerprintHexLen]
+}
+
+// GenerateDevinSentryTrace generates a Sentry distributed tracing header in the format:
+// "<32-hex-trace-id>-<16-hex-span-id>-1"
+func GenerateDevinSentryTrace() string {
+	var b [24]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		u1 := strings.ReplaceAll(uuid.New().String(), "-", "")
+		u2 := strings.ReplaceAll(uuid.New().String(), "-", "")[:16]
+		return u1 + "-" + u2 + "-1"
+	}
+	traceID := hex.EncodeToString(b[:16])
+	spanID := hex.EncodeToString(b[16:24])
+	return traceID + "-" + spanID + "-1"
+}
+
+const defaultMaxSessionTurnCounters = 5000
+
+var sessionTurnLRU = cache.NewBoundedLRU[string, *atomic.Uint64](defaultMaxSessionTurnCounters, nil)
+
+// NextDevinSessionTurnIndex returns the next 0-based request ordinal for a session (Field 15.2).
+// In native devin-cli, the counter is process-scoped per session:
+// First request in a session returns 0 (which is omitted on the wire).
+// Subsequent requests return 1, 2, 3... monotonically.
+func NextDevinSessionTurnIndex(sessionID string) int {
+	cleanID := strings.TrimSpace(sessionID)
+	if cleanID == "" {
+		return 0
+	}
+
+	counter := sessionTurnLRU.GetOrAdd(cleanID, func() *atomic.Uint64 {
+		return &atomic.Uint64{}
+	})
+	return int(counter.Add(1) - 1)
+}
+
+// ResetDevinSessionTurnIndex clears the session counter (used for testing or explicit session reset).
+func ResetDevinSessionTurnIndex(sessionID string) {
+	sessionTurnLRU.Delete(strings.TrimSpace(sessionID))
 }
 
 // WrapConnectEnvelope wraps raw payload bytes into a standard 5-byte Connect envelope:
@@ -373,7 +421,7 @@ func BuildDevinGetChatMessageRequest(
 	f8Bytes = protowire.AppendVarint(f8Bytes, 40)
 
 	f8Bytes = protowire.AppendTag(f8Bytes, 8, protowire.Fixed64Type)
-	f8Bytes = protowire.AppendFixed64(f8Bytes, math.Float64bits(0.95))
+	f8Bytes = protowire.AppendFixed64(f8Bytes, math.Float64bits(float64(float32(0.95))))
 
 	reqBytes = protowire.AppendTag(reqBytes, 8, protowire.BytesType)
 	reqBytes = protowire.AppendBytes(reqBytes, f8Bytes)
@@ -402,18 +450,32 @@ func BuildDevinGetChatMessageRequest(
 	}
 
 	// 7. Thread session metadata (Field 15)
+	// In native devin-cli:
+	// Field 1: sessionID (UUID string)
+	// Field 2: turnIndex (per-session request ordinal, omitted when 0)
+	// Field 3: 4 (varint)
+	// Field 4: 14 (emitted conditionally on user-turn boundaries)
+	turnIndex := NextDevinSessionTurnIndex(sessionID)
+
 	var f15Bytes []byte
 	f15Bytes = protowire.AppendTag(f15Bytes, 1, protowire.BytesType)
 	f15Bytes = protowire.AppendString(f15Bytes, sessionID)
 
-	f15Bytes = protowire.AppendTag(f15Bytes, 2, protowire.VarintType)
-	f15Bytes = protowire.AppendVarint(f15Bytes, 53)
+	if turnIndex > 0 {
+		f15Bytes = protowire.AppendTag(f15Bytes, 2, protowire.VarintType)
+		f15Bytes = protowire.AppendVarint(f15Bytes, uint64(turnIndex))
+	}
 
 	f15Bytes = protowire.AppendTag(f15Bytes, 3, protowire.VarintType)
 	f15Bytes = protowire.AppendVarint(f15Bytes, 4)
 
-	f15Bytes = protowire.AppendTag(f15Bytes, 4, protowire.VarintType)
-	f15Bytes = protowire.AppendVarint(f15Bytes, 14)
+	// In native devin-cli, Field 15.4=14 is emitted on user-turn boundaries
+	if len(prompts) > 0 && prompts[len(prompts)-1].Source == 1 {
+		if turnIndex == 0 || len(prompts) < 2 || prompts[len(prompts)-2].Source != 1 {
+			f15Bytes = protowire.AppendTag(f15Bytes, 4, protowire.VarintType)
+			f15Bytes = protowire.AppendVarint(f15Bytes, 14)
+		}
+	}
 
 	reqBytes = protowire.AppendTag(reqBytes, 15, protowire.BytesType)
 	reqBytes = protowire.AppendBytes(reqBytes, f15Bytes)

@@ -61,6 +61,24 @@ func NewProxyAwareHTTPClient(ctx context.Context, cfg *config.Config, auth *clip
 	return httpClient
 }
 
+// NewDevinHTTPClient creates an HTTP client customized for Devin Connect-RPC upstream.
+// Suppresses automatic Accept-Encoding: gzip while preserving robust HTTP/2 streaming.
+func NewDevinHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, timeout time.Duration) *http.Client {
+	httpClient := NewProxyAwareHTTPClient(ctx, cfg, auth, timeout)
+	if httpClient.Transport == nil {
+		if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+			httpClient.Transport = dt.Clone()
+		}
+	} else if tr, ok := httpClient.Transport.(*http.Transport); ok {
+		// Clone transport to avoid mutating a shared or cached roundtripper
+		httpClient.Transport = tr.Clone()
+	}
+	if tr, ok := httpClient.Transport.(*http.Transport); ok {
+		tr.DisableCompression = true
+	}
+	return httpClient
+}
+
 // buildProxyTransport creates an HTTP transport configured for the given proxy URL.
 // It supports SOCKS5, HTTP, and HTTPS proxy protocols.
 //

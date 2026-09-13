@@ -61,6 +61,41 @@ func TestDevinExecutorPrepareRequest(t *testing.T) {
 	if req.Header.Get("Connect-Protocol-Version") != "1" {
 		t.Fatalf("Connect-Protocol-Version = %q, want 1", req.Header.Get("Connect-Protocol-Version"))
 	}
+	if req.Header.Get("Accept") != "*/*" {
+		t.Fatalf("Accept = %q, want */*", req.Header.Get("Accept"))
+	}
+	sentryTrace := req.Header.Get("Sentry-Trace")
+	if sentryTrace == "" {
+		t.Fatalf("Sentry-Trace header missing")
+	}
+	parts := strings.Split(sentryTrace, "-")
+	if len(parts) != 3 || len(parts[0]) != 32 || len(parts[1]) != 16 || parts[2] != "1" {
+		t.Fatalf("invalid Sentry-Trace format: %q", sentryTrace)
+	}
+
+	// Verify User-Agent suppression on the wire
+	var receivedUA []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedUA = r.Header["User-Agent"]
+	}))
+	defer ts.Close()
+
+	wireReq, err := http.NewRequest(http.MethodPost, ts.URL, nil)
+	if err != nil {
+		t.Fatalf("NewRequest failed: %v", err)
+	}
+	if err := exec.PrepareRequest(wireReq, auth); err != nil {
+		t.Fatalf("PrepareRequest failed: %v", err)
+	}
+	resp, err := ts.Client().Do(wireReq)
+	if err != nil {
+		t.Fatalf("Do request failed: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	if len(receivedUA) != 0 {
+		t.Errorf("expected User-Agent to be completely omitted on wire, got: %v", receivedUA)
+	}
 }
 
 func TestDevinAuthCredentials(t *testing.T) {

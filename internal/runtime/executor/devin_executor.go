@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -97,7 +98,15 @@ func (e *DevinExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Aut
 	}
 	req.Header.Set("Content-Type", "application/connect+proto")
 	req.Header.Set("Connect-Protocol-Version", "1")
-	req.Header.Set("User-Agent", "connect-go/1.19.1 (go1.25.0)")
+	req.Header.Set("Accept", "*/*")
+	// Native devin-cli attaches Sentry-Trace only to chat streaming, omitting it on unary status/catalog calls.
+	isUnary := req.URL != nil && (strings.Contains(req.URL.Path, "GetUserStatus") || strings.Contains(req.URL.Path, "GetCliModelConfigs") || strings.Contains(req.URL.Path, "SeatManagementService"))
+	if !isUnary && req.Header.Get("Sentry-Trace") == "" {
+		req.Header.Set("Sentry-Trace", helps.GenerateDevinSentryTrace())
+	}
+	// Native devin-cli suppresses User-Agent header entirely on the wire.
+	// In Go net/http, setting the header slice to empty string suppresses default Go-http-client injection.
+	req.Header["User-Agent"] = []string{""}
 
 	var attrs map[string]string
 	if auth != nil {
@@ -119,7 +128,7 @@ func (e *DevinExecutor) HttpRequest(ctx context.Context, auth *cliproxyauth.Auth
 	if err := e.PrepareRequest(httpReq, auth); err != nil {
 		return nil, err
 	}
-	httpClient := helps.NewProxyAwareHTTPClient(ctx, e.cfg, auth, 0)
+	httpClient := helps.NewDevinHTTPClient(ctx, e.cfg, auth, 0)
 	return httpClient.Do(httpReq)
 }
 
@@ -147,7 +156,7 @@ func (e *DevinExecutor) Refresh(ctx context.Context, auth *cliproxyauth.Auth) (*
 		return auth, nil
 	}
 
-	httpClient := helps.NewProxyAwareHTTPClient(ctx, e.cfg, auth, 0)
+	httpClient := helps.NewDevinHTTPClient(ctx, e.cfg, auth, 0)
 	authService := devinauth.NewDevinAuthService(httpClient)
 	if baseURL := strings.TrimSpace(auth.Attributes["base_url"]); baseURL != "" {
 		authService.SetServerBaseURL(baseURL)
@@ -276,7 +285,7 @@ func (e *DevinExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 		AuthValue: authValue,
 	})
 
-	httpClient := reporter.TrackHTTPClient(helps.NewProxyAwareHTTPClient(ctx, e.cfg, auth, 0))
+	httpClient := reporter.TrackHTTPClient(helps.NewDevinHTTPClient(ctx, e.cfg, auth, 0))
 	httpResp, errDo := httpClient.Do(httpReq)
 	if errDo != nil {
 		helps.RecordAPIResponseError(ctx, e.cfg, errDo)
@@ -288,7 +297,7 @@ func (e *DevinExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 
 	helps.RecordAPIResponseMetadata(ctx, e.cfg, httpResp.StatusCode, httpResp.Header.Clone())
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-		errData, _ := io.ReadAll(httpResp.Body)
+		errData, _ := io.ReadAll(io.LimitReader(httpResp.Body, 1<<20))
 		helps.AppendAPIResponseChunk(ctx, e.cfg, errData)
 		return resp, newDevinStatusError(httpResp.StatusCode, httpResp.Header, errData)
 	}
@@ -340,7 +349,7 @@ func (e *DevinExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		AuthValue: authValue,
 	})
 
-	httpClient := reporter.TrackHTTPClient(helps.NewProxyAwareHTTPClient(ctx, e.cfg, auth, 0))
+	httpClient := reporter.TrackHTTPClient(helps.NewDevinHTTPClient(ctx, e.cfg, auth, 0))
 	httpResp, errDo := httpClient.Do(httpReq)
 	if errDo != nil {
 		helps.RecordAPIResponseError(ctx, e.cfg, errDo)
@@ -348,16 +357,21 @@ func (e *DevinExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 	}
 	helps.RecordAPIResponseMetadata(ctx, e.cfg, httpResp.StatusCode, httpResp.Header.Clone())
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-		errData, _ := io.ReadAll(httpResp.Body)
+		errData, _ := io.ReadAll(io.LimitReader(httpResp.Body, 1<<20))
 		_ = httpResp.Body.Close()
 		helps.AppendAPIResponseChunk(ctx, e.cfg, errData)
-		return nil, statusErr{code: httpResp.StatusCode, msg: string(errData)}
+		return nil, newDevinStatusError(httpResp.StatusCode, httpResp.Header, errData)
 	}
 
 	out := make(chan cliproxyexecutor.StreamChunk)
 	responseFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
 
 	streamCtx, cancelStream := context.WithCancel(ctx)
+
+	go func() {
+		<-streamCtx.Done()
+		_ = httpResp.Body.Close()
+	}()
 
 	go func() {
 		defer close(out)
@@ -382,9 +396,6 @@ func (e *DevinExecutor) prepareDevinHTTPRequest(ctx context.Context, auth *clipr
 	if apiKey == "" {
 		return nil, "", nil, fmt.Errorf("devin credentials missing: api_key or session_token required")
 	}
-	if deviceSeed == "" {
-		deviceSeed = apiKey
-	}
 
 	payload := req.Payload
 	isInteractionsSource := opts.SourceFormat == "" || opts.SourceFormat == sdktranslator.FormatInteractions
@@ -394,7 +405,8 @@ func (e *DevinExecutor) prepareDevinHTTPRequest(ctx context.Context, auth *clipr
 	systemPrompt, prompts, tools, temp, maxTokens, sessionID, cascadeID, thinkingLevel, budgetTokens := parseInteractionsPayload(payload, opts.OriginalRequest)
 	sessionID, cascadeID = resolveDevinSessionAndCascadeIDs(ctx, sessionID, cascadeID, opts)
 
-	if modelInfo := registry.LookupModelInfo(req.Model, "devin"); modelInfo != nil && modelInfo.MaxCompletionTokens > 0 {
+	baseModel := thinking.ParseSuffix(req.Model).ModelName
+	if modelInfo := registry.LookupModelInfo(baseModel, "devin"); modelInfo != nil && modelInfo.MaxCompletionTokens > 0 {
 		if maxTokens > modelInfo.MaxCompletionTokens || maxTokens <= 0 {
 			maxTokens = modelInfo.MaxCompletionTokens
 		}
@@ -469,7 +481,7 @@ func (e *DevinExecutor) streamDevinFrames(
 	stepIndex := 0
 	thoughtStarted := false
 	contentStarted := false
-	currentToolCallActive := false
+	toolCallSteps := make(map[int]int) // maps tc.Index -> stepIndex
 	thinkingBuf := &helps.UTF8SplitBuffer{}
 	contentBuf := &helps.UTF8SplitBuffer{}
 	var accumulatedThinking strings.Builder
@@ -533,15 +545,17 @@ func (e *DevinExecutor) streamDevinFrames(
 	}
 
 	thoughtStepIndex := -1
+	var streamErr error
 
 	// 2. Consume streaming Connect-proto frames
 	for {
 		flag, payload, errRead := helps.ReadConnectFrame(body)
 		if errRead != nil {
-			if errors.Is(errRead, io.EOF) || errors.Is(errRead, io.ErrUnexpectedEOF) {
+			if errors.Is(errRead, io.EOF) || errors.Is(errRead, net.ErrClosed) || ctx.Err() != nil {
 				break
 			}
-			log.Debugf("devin executor: read connect frame error: %v", errRead)
+			streamErr = errRead
+			log.Warnf("devin executor: stream read error: %v", errRead)
 			break
 		}
 		streamFrameCount++
@@ -551,6 +565,7 @@ func (e *DevinExecutor) streamDevinFrames(
 			code, errTrailer := helps.ParseDevinTrailerError(payload)
 			if errTrailer != nil {
 				log.Warnf("devin executor: trailer error (%d): %v", code, errTrailer)
+				helps.RecordAPIResponseError(ctx, e.cfg, errTrailer)
 				failedEvent, _ := sjson.SetBytes([]byte(`{"event_type":"response.failed","error":{"message":"","code":""}}`), "error.message", errTrailer.Error())
 				failedEvent, _ = sjson.SetBytes(failedEvent, "error.code", fmt.Sprintf("%d", code))
 				_ = emitInteractionsEvent(failedEvent)
@@ -600,14 +615,23 @@ func (e *DevinExecutor) streamDevinFrames(
 
 		// Emit thinking signature delta targeting the thought step
 		if len(frameRes.DeltaSignature) > 0 {
-			targetIdx := thoughtStepIndex
-			if targetIdx < 0 {
-				targetIdx = 0
+			if !thoughtStarted {
+				thoughtStepIndex = stepIndex
+				startEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.start","index":0,"step":{"type":"thought"}}`), "index", stepIndex)
+				if !emitInteractionsEvent(startEvent) {
+					return
+				}
+				thoughtStarted = true
 			}
 			sigEvent := []byte(`{"event_type":"step.delta","index":0,"delta":{"type":"thought_signature","signature":""}}`)
-			sigEvent, _ = sjson.SetBytes(sigEvent, "index", targetIdx)
+			sigEvent, _ = sjson.SetBytes(sigEvent, "index", thoughtStepIndex)
 			sigEvent, _ = sjson.SetBytes(sigEvent, "delta.signature", string(frameRes.DeltaSignature))
-			_ = emitInteractionsEvent(sigEvent)
+			if frameRes.DeltaSignatureType != "" {
+				sigEvent, _ = sjson.SetBytes(sigEvent, "delta.signature_type", frameRes.DeltaSignatureType)
+			}
+			if !emitInteractionsEvent(sigEvent) {
+				return
+			}
 		}
 
 		// Emit content text delta
@@ -653,23 +677,22 @@ func (e *DevinExecutor) streamDevinFrames(
 				stepIndex++
 			}
 
-			if tc.Name != "" || tc.ID != "" {
-				if currentToolCallActive {
-					stopEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.stop","index":0}`), "index", stepIndex)
-					_ = emitInteractionsEvent(stopEvent)
-					stepIndex++
-				}
-				startEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.start","index":0,"step":{"type":"function_call","name":"","id":"","call_id":"","arguments":{}}}`), "index", stepIndex)
+			sIdx, exists := toolCallSteps[tc.Index]
+			if !exists {
+				sIdx = stepIndex
+				stepIndex++
+				toolCallSteps[tc.Index] = sIdx
+				startEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.start","index":0,"step":{"type":"function_call","name":"","id":"","call_id":"","arguments":{}}}`), "index", sIdx)
 				startEvent, _ = sjson.SetBytes(startEvent, "step.name", tc.Name)
 				startEvent, _ = sjson.SetBytes(startEvent, "step.id", tc.ID)
 				startEvent, _ = sjson.SetBytes(startEvent, "step.call_id", tc.ID)
 				if !emitInteractionsEvent(startEvent) {
 					return
 				}
-				currentToolCallActive = true
 			}
+
 			if tc.Arguments != "" {
-				deltaEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.delta","index":0,"delta":{"type":"arguments_delta","arguments":""}}`), "index", stepIndex)
+				deltaEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.delta","index":0,"delta":{"type":"arguments_delta","arguments":""}}`), "index", sIdx)
 				deltaEvent, _ = sjson.SetBytes(deltaEvent, "delta.arguments", tc.Arguments)
 				if !emitInteractionsEvent(deltaEvent) {
 					return
@@ -678,25 +701,22 @@ func (e *DevinExecutor) streamDevinFrames(
 		}
 	}
 
-	// 3. Emit accumulated signature if present
-	if len(accumulatedSignature) > 0 {
-		targetIdx := thoughtStepIndex
-		if targetIdx < 0 {
-			targetIdx = 0
-		}
-		sigBase64 := base64.StdEncoding.EncodeToString(accumulatedSignature)
-		sigEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.delta","index":0,"delta":{"type":"thought_signature","signature":""}}`), "index", targetIdx)
-		sigEvent, _ = sjson.SetBytes(sigEvent, "delta.signature", sigBase64)
-		if signatureType != "" {
-			sigEvent, _ = sjson.SetBytes(sigEvent, "delta.signature_type", signatureType)
-		}
-		_ = emitInteractionsEvent(sigEvent)
-	}
-
-	// 4. Close open steps
-	if thoughtStarted || contentStarted || currentToolCallActive {
+	// 3. Close open steps
+	if thoughtStarted || contentStarted {
 		stopEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.stop","index":0}`), "index", stepIndex)
 		_ = emitInteractionsEvent(stopEvent)
+	}
+	for _, sIdx := range toolCallSteps {
+		stopEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.stop","index":0}`), "index", sIdx)
+		_ = emitInteractionsEvent(stopEvent)
+	}
+
+	// If stream encountered an abnormal read error mid-flight, record failure and emit response.failed
+	if streamErr != nil && ctx.Err() == nil {
+		helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
+		failedEvent, _ := sjson.SetBytes([]byte(`{"event_type":"response.failed","error":{"message":"","code":"stream_read_error"}}`), "error.message", streamErr.Error())
+		_ = emitInteractionsEvent(failedEvent)
+		return
 	}
 
 	// 5. Emit interaction.completed with final usage
@@ -775,7 +795,7 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 	for {
 		flag, payload, errRead := helps.ReadConnectFrame(body)
 		if errRead != nil {
-			if errors.Is(errRead, io.EOF) || errors.Is(errRead, io.ErrUnexpectedEOF) {
+			if errors.Is(errRead, io.EOF) {
 				break
 			}
 			respLog := &helps.DevinUpstreamResponseLog{
@@ -840,14 +860,18 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 			textParts = append(textParts, frameRes.ContentText)
 		}
 		for _, tc := range frameRes.ToolCallDeltas {
-			if tc.Name != "" || tc.ID != "" {
-				toolCalls = append(toolCalls, helps.DevinToolCall{
-					ID:        tc.ID,
-					Name:      tc.Name,
-					Arguments: tc.Arguments,
-				})
-			} else if len(toolCalls) > 0 {
-				toolCalls[len(toolCalls)-1].Arguments += tc.Arguments
+			idx := tc.Index
+			for len(toolCalls) <= idx {
+				toolCalls = append(toolCalls, helps.DevinToolCall{})
+			}
+			if tc.ID != "" {
+				toolCalls[idx].ID = tc.ID
+			}
+			if tc.Name != "" {
+				toolCalls[idx].Name = tc.Name
+			}
+			if tc.Arguments != "" {
+				toolCalls[idx].Arguments += tc.Arguments
 			}
 		}
 	}
@@ -858,9 +882,13 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 
 	var steps [][]byte
 
-	if len(thinkingParts) > 0 {
+	if len(thinkingParts) > 0 || len(accumulatedSignature) > 0 {
 		thoughtStep := []byte(`{"type":"thought","content":[{"type":"text","text":""}]}`)
-		thoughtStep, _ = sjson.SetBytes(thoughtStep, "content.0.text", strings.Join(thinkingParts, ""))
+		if len(thinkingParts) > 0 {
+			thoughtStep, _ = sjson.SetBytes(thoughtStep, "content.0.text", strings.Join(thinkingParts, ""))
+		} else {
+			thoughtStep, _ = sjson.DeleteBytes(thoughtStep, "content")
+		}
 		if len(accumulatedSignature) > 0 {
 			sigStr := string(accumulatedSignature)
 			thoughtStep, _ = sjson.SetBytes(thoughtStep, "signature", sigStr)
@@ -972,19 +1000,22 @@ func parseInteractionsPayload(payload, originalRequest []byte) (
 	}
 
 	// 3. Session and Cascade ID
+	// Prioritize stable session identifiers across turns (session_id, sessionId, conversation_id)
+	// to ensure upstream session ID and cascade ID remain stable, preserving prompt caching.
+	// Fall back to previous_interaction_id only when no stable session identifier exists.
 	sessionID = strings.TrimSpace(firstNonEmpty(
-		root.Get("previous_interaction_id").String(),
 		root.Get("session_id").String(),
 		root.Get("sessionId").String(),
 		root.Get("conversation_id").String(),
+		root.Get("previous_interaction_id").String(),
 	))
 	if sessionID == "" && len(originalRequest) > 0 {
 		origRoot := gjson.ParseBytes(originalRequest)
 		sessionID = strings.TrimSpace(firstNonEmpty(
-			origRoot.Get("previous_interaction_id").String(),
 			origRoot.Get("session_id").String(),
 			origRoot.Get("sessionId").String(),
 			origRoot.Get("conversation_id").String(),
+			origRoot.Get("previous_interaction_id").String(),
 		))
 	}
 	cascadeID = sessionID
@@ -1403,16 +1434,22 @@ func detectSignatureType(sig string) string {
 	return "sealed"
 }
 
+type originalAssistantMeta struct {
+	signature     []byte
+	signatureType string
+	thinking      string
+}
+
 func supplementSignaturesFromOriginal(original []byte, prompts []helps.DevinPrompt) {
 	origRoot := gjson.ParseBytes(original)
 	messages := origRoot.Get("messages")
 	if !messages.IsArray() {
 		return
 	}
-	var assistantSigs [][]byte
-	var assistantSigTypes []string
+	var originalAssistants []originalAssistantMeta
 	for _, m := range messages.Array() {
 		if strings.EqualFold(m.Get("role").String(), "assistant") {
+			var meta originalAssistantMeta
 			content := m.Get("content")
 			if content.IsArray() {
 				for _, part := range content.Array() {
@@ -1420,22 +1457,34 @@ func supplementSignaturesFromOriginal(original []byte, prompts []helps.DevinProm
 						if sig := part.Get("signature").String(); sig != "" {
 							bytes, sType := parseSignatureBytes(sig)
 							if len(bytes) > 0 {
-								assistantSigs = append(assistantSigs, bytes)
-								assistantSigTypes = append(assistantSigTypes, sType)
+								meta.signature = bytes
+								meta.signatureType = sType
 							}
+						}
+						if t := part.Get("thinking").String(); t != "" {
+							meta.thinking = t
 						}
 					}
 				}
 			}
+			originalAssistants = append(originalAssistants, meta)
 		}
 	}
 
-	sigIdx := 0
+	asstIdx := 0
 	for i := range prompts {
-		if prompts[i].Source == 2 && len(prompts[i].Signature) == 0 && sigIdx < len(assistantSigs) {
-			prompts[i].Signature = assistantSigs[sigIdx]
-			prompts[i].SignatureType = assistantSigTypes[sigIdx]
-			sigIdx++
+		if prompts[i].Source == 2 {
+			if asstIdx < len(originalAssistants) {
+				orig := originalAssistants[asstIdx]
+				if len(prompts[i].Signature) == 0 && len(orig.signature) > 0 {
+					prompts[i].Signature = orig.signature
+					prompts[i].SignatureType = orig.signatureType
+				}
+				if prompts[i].Thinking == "" && orig.thinking != "" {
+					prompts[i].Thinking = orig.thinking
+				}
+				asstIdx++
+			}
 		}
 	}
 }
@@ -1496,6 +1545,9 @@ func devinAuthCredentials(auth *cliproxyauth.Auth) (apiKey string, baseURL strin
 		}
 		if v, ok := auth.Metadata["base_url"].(string); ok && strings.TrimSpace(v) != "" && baseURL == helps.DevinDefaultBaseURL {
 			baseURL = strings.TrimSpace(v)
+		}
+		if v, ok := auth.Metadata["device_seed"].(string); ok && strings.TrimSpace(v) != "" && deviceSeed == "" {
+			deviceSeed = strings.TrimSpace(v)
 		}
 	}
 	return
