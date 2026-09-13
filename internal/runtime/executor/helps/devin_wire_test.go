@@ -588,3 +588,120 @@ func extractField15Subfields(t *testing.T, reqBytes []byte) (string, map[int]uin
 	}
 	return sessionID, subfields
 }
+
+func TestParseDevinUsageField_HeadersAndField4(t *testing.T) {
+	var f7Bytes []byte
+	f7Bytes = protowire.AppendTag(f7Bytes, 2, protowire.VarintType)
+	f7Bytes = protowire.AppendVarint(f7Bytes, 3)
+
+	f7Bytes = protowire.AppendTag(f7Bytes, 4, protowire.VarintType)
+	f7Bytes = protowire.AppendVarint(f7Bytes, 58)
+
+	f7Bytes = protowire.AppendTag(f7Bytes, 3, protowire.VarintType)
+	f7Bytes = protowire.AppendVarint(f7Bytes, 39)
+
+	f7Bytes = protowire.AppendTag(f7Bytes, 5, protowire.VarintType)
+	f7Bytes = protowire.AppendVarint(f7Bytes, 19179)
+
+	f7Bytes = protowire.AppendTag(f7Bytes, 6, protowire.VarintType)
+	f7Bytes = protowire.AppendVarint(f7Bytes, 66)
+
+	// Submessage 1: openai-version
+	var h1 []byte
+	h1 = protowire.AppendTag(h1, 1, protowire.BytesType)
+	h1 = protowire.AppendString(h1, "openai-version")
+	h1 = protowire.AppendTag(h1, 2, protowire.BytesType)
+	h1 = protowire.AppendString(h1, "2020-10-01")
+	f7Bytes = protowire.AppendTag(f7Bytes, 8, protowire.BytesType)
+	f7Bytes = protowire.AppendBytes(f7Bytes, h1)
+
+	// Submessage 2: x-request-id
+	var h2 []byte
+	h2 = protowire.AppendTag(h2, 1, protowire.BytesType)
+	h2 = protowire.AppendString(h2, "x-request-id")
+	h2 = protowire.AppendTag(h2, 2, protowire.BytesType)
+	h2 = protowire.AppendString(h2, "req_5bb00ad48ae048119e3420bddf36257f")
+	f7Bytes = protowire.AppendTag(f7Bytes, 8, protowire.BytesType)
+	f7Bytes = protowire.AppendBytes(f7Bytes, h2)
+
+	// Submessage 3: openai-processing-ms
+	var h3 []byte
+	h3 = protowire.AppendTag(h3, 1, protowire.BytesType)
+	h3 = protowire.AppendString(h3, "openai-processing-ms")
+	h3 = protowire.AppendTag(h3, 2, protowire.BytesType)
+	h3 = protowire.AppendString(h3, "419")
+	f7Bytes = protowire.AppendTag(f7Bytes, 8, protowire.BytesType)
+	f7Bytes = protowire.AppendBytes(f7Bytes, h3)
+
+	f7Bytes = protowire.AppendTag(f7Bytes, 9, protowire.BytesType)
+	f7Bytes = protowire.AppendString(f7Bytes, "gpt-5-6-luna-low")
+
+	usage := parseDevinUsageField(f7Bytes)
+	if usage == nil {
+		t.Fatal("expected non-nil usage")
+	}
+
+	// 3 + 58 = 61
+	if usage.PromptTokens != 61 {
+		t.Errorf("PromptTokens = %d, want 61 (3 turn + 58 context)", usage.PromptTokens)
+	}
+	if usage.CompletionTokens != 39 {
+		t.Errorf("CompletionTokens = %d, want 39", usage.CompletionTokens)
+	}
+	if usage.CachedTokens != 19179 {
+		t.Errorf("CachedTokens = %d, want 19179", usage.CachedTokens)
+	}
+	if usage.StatusCode != 66 {
+		t.Errorf("StatusCode = %d, want 66", usage.StatusCode)
+	}
+	if usage.RequestID != "req_5bb00ad48ae048119e3420bddf36257f" {
+		t.Errorf("RequestID = %q, want clean request-id", usage.RequestID)
+	}
+	if usage.ModelName != "gpt-5-6-luna-low" {
+		t.Errorf("ModelName = %q, want gpt-5-6-luna-low", usage.ModelName)
+	}
+	if usage.Headers["openai-processing-ms"] != "419" {
+		t.Errorf("header processing-ms = %q, want 419", usage.Headers["openai-processing-ms"])
+	}
+	if usage.Headers["openai-version"] != "2020-10-01" {
+		t.Errorf("header openai-version = %q, want 2020-10-01", usage.Headers["openai-version"])
+	}
+}
+
+func TestParseDevinUsageField_AnthropicRequestId(t *testing.T) {
+	var f7Bytes []byte
+	f7Bytes = protowire.AppendTag(f7Bytes, 2, protowire.VarintType)
+	f7Bytes = protowire.AppendVarint(f7Bytes, 4)
+
+	f7Bytes = protowire.AppendTag(f7Bytes, 3, protowire.VarintType)
+	f7Bytes = protowire.AppendVarint(f7Bytes, 109)
+
+	f7Bytes = protowire.AppendTag(f7Bytes, 5, protowire.VarintType)
+	f7Bytes = protowire.AppendVarint(f7Bytes, 577)
+
+	// Anthropic uses capitalized "Request-Id"
+	var h []byte
+	h = protowire.AppendTag(h, 1, protowire.BytesType)
+	h = protowire.AppendString(h, "Request-Id")
+	h = protowire.AppendTag(h, 2, protowire.BytesType)
+	h = protowire.AppendString(h, "req_011Cf1JivhJrXDq9ycq7cEtH")
+	f7Bytes = protowire.AppendTag(f7Bytes, 8, protowire.BytesType)
+	f7Bytes = protowire.AppendBytes(f7Bytes, h)
+
+	usage := parseDevinUsageField(f7Bytes)
+	if usage == nil {
+		t.Fatal("expected non-nil usage")
+	}
+	if usage.RequestID != "req_011Cf1JivhJrXDq9ycq7cEtH" {
+		t.Errorf("RequestID = %q, want req_011Cf1JivhJrXDq9ycq7cEtH", usage.RequestID)
+	}
+	if usage.PromptTokens != 4 {
+		t.Errorf("PromptTokens = %d, want 4", usage.PromptTokens)
+	}
+	if usage.CompletionTokens != 109 {
+		t.Errorf("CompletionTokens = %d, want 109", usage.CompletionTokens)
+	}
+	if usage.CachedTokens != 577 {
+		t.Errorf("CachedTokens = %d, want 577", usage.CachedTokens)
+	}
+}

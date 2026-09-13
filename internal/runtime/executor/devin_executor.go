@@ -569,6 +569,14 @@ func (e *DevinExecutor) streamDevinFrames(
 
 		if frameRes.Usage != nil {
 			finalUsage = frameRes.Usage
+		} else if len(frameRes.ResponseDimensionGroups) > 0 && finalUsage == nil {
+			if inTok, outTok, cachedTok, ok := helps.ParseDevinResponseDimensionGroups(frameRes.ResponseDimensionGroups); ok {
+				finalUsage = &helps.DevinUsage{
+					PromptTokens:     inTok,
+					CompletionTokens: outTok,
+					CachedTokens:     cachedTok,
+				}
+			}
 		}
 		if len(frameRes.DeltaSignature) > 0 {
 			accumulatedSignature = append(accumulatedSignature, frameRes.DeltaSignature...)
@@ -906,6 +914,14 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 
 		if frameRes.Usage != nil {
 			finalUsage = frameRes.Usage
+		} else if len(frameRes.ResponseDimensionGroups) > 0 && finalUsage == nil {
+			if inTok, outTok, cachedTok, ok := helps.ParseDevinResponseDimensionGroups(frameRes.ResponseDimensionGroups); ok {
+				finalUsage = &helps.DevinUsage{
+					PromptTokens:     inTok,
+					CompletionTokens: outTok,
+					CachedTokens:     cachedTok,
+				}
+			}
 		}
 		if len(frameRes.DeltaSignature) > 0 {
 			accumulatedSignature = append(accumulatedSignature, frameRes.DeltaSignature...)
