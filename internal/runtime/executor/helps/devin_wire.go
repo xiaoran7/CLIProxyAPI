@@ -222,15 +222,21 @@ func ReadConnectFrame(r io.Reader) (flag byte, payload []byte, err error) {
 		}
 		defer func() { _ = gz.Close() }()
 
+		initCap := int(length) * 4
+		if initCap > maxDecompressedFrameSize {
+			initCap = maxDecompressedFrameSize
+		} else if initCap < 4096 {
+			initCap = 4096
+		}
+		decompBuf := bytes.NewBuffer(make([]byte, 0, initCap))
 		limitedReader := io.LimitReader(gz, maxDecompressedFrameSize+1)
-		decompressed, errRead := io.ReadAll(limitedReader)
-		if errRead != nil {
+		if _, errRead := decompBuf.ReadFrom(limitedReader); errRead != nil {
 			return flag, nil, fmt.Errorf("read decompressed connect frame: %w", errRead)
 		}
-		if len(decompressed) > maxDecompressedFrameSize {
+		if decompBuf.Len() > maxDecompressedFrameSize {
 			return flag, nil, fmt.Errorf("decompressed frame size exceeds maximum limit (%d)", maxDecompressedFrameSize)
 		}
-		payload = decompressed
+		payload = decompBuf.Bytes()
 	}
 
 	return flag, payload, nil
@@ -298,7 +304,11 @@ func BuildDevinGetChatMessageRequest(
 	}
 	osName := runtime.GOOS
 
-	var reqBytes []byte
+	estimatedSize := 4096 + len(systemPrompt)
+	for _, p := range prompts {
+		estimatedSize += 256 + len(p.Content)
+	}
+	reqBytes := make([]byte, 0, estimatedSize)
 
 	// 1. ClientMetadata (Field 1)
 	f1Bytes := BuildDevinClientMetadataBytes(sessionToken, deviceSeed, osName)
