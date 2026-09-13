@@ -154,6 +154,9 @@ waitForResult:
 				if res.Error != "" {
 					return nil, fmt.Errorf("devin oauth error: %s", res.Error)
 				}
+				if state != "" && res.State != state {
+					return nil, fmt.Errorf("devin oauth state mismatch (possible CSRF)")
+				}
 				authCode = res.Code
 				break waitForResult
 			default:

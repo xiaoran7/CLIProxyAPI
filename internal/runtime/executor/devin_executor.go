@@ -157,7 +157,7 @@ func (e *DevinExecutor) Refresh(ctx context.Context, auth *cliproxyauth.Auth) (*
 		return auth, nil
 	}
 
-	httpClient := helps.NewDevinHTTPClient(ctx, e.cfg, auth, 0)
+	httpClient := helps.NewDevinHTTPClient(ctx, e.cfg, auth, 30*time.Second)
 	authService := devinauth.NewDevinAuthService(httpClient)
 	if baseURL := strings.TrimSpace(auth.Attributes["base_url"]); baseURL != "" {
 		authService.SetServerBaseURL(baseURL)
@@ -468,6 +468,8 @@ func (e *DevinExecutor) prepareDevinHTTPRequest(ctx context.Context, auth *clipr
 	return httpReq, chatModelUID, logBody, nil
 }
 
+const maxDevinToolCalls = 128
+
 func (e *DevinExecutor) streamDevinFrames(
 	ctx context.Context,
 	body io.Reader,
@@ -669,6 +671,10 @@ func (e *DevinExecutor) streamDevinFrames(
 
 		// Emit tool call deltas
 		for _, tc := range frameRes.ToolCallDeltas {
+			if tc.Index < 0 || tc.Index >= maxDevinToolCalls {
+				log.Warnf("devin executor: tool call index %d out of bounds (max %d), dropping", tc.Index, maxDevinToolCalls)
+				continue
+			}
 			if thoughtStarted {
 				stopEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.stop","index":0}`), "index", stepIndex)
 				_ = emitInteractionsEvent(stopEvent)
@@ -873,6 +879,10 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 		}
 		for _, tc := range frameRes.ToolCallDeltas {
 			idx := tc.Index
+			if idx < 0 || idx >= maxDevinToolCalls {
+				log.Warnf("devin executor: tool call index %d out of bounds (max %d), dropping", idx, maxDevinToolCalls)
+				continue
+			}
 			for len(toolCalls) <= idx {
 				toolCalls = append(toolCalls, helps.DevinToolCall{})
 			}
