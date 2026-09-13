@@ -164,10 +164,11 @@ func sanitizeAndValidateDevinModels(models []*ModelInfo) ([]*ModelInfo, error) {
 			id = "devin/" + id
 		}
 		m.ID = id
-		if _, exists := seen[id]; exists {
+		seenID := strings.ToLower(id)
+		if _, exists := seen[seenID]; exists {
 			return nil, fmt.Errorf("duplicate model id: %q", id)
 		}
-		seen[id] = struct{}{}
+		seen[seenID] = struct{}{}
 
 		// Ensure proper default fields
 		if m.Type == "" {
