@@ -616,7 +616,7 @@ func (e *DevinExecutor) streamDevinFrames(
 
 		// Emit thinking signature delta targeting the thought step
 		if len(frameRes.DeltaSignature) > 0 {
-			if !thoughtStarted {
+			if thoughtStepIndex == -1 && !contentStarted {
 				thoughtStepIndex = stepIndex
 				startEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.start","index":0,"step":{"type":"thought"}}`), "index", stepIndex)
 				if !emitInteractionsEvent(startEvent) {
@@ -624,8 +624,12 @@ func (e *DevinExecutor) streamDevinFrames(
 				}
 				thoughtStarted = true
 			}
+			targetIdx := thoughtStepIndex
+			if targetIdx < 0 {
+				targetIdx = 0
+			}
 			sigEvent := []byte(`{"event_type":"step.delta","index":0,"delta":{"type":"thought_signature","signature":""}}`)
-			sigEvent, _ = sjson.SetBytes(sigEvent, "index", thoughtStepIndex)
+			sigEvent, _ = sjson.SetBytes(sigEvent, "index", targetIdx)
 			sigEvent, _ = sjson.SetBytes(sigEvent, "delta.signature", string(frameRes.DeltaSignature))
 			if frameRes.DeltaSignatureType != "" {
 				sigEvent, _ = sjson.SetBytes(sigEvent, "delta.signature_type", frameRes.DeltaSignatureType)
