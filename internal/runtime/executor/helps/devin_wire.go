@@ -597,7 +597,8 @@ func SanitizeDevinSystemPrompt(prompt string, matcher *SensitiveWordMatcher) str
 	if prompt == "" {
 		return ""
 	}
-	lines := strings.Split(prompt, "\n")
+	normalized := strings.ReplaceAll(prompt, "\r\n", "\n")
+	lines := strings.Split(normalized, "\n")
 	var kept []string
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)

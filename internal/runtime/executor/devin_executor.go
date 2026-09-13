@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -706,9 +707,16 @@ func (e *DevinExecutor) streamDevinFrames(
 		stopEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.stop","index":0}`), "index", stepIndex)
 		_ = emitInteractionsEvent(stopEvent)
 	}
-	for _, sIdx := range toolCallSteps {
-		stopEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.stop","index":0}`), "index", sIdx)
-		_ = emitInteractionsEvent(stopEvent)
+	if len(toolCallSteps) > 0 {
+		sortedIndices := make([]int, 0, len(toolCallSteps))
+		for _, sIdx := range toolCallSteps {
+			sortedIndices = append(sortedIndices, sIdx)
+		}
+		sort.Ints(sortedIndices)
+		for _, sIdx := range sortedIndices {
+			stopEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.stop","index":0}`), "index", sIdx)
+			_ = emitInteractionsEvent(stopEvent)
+		}
 	}
 
 	// If stream encountered an abnormal read error mid-flight, record failure and emit response.failed
