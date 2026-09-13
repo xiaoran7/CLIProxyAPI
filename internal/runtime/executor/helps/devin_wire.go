@@ -789,10 +789,16 @@ func ParseDevinTrailerError(payload []byte) (statusCode int, err error) {
 	codeStr := strings.ToLower(trailer.Error.Code)
 	msgLower := strings.ToLower(trailer.Error.Message)
 
-	httpCode := http.StatusInternalServerError
+	httpCode := http.StatusBadGateway
 	switch codeStr {
 	case "invalid_argument":
-		httpCode = http.StatusBadRequest
+		if strings.Contains(msgLower, "internal error") {
+			httpCode = http.StatusBadGateway
+		} else {
+			httpCode = http.StatusBadRequest
+		}
+	case "internal":
+		httpCode = http.StatusBadGateway
 	case "unauthenticated":
 		httpCode = http.StatusUnauthorized
 	case "permission_denied":

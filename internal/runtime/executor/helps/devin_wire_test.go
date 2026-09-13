@@ -254,6 +254,30 @@ func TestParseDevinTrailerError(t *testing.T) {
 	if code != 401 {
 		t.Errorf("status code = %d, want 401", code)
 	}
+
+	internalErrJSON := []byte(`{"error":{"code":"invalid_argument","message":"an internal error occurred (trace ID: fa43c6393b805646b66997cc46c6f4af)"}}`)
+	code, err = ParseDevinTrailerError(internalErrJSON)
+	if code != 502 {
+		t.Errorf("status code = %d, want 502 for upstream internal error mislabeled as invalid_argument", code)
+	}
+
+	normalInvalidArgJSON := []byte(`{"error":{"code":"invalid_argument","message":"field 'model' cannot be empty"}}`)
+	code, err = ParseDevinTrailerError(normalInvalidArgJSON)
+	if code != 400 {
+		t.Errorf("status code = %d, want 400 for legitimate client invalid argument", code)
+	}
+
+	upstreamInternalJSON := []byte(`{"error":{"code":"internal","message":"database timeout"}}`)
+	code, err = ParseDevinTrailerError(upstreamInternalJSON)
+	if code != 502 {
+		t.Errorf("status code = %d, want 502 for upstream internal error", code)
+	}
+
+	unknownErrJSON := []byte(`{"error":{"code":"unknown_future_error","message":"something unusual"}}`)
+	code, err = ParseDevinTrailerError(unknownErrJSON)
+	if code != 502 {
+		t.Errorf("status code = %d, want 502 for fallback gateway error", code)
+	}
 }
 
 func TestUTF8SplitBuffer(t *testing.T) {
