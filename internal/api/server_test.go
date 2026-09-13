@@ -2985,8 +2985,14 @@ func TestModelsForCPAClientSerializesWebSearchCapabilities(t *testing.T) {
 		{"cpa-web-search-mixed-gemini", "gemini", "cpa-mixed-search-model"},
 		{"cpa-web-search-prefixed", "codex", "team/cpa-prefixed-search-model"},
 	}
+	webSearch := true
 	for _, registration := range registrations {
-		modelRegistry.RegisterClient(registration.clientID, registration.provider, []*registry.ModelInfo{{ID: registration.modelID}})
+		modelRegistry.RegisterClient(registration.clientID, registration.provider, []*registry.ModelInfo{{
+			ID: registration.modelID,
+			NativeCapabilities: &registry.NativeCapabilities{
+				WebSearch: &webSearch,
+			},
+		}})
 	}
 	t.Cleanup(func() {
 		for _, registration := range registrations {
@@ -3020,15 +3026,28 @@ func TestModelsForCPAClientSerializesWebSearchCapabilities(t *testing.T) {
 	for _, modelID := range []string{"cpa-no-search-gemini-model", "cpa-mixed-search-model"} {
 		assertSerializedCPAWebSearch(t, entries[modelID], false)
 	}
+
+	legacyRequest := httptest.NewRequest(http.MethodGet, "/v1/models?client_version=0.153.4", nil)
+	legacyRequest.Header.Set("Authorization", "Bearer test-key")
+	legacyRecorder := httptest.NewRecorder()
+	server.engine.ServeHTTP(legacyRecorder, legacyRequest)
+	if strings.Contains(legacyRecorder.Body.String(), "cpa_capabilities") {
+		t.Fatalf("non-CPA response exposed CPA capability: %s", legacyRecorder.Body.String())
+	}
 }
 
-func TestHomeModelsPreserveProvidersForCPAWebSearchCapability(t *testing.T) {
+func TestHomeModelsRequirePerEntryWebSearchCapabilityAndConservativeRoutes(t *testing.T) {
 	entries, errDecode := decodeHomeModels([]byte(`{
-		"codex":[{"id":"home-codex"},{"id":"home-mixed"}],
-		"xai":[{"id":"home-xai"}],
-		"claude":[{"id":"home-claude"},{"id":"gpt-5.5"}],
-		"gemini":[{"id":"home-gemini"},{"id":"home-mixed"}],
-		"custom":[{"id":"home-unknown"}]
+		"codex":[
+			{"id":"home-codex","native_capabilities":{"web_search":true}},
+			{"id":"home-unknown"},
+			{"id":"home-duplicate","native_capabilities":{"web_search":true}},
+			{"id":"home-duplicate","native_capabilities":{"web_search":false}}
+		],
+		"xai":[{"id":"home-xai","native_capabilities":{"web_search":true}}],
+		"claude":[{"id":"gpt-5.5","native_capabilities":{"web_search":true}}],
+		"gemini":[{"id":"home-gemini","native_capabilities":{"web_search":true}}],
+		"custom":[{"id":"home-custom","native_capabilities":{"web_search":true}}]
 	}`))
 	if errDecode != nil {
 		t.Fatalf("decode Home models: %v", errDecode)
@@ -3038,7 +3057,7 @@ func TestHomeModelsPreserveProvidersForCPAWebSearchCapability(t *testing.T) {
 	for _, entry := range entries {
 		models = append(models, formatHomeCodexModel(entry))
 	}
-	response := codexmodels.BuildResponseForClientWithCPAProviders(models, nil, homeProvidersForModel(entries), false, "cpa")
+	response := codexmodels.BuildResponseForClientWithCPACapabilities(models, nil, homeWebSearchCapabilityForModel(entries), false, "cpa")
 	catalog, ok := response["models"].([]map[string]any)
 	if !ok {
 		t.Fatalf("models = %#v, want []map[string]any", response["models"])
@@ -3048,17 +3067,19 @@ func TestHomeModelsPreserveProvidersForCPAWebSearchCapability(t *testing.T) {
 		slug, _ := model["slug"].(string)
 		bySlug[slug] = model
 	}
-	for _, modelID := range []string{"home-codex", "home-xai", "home-claude", "gpt-5.5"} {
+	for _, modelID := range []string{"home-codex", "home-xai", "gpt-5.5"} {
 		assertSerializedCPAWebSearch(t, bySlug[modelID], true)
 	}
 	if supportsSearchTool, _ := bySlug["gpt-5.5"]["supports_search_tool"].(bool); !supportsSearchTool {
-		t.Fatal("CPA capability provider metadata changed legacy Home supports_search_tool")
+		t.Fatal("CPA capability metadata changed legacy Home supports_search_tool")
 	}
-	for _, modelID := range []string{"home-gemini", "home-mixed"} {
+	for _, modelID := range []string{"home-gemini", "home-duplicate"} {
 		assertSerializedCPAWebSearch(t, bySlug[modelID], false)
 	}
-	if _, exists := bySlug["home-unknown"]["cpa_capabilities"]; exists {
-		t.Fatalf("home-unknown cpa_capabilities = %#v, want omitted", bySlug["home-unknown"]["cpa_capabilities"])
+	for _, modelID := range []string{"home-unknown", "home-custom"} {
+		if _, exists := bySlug[modelID]["cpa_capabilities"]; exists {
+			t.Fatalf("%s cpa_capabilities = %#v, want omitted", modelID, bySlug[modelID]["cpa_capabilities"])
+		}
 	}
 }
 

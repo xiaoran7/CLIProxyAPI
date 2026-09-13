@@ -662,20 +662,20 @@ func (s *Server) handleHomeCodexClientModels(c *gin.Context, clientVersion strin
 		models = append(models, formatHomeCodexModel(entry))
 	}
 
-	var cpaProvidersForModel codexmodels.ProvidersForModelFunc
+	var webSearchCapabilityForModel codexmodels.WebSearchCapabilityForModelFunc
 	if clientVersion == "cpa" {
-		cpaProvidersForModel = homeProvidersForModel(entries)
+		webSearchCapabilityForModel = homeWebSearchCapabilityForModel(entries)
 	}
-	s.writeModelListResponse(c, "openai", codexmodels.BuildResponseForClientWithCPAProviders(models, nil, cpaProvidersForModel, s.cfg.Codex.OptimizeMultiAgentV2, clientVersion))
+	s.writeModelListResponse(c, "openai", codexmodels.BuildResponseForClientWithCPACapabilities(models, nil, webSearchCapabilityForModel, s.cfg.Codex.OptimizeMultiAgentV2, clientVersion))
 }
 
-func homeProvidersForModel(entries []homeModelEntry) codexmodels.ProvidersForModelFunc {
-	providersByID := make(map[string][]string, len(entries))
+func homeWebSearchCapabilityForModel(entries []homeModelEntry) codexmodels.WebSearchCapabilityForModelFunc {
+	routesByID := make(map[string][]registry.NativeCapabilityRoute, len(entries))
 	for _, entry := range entries {
-		providersByID[entry.id] = append([]string(nil), entry.providers...)
+		routesByID[entry.id] = append([]registry.NativeCapabilityRoute(nil), entry.nativeCapabilityRoutes...)
 	}
-	return func(id string) []string {
-		return append([]string(nil), providersByID[strings.TrimSpace(id)]...)
+	return func(id string) *bool {
+		return registry.ResolveResponsesWebSearchCapability(routesByID[strings.TrimSpace(id)])
 	}
 }
 
@@ -729,14 +729,15 @@ func (s *Server) geminiGetHandler(geminiHandler *gemini.GeminiAPIHandler) gin.Ha
 }
 
 type homeModelEntry struct {
-	id                  string
-	created             int64
-	ownedBy             string
-	displayName         string
-	contextLength       int
-	maxCompletionTokens int
-	thinking            *registry.ThinkingSupport
-	providers           []string
+	id                     string
+	created                int64
+	ownedBy                string
+	displayName            string
+	contextLength          int
+	maxCompletionTokens    int
+	thinking               *registry.ThinkingSupport
+	providers              []string
+	nativeCapabilityRoutes []registry.NativeCapabilityRoute
 }
 
 func (s *Server) handleHomeModels(c *gin.Context) {
@@ -1020,8 +1021,14 @@ func decodeHomeModels(raw []byte) ([]homeModelEntry, error) {
 			if id == "" {
 				continue
 			}
+			nativeCapabilities := homeModelNativeCapabilities(model)
+			route := registry.NativeCapabilityRoute{
+				Provider:           provider,
+				NativeCapabilities: nativeCapabilities,
+			}
 			if index, ok := indexByID[id]; ok {
 				out[index].providers = appendUniqueHomeProvider(out[index].providers, provider)
+				out[index].nativeCapabilityRoutes = append(out[index].nativeCapabilityRoutes, route)
 				continue
 			}
 
@@ -1037,14 +1044,15 @@ func decodeHomeModels(raw []byte) ([]homeModelEntry, error) {
 
 			indexByID[id] = len(out)
 			out = append(out, homeModelEntry{
-				id:                  id,
-				created:             homeModelInt64Value(model, "created"),
-				ownedBy:             ownedBy,
-				displayName:         displayName,
-				contextLength:       int(homeModelInt64Value(model, "context_length", "contextLength", "inputTokenLimit", "max_input_tokens")),
-				maxCompletionTokens: int(homeModelInt64Value(model, "max_completion_tokens", "maxCompletionTokens", "outputTokenLimit", "max_tokens")),
-				thinking:            thinking,
-				providers:           appendUniqueHomeProvider(nil, provider),
+				id:                     id,
+				created:                homeModelInt64Value(model, "created"),
+				ownedBy:                ownedBy,
+				displayName:            displayName,
+				contextLength:          int(homeModelInt64Value(model, "context_length", "contextLength", "inputTokenLimit", "max_input_tokens")),
+				maxCompletionTokens:    int(homeModelInt64Value(model, "max_completion_tokens", "maxCompletionTokens", "outputTokenLimit", "max_tokens")),
+				thinking:               thinking,
+				providers:              appendUniqueHomeProvider(nil, provider),
+				nativeCapabilityRoutes: []registry.NativeCapabilityRoute{route},
 			})
 		}
 	}
@@ -1054,6 +1062,18 @@ func decodeHomeModels(raw []byte) ([]homeModelEntry, error) {
 		return nil, fmt.Errorf("home models payload contains no models")
 	}
 	return out, nil
+}
+
+func homeModelNativeCapabilities(model map[string]any) *registry.NativeCapabilities {
+	raw, ok := model["native_capabilities"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	webSearch, ok := raw["web_search"].(bool)
+	if !ok {
+		return &registry.NativeCapabilities{}
+	}
+	return &registry.NativeCapabilities{WebSearch: &webSearch}
 }
 
 func appendUniqueHomeProvider(providers []string, provider string) []string {
