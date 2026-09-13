@@ -110,7 +110,7 @@ func ParseGetUserStatusResponse(data []byte) (*DevinUserStatus, error) {
 	rem := data
 	for len(rem) > 0 {
 		num, wireType, n := protowire.ConsumeTag(rem)
-		if n < 0 {
+		if n <= 0 {
 			return nil, protowire.ParseError(n)
 		}
 		rem = rem[n:]
@@ -118,7 +118,7 @@ func ParseGetUserStatusResponse(data []byte) (*DevinUserStatus, error) {
 		if num == 1 && wireType == protowire.BytesType {
 			// Field 1: user_status
 			userStatusBytes, m := protowire.ConsumeBytes(rem)
-			if m < 0 {
+			if m <= 0 {
 				return nil, protowire.ParseError(m)
 			}
 			rem = rem[m:]
@@ -126,7 +126,7 @@ func ParseGetUserStatusResponse(data []byte) (*DevinUserStatus, error) {
 			parseUserStatus(userStatusBytes, status)
 		} else {
 			m := protowire.ConsumeFieldValue(num, wireType, rem)
-			if m < 0 {
+			if m <= 0 {
 				return nil, protowire.ParseError(m)
 			}
 			rem = rem[m:]
@@ -140,14 +140,14 @@ func parseUserStatus(data []byte, status *DevinUserStatus) {
 	rem := data
 	for len(rem) > 0 {
 		num, wireType, n := protowire.ConsumeTag(rem)
-		if n < 0 {
+		if n <= 0 {
 			return
 		}
 		rem = rem[n:]
 
 		if wireType == protowire.BytesType {
 			bytesVal, m := protowire.ConsumeBytes(rem)
-			if m < 0 {
+			if m <= 0 {
 				return
 			}
 			rem = rem[m:]
@@ -166,7 +166,7 @@ func parseUserStatus(data []byte, status *DevinUserStatus) {
 			}
 		} else {
 			m := protowire.ConsumeFieldValue(num, wireType, rem)
-			if m < 0 {
+			if m <= 0 {
 				return
 			}
 			rem = rem[m:]
@@ -178,7 +178,7 @@ func parsePlanStatus(data []byte, status *DevinUserStatus) {
 	rem := data
 	for len(rem) > 0 {
 		num, wireType, n := protowire.ConsumeTag(rem)
-		if n < 0 {
+		if n <= 0 {
 			return
 		}
 		rem = rem[n:]
@@ -186,7 +186,7 @@ func parsePlanStatus(data []byte, status *DevinUserStatus) {
 		switch wireType {
 		case protowire.BytesType:
 			bytesVal, m := protowire.ConsumeBytes(rem)
-			if m < 0 {
+			if m <= 0 {
 				return
 			}
 			rem = rem[m:]
@@ -208,7 +208,7 @@ func parsePlanStatus(data []byte, status *DevinUserStatus) {
 
 		case protowire.VarintType:
 			val, m := protowire.ConsumeVarint(rem)
-			if m < 0 {
+			if m <= 0 {
 				return
 			}
 			rem = rem[m:]
@@ -230,7 +230,7 @@ func parsePlanStatus(data []byte, status *DevinUserStatus) {
 
 		default:
 			m := protowire.ConsumeFieldValue(num, wireType, rem)
-			if m < 0 {
+			if m <= 0 {
 				return
 			}
 			rem = rem[m:]
@@ -242,14 +242,14 @@ func parsePlanInfo(data []byte, status *DevinUserStatus) {
 	rem := data
 	for len(rem) > 0 {
 		num, wireType, n := protowire.ConsumeTag(rem)
-		if n < 0 {
+		if n <= 0 {
 			return
 		}
 		rem = rem[n:]
 
 		if wireType == protowire.BytesType {
 			bytesVal, m := protowire.ConsumeBytes(rem)
-			if m < 0 {
+			if m <= 0 {
 				return
 			}
 			rem = rem[m:]
@@ -262,7 +262,7 @@ func parsePlanInfo(data []byte, status *DevinUserStatus) {
 			}
 		} else {
 			m := protowire.ConsumeFieldValue(num, wireType, rem)
-			if m < 0 {
+			if m <= 0 {
 				return
 			}
 			rem = rem[m:]
@@ -274,14 +274,14 @@ func parsePlanInfoOrg(data []byte, status *DevinUserStatus) {
 	rem := data
 	for len(rem) > 0 {
 		num, wireType, n := protowire.ConsumeTag(rem)
-		if n < 0 {
+		if n <= 0 {
 			return
 		}
 		rem = rem[n:]
 
 		if wireType == protowire.BytesType {
 			bytesVal, m := protowire.ConsumeBytes(rem)
-			if m < 0 {
+			if m <= 0 {
 				return
 			}
 			rem = rem[m:]
@@ -294,7 +294,7 @@ func parsePlanInfoOrg(data []byte, status *DevinUserStatus) {
 			}
 		} else {
 			m := protowire.ConsumeFieldValue(num, wireType, rem)
-			if m < 0 {
+			if m <= 0 {
 				return
 			}
 			rem = rem[m:]
@@ -306,14 +306,14 @@ func parseSecondsSubfield(data []byte) int64 {
 	rem := data
 	for len(rem) > 0 {
 		num, wireType, n := protowire.ConsumeTag(rem)
-		if n < 0 {
+		if n <= 0 {
 			return 0
 		}
 		rem = rem[n:]
 
 		if wireType == protowire.VarintType {
 			val, m := protowire.ConsumeVarint(rem)
-			if m < 0 {
+			if m <= 0 {
 				return 0
 			}
 			rem = rem[m:]
@@ -322,7 +322,7 @@ func parseSecondsSubfield(data []byte) int64 {
 			}
 		} else {
 			m := protowire.ConsumeFieldValue(num, wireType, rem)
-			if m < 0 {
+			if m <= 0 {
 				return 0
 			}
 			rem = rem[m:]
@@ -364,7 +364,7 @@ func (s *DevinAuthService) FetchUserStatus(ctx context.Context, sessionToken, de
 		_ = resp.Body.Close()
 	}()
 
-	respBytes, errRead := io.ReadAll(resp.Body)
+	respBytes, errRead := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if errRead != nil {
 		return nil, errRead
 	}

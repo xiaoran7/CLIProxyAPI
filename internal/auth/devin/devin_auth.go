@@ -108,7 +108,7 @@ func (s *DevinAuthService) ExchangeCodeForToken(ctx context.Context, code, codeV
 		_ = resp.Body.Close()
 	}()
 
-	respBytes, errRead := io.ReadAll(resp.Body)
+	respBytes, errRead := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if errRead != nil {
 		return "", fmt.Errorf("read token exchange response: %w", errRead)
 	}
@@ -143,7 +143,7 @@ func (s *DevinAuthService) FetchSelfProfile(ctx context.Context, sessionToken st
 		_ = resp.Body.Close()
 	}()
 
-	respBytes, errRead := io.ReadAll(resp.Body)
+	respBytes, errRead := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if errRead != nil {
 		return "", "", "", errRead
 	}

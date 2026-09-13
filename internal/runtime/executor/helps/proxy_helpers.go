@@ -66,6 +66,24 @@ var devinTransportCache = NewTransportCache[string](DefaultTransportCacheCapacit
 // NewDevinHTTPClient creates an HTTP client customized for Devin Connect-RPC upstream.
 // Suppresses automatic Accept-Encoding: gzip while preserving connection reuse across requests.
 func NewDevinHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, timeout time.Duration) *http.Client {
+	// Respect explicitly injected context RoundTripper (e.g. from Conductor, Home, or integration test fixtures)
+	if ctx != nil {
+		if rt, ok := ctx.Value("cliproxy.roundtripper").(http.RoundTripper); ok && rt != nil {
+			if tr, ok := rt.(*http.Transport); ok {
+				cloned := tr.Clone()
+				cloned.DisableCompression = true
+				return &http.Client{
+					Transport: cloned,
+					Timeout:   timeout,
+				}
+			}
+			return &http.Client{
+				Transport: rt,
+				Timeout:   timeout,
+			}
+		}
+	}
+
 	proxyURL := ""
 	if auth != nil && strings.TrimSpace(auth.ProxyURL) != "" {
 		proxyURL = strings.TrimSpace(auth.ProxyURL)

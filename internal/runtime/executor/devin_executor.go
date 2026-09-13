@@ -540,6 +540,16 @@ func (e *DevinExecutor) streamDevinFrames(
 		return true
 	}
 
+	emitStreamError := func(err error) {
+		if err == nil {
+			return
+		}
+		select {
+		case out <- cliproxyexecutor.StreamChunk{Err: err}:
+		case <-ctx.Done():
+		}
+	}
+
 	// 1. Send initial interaction.created event
 	createdEvent, _ := sjson.SetBytes([]byte(`{"event_type":"interaction.created","interaction":{"id":"","model":""}}`), "interaction.id", interactionID)
 	createdEvent, _ = sjson.SetBytes(createdEvent, "interaction.model", req.Model)
@@ -573,6 +583,7 @@ func (e *DevinExecutor) streamDevinFrames(
 				failedEvent, _ := sjson.SetBytes([]byte(`{"event_type":"response.failed","error":{"message":"","code":""}}`), "error.message", errTrailer.Error())
 				failedEvent, _ = sjson.SetBytes(failedEvent, "error.code", fmt.Sprintf("%d", code))
 				_ = emitInteractionsEvent(failedEvent)
+				emitStreamError(statusErr{code: code, msg: errTrailer.Error()})
 				return
 			}
 			sawEOS = true
@@ -742,6 +753,7 @@ func (e *DevinExecutor) streamDevinFrames(
 		helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
 		failedEvent, _ := sjson.SetBytes([]byte(`{"event_type":"response.failed","error":{"message":"","code":"stream_read_error"}}`), "error.message", streamErr.Error())
 		_ = emitInteractionsEvent(failedEvent)
+		emitStreamError(streamErr)
 		return
 	}
 
@@ -752,6 +764,7 @@ func (e *DevinExecutor) streamDevinFrames(
 		helps.RecordAPIResponseError(ctx, e.cfg, truncErr)
 		failedEvent, _ := sjson.SetBytes([]byte(`{"event_type":"response.failed","error":{"message":"devin stream terminated prematurely before EOS trailer","code":"stream_truncated"}}`), "error.message", truncErr.Error())
 		_ = emitInteractionsEvent(failedEvent)
+		emitStreamError(truncErr)
 		return
 	}
 
