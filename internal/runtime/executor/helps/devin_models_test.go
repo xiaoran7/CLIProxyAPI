@@ -1,7 +1,10 @@
 package helps
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
 )
 
 func TestResolveDevinChatModelUID(t *testing.T) {
@@ -143,10 +146,10 @@ func TestResolveDevinChatModelUID(t *testing.T) {
 			want:          "glm-5-2-none",
 		},
 		{
-			name:          "glm-5-2 suffix max maps to default",
+			name:          "glm-5-2 suffix max maps to max",
 			rawModel:      "devin/glm-5-2(max)",
 			thinkingLevel: "",
-			want:          "glm-5-2",
+			want:          "glm-5-2-max",
 		},
 		{
 			name:          "devin prefix lowercase swe-2",
@@ -256,6 +259,162 @@ func TestResolveDevinChatModelUID(t *testing.T) {
 			thinkingLevel: "",
 			want:          "gemini-3-8-flash-high",
 		},
+		{
+			name:          "gpt-5-6-luna default maps to low",
+			rawModel:      "devin/gpt-5-6-luna",
+			thinkingLevel: "",
+			want:          "gpt-5-6-luna-low",
+		},
+		{
+			name:          "gpt-5-6-luna with high suffix",
+			rawModel:      "devin/gpt-5-6-luna(high)",
+			thinkingLevel: "",
+			want:          "gpt-5-6-luna-high",
+		},
+		{
+			name:          "gpt-5-6-luna with none suffix",
+			rawModel:      "devin/gpt-5-6-luna:none",
+			thinkingLevel: "",
+			want:          "gpt-5-6-luna-none",
+		},
+		{
+			name:          "gpt-5-6-sol default maps to low",
+			rawModel:      "devin/gpt-5-6-sol",
+			thinkingLevel: "",
+			want:          "gpt-5-6-sol-low",
+		},
+		{
+			name:          "gpt-5-6-terra default maps to low",
+			rawModel:      "devin/gpt-5-6-terra",
+			thinkingLevel: "",
+			want:          "gpt-5-6-terra-low",
+		},
+		{
+			name:          "gpt-5-5 default maps to low",
+			rawModel:      "devin/gpt-5-5",
+			thinkingLevel: "",
+			want:          "gpt-5-5-low",
+		},
+		{
+			name:          "gpt-5-4 default maps to low",
+			rawModel:      "devin/gpt-5-4",
+			thinkingLevel: "",
+			want:          "gpt-5-4-low",
+		},
+		{
+			name:          "gpt-5-4-mini default maps to medium",
+			rawModel:      "devin/gpt-5-4-mini",
+			thinkingLevel: "",
+			want:          "gpt-5-4-mini-medium",
+		},
+		{
+			name:          "gpt-5-3-codex default maps to medium",
+			rawModel:      "devin/gpt-5-3-codex",
+			thinkingLevel: "",
+			want:          "gpt-5-3-codex-medium",
+		},
+		{
+			name:          "claude-opus-5 default maps to medium",
+			rawModel:      "devin/claude-opus-5",
+			thinkingLevel: "",
+			want:          "claude-opus-5-medium",
+		},
+		{
+			name:          "claude-opus-4-8 default maps to medium",
+			rawModel:      "devin/claude-opus-4-8",
+			thinkingLevel: "",
+			want:          "claude-opus-4-8-medium",
+		},
+		{
+			name:          "claude-opus-4-7 default maps to medium",
+			rawModel:      "devin/claude-opus-4-7",
+			thinkingLevel: "",
+			want:          "claude-opus-4-7-medium",
+		},
+		{
+			name:          "claude-sonnet-5 default maps to medium",
+			rawModel:      "devin/claude-sonnet-5",
+			thinkingLevel: "",
+			want:          "claude-sonnet-5-medium",
+		},
+		{
+			name:          "gemini-3-7-flash default maps to high",
+			rawModel:      "devin/gemini-3-7-flash",
+			thinkingLevel: "",
+			want:          "gemini-3-7-flash-high",
+		},
+		{
+			name:          "gemini-3-6-flash default maps to high",
+			rawModel:      "devin/gemini-3-6-flash",
+			thinkingLevel: "",
+			want:          "gemini-3-6-flash-high",
+		},
+		{
+			name:          "gemini-3-5-flash default maps to high",
+			rawModel:      "devin/gemini-3-5-flash",
+			thinkingLevel: "",
+			want:          "gemini-3-5-flash-high",
+		},
+		{
+			name:          "deepseek-v4-pro default maps to high",
+			rawModel:      "devin/deepseek-v4-pro",
+			thinkingLevel: "",
+			want:          "deepseek-v4-pro-high",
+		},
+		{
+			name:          "grok-4-5 default maps to high",
+			rawModel:      "devin/grok-4-5",
+			thinkingLevel: "",
+			want:          "grok-4-5-high",
+		},
+		{
+			name:          "kimi-k3 default maps to high",
+			rawModel:      "devin/kimi-k3",
+			thinkingLevel: "",
+			want:          "kimi-k3-high",
+		},
+		{
+			name:          "nemotron-3-ultra default maps to high",
+			rawModel:      "devin/nemotron-3-ultra",
+			thinkingLevel: "",
+			want:          "nemotron-3-ultra-high",
+		},
+		{
+			name:          "swe-1-6 default maps to swe-1-6",
+			rawModel:      "devin/swe-1-6",
+			thinkingLevel: "",
+			want:          "swe-1-6",
+		},
+		{
+			name:          "swe-1-6 with fast maps to swe-1-6-fast",
+			rawModel:      "devin/swe-1-6:fast",
+			thinkingLevel: "",
+			want:          "swe-1-6-fast",
+		},
+		{
+			name:          "kimi-k2-6 default maps to kimi-k2-6",
+			rawModel:      "devin/kimi-k2-6",
+			thinkingLevel: "",
+			want:          "kimi-k2-6",
+		},
+		{
+			name:          "kimi-k2-7 default maps to kimi-k2-7",
+			rawModel:      "devin/kimi-k2-7",
+			thinkingLevel: "",
+			want:          "kimi-k2-7",
+		},
+		{
+			name:          "claude-opus-4-6 default maps to claude-opus-4-6",
+			rawModel:      "devin/claude-opus-4-6",
+			thinkingLevel: "",
+			want:          "claude-opus-4-6",
+		},
+		{
+			name:          "claude-sonnet-4-6 default maps to claude-sonnet-4-6",
+			rawModel:      "devin/claude-sonnet-4-6",
+			thinkingLevel: "",
+			want:          "claude-sonnet-4-6",
+		},
 	}
 
 	for _, tt := range tests {
@@ -265,5 +424,29 @@ func TestResolveDevinChatModelUID(t *testing.T) {
 				t.Errorf("ResolveDevinChatModelUID(%q, %q, %d) = %q, want %q", tt.rawModel, tt.thinkingLevel, tt.budgetTokens, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestResolveDevinChatModelUID_AllCatalogModels(t *testing.T) {
+	models := registry.GetDevinModels()
+	if len(models) == 0 {
+		t.Fatal("GetDevinModels() returned empty list")
+	}
+
+	testEfforts := []string{"", "none", "low", "medium", "high", "xhigh", "max"}
+	for _, m := range models {
+		baseID := strings.TrimPrefix(m.ID, "devin/")
+		for _, eff := range testEfforts {
+			resolved := ResolveDevinChatModelUID("devin/"+baseID, eff, 0)
+			if resolved == "" {
+				t.Errorf("model %q with effort %q resolved to empty string", baseID, eff)
+			}
+			// If model defines thinking levels, resolved UID must have an effort suffix
+			if m.Thinking != nil && len(m.Thinking.Levels) > 0 {
+				if !HasDevinEffortSuffix(resolved) && baseID != "swe-1-7" && baseID != "glm-5-2" {
+					t.Errorf("thinking model %q with effort %q resolved to bare UID %q without effort suffix", baseID, eff, resolved)
+				}
+			}
+		}
 	}
 }

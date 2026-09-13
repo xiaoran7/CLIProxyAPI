@@ -53,6 +53,24 @@ func GetDevinModels() []*ModelInfo {
 	return cloneModelInfos(staticDevinModels)
 }
 
+// LookupDevinModel looks up a model definition from the active Devin catalog.
+// Accepts both namespaced ("devin/model") and bare ("model") IDs.
+func LookupDevinModel(modelID string) *ModelInfo {
+	clean := strings.ToLower(strings.TrimSpace(modelID))
+	clean = strings.TrimPrefix(clean, "devin/")
+	if clean == "" {
+		return nil
+	}
+
+	for _, m := range GetDevinModels() {
+		mClean := strings.ToLower(strings.TrimPrefix(m.ID, "devin/"))
+		if mClean == clean {
+			return cloneModelInfo(m)
+		}
+	}
+	return nil
+}
+
 // GetDevinModelsJSON returns the current raw JSON payload of the Devin model catalog.
 func GetDevinModelsJSON() []byte {
 	data, _ := GetDevinModelsSnapshot()

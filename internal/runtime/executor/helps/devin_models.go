@@ -3,19 +3,8 @@ package helps
 import (
 	"strings"
 
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/thinking"
-)
-
-// Family effort configurations extracted from GetCliModelConfigs (215 models).
-var (
-	swe2Efforts             = []string{"medium", "high", "max"}
-	fable51Efforts          = []string{"low", "medium", "high", "xhigh", "max"}
-	astraEfforts            = []string{"low", "medium", "high", "xhigh", "max"}
-	glm53Efforts            = []string{"low", "high", "max"}
-	gemini38Efforts         = []string{"low", "medium", "high"}
-	grok46Efforts           = []string{"low", "medium", "high", "xhigh"}
-	deepseekV4FlashEfforts  = []string{"high", "max"}
-	deepseekV41FlashEfforts = []string{"high", "max"}
 )
 
 // knownDevinSuffixes lists recognized model uid suffixes.
@@ -35,6 +24,12 @@ var knownDevinSuffixes = []string{
 	"-max-priority",
 }
 
+// Special private Devin upstream aliases that cannot be dynamically inferred.
+var specialDevinAliases = map[string]string{
+	"claude-haiku-4-5": "MODEL_PRIVATE_11",
+	"gpt-4-1":          "MODEL_CHAT_GPT_4_1_2025_04_14",
+}
+
 // HasDevinEffortSuffix reports whether the model name already ends with a known Devin effort suffix.
 func HasDevinEffortSuffix(model string) bool {
 	lower := strings.ToLower(strings.TrimSpace(model))
@@ -50,7 +45,7 @@ func HasDevinEffortSuffix(model string) bool {
 func NormalizeThinkingLevel(level string, budgetTokens int) string {
 	normalized := strings.ToLower(strings.TrimSpace(level))
 	switch normalized {
-	case "minimal", "low", "medium", "high", "xhigh", "max":
+	case "minimal", "low", "medium", "high", "xhigh", "max", "fast":
 		return normalized
 	case "none", "off", "disabled":
 		return "none"
@@ -75,8 +70,9 @@ func NormalizeThinkingLevel(level string, budgetTokens int) string {
 }
 
 // ResolveDevinChatModelUID resolves a model identifier into a valid upstream Devin chat_model_uid.
-// It prioritizes already-formed UIDs, strips CPA suffixes, resolves body effort/budgets,
-// and clamps efforts to the specific family whitelist.
+// It prioritizes dynamic catalog metadata from devin_models.json, automatically clamps
+// requested efforts to supported levels, applies sensible default efforts for thinking models,
+// and ensures bare non-thinking models remain bare.
 func ResolveDevinChatModelUID(rawModel string, thinkingLevel string, budgetTokens int) string {
 	model := strings.TrimSpace(rawModel)
 	if model == "" {
@@ -104,87 +100,112 @@ func ResolveDevinChatModelUID(rawModel string, thinkingLevel string, budgetToken
 		thinkingLevel = strings.TrimSpace(cleanModel[colonIdx+1:])
 	}
 
-	// 3. Normalize requested effort
+	// 4. Normalize requested effort
 	effort := NormalizeThinkingLevel(thinkingLevel, budgetTokens)
-
-	// 4. Family-specific mapping and clamping
 	lowerBase := strings.ToLower(baseModel)
-	switch {
-	case strings.Contains(lowerBase, "swe-2"):
-		clamped := clampEffort(effort, swe2Efforts, "high")
-		return "swe-2-" + clamped
+	canonicalBase := strings.ReplaceAll(lowerBase, ".", "-")
 
-	case strings.Contains(lowerBase, "swe-1-7") || strings.Contains(lowerBase, "swe-1.7"):
-		if effort == "medium" {
-			return "swe-1-7-medium"
-		}
-		return "swe-1-7"
-
-	case strings.Contains(lowerBase, "fable-5-1") || strings.Contains(lowerBase, "fable-5.1"):
-		clamped := clampEffort(effort, fable51Efforts, "medium")
-		return "claude-fable-5-1-" + clamped
-
-	case strings.Contains(lowerBase, "fable-5") || strings.Contains(lowerBase, "5-fable"):
-		clamped := clampEffort(effort, fable51Efforts, "medium")
-		return "claude-5-fable-" + clamped
-
-	case strings.Contains(lowerBase, "claude-haiku-4-5") || strings.Contains(lowerBase, "claude-haiku-4.5") || strings.Contains(lowerBase, "haiku-4-5"):
-		return "MODEL_PRIVATE_11"
-
-	case strings.Contains(lowerBase, "claude-sonnet-4-5") || strings.Contains(lowerBase, "claude-sonnet-4.5") || strings.Contains(lowerBase, "sonnet-4-5"):
+	// 5. Check special private upstream aliases
+	if alias, exists := specialDevinAliases[canonicalBase]; exists {
+		return alias
+	}
+	if canonicalBase == "claude-sonnet-4-5" || strings.Contains(canonicalBase, "sonnet-4-5") {
 		if effort != "" && effort != "none" {
 			return "MODEL_PRIVATE_3"
 		}
 		return "MODEL_PRIVATE_2"
+	}
+	if canonicalBase == "gemini-3-flash" {
+		canonicalBase = "gemini-3-8-flash"
+	}
 
-	case strings.Contains(lowerBase, "astra"):
-		clamped := clampEffort(effort, astraEfforts, "medium")
-		return "gpt-6-astra-" + clamped
+	// 6. Look up dynamic model metadata from the Devin catalog (devin_models.json)
+	modelInfo := registry.LookupDevinModel(canonicalBase)
+	if modelInfo == nil && canonicalBase != lowerBase {
+		modelInfo = registry.LookupDevinModel(lowerBase)
+	}
 
-	case strings.Contains(lowerBase, "gpt-4-1") || strings.Contains(lowerBase, "gpt-4.1"):
-		return "MODEL_CHAT_GPT_4_1_2025_04_14"
+	var allowedLevels []string
+	if modelInfo != nil && modelInfo.Thinking != nil && len(modelInfo.Thinking.Levels) > 0 {
+		allowedLevels = modelInfo.Thinking.Levels
+	}
 
-	case strings.Contains(lowerBase, "glm-5-2") || strings.Contains(lowerBase, "glm-5.2"):
+	// 7. Special base models that default to bare name unless specific variant requested
+	switch canonicalBase {
+	case "swe-1-7":
+		if effort == "medium" {
+			return "swe-1-7-medium"
+		}
+		return "swe-1-7"
+	case "swe-1-6":
+		if effort == "fast" {
+			return "swe-1-6-fast"
+		}
+		return "swe-1-6"
+	case "glm-5-2":
 		if effort == "none" {
 			return "glm-5-2-none"
 		}
-		return "glm-5-2"
-
-	case strings.Contains(lowerBase, "glm-5-3-flash") || strings.Contains(lowerBase, "glm-5.3-flash"):
-		clamped := clampEffort(effort, glm53Efforts, "high")
-		return "glm-5-3-flash-" + clamped
-
-	case strings.Contains(lowerBase, "glm-5-3") || strings.Contains(lowerBase, "glm-5.3"):
-		clamped := clampEffort(effort, glm53Efforts, "high")
-		return "glm-5-3-" + clamped
-
-	case strings.Contains(lowerBase, "gemini-3-8-flash") || strings.Contains(lowerBase, "gemini-3.8-flash"):
-		clamped := clampEffort(effort, gemini38Efforts, "high")
-		return "gemini-3-8-flash-" + clamped
-
-	case lowerBase == "gemini-3-flash":
-		clamped := clampEffort(effort, gemini38Efforts, "high")
-		return "gemini-3-8-flash-" + clamped
-
-	case strings.Contains(lowerBase, "grok-4-6") || strings.Contains(lowerBase, "grok-4.6"):
-		clamped := clampEffort(effort, grok46Efforts, "high")
-		return "grok-4-6-" + clamped
-
-	case strings.Contains(lowerBase, "deepseek-v4-1-flash") || strings.Contains(lowerBase, "deepseek-v4.1-flash"):
-		clamped := clampEffort(effort, deepseekV41FlashEfforts, "high")
-		return "deepseek-v4-1-flash-" + clamped
-
-	case strings.Contains(lowerBase, "deepseek-v4-flash"):
-		clamped := clampEffort(effort, deepseekV4FlashEfforts, "high")
-		return "deepseek-v4-flash-" + clamped
-
-	default:
-		// Default generic fallback: append effort if present, else return base
-		if effort != "" {
-			return baseModel + "-" + effort
+		if effort == "max" {
+			return "glm-5-2-max"
 		}
-		return baseModel
+		return "glm-5-2"
 	}
+
+	// 8. If model has no thinking levels defined in catalog, treat as bare model
+	if len(allowedLevels) == 0 {
+		return canonicalBase
+	}
+
+	// 9. Model has thinking levels: determine default effort and clamp
+	defaultEffort := selectDefaultDevinEffort(canonicalBase, allowedLevels)
+	clamped := clampEffort(effort, allowedLevels, defaultEffort)
+	return canonicalBase + "-" + clamped
+}
+
+func selectDefaultDevinEffort(baseModel string, levels []string) string {
+	if strings.Contains(baseModel, "swe-2") {
+		return "high"
+	}
+	hasNone := false
+	hasLow := false
+	hasMedium := false
+	hasHigh := false
+	for _, l := range levels {
+		switch l {
+		case "none":
+			hasNone = true
+		case "low":
+			hasLow = true
+		case "medium":
+			hasMedium = true
+		case "high":
+			hasHigh = true
+		}
+	}
+	// For OpenAI GPT-5.x families in Devin CLI (which support "none" and "low"), default to low
+	if hasNone && hasLow && strings.HasPrefix(baseModel, "gpt-5") {
+		return "low"
+	}
+	// For models with high thinking (e.g. deepseek, gemini, grok, glm, kimi, nemotron), prefer high
+	if hasHigh && (strings.Contains(baseModel, "gemini") ||
+		strings.Contains(baseModel, "grok") ||
+		strings.Contains(baseModel, "glm") ||
+		strings.Contains(baseModel, "deepseek") ||
+		strings.Contains(baseModel, "kimi") ||
+		strings.Contains(baseModel, "nemotron")) {
+		return "high"
+	}
+	if hasMedium {
+		return "medium"
+	}
+	if hasHigh {
+		return "high"
+	}
+	if hasLow {
+		return "low"
+	}
+	return levels[0]
 }
 
 var devinStandardLevelOrder = []string{"minimal", "low", "medium", "high", "xhigh", "max"}
@@ -200,7 +221,7 @@ func devinLevelIndex(level string) int {
 }
 
 func clampEffort(requested string, allowed []string, defaultEffort string) string {
-	if requested == "" || requested == "none" {
+	if requested == "" {
 		return defaultEffort
 	}
 	reqLower := strings.ToLower(strings.TrimSpace(requested))
@@ -208,6 +229,9 @@ func clampEffort(requested string, allowed []string, defaultEffort string) strin
 		if reqLower == strings.ToLower(strings.TrimSpace(a)) {
 			return a
 		}
+	}
+	if reqLower == "none" {
+		return defaultEffort
 	}
 
 	reqIdx := devinLevelIndex(reqLower)
