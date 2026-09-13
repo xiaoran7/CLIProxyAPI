@@ -700,6 +700,12 @@ func (e *DevinExecutor) streamDevinFrames(
 				if !emitInteractionsEvent(startEvent) {
 					return
 				}
+			} else if tc.Name != "" || tc.ID != "" {
+				updateEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.start","index":0,"step":{"type":"function_call","name":"","id":"","call_id":"","arguments":{}}}`), "index", sIdx)
+				updateEvent, _ = sjson.SetBytes(updateEvent, "step.name", tc.Name)
+				updateEvent, _ = sjson.SetBytes(updateEvent, "step.id", tc.ID)
+				updateEvent, _ = sjson.SetBytes(updateEvent, "step.call_id", tc.ID)
+				_ = emitInteractionsEvent(updateEvent)
 			}
 
 			if tc.Arguments != "" {
