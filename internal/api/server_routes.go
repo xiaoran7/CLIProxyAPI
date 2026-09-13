@@ -662,7 +662,21 @@ func (s *Server) handleHomeCodexClientModels(c *gin.Context, clientVersion strin
 		models = append(models, formatHomeCodexModel(entry))
 	}
 
-	s.writeModelListResponse(c, "openai", codexmodels.BuildResponseForClient(models, nil, s.cfg.Codex.OptimizeMultiAgentV2, clientVersion))
+	var cpaProvidersForModel codexmodels.ProvidersForModelFunc
+	if clientVersion == "cpa" {
+		cpaProvidersForModel = homeProvidersForModel(entries)
+	}
+	s.writeModelListResponse(c, "openai", codexmodels.BuildResponseForClientWithCPAProviders(models, nil, cpaProvidersForModel, s.cfg.Codex.OptimizeMultiAgentV2, clientVersion))
+}
+
+func homeProvidersForModel(entries []homeModelEntry) codexmodels.ProvidersForModelFunc {
+	providersByID := make(map[string][]string, len(entries))
+	for _, entry := range entries {
+		providersByID[entry.id] = append([]string(nil), entry.providers...)
+	}
+	return func(id string) []string {
+		return append([]string(nil), providersByID[strings.TrimSpace(id)]...)
+	}
 }
 
 func formatHomeCodexModel(entry homeModelEntry) map[string]any {
@@ -722,6 +736,7 @@ type homeModelEntry struct {
 	contextLength       int
 	maxCompletionTokens int
 	thinking            *registry.ThinkingSupport
+	providers           []string
 }
 
 func (s *Server) handleHomeModels(c *gin.Context) {
@@ -990,9 +1005,10 @@ func decodeHomeModels(raw []byte) ([]homeModelEntry, error) {
 		return nil, fmt.Errorf("home models payload has no sections")
 	}
 
-	seen := make(map[string]struct{})
+	indexByID := make(map[string]int)
 	out := make([]homeModelEntry, 0, 256)
-	for _, models := range bySection {
+	for section, models := range bySection {
+		provider := strings.ToLower(strings.TrimSpace(section))
 		for _, model := range models {
 			id, _ := model["id"].(string)
 			id = strings.TrimSpace(id)
@@ -1004,10 +1020,10 @@ func decodeHomeModels(raw []byte) ([]homeModelEntry, error) {
 			if id == "" {
 				continue
 			}
-			if _, ok := seen[id]; ok {
+			if index, ok := indexByID[id]; ok {
+				out[index].providers = appendUniqueHomeProvider(out[index].providers, provider)
 				continue
 			}
-			seen[id] = struct{}{}
 
 			ownedBy, _ := model["owned_by"].(string)
 			ownedBy = strings.TrimSpace(ownedBy)
@@ -1019,6 +1035,7 @@ func decodeHomeModels(raw []byte) ([]homeModelEntry, error) {
 			}
 			thinking := homeModelThinkingSupport(model)
 
+			indexByID[id] = len(out)
 			out = append(out, homeModelEntry{
 				id:                  id,
 				created:             homeModelInt64Value(model, "created"),
@@ -1027,6 +1044,7 @@ func decodeHomeModels(raw []byte) ([]homeModelEntry, error) {
 				contextLength:       int(homeModelInt64Value(model, "context_length", "contextLength", "inputTokenLimit", "max_input_tokens")),
 				maxCompletionTokens: int(homeModelInt64Value(model, "max_completion_tokens", "maxCompletionTokens", "outputTokenLimit", "max_tokens")),
 				thinking:            thinking,
+				providers:           appendUniqueHomeProvider(nil, provider),
 			})
 		}
 	}
@@ -1036,6 +1054,18 @@ func decodeHomeModels(raw []byte) ([]homeModelEntry, error) {
 		return nil, fmt.Errorf("home models payload contains no models")
 	}
 	return out, nil
+}
+
+func appendUniqueHomeProvider(providers []string, provider string) []string {
+	if provider == "" {
+		return providers
+	}
+	for _, existing := range providers {
+		if existing == provider {
+			return providers
+		}
+	}
+	return append(providers, provider)
 }
 
 func homeModelThinkingSupport(model map[string]any) *registry.ThinkingSupport {

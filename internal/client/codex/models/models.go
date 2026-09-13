@@ -55,12 +55,18 @@ func BuildResponse(availableModels []map[string]any, providersForModel Providers
 // BuildResponseForClient builds a Codex client model response from available models
 // tailored for a specific client version.
 func BuildResponseForClient(availableModels []map[string]any, providersForModel ProvidersForModelFunc, optimizeMultiAgentV2 bool, clientVersion string) map[string]any {
+	return BuildResponseForClientWithCPAProviders(availableModels, providersForModel, providersForModel, optimizeMultiAgentV2, clientVersion)
+}
+
+// BuildResponseForClientWithCPAProviders builds a client response while allowing
+// CPA-only capability metadata to use a provider source separate from legacy fields.
+func BuildResponseForClientWithCPAProviders(availableModels []map[string]any, providersForModel, cpaProvidersForModel ProvidersForModelFunc, optimizeMultiAgentV2 bool, clientVersion string) map[string]any {
 	return map[string]any{
-		"models": buildCodexClientModels(availableModels, providersForModel, optimizeMultiAgentV2, clientVersion),
+		"models": buildCodexClientModels(availableModels, providersForModel, cpaProvidersForModel, optimizeMultiAgentV2, clientVersion),
 	}
 }
 
-func buildCodexClientModels(models []map[string]any, providersForModel ProvidersForModelFunc, optimizeMultiAgentV2 bool, clientVersion string) []map[string]any {
+func buildCodexClientModels(models []map[string]any, providersForModel, cpaProvidersForModel ProvidersForModelFunc, optimizeMultiAgentV2 bool, clientVersion string) []map[string]any {
 	templates, defaultTemplate, err := loadCodexClientModelTemplates()
 	if err != nil || defaultTemplate == nil {
 		return nil
@@ -89,6 +95,7 @@ func buildCodexClientModels(models []map[string]any, providersForModel Providers
 				applyCodexClientThinkingMetadata(entry, thinkingSupport, clientVersion)
 			}
 			applyCodexClientProviderCapabilities(entry, id, true, providersForModel)
+			applyCPAWebSearchCapability(entry, id, cpaProvidersForModel, clientVersion)
 			sanitizeCodexClientReasoningMetadata(entry, clientVersion)
 			applyCodexClientVisibilityOverride(entry, id)
 			if optimizeMultiAgentV2 {
@@ -102,6 +109,7 @@ func buildCodexClientModels(models []map[string]any, providersForModel Providers
 		applyCodexClientModelMetadata(entry, id, model, optimizeMultiAgentV2, clientVersion)
 		applyCodexClientMaxTokens(entry, model)
 		applyCodexClientProviderCapabilities(entry, id, false, providersForModel)
+		applyCPAWebSearchCapability(entry, id, cpaProvidersForModel, clientVersion)
 		sanitizeCodexClientReasoningMetadata(entry, clientVersion)
 		applyCodexClientVisibilityOverride(entry, id)
 		result = append(result, entry)
@@ -402,6 +410,51 @@ func applyCodexClientMaxTokens(entry map[string]any, model map[string]any) {
 	if maxCompletionTokens := intModelValue(model, "max_completion_tokens"); maxCompletionTokens > 0 {
 		entry["max_tokens"] = maxCompletionTokens
 	}
+}
+
+func applyCPAWebSearchCapability(entry map[string]any, id string, providersForModel ProvidersForModelFunc, clientVersion string) {
+	if clientVersion != "cpa" || providersForModel == nil {
+		return
+	}
+
+	providers := providersForPublicModel(id, providersForModel)
+	if len(providers) == 0 {
+		return
+	}
+
+	hasUnknown := false
+	for _, rawProvider := range providers {
+		provider := strings.ToLower(strings.TrimSpace(rawProvider))
+		switch provider {
+		case "codex", "xai", "claude":
+			// These providers support native web search through the existing Responses path.
+		case "openai", "openai-compatibility", "gemini", "aistudio", "vertex", "antigravity", "kimi", "interactions":
+			entry["cpa_capabilities"] = map[string]any{"web_search": false}
+			return
+		default:
+			if strings.HasPrefix(provider, "openai-compatible-") {
+				entry["cpa_capabilities"] = map[string]any{"web_search": false}
+				return
+			}
+			hasUnknown = true
+		}
+	}
+	if hasUnknown {
+		return
+	}
+	entry["cpa_capabilities"] = map[string]any{"web_search": true}
+}
+
+func providersForPublicModel(id string, providersForModel ProvidersForModelFunc) []string {
+	if providersForModel == nil {
+		return nil
+	}
+	providers := providersForModel(id)
+	if len(providers) == 0 && strings.Contains(id, "/") {
+		_, base, _ := strings.Cut(id, "/")
+		providers = providersForModel(strings.TrimSpace(base))
+	}
+	return providers
 }
 
 func applyCodexClientProviderCapabilities(entry map[string]any, id string, isTemplate bool, providersForModel ProvidersForModelFunc) {

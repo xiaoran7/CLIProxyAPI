@@ -1391,3 +1391,82 @@ func TestCodexClientModelsResponse_OAuthAliasesInheritCompleteReasoningLevelsWit
 		}
 	}
 }
+
+func TestCodexClientModelsResponse_CPAWebSearchCapabilities(t *testing.T) {
+	providers := map[string][]string{
+		"codex-model":                {"codex"},
+		"xai-model":                  {"xai"},
+		"claude-model":               {"claude"},
+		"all-native-model":           {"codex", "xai", "claude"},
+		"mixed-model":                {"codex", "gemini"},
+		"unknown-model":              {"third-party-provider"},
+		"known-unsupported-model":    {"openai-compatibility"},
+		"native-and-unknown-model":   {"xai", "third-party-provider"},
+		"base-prefixed-native-model": {"claude"},
+	}
+	providerLookup := func(id string) []string {
+		return append([]string(nil), providers[id]...)
+	}
+	availableModels := []map[string]any{
+		{"id": "codex-model"},
+		{"id": "xai-model"},
+		{"id": "claude-model"},
+		{"id": "all-native-model"},
+		{"id": "mixed-model"},
+		{"id": "unknown-model"},
+		{"id": "known-unsupported-model"},
+		{"id": "native-and-unknown-model"},
+		{"id": "team/base-prefixed-native-model"},
+		{"id": "no-provider-model"},
+	}
+
+	resp := BuildResponseForClient(availableModels, providerLookup, false, "cpa")
+	models, ok := resp["models"].([]map[string]any)
+	if !ok || len(models) != len(availableModels) {
+		t.Fatalf("models = %#v, want %d models", resp["models"], len(availableModels))
+	}
+	entries := make(map[string]map[string]any, len(models))
+	for _, model := range models {
+		entries[stringModelValue(model, "slug")] = model
+	}
+
+	for _, id := range []string{"codex-model", "xai-model", "claude-model", "all-native-model", "team/base-prefixed-native-model"} {
+		assertCPAWebSearchCapability(t, entries[id], true, true)
+	}
+	for _, id := range []string{"mixed-model", "known-unsupported-model"} {
+		assertCPAWebSearchCapability(t, entries[id], false, true)
+	}
+	for _, id := range []string{"unknown-model", "native-and-unknown-model", "no-provider-model"} {
+		assertCPAWebSearchCapability(t, entries[id], false, false)
+	}
+}
+
+func TestCodexClientModelsResponse_CPAWebSearchCapabilitiesOnlyForCPAClient(t *testing.T) {
+	providerLookup := func(string) []string { return []string{"codex"} }
+	for _, clientVersion := range []string{"", "0.153.4", "CPA", "cpa-preview"} {
+		resp := BuildResponseForClient([]map[string]any{{"id": "gpt-5.5"}}, providerLookup, false, clientVersion)
+		models, ok := resp["models"].([]map[string]any)
+		if !ok || len(models) != 1 {
+			t.Fatalf("client version %q models = %#v, want one model", clientVersion, resp["models"])
+		}
+		assertCPAWebSearchCapability(t, models[0], false, false)
+	}
+}
+
+func assertCPAWebSearchCapability(t *testing.T, model map[string]any, want bool, wantPresent bool) {
+	t.Helper()
+	raw, present := model["cpa_capabilities"]
+	if present != wantPresent {
+		t.Fatalf("model %q cpa_capabilities presence = %v, want %v", stringModelValue(model, "slug"), present, wantPresent)
+	}
+	if !wantPresent {
+		return
+	}
+	capabilities, ok := raw.(map[string]any)
+	if !ok {
+		t.Fatalf("model %q cpa_capabilities = %#v, want object", stringModelValue(model, "slug"), raw)
+	}
+	if got, ok := capabilities["web_search"].(bool); !ok || got != want {
+		t.Fatalf("model %q web_search = %#v, want %v", stringModelValue(model, "slug"), capabilities["web_search"], want)
+	}
+}
