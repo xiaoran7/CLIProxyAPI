@@ -40,6 +40,8 @@ type Service struct {
 	executorRegistrationMu sync.Mutex
 	authUpdateMu           sync.Mutex
 	authRevisions          map[string]uint64
+	authRegWaitMu          sync.Mutex
+	authRegWaiters         map[string]chan struct{}
 	configSequence         uint64
 	appliedRoutingState    *routingRuntimeState
 
