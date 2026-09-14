@@ -20,7 +20,9 @@ func TestInstanceID_PersistenceAndFormat(t *testing.T) {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	defer func() {
-		_ = os.RemoveAll(tmpDir)
+		if errRemove := os.RemoveAll(tmpDir); errRemove != nil {
+			t.Errorf("failed to remove temporary directory %s: %v", tmpDir, errRemove)
+		}
 		ResetCachedInstanceID()
 	}()
 
