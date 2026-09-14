@@ -551,7 +551,6 @@ func TestFetchCredentialQuota_DeclarativeProbeSummaryOnly(t *testing.T) {
 func TestFilterUsableQuotaSummaryPreservesExplicitZero(t *testing.T) {
 	summary := filterUsableQuotaSummary(
 		[]byte(`{"summary":[{"key":"balance","label":"Balance","value":0}]}`),
-		[]pluginapi.QuotaMetric{{Key: "balance", Label: "Balance"}},
 	)
 	if len(summary) != 1 || summary[0].Value != 0 {
 		t.Fatalf("summary = %#v", summary)
@@ -585,6 +584,43 @@ func TestFetchCredentialQuota_DeclarativeProbeSummaryWithoutValueReturnsError(t 
 
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("expected status 502, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFetchCredentialQuota_DeclarativeProbeIgnoresMalformedOptionalSummary(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"subscription":{"plan":"ProbePro"},"summary":"usage text"}`))
+	}))
+	defer upstream.Close()
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	auth := &coreauth.Auth{
+		ID:       "probe-malformed-summary-auth",
+		FileName: "probe-malformed-summary.json",
+		Provider: "probe-summary",
+		Metadata: map[string]any{"quota_probe": map[string]any{"url": upstream.URL, "method": "GET"}},
+	}
+	authIndex := auth.EnsureIndex()
+	_, _ = manager.Register(context.Background(), auth)
+
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: t.TempDir()}, manager)
+	h.SetPluginHost(pluginhost.New())
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v0/management/quota/fetch", strings.NewReader(`{"auth_index":"`+authIndex+`"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	h.FetchCredentialQuota(ctx)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var quotaResp pluginapi.QuotaFetchResponse
+	if errUnmarshal := json.Unmarshal(rec.Body.Bytes(), &quotaResp); errUnmarshal != nil {
+		t.Fatalf("failed to decode response: %v", errUnmarshal)
+	}
+	if quotaResp.Subscription == nil || quotaResp.Subscription.Plan != "ProbePro" || len(quotaResp.Summary) != 0 {
+		t.Fatalf("unexpected response: %+v", quotaResp)
 	}
 }
 

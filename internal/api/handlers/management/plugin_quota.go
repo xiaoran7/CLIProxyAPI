@@ -480,78 +480,85 @@ func (h *Handler) executeQuotaProbe(c *gin.Context, auth *coreauth.Auth, probe m
 		return mappedResp, true, nil
 	}
 
-	var quotaResp pluginapi.QuotaFetchResponse
-	if errJSON := json.Unmarshal(respBytes, &quotaResp); errJSON == nil {
-		hasPlan := quotaResp.Subscription != nil && strings.TrimSpace(quotaResp.Subscription.Plan) != ""
-		// Filter groups to retain only buckets with an actual valid numeric remaining fraction in raw JSON
-		filteredGroups := make([]pluginapi.QuotaGroup, 0, len(quotaResp.Groups))
-		groupsRes := gjson.GetBytes(respBytes, "groups")
-		if groupsRes.IsArray() {
-			for gIdx, grp := range groupsRes.Array() {
-				if gIdx >= len(quotaResp.Groups) {
-					break
-				}
-				bucketsRes := grp.Get("buckets")
-				if !bucketsRes.IsArray() {
-					continue
-				}
-				origGroup := quotaResp.Groups[gIdx]
-				validBuckets := make([]pluginapi.QuotaBucket, 0, len(origGroup.Buckets))
-				for bIdx, bkt := range bucketsRes.Array() {
-					if bIdx >= len(origGroup.Buckets) {
-						break
+	var rawQuota map[string]json.RawMessage
+	if errRaw := json.Unmarshal(respBytes, &rawQuota); errRaw == nil {
+		delete(rawQuota, "summary") // Optional plugin data must not invalidate core quota fields.
+		if coreQuotaJSON, errMarshal := json.Marshal(rawQuota); errMarshal == nil {
+			var quotaResp pluginapi.QuotaFetchResponse
+			if errJSON := json.Unmarshal(coreQuotaJSON, &quotaResp); errJSON == nil {
+				hasPlan := quotaResp.Subscription != nil && strings.TrimSpace(quotaResp.Subscription.Plan) != ""
+				// Filter groups to retain only buckets with an actual valid numeric remaining fraction in raw JSON
+				filteredGroups := make([]pluginapi.QuotaGroup, 0, len(quotaResp.Groups))
+				groupsRes := gjson.GetBytes(respBytes, "groups")
+				if groupsRes.IsArray() {
+					for gIdx, grp := range groupsRes.Array() {
+						if gIdx >= len(quotaResp.Groups) {
+							break
+						}
+						bucketsRes := grp.Get("buckets")
+						if !bucketsRes.IsArray() {
+							continue
+						}
+						origGroup := quotaResp.Groups[gIdx]
+						validBuckets := make([]pluginapi.QuotaBucket, 0, len(origGroup.Buckets))
+						for bIdx, bkt := range bucketsRes.Array() {
+							if bIdx >= len(origGroup.Buckets) {
+								break
+							}
+							remFrac := bkt.Get("remainingFraction")
+							if !remFrac.Exists() {
+								remFrac = bkt.Get("remaining_fraction")
+							}
+							if fracVal, okNum := parseNumericFraction(remFrac); okNum {
+								bucket := origGroup.Buckets[bIdx]
+								bucket.RemainingFraction = fracVal
+								validBuckets = append(validBuckets, bucket)
+							}
+						}
+						if len(validBuckets) > 0 {
+							origGroup.Buckets = validBuckets
+							filteredGroups = append(filteredGroups, origGroup)
+						}
 					}
-					remFrac := bkt.Get("remainingFraction")
-					if !remFrac.Exists() {
-						remFrac = bkt.Get("remaining_fraction")
-					}
-					if fracVal, okNum := parseNumericFraction(remFrac); okNum {
-						bucket := origGroup.Buckets[bIdx]
-						bucket.RemainingFraction = fracVal
-						validBuckets = append(validBuckets, bucket)
-					}
 				}
-				if len(validBuckets) > 0 {
-					origGroup.Buckets = validBuckets
-					filteredGroups = append(filteredGroups, origGroup)
+				quotaResp.Groups = filteredGroups
+				quotaResp.Summary = filterUsableQuotaSummary(respBytes)
+				hasValidBuckets := len(filteredGroups) > 0
+				hasValidSummary := len(quotaResp.Summary) > 0
+				if hasPlan || hasValidBuckets || hasValidSummary {
+					if quotaResp.ServerTimeOffsetMs == 0 {
+						quotaResp.ServerTimeOffsetMs = serverOffsetMs
+					}
+					return quotaResp, true, nil
 				}
 			}
-		}
-		quotaResp.Groups = filteredGroups
-		quotaResp.Summary = filterUsableQuotaSummary(respBytes, quotaResp.Summary)
-		hasValidBuckets := len(filteredGroups) > 0
-		hasValidSummary := len(quotaResp.Summary) > 0
-		if hasPlan || hasValidBuckets || hasValidSummary {
-			if quotaResp.ServerTimeOffsetMs == 0 {
-				quotaResp.ServerTimeOffsetMs = serverOffsetMs
-			}
-			return quotaResp, true, nil
 		}
 	}
 
 	return pluginapi.QuotaFetchResponse{}, true, fmt.Errorf("upstream probe response does not match normalized quota shape or declared mapping")
 }
 
-func filterUsableQuotaSummary(raw []byte, summary []pluginapi.QuotaMetric) []pluginapi.QuotaMetric {
+func filterUsableQuotaSummary(raw []byte) []pluginapi.QuotaMetric {
 	rawSummary := gjson.GetBytes(raw, "summary")
 	if !rawSummary.IsArray() {
 		return nil
 	}
-	usable := make([]pluginapi.QuotaMetric, 0, len(summary))
-	for index, rawMetric := range rawSummary.Array() {
-		if index >= len(summary) {
-			break
-		}
+	usable := make([]pluginapi.QuotaMetric, 0, len(rawSummary.Array()))
+	for _, rawMetric := range rawSummary.Array() {
+		key := strings.TrimSpace(rawMetric.Get("key").String())
+		label := strings.TrimSpace(rawMetric.Get("label").String())
 		value := rawMetric.Get("value")
-		if value.Type != gjson.Number || math.IsNaN(value.Float()) || math.IsInf(value.Float(), 0) {
+		if key == "" || label == "" || value.Type != gjson.Number || math.IsNaN(value.Float()) || math.IsInf(value.Float(), 0) {
 			continue
 		}
-		metric := summary[index]
-		if strings.TrimSpace(metric.Key) == "" || strings.TrimSpace(metric.Label) == "" {
-			continue
-		}
-		metric.Value = value.Float()
-		usable = append(usable, metric)
+		usable = append(usable, pluginapi.QuotaMetric{
+			Key:      key,
+			Label:    label,
+			Value:    value.Float(),
+			Unit:     strings.TrimSpace(rawMetric.Get("unit").String()),
+			Format:   strings.TrimSpace(rawMetric.Get("format").String()),
+			Currency: strings.TrimSpace(rawMetric.Get("currency").String()),
+		})
 	}
 	return usable
 }
