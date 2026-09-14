@@ -12,11 +12,21 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/discovery"
 )
 
-func newLANBrowser() (discovery.Browser, error) {
-	ifaces, err := discovery.FilterInterfaces(nil, nil)
+// DiscoverOptions configures a one-shot LAN discovery scan.
+type DiscoverOptions struct {
+	Timeout     time.Duration
+	JSONOutput  bool
+	ServiceType string
+	Include     []string
+	Exclude     []string
+}
+
+func newLANBrowser(include, exclude []string) (discovery.Browser, error) {
+	ifaces, err := discovery.FilterInterfaces(include, exclude)
 	if err != nil {
 		return nil, err
 	}
@@ -26,22 +36,83 @@ func newLANBrowser() (discovery.Browser, error) {
 	return discovery.NewZeroconfBrowser(ifaces...), nil
 }
 
+// ParseInterfaceList splits comma-separated interface names and drops blanks.
+func ParseInterfaceList(values ...string) []string {
+	var out []string
+	seen := make(map[string]struct{})
+	for _, raw := range values {
+		for _, part := range strings.Split(raw, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			if _, exists := seen[part]; exists {
+				continue
+			}
+			seen[part] = struct{}{}
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// ResolveDiscoveryInterfaceFilters prefers explicit CLI filters over config filters.
+func ResolveDiscoveryInterfaceFilters(cliInclude, cliExclude, cfgInclude, cfgExclude []string) (include, exclude []string) {
+	if len(cliInclude) > 0 || len(cliExclude) > 0 {
+		return append([]string(nil), cliInclude...), append([]string(nil), cliExclude...)
+	}
+	return append([]string(nil), cfgInclude...), append([]string(nil), cfgExclude...)
+}
+
+// LoadDiscoveryScanFilters reads discovery.interfaces from a config file.
+// Missing or invalid files yield empty filters so the default physical LAN allow-list is used.
+func LoadDiscoveryScanFilters(configPath string) (include, exclude []string) {
+	configPath = strings.TrimSpace(configPath)
+	if configPath == "" {
+		return nil, nil
+	}
+	raw, errRead := os.ReadFile(configPath)
+	if errRead != nil {
+		return nil, nil
+	}
+	cfg, errParse := config.ParseConfigBytes(raw)
+	if errParse != nil || cfg == nil {
+		return nil, nil
+	}
+	return ParseInterfaceList(cfg.Discovery.Interfaces.Include...), ParseInterfaceList(cfg.Discovery.Interfaces.Exclude...)
+}
+
 // DoDiscover executes the LAN AI gateway discovery workflow and outputs results.
 // Returns 0 on success, 1 on error.
 func DoDiscover(timeout time.Duration, jsonOutput bool) int {
-	return DoDiscoverWithServiceType(timeout, jsonOutput, discovery.DefaultServiceType)
+	return DoDiscoverWithOptions(DiscoverOptions{Timeout: timeout, JSONOutput: jsonOutput})
 }
 
 // DoDiscoverWithServiceType executes LAN discovery for the requested DNS-SD service type.
 func DoDiscoverWithServiceType(timeout time.Duration, jsonOutput bool, serviceType string) int {
-	return runDiscoverWithServiceType(timeout, jsonOutput, serviceType, os.Stdout, os.Stderr, newLANBrowser)
+	return DoDiscoverWithOptions(DiscoverOptions{Timeout: timeout, JSONOutput: jsonOutput, ServiceType: serviceType})
+}
+
+// DoDiscoverWithOptions executes LAN discovery with explicit scan options.
+func DoDiscoverWithOptions(opts DiscoverOptions) int {
+	include, exclude := ResolveDiscoveryInterfaceFilters(opts.Include, opts.Exclude, nil, nil)
+	return runDiscoverWithOptions(opts, os.Stdout, os.Stderr, func() (discovery.Browser, error) {
+		return newLANBrowser(include, exclude)
+	})
 }
 
 func runDiscover(timeout time.Duration, jsonOutput bool, stdout, stderr io.Writer, newBrowser func() (discovery.Browser, error)) int {
-	return runDiscoverWithServiceType(timeout, jsonOutput, discovery.DefaultServiceType, stdout, stderr, newBrowser)
+	return runDiscoverWithOptions(DiscoverOptions{Timeout: timeout, JSONOutput: jsonOutput}, stdout, stderr, newBrowser)
 }
 
 func runDiscoverWithServiceType(timeout time.Duration, jsonOutput bool, serviceType string, stdout, stderr io.Writer, newBrowser func() (discovery.Browser, error)) int {
+	return runDiscoverWithOptions(DiscoverOptions{Timeout: timeout, JSONOutput: jsonOutput, ServiceType: serviceType}, stdout, stderr, newBrowser)
+}
+
+func runDiscoverWithOptions(opts DiscoverOptions, stdout, stderr io.Writer, newBrowser func() (discovery.Browser, error)) int {
+	timeout := opts.Timeout
+	jsonOutput := opts.JSONOutput
+	serviceType := opts.ServiceType
 	if timeout <= 0 {
 		timeout = 3 * time.Second
 	} else if timeout > 60*time.Second {
@@ -117,22 +188,7 @@ func runDiscoverWithServiceType(timeout time.Duration, jsonOutput bool, serviceT
 		instanceLabel := sanitizeTerminal(gw.InstanceName)
 		fmt.Fprintf(stdout, "[%d] %s (Product: %s, Version: %s)\n", i+1, instanceLabel, productLabel, versionLabel)
 
-		// Primary IP selection
-		primaryIP := "127.0.0.1"
-		var allIPs []string
-		for _, ip := range gw.IPv4 {
-			if !ip.IsLoopback() {
-				allIPs = append(allIPs, ip.String())
-			}
-		}
-		if len(allIPs) > 0 {
-			primaryIP = allIPs[0]
-		} else if len(gw.IPv6) > 0 {
-			primaryIP = gw.IPv6[0].String()
-			for _, ip := range gw.IPv6 {
-				allIPs = append(allIPs, ip.String())
-			}
-		}
+		primaryIP, allIPs := preferredDisplayAddresses(gw)
 
 		hostPort := net.JoinHostPort(primaryIP, strconv.Itoa(gw.Port))
 		hostLabel := sanitizeTerminal(gw.Host)
@@ -193,6 +249,43 @@ func runDiscoverWithServiceType(timeout time.Duration, jsonOutput bool, serviceT
 	}
 
 	return 0
+}
+
+func preferredDisplayAddresses(gw discovery.DiscoveredService) (primary string, all []string) {
+	for _, ip := range gw.IPv4 {
+		if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+			continue
+		}
+		all = append(all, ip.String())
+	}
+	if len(all) > 0 {
+		return all[0], all
+	}
+
+	var routable []string
+	var linkLocal []string
+	for _, ip := range gw.IPv6 {
+		if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+			continue
+		}
+		if ip.IsLinkLocalUnicast() {
+			linkLocal = append(linkLocal, ip.String())
+			continue
+		}
+		routable = append(routable, ip.String())
+	}
+	if len(routable) > 0 {
+		return routable[0], append(routable, linkLocal...)
+	}
+
+	host := strings.TrimSpace(strings.TrimSuffix(gw.Host, "."))
+	if host != "" && !strings.EqualFold(host, "localhost") {
+		return host, append([]string{host}, linkLocal...)
+	}
+	if len(linkLocal) > 0 {
+		return linkLocal[0], linkLocal
+	}
+	return "127.0.0.1", nil
 }
 
 // sanitizeTerminal strips control characters, ANSI escape sequences, Bidi overrides,

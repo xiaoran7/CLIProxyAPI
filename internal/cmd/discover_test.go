@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -62,6 +64,48 @@ func TestRunDiscoverCustomServiceType(t *testing.T) {
 	}
 	if browser.serviceType != "_custom._tcp" {
 		t.Fatalf("service type = %q, want _custom._tcp", browser.serviceType)
+	}
+}
+
+func TestResolveDiscoveryInterfaceFiltersPrefersCLI(t *testing.T) {
+	include, exclude := ResolveDiscoveryInterfaceFilters([]string{"docker0"}, nil, []string{"en0"}, []string{"awdl0"})
+	if len(include) != 1 || include[0] != "docker0" || len(exclude) != 0 {
+		t.Fatalf("cli filters = include %v exclude %v", include, exclude)
+	}
+	include, exclude = ResolveDiscoveryInterfaceFilters(nil, nil, []string{"docker0"}, []string{"veth0"})
+	if len(include) != 1 || include[0] != "docker0" || len(exclude) != 1 || exclude[0] != "veth0" {
+		t.Fatalf("config filters = include %v exclude %v", include, exclude)
+	}
+}
+
+func TestLoadDiscoveryScanFiltersReadsInclude(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("discovery:\n  interfaces:\n    include:\n      - docker0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	include, exclude := LoadDiscoveryScanFilters(path)
+	if len(include) != 1 || include[0] != "docker0" || len(exclude) != 0 {
+		t.Fatalf("loaded filters = include %v exclude %v", include, exclude)
+	}
+}
+
+func TestPreferredDisplayAddressesSkipsBareLinkLocal(t *testing.T) {
+	primary, all := preferredDisplayAddresses(discovery.DiscoveredService{
+		Host: "gateway.local.",
+		IPv6: []net.IP{net.ParseIP("fe80::1")},
+	})
+	if primary != "gateway.local" {
+		t.Fatalf("primary = %q, want hostname", primary)
+	}
+	if len(all) != 2 || all[0] != "gateway.local" || all[1] != "fe80::1" {
+		t.Fatalf("addresses = %v", all)
+	}
+	primary, _ = preferredDisplayAddresses(discovery.DiscoveredService{
+		IPv6: []net.IP{net.ParseIP("fe80::1"), net.ParseIP("2001:db8::10")},
+	})
+	if primary != "2001:db8::10" {
+		t.Fatalf("primary = %q, want routable IPv6", primary)
 	}
 }
 
