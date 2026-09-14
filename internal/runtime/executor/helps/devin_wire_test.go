@@ -2,6 +2,7 @@ package helps
 
 import (
 	"bytes"
+	"math"
 	"strings"
 	"testing"
 
@@ -703,5 +704,86 @@ func TestParseDevinUsageField_AnthropicRequestId(t *testing.T) {
 	}
 	if usage.CachedTokens != 577 {
 		t.Errorf("CachedTokens = %d, want 577", usage.CachedTokens)
+	}
+}
+
+func TestParseDevinResponseDimensionGroups(t *testing.T) {
+	buildMetric := func(key string, val float32) []byte {
+		// Dimension submessage (Tag 4 of Metric)
+		var dim []byte
+		dim = protowire.AppendTag(dim, 2, protowire.Fixed32Type)
+		dim = protowire.AppendFixed32(dim, math.Float32bits(val))
+
+		// Metric submessage (Tag 2 of Group)
+		var metric []byte
+		metric = protowire.AppendTag(metric, 4, protowire.BytesType)
+		metric = protowire.AppendBytes(metric, dim)
+		metric = protowire.AppendTag(metric, 5, protowire.BytesType)
+		metric = protowire.AppendString(metric, key)
+		return metric
+	}
+
+	// Build Group (Tag 28)
+	var group []byte
+	group = protowire.AppendTag(group, 1, protowire.BytesType)
+	group = protowire.AppendString(group, "Token Usage")
+
+	group = protowire.AppendTag(group, 2, protowire.BytesType)
+	group = protowire.AppendBytes(group, buildMetric("input_tokens", 575.0))
+
+	group = protowire.AppendTag(group, 2, protowire.BytesType)
+	group = protowire.AppendBytes(group, buildMetric("output_tokens", 5.0))
+
+	group = protowire.AppendTag(group, 2, protowire.BytesType)
+	group = protowire.AppendBytes(group, buildMetric("cached_input_tokens", 128.0))
+
+	// Envelope Tag 28
+	var root []byte
+	root = protowire.AppendTag(root, 28, protowire.BytesType)
+	root = protowire.AppendBytes(root, group)
+
+	promptTokens, completionTokens, cachedTokens, found := ParseDevinResponseDimensionGroups(root)
+	if !found {
+		t.Fatal("expected found = true")
+	}
+	if promptTokens != 575 {
+		t.Errorf("promptTokens = %d, want 575", promptTokens)
+	}
+	if completionTokens != 5 {
+		t.Errorf("completionTokens = %d, want 5", completionTokens)
+	}
+	if cachedTokens != 128 {
+		t.Errorf("cachedTokens = %d, want 128", cachedTokens)
+	}
+
+	// Verify inner group directly (as extracted by ParseDevinFrame case 28)
+	p2, c2, ca2, found2 := ParseDevinResponseDimensionGroups(group)
+	if !found2 || p2 != 575 || c2 != 5 || ca2 != 128 {
+		t.Errorf("inner group ParseDevinResponseDimensionGroups = (%d,%d,%d,%t), want (575,5,128,true)", p2, c2, ca2, found2)
+	}
+
+	// Verify multi-group where unrelated group precedes Token Usage
+	var latencyGroup []byte
+	latencyGroup = protowire.AppendTag(latencyGroup, 1, protowire.BytesType)
+	latencyGroup = protowire.AppendString(latencyGroup, "Latency Metrics")
+
+	p3, c3, ca3, found3 := ParseDevinResponseDimensionGroups(latencyGroup, group)
+	if !found3 || p3 != 575 || c3 != 5 || ca3 != 128 {
+		t.Errorf("multi-group ParseDevinResponseDimensionGroups = (%d,%d,%d,%t), want (575,5,128,true)", p3, c3, ca3, found3)
+	}
+}
+
+func TestParseDevinResponseDimensionGroups_UnrelatedGroup(t *testing.T) {
+	var group []byte
+	group = protowire.AppendTag(group, 1, protowire.BytesType)
+	group = protowire.AppendString(group, "Latency Metrics")
+
+	var root []byte
+	root = protowire.AppendTag(root, 28, protowire.BytesType)
+	root = protowire.AppendBytes(root, group)
+
+	promptTokens, completionTokens, cachedTokens, found := ParseDevinResponseDimensionGroups(root)
+	if found {
+		t.Errorf("expected found = false for unrelated group, got true with prompt=%d, comp=%d, cached=%d", promptTokens, completionTokens, cachedTokens)
 	}
 }

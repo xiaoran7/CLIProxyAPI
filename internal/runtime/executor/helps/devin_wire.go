@@ -117,7 +117,7 @@ type DevinFrameResult struct {
 	Latency                 float64
 	MessageID               string
 	Usage                   *DevinUsage
-	ResponseDimensionGroups []byte
+	ResponseDimensionGroups [][]byte
 	UnknownFieldNumbers     []int
 }
 
@@ -588,7 +588,7 @@ func ParseDevinFrame(payload []byte) (DevinFrameResult, error) {
 			case 21:
 				res.DeltaSignatureType = string(val)
 			case 28:
-				res.ResponseDimensionGroups = val
+				res.ResponseDimensionGroups = append(res.ResponseDimensionGroups, val)
 			default:
 				res.UnknownFieldNumbers = append(res.UnknownFieldNumbers, int(num))
 			}
@@ -795,10 +795,10 @@ func parseDevinUsageField(data []byte) *DevinUsage {
 						u.Headers = make(map[string]string)
 					}
 					u.Headers[k] = v
-					if strings.EqualFold(k, "x-request-id") || strings.EqualFold(k, "request-id") {
+					if (strings.EqualFold(k, "x-request-id") || strings.EqualFold(k, "request-id")) && v != "" {
 						u.RequestID = v
 					}
-				} else if isPrintableASCII(val) {
+				} else if len(val) > 0 && isPrintableASCII(val) && u.RequestID == "" {
 					u.RequestID = string(val)
 				}
 			case 9:
@@ -827,31 +827,19 @@ func parseDevinUsageField(data []byte) *DevinUsage {
 	return u
 }
 
-// ParseDevinResponseDimensionGroups parses Field 28 (ResponseDimensionGroups) to extract Token Usage metrics:
+// ParseDevinResponseDimensionGroups parses Field 28 (ResponseDimensionGroups) entries to extract Token Usage metrics:
 // input_tokens, output_tokens, cached_input_tokens.
-func ParseDevinResponseDimensionGroups(data []byte) (promptTokens, completionTokens, cachedTokens int64, found bool) {
-	pos := 0
-	for pos < len(data) {
-		num, typ, n := protowire.ConsumeTag(data[pos:])
-		if n <= 0 {
-			break
+// Accepts one or more group payloads (each corresponding to a Field 28 value), or an outer envelope containing Tag 28.
+func ParseDevinResponseDimensionGroups(groups ...[]byte) (promptTokens, completionTokens, cachedTokens int64, found bool) {
+	for _, gBytes := range groups {
+		if len(gBytes) == 0 {
+			continue
 		}
-		pos += n
-		if typ != protowire.BytesType {
-			nSkip := protowire.ConsumeFieldValue(num, typ, data[pos:])
-			if nSkip <= 0 {
-				break
+		// If outer envelope carries Tag 28, unwrap it to get inner group bytes.
+		if num, typ, n := protowire.ConsumeTag(gBytes); n > 0 && num == 28 && typ == protowire.BytesType {
+			if inner, bn := protowire.ConsumeBytes(gBytes[n:]); bn > 0 {
+				gBytes = inner
 			}
-			pos += nSkip
-			continue
-		}
-		gBytes, bn := protowire.ConsumeBytes(data[pos:])
-		if bn <= 0 {
-			break
-		}
-		pos += bn
-		if num != 28 {
-			continue
 		}
 
 		gPos := 0
@@ -953,6 +941,9 @@ func ParseDevinResponseDimensionGroups(data []byte) (promptTokens, completionTok
 					cachedTokens = int64(m.val)
 					found = true
 				}
+			}
+			if found {
+				return promptTokens, completionTokens, cachedTokens, true
 			}
 		}
 	}

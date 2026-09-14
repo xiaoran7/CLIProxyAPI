@@ -175,7 +175,13 @@ func (h *Handler) APICall(c *gin.Context) {
 			return
 		}
 		if token != "" {
-			body.Data = strings.ReplaceAll(body.Data, "$TOKEN$", token)
+			replacement := token
+			if json.Valid([]byte(body.Data)) && strings.ContainsAny(token, "\"\\\r\n\t") {
+				if b, errMarshal := json.Marshal(token); errMarshal == nil && len(b) >= 2 {
+					replacement = string(b[1 : len(b)-1])
+				}
+			}
+			body.Data = strings.ReplaceAll(body.Data, "$TOKEN$", replacement)
 		}
 	}
 
@@ -252,6 +258,9 @@ func tokenValueForAuth(auth *coreauth.Auth) string {
 	}
 	if auth.Attributes != nil {
 		if v := strings.TrimSpace(auth.Attributes["api_key"]); v != "" {
+			return v
+		}
+		if v := strings.TrimSpace(auth.Attributes["session_token"]); v != "" {
 			return v
 		}
 	}

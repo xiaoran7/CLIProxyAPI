@@ -163,12 +163,12 @@ func sanitizeAndValidateDevinModels(models []*ModelInfo) ([]*ModelInfo, error) {
 		if !strings.HasPrefix(strings.ToLower(id), "devin/") {
 			id = "devin/" + id
 		}
+		id = strings.ToLower(id)
 		m.ID = id
-		seenID := strings.ToLower(id)
-		if _, exists := seen[seenID]; exists {
+		if _, exists := seen[id]; exists {
 			return nil, fmt.Errorf("duplicate model id: %q", id)
 		}
-		seen[seenID] = struct{}{}
+		seen[id] = struct{}{}
 
 		// Ensure proper default fields
 		if m.Type == "" {
