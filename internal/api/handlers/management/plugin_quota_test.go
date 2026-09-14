@@ -45,6 +45,9 @@ func (m *mockQuotaProvider) FetchQuota(ctx context.Context, req pluginapi.QuotaF
 			TierID:   "pro-tier",
 		},
 		ServerTimeOffsetMs: 42,
+		Summary: []pluginapi.QuotaMetric{
+			{Key: "credits_used", Label: "Credits used", Value: 1740.28, Unit: "credits"},
+		},
 		Groups: []pluginapi.QuotaGroup{
 			{
 				DisplayName: "Standard Limits",
@@ -180,6 +183,9 @@ func TestFetchCredentialQuota_Endpoint(t *testing.T) {
 	}
 	if quotaResp.Subscription == nil || quotaResp.Subscription.Plan != "Pro" {
 		t.Fatalf("unexpected subscription: %+v", quotaResp.Subscription)
+	}
+	if len(quotaResp.Summary) != 1 || quotaResp.Summary[0].Key != "credits_used" || quotaResp.Summary[0].Value != 1740.28 {
+		t.Fatalf("unexpected quota summary: %+v", quotaResp.Summary)
 	}
 	if len(quotaResp.Groups) != 1 || len(quotaResp.Groups[0].Buckets) != 1 {
 		t.Fatalf("unexpected quota groups: %+v", quotaResp.Groups)
