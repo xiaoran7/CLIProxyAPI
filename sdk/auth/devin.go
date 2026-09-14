@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -83,32 +84,15 @@ func (a *DevinAuthenticator) Login(ctx context.Context, cfg *config.Config, opts
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case errInput := <-manualInputErrCh:
-			if errInput != nil {
-				return nil, fmt.Errorf("failed to read devin input: %w", errInput)
-			}
-			return nil, fmt.Errorf("no input received")
+			return nil, fmt.Errorf("failed to read devin input: %w", errInput)
 		case input := <-manualInputCh:
-			trimmed := strings.TrimSpace(input)
-			trimmed = strings.Trim(trimmed, "\"'")
-			if trimmed == "" {
-				return nil, fmt.Errorf("devin authentication canceled: empty input received")
+			var errPaste error
+			authCode, rawPastedToken, errPaste = parseDevinManualPaste(input, state)
+			if errPaste != nil {
+				return nil, errPaste
 			}
-
-			// 1. Direct manual session token paste (supports Devin --force-manual-token-flow)
-			if strings.HasPrefix(trimmed, "devin-session-token$") || strings.HasPrefix(trimmed, "eyJ") {
-				rawPastedToken = trimmed
-			} else if parsed, errParse := misc.ParseOAuthCallback(trimmed); errParse == nil && parsed != nil && parsed.Code != "" {
-				// 2. Full callback redirect URL. In headless mode, if state is present in the pasted URL,
-				// ensure it matches. PKCE verifier protects the code exchange against CSRF.
-				if state != "" && parsed.State != "" && parsed.State != state {
-					return nil, fmt.Errorf("devin oauth state mismatch (possible CSRF)")
-				}
-				authCode = parsed.Code
-			} else if !strings.ContainsAny(trimmed, " \t\r\n/?#=") {
-				// 3. Raw authorization code paste
-				authCode = trimmed
-			} else {
-				return nil, fmt.Errorf("unrecognized devin authorization code or token format")
+			if authCode == "" && rawPastedToken == "" {
+				return nil, fmt.Errorf("devin authentication canceled: empty input received")
 			}
 		}
 
@@ -238,31 +222,19 @@ waitForResult:
 		case input := <-manualInputCh:
 			manualInputCh = nil
 			manualInputErrCh = nil
-			trimmed := strings.TrimSpace(input)
-			trimmed = strings.Trim(trimmed, "\"'")
-			if trimmed == "" {
-				continue
-			}
-
-			// 1. Direct manual session token paste (supports Devin --force-manual-token-flow)
-			if strings.HasPrefix(trimmed, "devin-session-token$") || strings.HasPrefix(trimmed, "eyJ") {
-				rawPastedToken = trimmed
-				break waitForResult
-			}
-
-			// 2. Full callback redirect URL
-			parsed, errParse := misc.ParseOAuthCallback(trimmed)
-			if errParse == nil && parsed != nil && parsed.Code != "" {
-				if state != "" && parsed.State != state {
-					return nil, fmt.Errorf("devin oauth state mismatch (possible CSRF)")
+			pastedCode, pastedToken, errPaste := parseDevinManualPaste(input, state)
+			if errPaste != nil {
+				if errors.Is(errPaste, errDevinUnrecognizedPaste) {
+					continue
 				}
-				authCode = parsed.Code
+				return nil, errPaste
+			}
+			if pastedToken != "" {
+				rawPastedToken = pastedToken
 				break waitForResult
 			}
-
-			// 3. Raw authorization code paste
-			if !strings.ContainsAny(trimmed, " \t\r\n/?#=") {
-				authCode = trimmed
+			if pastedCode != "" {
+				authCode = pastedCode
 				break waitForResult
 			}
 
@@ -289,4 +261,44 @@ waitForResult:
 	}
 
 	return authSvc.CreateAuthRecord(ctx, sessionToken)
+}
+
+var errDevinUnrecognizedPaste = errors.New("unrecognized devin authorization code or token format")
+
+// parseDevinManualPaste classifies a pasted authorization code, callback URL, or session token.
+// Empty input returns empty values with a nil error; callers decide whether to abort or keep waiting.
+func parseDevinManualPaste(input, expectedState string) (authCode, rawToken string, err error) {
+	trimmed := strings.TrimSpace(input)
+	trimmed = strings.Trim(trimmed, "\"'")
+	trimmed = strings.TrimSpace(trimmed)
+	if trimmed == "" {
+		return "", "", nil
+	}
+
+	// Direct manual session token paste (supports Devin --force-manual-token-flow).
+	if strings.HasPrefix(trimmed, "devin-session-token$") || strings.HasPrefix(trimmed, "eyJ") {
+		return "", trimmed, nil
+	}
+
+	if parsed, errParse := misc.ParseOAuthCallback(trimmed); errParse == nil && parsed != nil {
+		if errMsg := strings.TrimSpace(parsed.Error); errMsg != "" {
+			if desc := strings.TrimSpace(parsed.ErrorDescription); desc != "" {
+				errMsg = fmt.Sprintf("%s: %s", errMsg, desc)
+			}
+			return "", "", fmt.Errorf("devin oauth error: %s", errMsg)
+		}
+		if parsed.Code != "" {
+			// If state is present in the pasted URL, it must match. PKCE still protects
+			// a code pasted without state.
+			if expectedState != "" && parsed.State != "" && parsed.State != expectedState {
+				return "", "", fmt.Errorf("devin oauth state mismatch (possible CSRF)")
+			}
+			return parsed.Code, "", nil
+		}
+	}
+
+	if !strings.ContainsAny(trimmed, " \t\r\n/?#=") {
+		return trimmed, "", nil
+	}
+	return "", "", errDevinUnrecognizedPaste
 }

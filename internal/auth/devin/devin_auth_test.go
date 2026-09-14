@@ -130,6 +130,25 @@ func TestBuildAuthorizationURLHeadlessCodeFlow(t *testing.T) {
 	}
 }
 
+func TestBuildAuthorizationURLWhitespaceRedirectIsHeadless(t *testing.T) {
+	svc := NewDevinAuthService(nil)
+	u := svc.BuildAuthorizationURL("  \t", "challenge", "state-ws")
+	parsed, err := url.Parse(u)
+	if err != nil {
+		t.Fatalf("failed to parse auth url: %v", err)
+	}
+	if parsed.Query().Get("redirect_uri") != "" {
+		t.Errorf("redirect_uri = %q, want empty", parsed.Query().Get("redirect_uri"))
+	}
+	if parsed.Query().Get("cli_pkce_marker") != "1" {
+		t.Errorf("cli_pkce_marker = %q, want 1", parsed.Query().Get("cli_pkce_marker"))
+	}
+	want := "state=state-ws&prompt=select_account&code_challenge=challenge&code_challenge_method=S256&cli_pkce_marker=1"
+	if parsed.RawQuery != want {
+		t.Errorf("raw query = %q, want %q", parsed.RawQuery, want)
+	}
+}
+
 func TestExchangeCodeForTokenAndFetchSelf(t *testing.T) {
 	// Mock devin API backend
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

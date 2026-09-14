@@ -90,19 +90,16 @@ func (s *DevinAuthService) BuildAuthorizationURL(redirectURI, codeChallenge, sta
 	var queryParts []string
 	if trimmedRedirect != "" {
 		queryParts = append(queryParts, "redirect_uri="+url.QueryEscape(trimmedRedirect))
-		if state != "" {
-			queryParts = append(queryParts, "state="+url.QueryEscape(state))
-		}
-		queryParts = append(queryParts, "prompt=select_account")
-		queryParts = append(queryParts, "code_challenge="+url.QueryEscape(codeChallenge))
-		queryParts = append(queryParts, "code_challenge_method=S256")
-	} else {
-		if state != "" {
-			queryParts = append(queryParts, "state="+url.QueryEscape(state))
-		}
-		queryParts = append(queryParts, "prompt=select_account")
-		queryParts = append(queryParts, "code_challenge="+url.QueryEscape(codeChallenge))
-		queryParts = append(queryParts, "code_challenge_method=S256")
+	}
+	if state != "" {
+		queryParts = append(queryParts, "state="+url.QueryEscape(state))
+	}
+	queryParts = append(queryParts,
+		"prompt=select_account",
+		"code_challenge="+url.QueryEscape(codeChallenge),
+		"code_challenge_method=S256",
+	)
+	if trimmedRedirect == "" {
 		queryParts = append(queryParts, "cli_pkce_marker=1")
 	}
 	return fmt.Sprintf("%s/auth/cli/continue?%s", strings.TrimRight(s.appBaseURL, "/"), strings.Join(queryParts, "&"))
