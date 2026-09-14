@@ -1,0 +1,423 @@
+package discovery
+
+import (
+	"context"
+	"net"
+	"os"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+func TestInstanceID_PersistenceAndFormat(t *testing.T) {
+	ResetCachedInstanceID()
+	tmpDir, err := os.MkdirTemp("", "cpa-discovery-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer func() {
+		_ = os.RemoveAll(tmpDir)
+		ResetCachedInstanceID()
+	}()
+
+	// 1. Generate new ID
+	id1 := GetOrGenerateInstanceID(tmpDir)
+	if len(id1) != 4 {
+		t.Errorf("expected 4-char hex ID, got %s (len %d)", id1, len(id1))
+	}
+
+	// 2. Retrieve again from same dir, should be identical
+	id2 := GetOrGenerateInstanceID(tmpDir)
+	if id1 != id2 {
+		t.Errorf("expected persistent ID %s, got %s", id1, id2)
+	}
+
+	// 3. Format instance name with default
+	name1 := FormatInstanceName("", id1)
+	expectedName := "CPA-" + id1
+	if name1 != expectedName {
+		t.Errorf("expected %s, got %s", expectedName, name1)
+	}
+
+	// 4. Test concurrent calls produce identical ID
+	ResetCachedInstanceID()
+	var wg sync.WaitGroup
+	results := make([]string, 10)
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			results[idx] = GetOrGenerateInstanceID(tmpDir)
+		}(i)
+	}
+	wg.Wait()
+	for _, r := range results {
+		if r != id1 {
+			t.Errorf("concurrent ID mismatch: expected %s, got %s", id1, r)
+		}
+	}
+
+	// 5. Test directory isolation
+	tmpDirB, errB := os.MkdirTemp("", "cpa-discovery-test-b-*")
+	if errB == nil {
+		defer os.RemoveAll(tmpDirB)
+		idB := GetOrGenerateInstanceID(tmpDirB)
+		if len(idB) != 4 {
+			t.Errorf("expected 4-char hex ID for dir B, got %s", idB)
+		}
+	}
+
+	// 6. Format instance name with custom name override
+	name2 := FormatInstanceName("My-Custom-Node", id1)
+	if name2 != "My-Custom-Node" {
+		t.Errorf("expected custom name override, got %s", name2)
+	}
+}
+
+func TestBuildTXTRecords_SizeAndKeys(t *testing.T) {
+	opts := DefaultTXTOptions()
+	opts.InstanceID = "8F3B"
+	opts.TLS = true
+	opts.AuthRequired = true
+
+	records := BuildTXTRecords(opts)
+	if len(records) == 0 {
+		t.Fatalf("expected non-empty TXT records")
+	}
+
+	parsed := ParseTXTRecords(records)
+
+	// Verify required keys
+	if parsed["version"] != "1" {
+		t.Errorf("expected version=1, got %s", parsed["version"])
+	}
+	if parsed["product"] != ProductCPA {
+		t.Errorf("expected product=%s, got %s", ProductCPA, parsed["product"])
+	}
+	if parsed["tls"] != "1" {
+		t.Errorf("expected tls=1, got %s", parsed["tls"])
+	}
+	if parsed["auth_required"] != "true" {
+		t.Errorf("expected auth_required=true, got %s", parsed["auth_required"])
+	}
+	if parsed["management"] != "false" {
+		t.Errorf("expected management=false, got %s", parsed["management"])
+	}
+	if parsed["api_openai"] != "/v1" {
+		t.Errorf("expected api_openai=/v1, got %s", parsed["api_openai"])
+	}
+	if parsed["api_gemini"] != "/v1beta" {
+		t.Errorf("expected api_gemini=/v1beta, got %s", parsed["api_gemini"])
+	}
+	expectedProtocols := "chat-completions,responses,messages,generate-content,interactions"
+	if parsed["protocols"] != expectedProtocols {
+		t.Errorf("expected protocols=%s, got %s", expectedProtocols, parsed["protocols"])
+	}
+	expectedFeatures := "chat,responses,messages,generate_content,interactions"
+	if parsed["features"] != expectedFeatures {
+		t.Errorf("expected features=%s, got %s", expectedFeatures, parsed["features"])
+	}
+
+	// Calculate total bytes
+	totalBytes := 0
+	for _, r := range records {
+		totalBytes += len(r) + 1
+	}
+	if totalBytes > 400 {
+		t.Errorf("TXT records exceed 400 bytes limit: %d bytes", totalBytes)
+	}
+}
+
+func TestBuildTXTRecords_OversizedAndRFCEnforcement(t *testing.T) {
+	opts := DefaultTXTOptions()
+	// Giant 500-byte product and feature strings
+	opts.Product = strings.Repeat("A", 500)
+	opts.Features = []string{strings.Repeat("F", 300)}
+	opts.NodeRole = strings.Repeat("R", 200)
+
+	records := BuildTXTRecords(opts)
+
+	totalBytes := 0
+	for _, r := range records {
+		if len(r) > maxTXTRecordBytes {
+			t.Errorf("individual TXT record exceeds RFC 6763 limit of %d bytes: %d", maxTXTRecordBytes, len(r))
+		}
+		totalBytes += len(r) + 1
+	}
+
+	if totalBytes > maxTXTBytes {
+		t.Errorf("total TXT records length %d exceeds max %d bytes", totalBytes, maxTXTBytes)
+	}
+	parsed := ParseTXTRecords(records)
+	if _, ok := parsed["product"]; ok {
+		t.Errorf("oversized product key should be omitted, got %q", parsed["product"])
+	}
+}
+
+func TestUniquifyInstanceName(t *testing.T) {
+	tests := []struct {
+		name     string
+		base     string
+		taken    []string
+		expected string
+	}{
+		{name: "unused name", base: "office-gateway", expected: "office-gateway"},
+		{name: "first collision", base: "office-gateway", taken: []string{"office-gateway"}, expected: "office-gateway-2"},
+		{name: "second collision", base: "office-gateway", taken: []string{"office-gateway", "office-gateway-2"}, expected: "office-gateway-3"},
+		{name: "empty falls back", base: "   ", expected: "CPA-0001"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			taken := make(map[string]struct{}, len(tt.taken))
+			for _, name := range tt.taken {
+				taken[name] = struct{}{}
+			}
+			if got := uniquifyInstanceName(tt.base, taken); got != tt.expected {
+				t.Fatalf("uniquifyInstanceName(%q) = %q, want %q", tt.base, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestTakenInstanceNamesSkipsOwnAddress(t *testing.T) {
+	own := net.ParseIP("192.0.2.10")
+	services := []DiscoveredService{
+		{InstanceName: "office-gateway", Port: 8317, IPv4: []net.IP{own}},
+		{InstanceName: "office-gateway", Port: 8317, IPv4: []net.IP{net.ParseIP("192.0.2.11")}},
+		{InstanceName: "other", Port: 9000, IPv4: []net.IP{net.ParseIP("192.0.2.12")}},
+	}
+	taken := takenInstanceNames(services, 8317, []string{"192.0.2.10"})
+	if _, ok := taken["office-gateway"]; !ok {
+		t.Fatal("expected colliding name on a different address to be taken")
+	}
+	if _, ok := taken["other"]; !ok {
+		t.Fatal("expected other instance names to be taken")
+	}
+}
+
+func TestValidation_ServiceTypeAndLabels(t *testing.T) {
+	// Valid service types
+	if err := validateServiceType("_ai-gateway._tcp"); err != nil {
+		t.Errorf("expected valid, got: %v", err)
+	}
+	if err := validateServiceType("_cliproxy._tcp"); err != nil {
+		t.Errorf("expected valid, got: %v", err)
+	}
+
+	// Invalid service types
+	invalidTypes := []string{
+		"ai-gateway._tcp",                 // Missing leading underscore
+		"_ai-gateway.tcp",                 // Missing underscore on protocol
+		"_toolongservicenamemoret15._tcp", // Exceeds 15 chars (RFC 6335)
+		"_-invalid._tcp",                  // Leading hyphen
+		"_invalid-._tcp",                  // Trailing hyphen
+		"_ai_gateway._tcp",                // Underscore in name (RFC 6335)
+	}
+	for _, it := range invalidTypes {
+		if err := validateServiceType(it); err == nil {
+			t.Errorf("expected invalid for %q, got nil", it)
+		}
+	}
+
+	// Subtype sanitization
+	if s := sanitizeSubtype("responses"); s != SubtypeResponses {
+		t.Errorf("expected %s, got %s", SubtypeResponses, s)
+	}
+	if s := sanitizeSubtype(SubtypeResponses); s != SubtypeResponses {
+		t.Errorf("expected %s, got %s", SubtypeResponses, s)
+	}
+	// Invalid subtypes (RFC 6763 §7.1 violation)
+	if s := sanitizeSubtype("_responses._sub"); s != "" {
+		t.Errorf("expected empty for _responses._sub, got %s", s)
+	}
+	if s := sanitizeSubtype("_responses_"); s != "" {
+		t.Errorf("expected empty for _responses_, got %s", s)
+	}
+	if s := sanitizeSubtype("_-responses"); s != "" {
+		t.Errorf("expected empty for _-responses, got %s", s)
+	}
+	if s := sanitizeSubtype("_responses-"); s != "" {
+		t.Errorf("expected empty for _responses-, got %s", s)
+	}
+
+	// Endpoint path sanitization (defense against traversal and protocol-relative SSRF)
+	if p := sanitizeEndpointPath("/v1"); p != "/v1" {
+		t.Errorf("expected /v1, got %s", p)
+	}
+	if p := sanitizeEndpointPath("/v1/chat/completions"); p != "/v1/chat/completions" {
+		t.Errorf("expected /v1/chat/completions, got %s", p)
+	}
+	if p := sanitizeEndpointPath("http://evil.com/v1"); p != "" {
+		t.Errorf("expected empty for absolute URL, got %s", p)
+	}
+	if p := sanitizeEndpointPath("//attacker.com/v1"); p != "" {
+		t.Errorf("expected empty for protocol-relative URL //attacker.com/v1, got %s", p)
+	}
+	if p := sanitizeEndpointPath("/\\attacker.com/v1"); p != "" {
+		t.Errorf("expected empty for backslash path /\\attacker.com/v1, got %s", p)
+	}
+	if p := sanitizeEndpointPath("/../etc/passwd"); p != "" {
+		t.Errorf("expected empty for traversal, got %s", p)
+	}
+
+	// Instance name UTF-8 rune boundary sanitization
+	// 20 Chinese characters = 60 bytes (valid), 22 Chinese characters = 66 bytes (exceeds 63)
+	longChinese := strings.Repeat("网", 22)
+	truncated := sanitizeInstanceName(longChinese)
+	if len(truncated) > 63 {
+		t.Errorf("expected instance name <= 63 bytes, got %d", len(truncated))
+	}
+	if len(truncated)%3 != 0 {
+		t.Errorf("expected clean UTF-8 rune boundary (multiple of 3 for Chinese characters), got %d", len(truncated))
+	}
+}
+
+func TestFilterUsableIPs(t *testing.T) {
+	ips := []net.IP{
+		net.ParseIP("192.0.2.10"),
+		net.ParseIP("fe80::1"),
+		net.ParseIP("127.0.0.1"),
+		net.ParseIP("::"),
+	}
+	usable := filterUsableIPs(ips)
+	if len(usable) != 1 || usable[0].String() != "192.0.2.10" {
+		t.Fatalf("filterUsableIPs() = %v, want [192.0.2.10]", usable)
+	}
+}
+
+func TestInterfaceFiltering_Helpers(t *testing.T) {
+	// Test isVirtualOrTunnel
+	virtualNames := []string{"docker0", "veth45a", "utun3", "tailscale0", "wg0", "tun1", "tap0", "br-123", "awdl0", "llw0"}
+	for _, name := range virtualNames {
+		if !isVirtualOrTunnel(name) {
+			t.Errorf("expected %s to be recognized as virtual/tunnel interface", name)
+		}
+	}
+
+	physicalNames := []string{"en0", "eth0", "wlan0", "eno1"}
+	for _, name := range physicalNames {
+		if isVirtualOrTunnel(name) {
+			t.Errorf("expected %s to be recognized as physical interface", name)
+		}
+	}
+
+	// Test matchesAny
+	if !matchesAny("docker0", []string{"docker*"}) {
+		t.Errorf("expected wildcard match for docker*")
+	}
+	if !matchesAny("en0", []string{"en0", "eth0"}) {
+		t.Errorf("expected exact match for en0")
+	}
+	if matchesAny("wlan0", []string{"docker*", "utun*"}) {
+		t.Errorf("expected wlan0 not to match")
+	}
+}
+
+func TestFilterInterfaces_RealMachine(t *testing.T) {
+	// Testing real interface filter on current test environment
+	ifaces, err := FilterInterfaces(nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error filtering interfaces: %v", err)
+	}
+
+	// Verify no excluded interfaces slipped in
+	for _, iface := range ifaces {
+		name := strings.ToLower(iface.Name)
+		if isVirtualOrTunnel(name) {
+			t.Errorf("interface %s should have been filtered out", name)
+		}
+	}
+}
+
+func TestAdvertiser_IdempotenceAndShutdown(t *testing.T) {
+	adv := NewZeroconfAdvertiser()
+
+	// Stopping an unstarted advertiser should be safe
+	if err := adv.Stop(); err != nil {
+		t.Errorf("unexpected error stopping unstarted advertiser: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ifaces, _ := FilterInterfaces(nil, nil)
+	spec := ServiceSpec{
+		InstanceName: "CPA-Test-Unit",
+		ServiceType:  "_test-ai._tcp",
+		Domain:       "local.",
+		Port:         65432,
+		TextRecords:  []string{"version=1", "product=test"},
+		Interfaces:   ifaces,
+	}
+
+	errStart := adv.Start(ctx, spec)
+	if errStart != nil {
+		// In some restricted CI environments multicast bind may fail; handle gracefully
+		t.Logf("multicast start failed (likely restricted sandbox network): %v", errStart)
+		return
+	}
+
+	// Calling Start again while running should fail
+	if errSecond := adv.Start(ctx, spec); errSecond == nil {
+		t.Errorf("expected error on duplicate Start(), got nil")
+	}
+
+	// Calling Stop should cleanly shutdown
+	if errStop := adv.Stop(); errStop != nil {
+		t.Errorf("unexpected error on Stop(): %v", errStop)
+	}
+
+	// Calling Stop a second time should be idempotent
+	if errStop2 := adv.Stop(); errStop2 != nil {
+		t.Errorf("unexpected error on second Stop(): %v", errStop2)
+	}
+}
+
+func TestAdvertiserAndBrowser_Integration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ifaces, _ := FilterInterfaces(nil, nil)
+	spec := ServiceSpec{
+		InstanceName: "CPA-LiveTest-42",
+		ServiceType:  DefaultServiceType,
+		Domain:       DefaultDomain,
+		Port:         54321,
+		Subtypes:     []string{SubtypeResponses},
+		TextRecords:  BuildTXTRecords(DefaultTXTOptions()),
+		Interfaces:   ifaces,
+	}
+
+	adv := NewZeroconfAdvertiser()
+	if err := adv.Start(ctx, spec); err != nil {
+		t.Skipf("skipping live multicast test: %v", err)
+	}
+	defer func() {
+		_ = adv.Stop()
+	}()
+
+	browser := NewZeroconfBrowser(ifaces...)
+	results, err := browser.Browse(ctx, DefaultServiceType, DefaultDomain, 3*time.Second)
+	if err != nil {
+		t.Fatalf("browse failed: %v", err)
+	}
+
+	found := false
+	for _, res := range results {
+		if res.InstanceName == "CPA-LiveTest-42" {
+			found = true
+			if res.Port != 54321 {
+				t.Errorf("expected port 54321, got %d", res.Port)
+			}
+			if res.Product != ProductCPA {
+				t.Errorf("expected product %s, got %s", ProductCPA, res.Product)
+			}
+			break
+		}
+	}
+
+	if !found {
+		t.Fatalf("advertised instance CPA-LiveTest-42 was not discovered")
+	}
+}
