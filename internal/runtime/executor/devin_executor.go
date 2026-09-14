@@ -568,7 +568,49 @@ func (e *DevinExecutor) streamDevinFrames(
 		}
 
 		if frameRes.Usage != nil {
-			finalUsage = frameRes.Usage
+			if finalUsage == nil {
+				finalUsage = frameRes.Usage
+			} else {
+				if frameRes.Usage.PromptTokens > 0 {
+					finalUsage.PromptTokens = frameRes.Usage.PromptTokens
+				}
+				if frameRes.Usage.CompletionTokens > 0 {
+					finalUsage.CompletionTokens = frameRes.Usage.CompletionTokens
+				}
+				if frameRes.Usage.CachedTokens > 0 {
+					finalUsage.CachedTokens = frameRes.Usage.CachedTokens
+				}
+				if frameRes.Usage.RequestID != "" {
+					finalUsage.RequestID = frameRes.Usage.RequestID
+				}
+				if frameRes.Usage.ModelName != "" {
+					finalUsage.ModelName = frameRes.Usage.ModelName
+				}
+				if len(frameRes.Usage.Headers) > 0 {
+					if finalUsage.Headers == nil {
+						finalUsage.Headers = make(map[string]string, len(frameRes.Usage.Headers))
+					}
+					for hk, hv := range frameRes.Usage.Headers {
+						finalUsage.Headers[hk] = hv
+					}
+				}
+			}
+		}
+		if len(frameRes.ResponseDimensionGroups) > 0 && (finalUsage == nil || finalUsage.PromptTokens == 0 || finalUsage.CompletionTokens == 0 || finalUsage.CachedTokens == 0) {
+			if inTok, outTok, cachedTok, ok := helps.ParseDevinResponseDimensionGroups(frameRes.ResponseDimensionGroups...); ok {
+				if finalUsage == nil {
+					finalUsage = &helps.DevinUsage{}
+				}
+				if finalUsage.PromptTokens == 0 {
+					finalUsage.PromptTokens = inTok
+				}
+				if finalUsage.CompletionTokens == 0 {
+					finalUsage.CompletionTokens = outTok
+				}
+				if finalUsage.CachedTokens == 0 {
+					finalUsage.CachedTokens = cachedTok
+				}
+			}
 		}
 		if len(frameRes.DeltaSignature) > 0 {
 			accumulatedSignature = append(accumulatedSignature, frameRes.DeltaSignature...)
@@ -905,7 +947,49 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 		}
 
 		if frameRes.Usage != nil {
-			finalUsage = frameRes.Usage
+			if finalUsage == nil {
+				finalUsage = frameRes.Usage
+			} else {
+				if frameRes.Usage.PromptTokens > 0 {
+					finalUsage.PromptTokens = frameRes.Usage.PromptTokens
+				}
+				if frameRes.Usage.CompletionTokens > 0 {
+					finalUsage.CompletionTokens = frameRes.Usage.CompletionTokens
+				}
+				if frameRes.Usage.CachedTokens > 0 {
+					finalUsage.CachedTokens = frameRes.Usage.CachedTokens
+				}
+				if frameRes.Usage.RequestID != "" {
+					finalUsage.RequestID = frameRes.Usage.RequestID
+				}
+				if frameRes.Usage.ModelName != "" {
+					finalUsage.ModelName = frameRes.Usage.ModelName
+				}
+				if len(frameRes.Usage.Headers) > 0 {
+					if finalUsage.Headers == nil {
+						finalUsage.Headers = make(map[string]string, len(frameRes.Usage.Headers))
+					}
+					for hk, hv := range frameRes.Usage.Headers {
+						finalUsage.Headers[hk] = hv
+					}
+				}
+			}
+		}
+		if len(frameRes.ResponseDimensionGroups) > 0 && (finalUsage == nil || finalUsage.PromptTokens == 0 || finalUsage.CompletionTokens == 0 || finalUsage.CachedTokens == 0) {
+			if inTok, outTok, cachedTok, ok := helps.ParseDevinResponseDimensionGroups(frameRes.ResponseDimensionGroups...); ok {
+				if finalUsage == nil {
+					finalUsage = &helps.DevinUsage{}
+				}
+				if finalUsage.PromptTokens == 0 {
+					finalUsage.PromptTokens = inTok
+				}
+				if finalUsage.CompletionTokens == 0 {
+					finalUsage.CompletionTokens = outTok
+				}
+				if finalUsage.CachedTokens == 0 {
+					finalUsage.CachedTokens = cachedTok
+				}
+			}
 		}
 		if len(frameRes.DeltaSignature) > 0 {
 			accumulatedSignature = append(accumulatedSignature, frameRes.DeltaSignature...)
