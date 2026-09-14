@@ -68,10 +68,29 @@ func (s *DevinAuthService) SetServerBaseURL(url string) {
 	}
 }
 
-// BuildAuthorizationURL constructs the PKCE login URL.
+// SetAPIBaseURL overrides the token exchange and profile API base URL (used in tests).
+func (s *DevinAuthService) SetAPIBaseURL(url string) {
+	if s != nil && strings.TrimSpace(url) != "" {
+		s.apiBaseURL = strings.TrimRight(strings.TrimSpace(url), "/")
+	}
+}
+
+// SetAppBaseURL overrides the user-facing OAuth authorization base URL (used in tests).
+func (s *DevinAuthService) SetAppBaseURL(url string) {
+	if s != nil && strings.TrimSpace(url) != "" {
+		s.appBaseURL = strings.TrimRight(strings.TrimSpace(url), "/")
+	}
+}
+
+// BuildAuthorizationURL constructs the PKCE login URL. When redirectURI is empty,
+// it generates a headless manual code URL (with cli_pkce_marker=1) matching official Devin CLI.
 func (s *DevinAuthService) BuildAuthorizationURL(redirectURI, codeChallenge, state string) string {
 	q := url.Values{}
-	q.Set("redirect_uri", redirectURI)
+	if strings.TrimSpace(redirectURI) != "" {
+		q.Set("redirect_uri", strings.TrimSpace(redirectURI))
+	} else {
+		q.Set("cli_pkce_marker", "1")
+	}
 	q.Set("code_challenge", codeChallenge)
 	q.Set("code_challenge_method", "S256")
 	q.Set("prompt", "select_account")

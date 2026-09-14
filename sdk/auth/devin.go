@@ -19,6 +19,7 @@ import (
 // DevinAuthenticator implements OAuth and headless authentication for Devin / Cognition.
 type DevinAuthenticator struct {
 	CallbackPort int
+	AuthService  *devinauth.DevinAuthService
 }
 
 // NewDevinAuthenticator constructs a new Devin authenticator instance.
@@ -60,6 +61,72 @@ func (a *DevinAuthenticator) Login(ctx context.Context, cfg *config.Config, opts
 		return nil, fmt.Errorf("devin state generation failed: %w", errState)
 	}
 
+	authSvc := a.AuthService
+	if authSvc == nil {
+		authSvc = devinauth.NewDevinAuthService(util.SetProxy(&cfg.SDKConfig, &http.Client{Timeout: 30 * time.Second}))
+	}
+
+	if opts.NoBrowser {
+		authURL := authSvc.BuildAuthorizationURL("", pkceCodes.CodeChallenge, state)
+		fmt.Printf("Visit the following URL to continue Devin authentication:\n%s\n\n", authURL)
+
+		if opts.Prompt == nil {
+			return nil, fmt.Errorf("devin authentication in no-browser mode requires an interactive prompt")
+		}
+
+		promptMsg := "Paste the Devin authorization code or session token directly: "
+		var authCode string
+		var rawPastedToken string
+
+		manualInputCh, manualInputErrCh := misc.AsyncPrompt(opts.Prompt, promptMsg)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case errInput := <-manualInputErrCh:
+			if errInput != nil {
+				return nil, fmt.Errorf("failed to read devin input: %w", errInput)
+			}
+			return nil, fmt.Errorf("no input received")
+		case input := <-manualInputCh:
+			trimmed := strings.TrimSpace(input)
+			trimmed = strings.Trim(trimmed, "\"'")
+			if trimmed == "" {
+				return nil, fmt.Errorf("devin authentication canceled: empty input received")
+			}
+
+			// 1. Direct manual session token paste (supports Devin --force-manual-token-flow)
+			if strings.HasPrefix(trimmed, "devin-session-token$") || strings.HasPrefix(trimmed, "eyJ") {
+				rawPastedToken = trimmed
+			} else if parsed, errParse := misc.ParseOAuthCallback(trimmed); errParse == nil && parsed != nil && parsed.Code != "" {
+				// 2. Full callback redirect URL
+				if state != "" && parsed.State != "" && parsed.State != state {
+					return nil, fmt.Errorf("devin oauth state mismatch (possible CSRF)")
+				}
+				authCode = parsed.Code
+			} else if !strings.ContainsAny(trimmed, " \t\r\n/?#=") {
+				// 3. Raw authorization code paste
+				authCode = trimmed
+			} else {
+				return nil, fmt.Errorf("unrecognized devin authorization code or token format")
+			}
+		}
+
+		var sessionToken string
+		if rawPastedToken != "" {
+			sessionToken = devinauth.FormatSessionToken(rawPastedToken)
+		} else if authCode != "" {
+			token, errExchange := authSvc.ExchangeCodeForToken(ctx, authCode, pkceCodes.CodeVerifier)
+			if errExchange != nil {
+				return nil, fmt.Errorf("failed to exchange devin authorization code: %w", errExchange)
+			}
+			sessionToken = devinauth.FormatSessionToken(token)
+		} else {
+			return nil, fmt.Errorf("no authorization code or token received")
+		}
+
+		return authSvc.CreateAuthRecord(ctx, sessionToken)
+	}
+
 	callbackPort := a.CallbackPort
 	if opts.CallbackPort > 0 {
 		callbackPort = opts.CallbackPort
@@ -76,24 +143,18 @@ func (a *DevinAuthenticator) Login(ctx context.Context, cfg *config.Config, opts
 		_ = oauthServer.Stop(stopCtx)
 	}()
 
-	authSvc := devinauth.NewDevinAuthService(util.SetProxy(&cfg.SDKConfig, &http.Client{Timeout: 30 * time.Second}))
 	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", actualPort)
 	authURL := authSvc.BuildAuthorizationURL(redirectURI, pkceCodes.CodeChallenge, state)
 
-	if !opts.NoBrowser {
-		fmt.Println("Opening browser for Devin authentication...")
-		if !browser.IsAvailable() {
-			log.Warn("No browser available; please open the URL manually")
-			util.PrintSSHTunnelInstructions(actualPort)
-			fmt.Printf("Visit the following URL to continue authentication:\n%s\n", authURL)
-		} else if errOpen := browser.OpenURL(authURL); errOpen != nil {
-			log.Warnf("Failed to open browser automatically: %v", errOpen)
-			util.PrintSSHTunnelInstructions(actualPort)
-			fmt.Printf("Visit the following URL to continue authentication:\n%s\n", authURL)
-		}
-	} else {
+	fmt.Println("Opening browser for Devin authentication...")
+	if !browser.IsAvailable() {
+		log.Warn("No browser available; please open the URL manually")
 		util.PrintSSHTunnelInstructions(actualPort)
-		fmt.Printf("Visit the following URL to continue Devin authentication:\n%s\n", authURL)
+		fmt.Printf("Visit the following URL to continue authentication:\n%s\n", authURL)
+	} else if errOpen := browser.OpenURL(authURL); errOpen != nil {
+		log.Warnf("Failed to open browser automatically: %v", errOpen)
+		util.PrintSSHTunnelInstructions(actualPort)
+		fmt.Printf("Visit the following URL to continue authentication:\n%s\n", authURL)
 	}
 
 	fmt.Println("Waiting for Devin authentication callback...")
@@ -177,6 +238,7 @@ waitForResult:
 			manualInputCh = nil
 			manualInputErrCh = nil
 			trimmed := strings.TrimSpace(input)
+			trimmed = strings.Trim(trimmed, "\"'")
 			if trimmed == "" {
 				continue
 			}
