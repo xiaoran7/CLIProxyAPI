@@ -511,6 +511,43 @@ func TestFetchCredentialQuota_DeclarativeProbe(t *testing.T) {
 	}
 }
 
+func TestFetchCredentialQuota_DeclarativeProbeSummaryOnly(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"summary":[{"key":"balance","label":"Balance","value":42,"unit":"credits"}]}`))
+	}))
+	defer upstream.Close()
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	auth := &coreauth.Auth{
+		ID:       "probe-summary-auth",
+		FileName: "probe-summary.json",
+		Provider: "probe-summary",
+		Metadata: map[string]any{"quota_probe": map[string]any{"url": upstream.URL, "method": "GET"}},
+	}
+	authIndex := auth.EnsureIndex()
+	_, _ = manager.Register(context.Background(), auth)
+
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: t.TempDir()}, manager)
+	h.SetPluginHost(pluginhost.New())
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v0/management/quota/fetch", strings.NewReader(`{"auth_index":"`+authIndex+`"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	h.FetchCredentialQuota(ctx)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var quotaResp pluginapi.QuotaFetchResponse
+	if errUnmarshal := json.Unmarshal(rec.Body.Bytes(), &quotaResp); errUnmarshal != nil {
+		t.Fatalf("failed to decode response: %v", errUnmarshal)
+	}
+	if len(quotaResp.Summary) != 1 || quotaResp.Summary[0].Key != "balance" || quotaResp.Summary[0].Value != 42 {
+		t.Fatalf("unexpected summary: %+v", quotaResp.Summary)
+	}
+}
+
 func TestFetchCredentialQuota_DeclarativeProbeWithMapping(t *testing.T) {
 	futureServerTime := time.Now().Add(5 * time.Minute).UTC().Truncate(time.Second)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

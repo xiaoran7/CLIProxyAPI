@@ -519,7 +519,8 @@ func (h *Handler) executeQuotaProbe(c *gin.Context, auth *coreauth.Auth, probe m
 		}
 		quotaResp.Groups = filteredGroups
 		hasValidBuckets := len(filteredGroups) > 0
-		if hasPlan || hasValidBuckets {
+		hasValidSummary := hasUsableQuotaSummary(quotaResp.Summary)
+		if hasPlan || hasValidBuckets || hasValidSummary {
 			if quotaResp.ServerTimeOffsetMs == 0 {
 				quotaResp.ServerTimeOffsetMs = serverOffsetMs
 			}
@@ -528,6 +529,15 @@ func (h *Handler) executeQuotaProbe(c *gin.Context, auth *coreauth.Auth, probe m
 	}
 
 	return pluginapi.QuotaFetchResponse{}, true, fmt.Errorf("upstream probe response does not match normalized quota shape or declared mapping")
+}
+
+func hasUsableQuotaSummary(summary []pluginapi.QuotaMetric) bool {
+	for _, metric := range summary {
+		if strings.TrimSpace(metric.Key) != "" && strings.TrimSpace(metric.Label) != "" && !math.IsNaN(metric.Value) && !math.IsInf(metric.Value, 0) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseNumericFraction(res gjson.Result) (float64, bool) {
