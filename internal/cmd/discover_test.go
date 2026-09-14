@@ -90,6 +90,18 @@ func TestLoadDiscoveryScanFiltersReadsInclude(t *testing.T) {
 	}
 }
 
+func TestLoadDiscoveryScanFiltersEmptyPathUsesWorkingConfig(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("discovery:\n  interfaces:\n    include:\n      - tailscale0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	include, exclude := LoadDiscoveryScanFilters("")
+	if len(include) != 1 || include[0] != "tailscale0" || len(exclude) != 0 {
+		t.Fatalf("empty-path filters = include %v exclude %v", include, exclude)
+	}
+}
+
 func TestPreferredDisplayAddressesSkipsBareLinkLocal(t *testing.T) {
 	primary, all := preferredDisplayAddresses(discovery.DiscoveredService{
 		Host: "gateway.local.",
@@ -100,6 +112,16 @@ func TestPreferredDisplayAddressesSkipsBareLinkLocal(t *testing.T) {
 	}
 	if len(all) != 2 || all[0] != "gateway.local" || all[1] != "fe80::1" {
 		t.Fatalf("addresses = %v", all)
+	}
+	primary, all = preferredDisplayAddresses(discovery.DiscoveredService{
+		Host: "\x1b[31mevil.local.",
+		IPv6: []net.IP{net.ParseIP("fe80::1")},
+	})
+	if primary != "fe80::1" {
+		t.Fatalf("unsafe hostname primary = %q, want link-local fallback", primary)
+	}
+	if strings.Contains(primary, "\x1b") || strings.Contains(strings.Join(all, ","), "\x1b") || strings.Contains(strings.Join(all, ","), "evil") {
+		t.Fatalf("unsanitized hostname leaked: %q %v", primary, all)
 	}
 	primary, _ = preferredDisplayAddresses(discovery.DiscoveredService{
 		IPv6: []net.IP{net.ParseIP("fe80::1"), net.ParseIP("2001:db8::10")},

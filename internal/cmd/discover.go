@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -66,10 +67,18 @@ func ResolveDiscoveryInterfaceFilters(cliInclude, cliExclude, cfgInclude, cfgExc
 
 // LoadDiscoveryScanFilters reads discovery.interfaces from a config file.
 // Missing or invalid files yield empty filters so the default physical LAN allow-list is used.
+func defaultDiscoveryConfigPath() string {
+	wd, errGetwd := os.Getwd()
+	if errGetwd != nil {
+		return "config.yaml"
+	}
+	return filepath.Join(wd, "config.yaml")
+}
+
 func LoadDiscoveryScanFilters(configPath string) (include, exclude []string) {
 	configPath = strings.TrimSpace(configPath)
 	if configPath == "" {
-		return nil, nil
+		configPath = defaultDiscoveryConfigPath()
 	}
 	raw, errRead := os.ReadFile(configPath)
 	if errRead != nil {
@@ -278,14 +287,30 @@ func preferredDisplayAddresses(gw discovery.DiscoveredService) (primary string, 
 		return routable[0], append(routable, linkLocal...)
 	}
 
-	host := strings.TrimSpace(strings.TrimSuffix(gw.Host, "."))
-	if host != "" && !strings.EqualFold(host, "localhost") {
+	host := sanitizeDisplayHost(gw.Host)
+	if host != "" {
 		return host, append([]string{host}, linkLocal...)
 	}
 	if len(linkLocal) > 0 {
 		return linkLocal[0], linkLocal
 	}
 	return "127.0.0.1", nil
+}
+
+func sanitizeDisplayHost(host string) string {
+	host = sanitizeTerminal(strings.TrimSpace(strings.TrimSuffix(host, ".")))
+	if host == "" || strings.EqualFold(host, "localhost") {
+		return ""
+	}
+	for _, r := range host {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '.') {
+			return ""
+		}
+	}
+	if strings.Contains(host, "..") || strings.HasPrefix(host, "-") || strings.HasPrefix(host, ".") || strings.HasSuffix(host, "-") || strings.HasSuffix(host, ".") {
+		return ""
+	}
+	return host
 }
 
 // sanitizeTerminal strips control characters, ANSI escape sequences, Bidi overrides,
