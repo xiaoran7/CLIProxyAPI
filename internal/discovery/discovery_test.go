@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"strings"
@@ -380,6 +381,73 @@ func TestMergeDiscoveredService(t *testing.T) {
 	}
 	if dst.AuthRequired || dst.RawTXT["tls"] != "1" || dst.Endpoints["anthropic"] != "/v1/messages" {
 		t.Fatalf("merged metadata = %#v", dst)
+	}
+}
+
+func TestDiscoveryMergeLimits(t *testing.T) {
+	dst := DiscoveredService{
+		IPv4:   []net.IP{net.ParseIP("192.0.2.1")},
+		RawTXT: map[string]string{"auth_required": "true"},
+	}
+	var srcIPs []net.IP
+	for i := 0; i < maxDiscoveredAddresses*2; i++ {
+		srcIPs = append(srcIPs, net.IPv4(198, 18, byte(i/256), byte(i%256)))
+	}
+	metadata := make([]string, 0, maxDiscoveredMetadataItems*2)
+	for i := 0; i < maxDiscoveredMetadataItems*2; i++ {
+		metadata = append(metadata, fmt.Sprintf("feature-%02d", i))
+	}
+	rawTXT := make(map[string]string, maxBrowseTXTRecords*2)
+	for i := 0; i < maxBrowseTXTRecords*2; i++ {
+		rawTXT[fmt.Sprintf("key-%03d", i)] = strings.Repeat("v", maxTXTRecordBytes)
+	}
+
+	mergeDiscoveredService(&dst, DiscoveredService{
+		IPv4:        srcIPs,
+		RawTXT:      rawTXT,
+		AuthMethods: metadata,
+		Protocols:   metadata,
+		Features:    metadata,
+	})
+
+	if len(dst.IPv4) != maxDiscoveredAddresses {
+		t.Fatalf("merged IPv4 count = %d, want %d", len(dst.IPv4), maxDiscoveredAddresses)
+	}
+	if len(dst.AuthMethods) != maxDiscoveredMetadataItems || len(dst.Protocols) != maxDiscoveredMetadataItems || len(dst.Features) != maxDiscoveredMetadataItems {
+		t.Fatalf("merged metadata counts = auth %d, protocols %d, features %d; want %d each", len(dst.AuthMethods), len(dst.Protocols), len(dst.Features), maxDiscoveredMetadataItems)
+	}
+	if len(dst.RawTXT) > maxBrowseTXTRecords || rawTXTMapBytes(dst.RawTXT) > maxBrowseTXTBytes {
+		t.Fatalf("merged TXT size = %d records/%d bytes, limits are %d records/%d bytes", len(dst.RawTXT), rawTXTMapBytes(dst.RawTXT), maxBrowseTXTRecords, maxBrowseTXTBytes)
+	}
+}
+
+func TestEntryToDiscoveredLimitsTXTLists(t *testing.T) {
+	var methods strings.Builder
+	for i := 0; i < maxDiscoveredMetadataItems*2; i++ {
+		if i > 0 {
+			methods.WriteByte(',')
+		}
+		methods.WriteString(fmt.Sprintf("method-%02d", i))
+	}
+	addresses := make([]net.IP, 0, maxDiscoveredAddresses*2)
+	for i := 0; i < maxDiscoveredAddresses*2; i++ {
+		addresses = append(addresses, net.IPv4(198, 18, byte(i/256), byte(i%256)))
+	}
+	svc := entryToDiscovered(&zeroconf.ServiceEntry{
+		ServiceRecord: zeroconf.ServiceRecord{
+			Instance: "node",
+			Service:  DefaultServiceType,
+			Domain:   DefaultDomain,
+		},
+		Port:     8317,
+		AddrIPv4: addresses,
+		Text:     []string{"auth_methods=" + methods.String()},
+	})
+	if len(svc.AuthMethods) != maxDiscoveredMetadataItems {
+		t.Fatalf("auth method count = %d, want %d", len(svc.AuthMethods), maxDiscoveredMetadataItems)
+	}
+	if len(svc.IPv4) != maxDiscoveredAddresses {
+		t.Fatalf("IPv4 count = %d, want %d", len(svc.IPv4), maxDiscoveredAddresses)
 	}
 }
 

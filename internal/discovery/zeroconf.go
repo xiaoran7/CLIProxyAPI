@@ -216,9 +216,13 @@ func NewZeroconfBrowser(ifaces ...net.Interface) *ZeroconfBrowser {
 }
 
 const (
-	maxDiscoveredServices = 256
-	maxBrowseTXTRecords   = 64
-	maxBrowseTXTBytes     = 16 * 1024
+	maxDiscoveredServices      = 256
+	maxBrowseEntries           = 256
+	maxBrowseTXTRecords        = 64
+	maxBrowseTXTBytes          = 16 * 1024
+	maxDiscoveredAddresses     = 32
+	maxDiscoveredMetadataItems = 32
+	maxMetadataItemBytes       = 64
 )
 
 func browseEntryWithinLimits(entry *zeroconf.ServiceEntry) bool {
@@ -251,40 +255,48 @@ func (b *ZeroconfBrowser) Browse(ctx context.Context, serviceType, domain string
 	}
 
 	entries := make(chan *zeroconf.ServiceEntry, 32)
+	browseCtx, cancelBrowse := context.WithCancel(ctx)
+	defer cancelBrowse()
+
 	var discovered []DiscoveredService
 	var mu sync.Mutex
 	seen := make(map[string]int)
 
-	// Collect entries in background until channel is closed by zeroconf's params.done()
+	// Stop the underlying zeroconf client after a bounded number of entries. This
+	// is separate from the caller's context so a LAN flood cannot grow the
+	// dependency's internal sentEntries cache for the full browse lifetime.
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
+		entriesSeen := 0
 		for entry := range entries {
-			if !browseEntryWithinLimits(entry) {
+			if entriesSeen >= maxBrowseEntries {
 				continue
 			}
-			svc := entryToDiscovered(entry)
-			if svc.Port == 0 || (len(svc.IPv4) == 0 && len(svc.IPv6) == 0) {
-				continue
+			entriesSeen++
+
+			if browseEntryWithinLimits(entry) {
+				svc := entryToDiscovered(entry)
+				if svc.Port != 0 && (len(svc.IPv4) != 0 || len(svc.IPv6) != 0) {
+					key := discoveredServiceKey(svc)
+					mu.Lock()
+					if index, ok := seen[key]; ok {
+						mergeDiscoveredService(&discovered[index], svc)
+					} else if len(discovered) < maxDiscoveredServices {
+						seen[key] = len(discovered)
+						discovered = append(discovered, svc)
+					}
+					mu.Unlock()
+				}
 			}
-			key := discoveredServiceKey(svc)
-			mu.Lock()
-			if index, ok := seen[key]; ok {
-				mergeDiscoveredService(&discovered[index], svc)
-				mu.Unlock()
-				continue
+
+			if entriesSeen == maxBrowseEntries {
+				cancelBrowse()
 			}
-			if len(discovered) >= maxDiscoveredServices {
-				mu.Unlock()
-				continue
-			}
-			seen[key] = len(discovered)
-			discovered = append(discovered, svc)
-			mu.Unlock()
 		}
 	}()
 
-	errBrowse := zeroconf.Browse(ctx, serviceType, domain, entries, b.options...)
+	errBrowse := zeroconf.Browse(browseCtx, serviceType, domain, entries, b.options...)
 	if errBrowse != nil {
 		// zeroconf may already have closed entries after a runtime error.
 		closeBrowseEntries(entries)
@@ -332,9 +344,7 @@ func mergeDiscoveredService(dst *DiscoveredService, src DiscoveredService) {
 	if dst.RawTXT == nil {
 		dst.RawTXT = make(map[string]string)
 	}
-	for key, value := range src.RawTXT {
-		dst.RawTXT[key] = value
-	}
+	mergeRawTXTRecords(dst.RawTXT, src.RawTXT)
 	if value, ok := dst.RawTXT["auth_required"]; ok {
 		dst.AuthRequired = strings.EqualFold(strings.TrimSpace(value), "true")
 	}
@@ -349,9 +359,43 @@ func mergeDiscoveredService(dst *DiscoveredService, src DiscoveredService) {
 	}
 }
 
+func mergeRawTXTRecords(dst, src map[string]string) {
+	totalBytes := rawTXTMapBytes(dst)
+	for key, value := range src {
+		if key == "" {
+			continue
+		}
+		replacedBytes := 0
+		_, exists := dst[key]
+		if exists {
+			replacedBytes = rawTXTRecordBytes(key, dst[key])
+		} else if len(dst) >= maxBrowseTXTRecords {
+			continue
+		}
+		nextBytes := totalBytes - replacedBytes + rawTXTRecordBytes(key, value)
+		if nextBytes > maxBrowseTXTBytes {
+			continue
+		}
+		dst[key] = value
+		totalBytes = nextBytes
+	}
+}
+
+func rawTXTMapBytes(records map[string]string) int {
+	totalBytes := 0
+	for key, value := range records {
+		totalBytes += rawTXTRecordBytes(key, value)
+	}
+	return totalBytes
+}
+
+func rawTXTRecordBytes(key, value string) int {
+	return len(key) + len(value) + 1
+}
+
 func appendUniqueIPs(dst, src []net.IP) []net.IP {
 	for _, ip := range src {
-		if ip == nil {
+		if ip == nil || len(dst) >= maxDiscoveredAddresses {
 			continue
 		}
 		duplicate := false
@@ -370,7 +414,8 @@ func appendUniqueIPs(dst, src []net.IP) []net.IP {
 
 func appendUniqueStrings(dst, src []string) []string {
 	for _, value := range src {
-		if value == "" {
+		value = strings.TrimSpace(value)
+		if value == "" || len(value) > maxMetadataItemBytes || len(dst) >= maxDiscoveredMetadataItems {
 			continue
 		}
 		duplicate := false
@@ -385,6 +430,25 @@ func appendUniqueStrings(dst, src []string) []string {
 		}
 	}
 	return dst
+}
+
+func parseTXTList(value string) []string {
+	var result []string
+	for len(value) > 0 && len(result) < maxDiscoveredMetadataItems {
+		item := value
+		if before, after, ok := strings.Cut(value, ","); ok {
+			item = before
+			value = after
+		} else {
+			value = ""
+		}
+		item = strings.TrimSpace(item)
+		if item == "" || len(item) > maxMetadataItemBytes {
+			continue
+		}
+		result = appendUniqueStrings(result, []string{item})
+	}
+	return result
 }
 
 // BrowseWithFallback discovers all AI gateways on the LAN (_ai-gateway._tcp) and prioritizes CPA instances.
@@ -450,13 +514,13 @@ func entryToDiscovered(e *zeroconf.ServiceEntry) DiscoveredService {
 		svc.AuthRequired = true
 	}
 	if methods := parsed["auth_methods"]; methods != "" {
-		svc.AuthMethods = strings.Split(methods, ",")
+		svc.AuthMethods = parseTXTList(methods)
 	}
 	if protos := parsed["protocols"]; protos != "" {
-		svc.Protocols = strings.Split(protos, ",")
+		svc.Protocols = parseTXTList(protos)
 	}
 	if feats := parsed["features"]; feats != "" {
-		svc.Features = strings.Split(feats, ",")
+		svc.Features = parseTXTList(feats)
 	}
 
 	if v, ok := parsed["api_openai"]; ok {
@@ -479,12 +543,15 @@ func entryToDiscovered(e *zeroconf.ServiceEntry) DiscoveredService {
 }
 
 func filterUsableIPs(ips []net.IP) []net.IP {
-	usable := make([]net.IP, 0, len(ips))
+	usable := make([]net.IP, 0, min(len(ips), maxDiscoveredAddresses))
 	for _, ip := range ips {
 		if ip == nil || ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() {
 			continue
 		}
-		usable = append(usable, ip)
+		usable = append(usable, append(net.IP(nil), ip...))
+		if len(usable) >= maxDiscoveredAddresses {
+			break
+		}
 	}
 	return usable
 }
