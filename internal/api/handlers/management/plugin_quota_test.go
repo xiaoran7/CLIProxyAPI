@@ -663,6 +663,7 @@ func TestFetchCredentialQuota_DeclarativeProbeWithMapping(t *testing.T) {
 		// Upstream returns raw non-normalized billing format
 		_, _ = w.Write([]byte(`{
 			"user": {"tier": "Enterprise"},
+			"Summary": [{"key": "credits_used", "label": "Credits used", "value": 40}],
 			"packages": [
 				{
 					"period": "monthly",
@@ -723,6 +724,9 @@ func TestFetchCredentialQuota_DeclarativeProbeWithMapping(t *testing.T) {
 	}
 	if quotaResp.Subscription == nil || quotaResp.Subscription.Plan != "Enterprise" {
 		t.Fatalf("unexpected plan: %+v", quotaResp.Subscription)
+	}
+	if len(quotaResp.Summary) != 1 || quotaResp.Summary[0].Key != "credits_used" || quotaResp.Summary[0].Value != 40 {
+		t.Fatalf("unexpected summary: %+v", quotaResp.Summary)
 	}
 	if len(quotaResp.Groups) != 1 || len(quotaResp.Groups[0].Buckets) != 1 {
 		t.Fatalf("unexpected groups: %+v", quotaResp.Groups)

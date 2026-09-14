@@ -474,6 +474,7 @@ func (h *Handler) executeQuotaProbe(c *gin.Context, auth *coreauth.Auth, probe m
 		if errMap != nil {
 			return pluginapi.QuotaFetchResponse{}, true, fmt.Errorf("probe response mapping failed: %w", errMap)
 		}
+		mappedResp.Summary = filterUsableQuotaSummary(respBytes)
 		if mappedResp.ServerTimeOffsetMs == 0 {
 			mappedResp.ServerTimeOffsetMs = serverOffsetMs
 		}
@@ -543,12 +544,25 @@ func (h *Handler) executeQuotaProbe(c *gin.Context, auth *coreauth.Auth, probe m
 }
 
 func filterUsableQuotaSummary(raw []byte) []pluginapi.QuotaMetric {
-	rawSummary := gjson.GetBytes(raw, "summary")
-	if !rawSummary.IsArray() {
+	var rawQuota map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &rawQuota); err != nil {
 		return nil
 	}
-	usable := make([]pluginapi.QuotaMetric, 0, len(rawSummary.Array()))
-	for _, rawMetric := range rawSummary.Array() {
+	rawSummary, ok := rawQuota["summary"]
+	if !ok {
+		for key, value := range rawQuota {
+			if strings.EqualFold(key, "summary") {
+				rawSummary = value
+				break
+			}
+		}
+	}
+	summaryResult := gjson.ParseBytes(rawSummary)
+	if !summaryResult.IsArray() {
+		return nil
+	}
+	usable := make([]pluginapi.QuotaMetric, 0, len(summaryResult.Array()))
+	for _, rawMetric := range summaryResult.Array() {
 		keyResult := rawMetric.Get("key")
 		labelResult := rawMetric.Get("label")
 		key := strings.TrimSpace(keyResult.String())
@@ -566,9 +580,11 @@ func filterUsableQuotaSummary(raw []byte) []pluginapi.QuotaMetric {
 			metric.Unit = strings.TrimSpace(unitResult.String())
 		}
 		if formatResult := rawMetric.Get("format"); formatResult.Type == gjson.String {
-			metric.Format = strings.TrimSpace(formatResult.String())
+			if format := strings.TrimSpace(formatResult.String()); format == "number" || format == "currency" {
+				metric.Format = format
+			}
 		}
-		if currencyResult := rawMetric.Get("currency"); currencyResult.Type == gjson.String {
+		if currencyResult := rawMetric.Get("currency"); metric.Format == "currency" && currencyResult.Type == gjson.String {
 			metric.Currency = strings.TrimSpace(currencyResult.String())
 		}
 		usable = append(usable, metric)
