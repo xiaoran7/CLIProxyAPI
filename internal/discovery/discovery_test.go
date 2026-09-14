@@ -63,7 +63,11 @@ func TestInstanceID_PersistenceAndFormat(t *testing.T) {
 	// 5. Test directory isolation
 	tmpDirB, errB := os.MkdirTemp("", "cpa-discovery-test-b-*")
 	if errB == nil {
-		defer os.RemoveAll(tmpDirB)
+		defer func() {
+			if errRemove := os.RemoveAll(tmpDirB); errRemove != nil {
+				t.Errorf("failed to remove temporary directory %s: %v", tmpDirB, errRemove)
+			}
+		}()
 		idB := GetOrGenerateInstanceID(tmpDirB)
 		if len(idB) != 4 {
 			t.Errorf("expected 4-char hex ID for dir B, got %s", idB)
@@ -249,6 +253,12 @@ func TestValidation_ServiceTypeAndLabels(t *testing.T) {
 	if s := sanitizeSubtype("_responses-"); s != "" {
 		t.Errorf("expected empty for _responses-, got %s", s)
 	}
+	if s := sanitizeSubtype("_" + strings.Repeat("a", 62)); s == "" {
+		t.Error("expected 62-character subtype payload to be accepted")
+	}
+	if s := sanitizeSubtype("_" + strings.Repeat("a", 63)); s != "" {
+		t.Error("expected 63-character subtype payload to be rejected")
+	}
 
 	// Endpoint path sanitization (defense against traversal and protocol-relative SSRF)
 	if p := sanitizeEndpointPath("/v1"); p != "/v1" {
@@ -343,6 +353,36 @@ func TestBrowseEntryWithinLimits(t *testing.T) {
 	}
 }
 
+func TestMergeDiscoveredService(t *testing.T) {
+	dst := DiscoveredService{
+		InstanceName: "node",
+		ServiceType:  DefaultServiceType,
+		Domain:       DefaultDomain,
+		Port:         8317,
+		IPv4:         []net.IP{net.ParseIP("192.0.2.10")},
+		RawTXT:       map[string]string{"auth_required": "true"},
+		Endpoints:    map[string]string{"openai": "/v1"},
+	}
+	src := DiscoveredService{
+		InstanceName: "node",
+		ServiceType:  DefaultServiceType,
+		Domain:       DefaultDomain,
+		Port:         8317,
+		IPv4:         []net.IP{net.ParseIP("192.0.2.10"), net.ParseIP("192.0.2.11")},
+		IPv6:         []net.IP{net.ParseIP("2001:db8::10")},
+		Product:      ProductCPA,
+		RawTXT:       map[string]string{"auth_required": "false", "tls": "1"},
+		Endpoints:    map[string]string{"anthropic": "/v1/messages"},
+	}
+	mergeDiscoveredService(&dst, src)
+	if len(dst.IPv4) != 2 || len(dst.IPv6) != 1 {
+		t.Fatalf("merged addresses = v4 %v, v6 %v", dst.IPv4, dst.IPv6)
+	}
+	if dst.AuthRequired || dst.RawTXT["tls"] != "1" || dst.Endpoints["anthropic"] != "/v1/messages" {
+		t.Fatalf("merged metadata = %#v", dst)
+	}
+}
+
 func TestFilterInterfaces_RealMachine(t *testing.T) {
 	// Testing real interface filter on current test environment
 	ifaces, err := FilterInterfaces(nil, nil)
@@ -404,9 +444,6 @@ func TestAdvertiser_IdempotenceAndShutdown(t *testing.T) {
 }
 
 func TestAdvertiserAndBrowser_Integration(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	ifaces, _ := FilterInterfaces(nil, nil)
 	spec := ServiceSpec{
 		InstanceName: "CPA-LiveTest-42",
@@ -419,15 +456,19 @@ func TestAdvertiserAndBrowser_Integration(t *testing.T) {
 	}
 
 	adv := NewZeroconfAdvertiser()
-	if err := adv.Start(ctx, spec); err != nil {
+	startCtx, startCancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer startCancel()
+	if err := adv.Start(startCtx, spec); err != nil {
 		t.Skipf("skipping live multicast test: %v", err)
 	}
 	defer func() {
 		_ = adv.Stop()
 	}()
 
+	browseCtx, browseCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer browseCancel()
 	browser := NewZeroconfBrowser(ifaces...)
-	results, err := browser.Browse(ctx, DefaultServiceType, DefaultDomain, 3*time.Second)
+	results, err := browser.Browse(browseCtx, DefaultServiceType, DefaultDomain)
 	if err != nil {
 		t.Fatalf("browse failed: %v", err)
 	}

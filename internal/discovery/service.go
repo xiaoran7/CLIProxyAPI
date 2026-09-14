@@ -75,7 +75,7 @@ func sanitizeSubtype(sub string) string {
 		sub = "_" + sub
 	}
 	label := sub[1:]
-	if len(label) == 0 || len(label) > 63 {
+	if len(label) == 0 || len(label) > 62 {
 		return ""
 	}
 	// RFC 6335 / RFC 6763: alphanumeric and hyphen, cannot start or end with hyphen, no internal underscores

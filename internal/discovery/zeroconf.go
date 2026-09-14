@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/libp2p/zeroconf/v2"
 	log "github.com/sirupsen/logrus"
@@ -67,8 +66,6 @@ func extractInterfaceIPs(ifaces []net.Interface) []string {
 	}
 	return ips
 }
-
-const instanceNameProbeTimeout = 400 * time.Millisecond
 
 // Start registers and starts mDNS advertisement for the primary service type
 // and any configured API protocol subtypes.
@@ -168,20 +165,16 @@ func (a *ZeroconfAdvertiser) Start(ctx context.Context, spec ServiceSpec) (err e
 }
 
 func browseTakenNames(ctx context.Context, spec ServiceSpec, ips []string) map[string]struct{} {
-	timeout := instanceNameProbeTimeout
-	if ctx != nil {
-		if deadline, ok := ctx.Deadline(); ok {
-			remaining := time.Until(deadline)
-			if remaining <= 0 {
-				return nil
-			}
-			if remaining < timeout {
-				timeout = remaining
-			}
-		}
+	if ctx == nil {
+		return nil
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		// Do not install a private deadline in a service startup context. The
+		// caller may provide a deadline when a bounded collision probe is wanted.
+		return nil
 	}
 	browser := NewZeroconfBrowser(spec.Interfaces...)
-	found, err := browser.Browse(ctx, spec.ServiceType, spec.Domain, timeout)
+	found, err := browser.Browse(ctx, spec.ServiceType, spec.Domain)
 	if err != nil {
 		log.Debugf("discovery: name uniqueness browse failed: %v", err)
 		return nil
@@ -246,9 +239,9 @@ func browseEntryWithinLimits(entry *zeroconf.ServiceEntry) bool {
 }
 
 // Browse performs a standard mDNS browse query for the given service type.
-func (b *ZeroconfBrowser) Browse(ctx context.Context, serviceType, domain string, timeout time.Duration) ([]DiscoveredService, error) {
+func (b *ZeroconfBrowser) Browse(ctx context.Context, serviceType, domain string) ([]DiscoveredService, error) {
 	if ctx == nil {
-		ctx = context.Background()
+		ctx = context.TODO()
 	}
 	if domain == "" {
 		domain = DefaultDomain
@@ -257,34 +250,16 @@ func (b *ZeroconfBrowser) Browse(ctx context.Context, serviceType, domain string
 		serviceType = DefaultServiceType
 	}
 
-	ctxTimeout, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	// If parent context is canceled earlier, cancel timeout context immediately
-	go func() {
-		select {
-		case <-ctxTimeout.Done():
-		case <-ctx.Done():
-			cancel()
-		}
-	}()
-
 	entries := make(chan *zeroconf.ServiceEntry, 32)
 	var discovered []DiscoveredService
 	var mu sync.Mutex
-	seen := make(map[string]bool)
+	seen := make(map[string]int)
 
 	// Collect entries in background until channel is closed by zeroconf's params.done()
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
-		accepted := 0
 		for entry := range entries {
-			// Keep draining the channel so zeroconf can shut down cleanly, but
-			// stop parsing attacker-controlled entries after the result cap.
-			if accepted >= maxDiscoveredServices {
-				continue
-			}
 			if !browseEntryWithinLimits(entry) {
 				continue
 			}
@@ -292,24 +267,27 @@ func (b *ZeroconfBrowser) Browse(ctx context.Context, serviceType, domain string
 			if svc.Port == 0 || (len(svc.IPv4) == 0 && len(svc.IPv6) == 0) {
 				continue
 			}
-			key := fmt.Sprintf("%s:%s:%d", svc.InstanceName, svc.Host, svc.Port)
+			key := discoveredServiceKey(svc)
 			mu.Lock()
-			if _, ok := seen[key]; ok || len(seen) >= maxDiscoveredServices {
+			if index, ok := seen[key]; ok {
+				mergeDiscoveredService(&discovered[index], svc)
 				mu.Unlock()
 				continue
 			}
-			seen[key] = true
+			if len(discovered) >= maxDiscoveredServices {
+				mu.Unlock()
+				continue
+			}
+			seen[key] = len(discovered)
 			discovered = append(discovered, svc)
-			accepted++
 			mu.Unlock()
 		}
 	}()
 
-	errBrowse := zeroconf.Browse(ctxTimeout, serviceType, domain, entries, b.options...)
+	errBrowse := zeroconf.Browse(ctx, serviceType, domain, entries, b.options...)
 	if errBrowse != nil {
-		cancel()
-		// zeroconf failed before launching mainloop; close entries so collector terminates cleanly
-		close(entries)
+		// zeroconf may already have closed entries after a runtime error.
+		closeBrowseEntries(entries)
 		<-doneCh
 		return nil, fmt.Errorf("discovery: browse query failed: %w", errBrowse)
 	}
@@ -319,13 +297,99 @@ func (b *ZeroconfBrowser) Browse(ctx context.Context, serviceType, domain string
 	return discovered, nil
 }
 
-// BrowseWithFallback discovers all AI gateways on the LAN (_ai-gateway._tcp) and prioritizes CPA instances.
-func (b *ZeroconfBrowser) BrowseWithFallback(ctx context.Context, timeout time.Duration) ([]DiscoveredService, error) {
-	if timeout <= 0 {
-		timeout = 3 * time.Second
-	}
+func closeBrowseEntries(entries chan *zeroconf.ServiceEntry) {
+	defer func() {
+		_ = recover()
+	}()
+	close(entries)
+}
 
-	allGateways, errMain := b.Browse(ctx, DefaultServiceType, DefaultDomain, timeout)
+func discoveredServiceKey(svc DiscoveredService) string {
+	return strings.Join([]string{svc.InstanceName, svc.ServiceType, svc.Domain}, "\x00")
+}
+
+func mergeDiscoveredService(dst *DiscoveredService, src DiscoveredService) {
+	if dst == nil {
+		return
+	}
+	if src.Host != "" {
+		dst.Host = src.Host
+	}
+	if src.Port != 0 {
+		dst.Port = src.Port
+	}
+	dst.IPv4 = appendUniqueIPs(dst.IPv4, src.IPv4)
+	dst.IPv6 = appendUniqueIPs(dst.IPv6, src.IPv6)
+	if src.Product != "" {
+		dst.Product = src.Product
+	}
+	if src.Version != "" {
+		dst.Version = src.Version
+	}
+	if src.NodeRole != "" {
+		dst.NodeRole = src.NodeRole
+	}
+	if dst.RawTXT == nil {
+		dst.RawTXT = make(map[string]string)
+	}
+	for key, value := range src.RawTXT {
+		dst.RawTXT[key] = value
+	}
+	if value, ok := dst.RawTXT["auth_required"]; ok {
+		dst.AuthRequired = strings.EqualFold(strings.TrimSpace(value), "true")
+	}
+	dst.AuthMethods = appendUniqueStrings(dst.AuthMethods, src.AuthMethods)
+	dst.Protocols = appendUniqueStrings(dst.Protocols, src.Protocols)
+	dst.Features = appendUniqueStrings(dst.Features, src.Features)
+	if dst.Endpoints == nil {
+		dst.Endpoints = make(map[string]string)
+	}
+	for key, value := range src.Endpoints {
+		dst.Endpoints[key] = value
+	}
+}
+
+func appendUniqueIPs(dst, src []net.IP) []net.IP {
+	for _, ip := range src {
+		if ip == nil {
+			continue
+		}
+		duplicate := false
+		for _, existing := range dst {
+			if existing.Equal(ip) {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			dst = append(dst, append(net.IP(nil), ip...))
+		}
+	}
+	return dst
+}
+
+func appendUniqueStrings(dst, src []string) []string {
+	for _, value := range src {
+		if value == "" {
+			continue
+		}
+		duplicate := false
+		for _, existing := range dst {
+			if existing == value {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			dst = append(dst, value)
+		}
+	}
+	return dst
+}
+
+// BrowseWithFallback discovers all AI gateways on the LAN (_ai-gateway._tcp) and prioritizes CPA instances.
+func (b *ZeroconfBrowser) BrowseWithFallback(ctx context.Context) ([]DiscoveredService, error) {
+	allGateways, errMain := b.Browse(ctx, DefaultServiceType, DefaultDomain)
 	if errMain != nil && len(allGateways) == 0 {
 		return nil, errMain
 	}

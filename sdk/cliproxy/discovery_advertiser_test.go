@@ -90,6 +90,36 @@ func TestDiscoveryManagerStartsOnceForUnchangedSpec(t *testing.T) {
 	}
 }
 
+func TestDiscoveryManagerPreservesBoundEndpointOnReload(t *testing.T) {
+	mgr := newTestDiscoveryManager()
+	adv := &fakeAdvertiser{}
+	mgr.newAdvertiser = func() discovery.Advertiser { return adv }
+	var gotHost string
+	var gotPort int
+	var gotTLS bool
+	mgr.buildSpec = func(cfg *config.Config, port int, tlsEnabled bool) (discovery.ServiceSpec, error) {
+		gotHost = cfg.Host
+		gotPort = port
+		gotTLS = tlsEnabled
+		return discovery.ServiceSpec{InstanceName: "n", Port: port}, nil
+	}
+	first := &config.Config{}
+	first.Host = ""
+	first.Discovery.Enabled = true
+	if !mgr.ApplyContext(context.Background(), first, 8317, false) {
+		t.Fatal("initial apply failed")
+	}
+	second := &config.Config{}
+	second.Host = "192.0.2.20"
+	second.Discovery.Enabled = true
+	if !mgr.ApplyContext(context.Background(), second, 9999, true) {
+		t.Fatal("reload apply failed")
+	}
+	if gotHost != "" || gotPort != 8317 || gotTLS {
+		t.Fatalf("reloaded endpoint = host %q port %d tls %t, want original endpoint", gotHost, gotPort, gotTLS)
+	}
+}
+
 func TestDiscoveryManagerRestartsOnIPChange(t *testing.T) {
 	mgr := newTestDiscoveryManager()
 	var created []*fakeAdvertiser

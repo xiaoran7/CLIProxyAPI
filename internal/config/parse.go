@@ -38,7 +38,6 @@ func ParseConfigBytes(data []byte) (*Config, error) {
 	cfg.Discovery.Enabled = false
 	cfg.Discovery.ServiceType = DefaultDiscoveryServiceType
 	cfg.Discovery.Subtypes = []string{"_chat-completions", "_responses", "_messages", "_generate-content", "_interactions"}
-	cfg.Discovery.Interfaces.Exclude = []string{"docker*", "utun*", "tailscale*", "wg*", "awdl*"}
 	cfg.RemoteManagement.PanelGitHubRepository = DefaultPanelGitHubRepository
 	cfg.CredentialInFlight = DefaultCredentialInFlightConfig()
 

@@ -5,7 +5,6 @@ package discovery
 import (
 	"context"
 	"net"
-	"time"
 )
 
 const (
@@ -67,6 +66,6 @@ type Advertiser interface {
 
 // Browser defines the client-side mDNS browsing interface.
 type Browser interface {
-	Browse(ctx context.Context, serviceType, domain string, timeout time.Duration) ([]DiscoveredService, error)
-	BrowseWithFallback(ctx context.Context, timeout time.Duration) ([]DiscoveredService, error)
+	Browse(ctx context.Context, serviceType, domain string) ([]DiscoveredService, error)
+	BrowseWithFallback(ctx context.Context) ([]DiscoveredService, error)
 }

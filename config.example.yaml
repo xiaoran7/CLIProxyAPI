@@ -65,7 +65,7 @@ discovery:
   #   - "_interactions"
   # interfaces:
   #   include: []                     # White-listed interfaces (empty: auto-detect physical interfaces)
-  #   exclude: ["docker*", "utun*", "tailscale*", "wg*", "awdl*"] # Black-listed virtual/tunnel interfaces
+  #   exclude: []                     # Additional interface patterns to exclude
   # auth-required: true               # Advertise that credentials are required
 
 # Credential concurrency is configured by Home in Home mode. The synthesized Home config is

@@ -17,11 +17,11 @@ type fakeBrowser struct {
 	err    error
 }
 
-func (f *fakeBrowser) Browse(context.Context, string, string, time.Duration) ([]discovery.DiscoveredService, error) {
+func (f *fakeBrowser) Browse(context.Context, string, string) ([]discovery.DiscoveredService, error) {
 	return f.result, f.err
 }
 
-func (f *fakeBrowser) BrowseWithFallback(context.Context, time.Duration) ([]discovery.DiscoveredService, error) {
+func (f *fakeBrowser) BrowseWithFallback(context.Context) ([]discovery.DiscoveredService, error) {
 	return f.result, f.err
 }
 

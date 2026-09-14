@@ -56,7 +56,7 @@ func runDiscover(timeout time.Duration, jsonOutput bool, stdout, stderr io.Write
 		}
 		return 1
 	}
-	gateways, err := browser.BrowseWithFallback(ctx, timeout)
+	gateways, err := browser.BrowseWithFallback(ctx)
 	if err != nil {
 		if jsonOutput {
 			out, _ := json.MarshalIndent(map[string]any{"error": err.Error(), "gateways": []any{}}, "", "  ")

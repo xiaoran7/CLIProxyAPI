@@ -39,6 +39,10 @@ type discoveryAdvertiserManager struct {
 	generation      uint64
 	refresh         *discoveryRefresh
 	closed          bool
+	boundHost       string
+	boundPort       int
+	boundTLS        bool
+	boundEndpoint   bool
 	refreshInterval time.Duration
 	newAdvertiser   func() discovery.Advertiser
 	buildSpec       func(*config.Config, int, bool) (discovery.ServiceSpec, error)
@@ -115,9 +119,19 @@ func (m *discoveryAdvertiserManager) applyContext(ctx context.Context, cfg *conf
 	}
 	m.generation++
 	applyGeneration := m.generation
+	if !m.boundEndpoint {
+		m.boundHost = cfg.Host
+		m.boundPort = port
+		m.boundTLS = tlsEnabled
+		m.boundEndpoint = true
+	}
+	boundCfg := *cfg
+	boundCfg.Host = m.boundHost
+	boundPort := m.boundPort
+	boundTLS := m.boundTLS
 	m.lastCfg = cfg
-	m.lastPort = port
-	m.lastTLS = tlsEnabled
+	m.lastPort = boundPort
+	m.lastTLS = boundTLS
 
 	if !cfg.Discovery.Enabled {
 		oldAdv := m.advertiser
@@ -143,7 +157,7 @@ func (m *discoveryAdvertiserManager) applyContext(ctx context.Context, cfg *conf
 	if buildSpec == nil {
 		buildSpec = discovery.BuildServiceSpec
 	}
-	spec, err := buildSpec(cfg, port, tlsEnabled)
+	spec, err := buildSpec(&boundCfg, boundPort, boundTLS)
 	if err != nil {
 		m.mu.Lock()
 		if !m.closed && m.generation == applyGeneration && m.lastCfg == cfg && cfg.Discovery.Enabled {
@@ -210,7 +224,7 @@ func (m *discoveryAdvertiserManager) applyContext(ctx context.Context, cfg *conf
 	m.advertiser = adv
 	m.enabled = true
 	m.lastSpec = spec
-	log.Infof("discovery: advertising as '%s.%s' on port %d", spec.InstanceName, spec.ServiceType, port)
+	log.Infof("discovery: advertising as '%s.%s' on port %d", spec.InstanceName, spec.ServiceType, boundPort)
 	return true
 }
 
