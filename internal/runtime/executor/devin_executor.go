@@ -596,7 +596,7 @@ func (e *DevinExecutor) streamDevinFrames(
 				}
 			}
 		}
-		if len(frameRes.ResponseDimensionGroups) > 0 && (finalUsage == nil || (finalUsage.PromptTokens == 0 && finalUsage.CompletionTokens == 0)) {
+		if len(frameRes.ResponseDimensionGroups) > 0 && (finalUsage == nil || finalUsage.PromptTokens == 0 || finalUsage.CompletionTokens == 0 || finalUsage.CachedTokens == 0) {
 			if inTok, outTok, cachedTok, ok := helps.ParseDevinResponseDimensionGroups(frameRes.ResponseDimensionGroups...); ok {
 				if finalUsage == nil {
 					finalUsage = &helps.DevinUsage{}
@@ -975,7 +975,7 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 				}
 			}
 		}
-		if len(frameRes.ResponseDimensionGroups) > 0 && (finalUsage == nil || (finalUsage.PromptTokens == 0 && finalUsage.CompletionTokens == 0)) {
+		if len(frameRes.ResponseDimensionGroups) > 0 && (finalUsage == nil || finalUsage.PromptTokens == 0 || finalUsage.CompletionTokens == 0 || finalUsage.CachedTokens == 0) {
 			if inTok, outTok, cachedTok, ok := helps.ParseDevinResponseDimensionGroups(frameRes.ResponseDimensionGroups...); ok {
 				if finalUsage == nil {
 					finalUsage = &helps.DevinUsage{}
