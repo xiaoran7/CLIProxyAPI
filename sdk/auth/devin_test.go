@@ -24,7 +24,22 @@ func TestDevinAuthenticatorProviderAndRefreshLead(t *testing.T) {
 }
 
 func TestDevinAuthenticatorHeadlessManualTokenLogin(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v3/self":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"user_name":"token-user","user_id":"uid-token","org_id":"org-token"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer mockServer.Close()
+
+	authSvc := devinauth.NewDevinAuthService(mockServer.Client())
+	authSvc.SetAPIBaseURL(mockServer.URL)
+
 	authenticator := NewDevinAuthenticator()
+	authenticator.AuthService = authSvc
 	cfg := &config.Config{}
 
 	mockPrompt := func(prompt string) (string, error) {
@@ -46,6 +61,27 @@ func TestDevinAuthenticatorHeadlessManualTokenLogin(t *testing.T) {
 	}
 	if auth.Attributes["api_key"] != "devin-session-token$eyJmock.session.token" {
 		t.Errorf("api_key = %q, want expected", auth.Attributes["api_key"])
+	}
+	if auth.Label != "Devin (token-user)" {
+		t.Errorf("auth.Label = %q, want 'Devin (token-user)'", auth.Label)
+	}
+}
+
+func TestDevinAuthenticatorHeadlessPromptNil(t *testing.T) {
+	authenticator := NewDevinAuthenticator()
+	cfg := &config.Config{}
+
+	opts := &LoginOptions{
+		NoBrowser: true,
+		Prompt:    nil,
+	}
+
+	_, err := authenticator.Login(context.Background(), cfg, opts)
+	if err == nil {
+		t.Fatal("expected error when prompt is nil, got nil")
+	}
+	if !strings.Contains(err.Error(), "requires an interactive prompt") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
 

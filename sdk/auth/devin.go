@@ -67,12 +67,12 @@ func (a *DevinAuthenticator) Login(ctx context.Context, cfg *config.Config, opts
 	}
 
 	if opts.NoBrowser {
-		authURL := authSvc.BuildAuthorizationURL("", pkceCodes.CodeChallenge, state)
-		fmt.Printf("Visit the following URL to continue Devin authentication:\n%s\n\n", authURL)
-
 		if opts.Prompt == nil {
 			return nil, fmt.Errorf("devin authentication in no-browser mode requires an interactive prompt")
 		}
+
+		authURL := authSvc.BuildAuthorizationURL("", pkceCodes.CodeChallenge, state)
+		fmt.Printf("Visit the following URL to continue Devin authentication:\n%s\n\n", authURL)
 
 		promptMsg := "Paste the Devin authorization code or session token directly: "
 		var authCode string
@@ -98,7 +98,8 @@ func (a *DevinAuthenticator) Login(ctx context.Context, cfg *config.Config, opts
 			if strings.HasPrefix(trimmed, "devin-session-token$") || strings.HasPrefix(trimmed, "eyJ") {
 				rawPastedToken = trimmed
 			} else if parsed, errParse := misc.ParseOAuthCallback(trimmed); errParse == nil && parsed != nil && parsed.Code != "" {
-				// 2. Full callback redirect URL
+				// 2. Full callback redirect URL. In headless mode, if state is present in the pasted URL,
+				// ensure it matches. PKCE verifier protects the code exchange against CSRF.
 				if state != "" && parsed.State != "" && parsed.State != state {
 					return nil, fmt.Errorf("devin oauth state mismatch (possible CSRF)")
 				}
