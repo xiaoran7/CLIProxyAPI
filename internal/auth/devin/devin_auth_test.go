@@ -85,6 +85,11 @@ func TestBuildAuthorizationURL(t *testing.T) {
 	if q.Get("state") != "state-abc" {
 		t.Errorf("state = %q", q.Get("state"))
 	}
+
+	expectedQuery := "redirect_uri=http%3A%2F%2F127.0.0.1%3A1234%2Fcallback&state=state-abc&prompt=select_account&code_challenge=test-challenge&code_challenge_method=S256"
+	if parsed.RawQuery != expectedQuery {
+		t.Errorf("raw query = %q, want %q", parsed.RawQuery, expectedQuery)
+	}
 }
 
 func TestBuildAuthorizationURLHeadlessCodeFlow(t *testing.T) {
@@ -117,6 +122,11 @@ func TestBuildAuthorizationURLHeadlessCodeFlow(t *testing.T) {
 	}
 	if q.Get("state") != "state-xyz" {
 		t.Errorf("state = %q", q.Get("state"))
+	}
+
+	expectedQuery := "state=state-xyz&prompt=select_account&code_challenge=test-challenge-headless&code_challenge_method=S256&cli_pkce_marker=1"
+	if parsed.RawQuery != expectedQuery {
+		t.Errorf("raw query = %q, want %q", parsed.RawQuery, expectedQuery)
 	}
 }
 
