@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +34,10 @@ const (
 
 func codexBufferingConfig(enabled bool) *config.Config {
 	return &config.Config{Codex: config.CodexConfig{StreamBootstrapBuffering: enabled}}
+}
+
+func codexBufferingConfigWithTimeout(enabled bool, timeout string) *config.Config {
+	return &config.Config{Codex: config.CodexConfig{StreamBootstrapBuffering: enabled, StreamBootstrapTimeout: timeout}}
 }
 
 func codexTestAuth(baseURL string) *cliproxyauth.Auth {
@@ -1315,5 +1320,390 @@ func TestCodexWebsocketsExecutor_BootstrapNonOverload_StillNotifiesDownstreamDis
 	}
 	if !notified {
 		t.Fatal("a terminal failure that is delivered in-stream must still signal the downstream disconnect")
+	}
+}
+
+type mockClock struct {
+	mu  sync.Mutex
+	cur time.Time
+}
+
+func (m *mockClock) now() time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cur
+}
+
+func (m *mockClock) advance(d time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cur = m.cur.Add(d)
+}
+
+func withMockClock(t *testing.T, initial time.Time) *mockClock {
+	m := &mockClock{cur: initial}
+	cleanup := setCodexBootstrapNowForTest(m.now)
+	t.Cleanup(cleanup)
+	return m
+}
+
+func TestCodexConfig_StreamBootstrapTimeoutDuration(t *testing.T) {
+	tests := []struct {
+		raw      string
+		expected time.Duration
+	}{
+		{"", 0},
+		{"   ", 0},
+		{"10s", 10 * time.Second},
+		{"8s", 8 * time.Second},
+		{"15", 15 * time.Second},
+		{"500ms", 500 * time.Millisecond},
+		{"0", 0},
+		{"0s", 0},
+		{"0m", 0},
+		{"0ms", 0},
+		{"none", 0},
+		{"NONE", 0},
+		{"unlimited", 0},
+		{"disabled", 0},
+		{"off", 0},
+		{"never", 0},
+		{"invalid", 0},
+		{"-5s", 0},
+		{"-1", 0},
+		{"9223372037", 0},
+		{"18446744074", 0},
+		{"36028797018963968", 0},
+	}
+	for _, tt := range tests {
+		cfg := &config.CodexConfig{StreamBootstrapTimeout: tt.raw}
+		if got := cfg.StreamBootstrapTimeoutDuration(); got != tt.expected {
+			t.Errorf("StreamBootstrapTimeoutDuration(%q) = %v, want %v", tt.raw, got, tt.expected)
+		}
+	}
+	var nilCfg *config.CodexConfig
+	if got := nilCfg.StreamBootstrapTimeoutDuration(); got != 0 {
+		t.Errorf("nil StreamBootstrapTimeoutDuration = %v, want 0", got)
+	}
+}
+
+// When bootstrap buffering is enabled, elapsed time exceeding the timeout must release the stream
+// so downstream headers are committed and in-stream delivery takes over rather than long hangs.
+func TestCodexExecutor_BootstrapBuffering_TimeBudgetReleasesStream(t *testing.T) {
+	t0 := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	clock := withMockClock(t, t0)
+
+	bootstrapStarted := make(chan struct{})
+	var once sync.Once
+	cleanup := setCodexBootstrapNowForTest(func() time.Time {
+		once.Do(func() {
+			close(bootstrapStarted)
+		})
+		return clock.now()
+	})
+	t.Cleanup(cleanup)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: response.in_progress\ndata: " + codexInProgressEvent + "\n\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		<-bootstrapStarted
+		clock.advance(11 * time.Second)
+
+		_, _ = w.Write([]byte("event: response.in_progress\ndata: " + codexInProgressEvent + "\n\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		_, _ = w.Write([]byte("event: error\ndata: " + codexOverloadEvent + "\n\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}))
+	defer server.Close()
+
+	req, opts := codexTestRequest()
+	result, err := NewCodexExecutor(codexBufferingConfigWithTimeout(true, "10s")).ExecuteStream(context.Background(), codexTestAuth(server.URL), req, opts)
+	if err != nil {
+		t.Fatalf("the time budget must release the stream before the overload arrives: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected a stream result once the time budget released the stream")
+	}
+	if _, streamErr := drainChunks(result); streamErr == nil {
+		t.Fatal("expected the overload to arrive in-stream after the time budget released")
+	}
+}
+
+func TestCodexWebsocketsExecutor_BootstrapBuffering_TimeBudgetReleasesStream(t *testing.T) {
+	t0 := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	clock := withMockClock(t, t0)
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		if _, _, errRead := conn.ReadMessage(); errRead != nil {
+			return
+		}
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(codexInProgressEvent))
+
+		// Advance clock past default 10s timeout
+		clock.advance(11 * time.Second)
+
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(codexInProgressEvent))
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(codexOverloadEvent))
+	}))
+	defer server.Close()
+
+	req, opts := codexWebsocketRequest()
+	result, err := NewCodexWebsocketsExecutor(codexBufferingConfigWithTimeout(true, "10s")).ExecuteStream(context.Background(), codexTestAuth(server.URL), req, opts)
+	if err != nil {
+		t.Fatalf("the time budget must release the stream before the overload arrives: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected a stream result once the time budget released the stream")
+	}
+	if _, streamErr := drainChunks(result); streamErr == nil {
+		t.Fatal("expected the overload to arrive in-stream after the time budget released")
+	}
+}
+
+// When stream-bootstrap-timeout is explicitly disabled with "none", time passing does not release the stream.
+func TestCodexExecutor_BootstrapBuffering_DisabledTimeBudget(t *testing.T) {
+	t0 := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	clock := withMockClock(t, t0)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: response.in_progress\ndata: " + codexInProgressEvent + "\n\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		// Advance clock by 100 seconds
+		clock.advance(100 * time.Second)
+
+		_, _ = w.Write([]byte("event: response.in_progress\ndata: " + codexInProgressEvent + "\n\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		_, _ = w.Write([]byte("event: error\ndata: " + codexOverloadEvent + "\n\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}))
+	defer server.Close()
+
+	req, opts := codexTestRequest()
+	cfg := codexBufferingConfigWithTimeout(true, "none")
+	result, err := NewCodexExecutor(cfg).ExecuteStream(context.Background(), codexTestAuth(server.URL), req, opts)
+	if err == nil {
+		t.Fatal("expected failover error when time budget is disabled")
+	}
+	if result != nil {
+		t.Fatal("expected nil stream result on failover")
+	}
+}
+
+func TestCodexWebsocketsExecutor_BootstrapBuffering_DisabledTimeBudget(t *testing.T) {
+	t0 := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	clock := withMockClock(t, t0)
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		if _, _, errRead := conn.ReadMessage(); errRead != nil {
+			return
+		}
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(codexInProgressEvent))
+
+		// Advance clock by 100 seconds
+		clock.advance(100 * time.Second)
+
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(codexInProgressEvent))
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(codexOverloadEvent))
+	}))
+	defer server.Close()
+
+	req, opts := codexWebsocketRequest()
+	cfg := codexBufferingConfigWithTimeout(true, "none")
+	result, err := NewCodexWebsocketsExecutor(cfg).ExecuteStream(context.Background(), codexTestAuth(server.URL), req, opts)
+	if err == nil {
+		t.Fatal("expected failover error when time budget is disabled")
+	}
+	if result != nil {
+		t.Fatal("expected nil stream result on failover")
+	}
+}
+
+// When stream-bootstrap-timeout is unset (defaulting to 0/unlimited), time passing does not release the stream.
+func TestCodexExecutor_BootstrapBuffering_DefaultUnsetTimeoutIsUnlimited(t *testing.T) {
+	t0 := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	clock := withMockClock(t, t0)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: response.in_progress\ndata: " + codexInProgressEvent + "\n\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		// Advance clock by 100 seconds
+		clock.advance(100 * time.Second)
+
+		_, _ = w.Write([]byte("event: response.in_progress\ndata: " + codexInProgressEvent + "\n\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		_, _ = w.Write([]byte("event: error\ndata: " + codexOverloadEvent + "\n\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}))
+	defer server.Close()
+
+	req, opts := codexTestRequest()
+	// Unset timeout config: defaults to 0 (unlimited time)
+	cfg := codexBufferingConfig(true)
+	result, err := NewCodexExecutor(cfg).ExecuteStream(context.Background(), codexTestAuth(server.URL), req, opts)
+	if err == nil {
+		t.Fatal("expected failover error when default timeout is unlimited")
+	}
+	if result != nil {
+		t.Fatal("expected nil stream result on failover")
+	}
+}
+
+// When the first message arriving after timeout is an overload rejection, it must be delivered
+// in-stream rather than triggering credential failover.
+func TestCodexExecutor_BootstrapBuffering_OverloadDirectlyAfterTimeoutDeliveredInStream(t *testing.T) {
+	t0 := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	clock := withMockClock(t, t0)
+
+	bootstrapStarted := make(chan struct{})
+	var once sync.Once
+	cleanup := setCodexBootstrapNowForTest(func() time.Time {
+		once.Do(func() {
+			close(bootstrapStarted)
+		})
+		return clock.now()
+	})
+	t.Cleanup(cleanup)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		<-bootstrapStarted
+		// Advance clock past 10s timeout before the first event arrives
+		clock.advance(11 * time.Second)
+
+		_, _ = w.Write([]byte("event: error\ndata: " + codexOverloadEvent + "\n\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}))
+	defer server.Close()
+
+	req, opts := codexTestRequest()
+	result, err := NewCodexExecutor(codexBufferingConfigWithTimeout(true, "10s")).ExecuteStream(context.Background(), codexTestAuth(server.URL), req, opts)
+	if err != nil {
+		t.Fatalf("expected stream result without failover when overload arrives after timeout: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil stream result")
+	}
+	if _, streamErr := drainChunks(result); streamErr == nil {
+		t.Fatal("expected overload error to be delivered in-stream")
+	}
+}
+
+func TestCodexWebsocketsExecutor_BootstrapBuffering_OverloadDirectlyAfterTimeoutDeliveredInStream(t *testing.T) {
+	t0 := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	clock := withMockClock(t, t0)
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		if _, _, errRead := conn.ReadMessage(); errRead != nil {
+			return
+		}
+
+		// Advance clock past 10s timeout before writing any messages
+		clock.advance(11 * time.Second)
+
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(codexOverloadEvent))
+	}))
+	defer server.Close()
+
+	req, opts := codexWebsocketRequest()
+	result, err := NewCodexWebsocketsExecutor(codexBufferingConfigWithTimeout(true, "10s")).ExecuteStream(context.Background(), codexTestAuth(server.URL), req, opts)
+	if err != nil {
+		t.Fatalf("expected stream result without failover when overload arrives after timeout: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil stream result")
+	}
+	if _, streamErr := drainChunks(result); streamErr == nil {
+		t.Fatal("expected overload error to be delivered in-stream")
+	}
+}
+
+// When a status-bearing websocket error (e.g. status: 429) arrives after timeout, it must be
+// delivered in-stream rather than failing over.
+func TestCodexWebsocketsExecutor_BootstrapBuffering_StatusBearingErrorAfterTimeoutDeliveredInStream(t *testing.T) {
+	t0 := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	clock := withMockClock(t, t0)
+
+	statusBearingError := `{"type":"error","status":429,"error":{"message":"Rate limit exceeded","type":"requests","code":"rate_limit_exceeded"}}`
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		if _, _, errRead := conn.ReadMessage(); errRead != nil {
+			return
+		}
+
+		// Advance clock past 10s timeout before writing error frame
+		clock.advance(11 * time.Second)
+
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(statusBearingError))
+	}))
+	defer server.Close()
+
+	req, opts := codexWebsocketRequest()
+	result, err := NewCodexWebsocketsExecutor(codexBufferingConfigWithTimeout(true, "10s")).ExecuteStream(context.Background(), codexTestAuth(server.URL), req, opts)
+	if err != nil {
+		t.Fatalf("expected stream result without failover when status-bearing error arrives after timeout: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil stream result")
+	}
+	if _, streamErr := drainChunks(result); streamErr == nil {
+		t.Fatal("expected status-bearing error to be delivered in-stream")
 	}
 }

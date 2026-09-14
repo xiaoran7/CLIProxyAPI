@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
@@ -277,6 +278,13 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 	}
 
 	buffering := e.cfg != nil && e.cfg.Codex.StreamBootstrapBuffering
+	var bootstrapTimeout time.Duration
+	var bootstrapStart time.Time
+	var exhaustionLogged bool
+	if buffering {
+		bootstrapTimeout = e.cfg.Codex.StreamBootstrapTimeoutDuration()
+		bootstrapStart = nowCodexBootstrap()
+	}
 
 	claudeInputTokens := helps.NewClaudeInputTokenState(from, to, responseFormat, originalPayload)
 	var param any
@@ -336,9 +344,16 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 			// this message has not been processed yet and dropping it would lose a token, or a
 			// terminal event, from the turn.
 			bufferedFrames++
-			windowOpen := bufferedFrames <= codexBootstrapMaxBufferedFrames
-			if !windowOpen && bufferedFrames == codexBootstrapMaxBufferedFrames+1 {
-				helps.LogWithRequestID(ctx).Debugf("codex websockets executor: bootstrap frame budget exhausted after %d messages read; this is the first message that may no longer be held", bufferedFrames)
+			timeSinceStart := nowCodexBootstrap().Sub(bootstrapStart)
+			timeoutReached := bootstrapTimeout > 0 && timeSinceStart >= bootstrapTimeout
+			windowOpen := bufferedFrames <= codexBootstrapMaxBufferedFrames && !timeoutReached
+			if !windowOpen && !exhaustionLogged {
+				exhaustionLogged = true
+				exhausted := "frame budget"
+				if timeoutReached {
+					exhausted = "time budget"
+				}
+				helps.LogWithRequestID(ctx).Debugf("codex websockets executor: bootstrap %s exhausted after %d messages read / %v; this message will be released", exhausted, bufferedFrames, timeSinceStart)
 			}
 			if msgType != websocket.TextMessage {
 				if msgType == websocket.BinaryMessage {
@@ -393,6 +408,11 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 				}
 				helps.RecordAPIWebsocketError(ctx, e.cfg, "upstream_error", wsErr)
 				reporter.PublishFailure(ctx, wsErr)
+				if timeoutReached {
+					helps.LogWithRequestID(ctx).Debugf("codex websockets executor: bootstrap error after %d messages read / %v, time budget exhausted; delivering in-stream", bufferedFrames, timeSinceStart)
+					bootstrapTerminalErr = wsErr
+					break
+				}
 				return nil, wsErr
 			}
 			if streamErr, terminalBody, ok := codexTerminalFailureErrWithCooling(payload, e.modelLevelCooling()); ok {
@@ -402,6 +422,10 @@ func (e *CodexWebsocketsExecutor) ExecuteStream(ctx context.Context, auth *clipr
 				// deliver anything. Every other terminal failure is forwarded in-stream and
 				// legitimately terminates the session, so it keeps the notifying variant.
 				failoverPending := isCodexOverloadBootstrapFailure(terminalBody)
+				if failoverPending && timeoutReached {
+					failoverPending = false
+					helps.LogWithRequestID(ctx).Debugf("codex websockets executor: bootstrap overload rejection after %d messages read / %v, time budget exhausted; delivering in-stream", bufferedFrames, timeSinceStart)
+				}
 				if sess != nil {
 					unlockStreamSession()
 					if failoverPending {
