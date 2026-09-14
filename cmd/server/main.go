@@ -909,21 +909,41 @@ func appendCSV(dst *[]string) func(string) error {
 
 func argvEnablesBoolFlag(args []string, name string) bool {
 	enabled := false
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			break
+		}
+		if arg == "-" || !strings.HasPrefix(arg, "-") {
+			break
+		}
 		flagName, value, hasValue := splitArgvFlag(arg)
-		if flagName != name {
-			continue
+		if flagName == name {
+			if !hasValue {
+				enabled = true
+			} else if parsed, errParse := strconv.ParseBool(value); errParse == nil {
+				enabled = parsed
+			}
 		}
-		if !hasValue {
-			enabled = true
-			continue
-		}
-		parsed, errParse := strconv.ParseBool(value)
-		if errParse == nil {
-			enabled = parsed
+		if !hasValue && argvFlagConsumesValue(flagName) {
+			if i+1 < len(args) && args[i+1] != "--" {
+				i++
+			}
 		}
 	}
 	return enabled
+}
+
+func argvFlagConsumesValue(name string) bool {
+	switch name {
+	case "codex-login", "codex-device-login", "claude-login", "no-browser",
+		"antigravity-login", "kimi-login", "xai-login", "devin-login",
+		"discover", "discover-json", "home-disable-cluster-discovery",
+		"tui", "standalone", "local-model":
+		return false
+	default:
+		return name != ""
+	}
 }
 
 func splitArgvFlag(arg string) (name, value string, hasValue bool) {

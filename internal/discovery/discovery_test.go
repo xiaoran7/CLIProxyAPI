@@ -208,6 +208,7 @@ func TestValidation_ServiceTypeAndLabels(t *testing.T) {
 		"_-invalid._tcp",                  // Leading hyphen
 		"_invalid-._tcp",                  // Trailing hyphen
 		"_ai_gateway._tcp",                // Underscore in name (RFC 6335)
+		"_ai-gateway._udp",                // CPA is TCP-only
 	}
 	for _, it := range invalidTypes {
 		if err := validateServiceType(it); err == nil {

@@ -2,6 +2,7 @@ package cliproxy
 
 import (
 	"context"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -69,6 +70,17 @@ func TestSpecEqualDetectsAdvertisedIPChange(t *testing.T) {
 	}
 	if specEqual(a, b) {
 		t.Fatal("expected advertised IP change to be detected")
+	}
+}
+
+func TestSpecEqualDetectsInterfaceIndexChange(t *testing.T) {
+	a := discovery.ServiceSpec{InstanceName: "n", Port: 8317, Interfaces: []net.Interface{{Index: 1, Name: "en0"}}}
+	b := discovery.ServiceSpec{InstanceName: "n", Port: 8317, Interfaces: []net.Interface{{Index: 2, Name: "en0"}}}
+	if !specEqual(a, a) {
+		t.Fatal("expected identical interface specs to be equal")
+	}
+	if specEqual(a, b) {
+		t.Fatal("expected interface index change to be detected")
 	}
 }
 

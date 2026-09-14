@@ -377,7 +377,7 @@ func specEqual(a, b discovery.ServiceSpec) bool {
 		}
 	}
 	for i := range a.Interfaces {
-		if a.Interfaces[i].Name != b.Interfaces[i].Name {
+		if a.Interfaces[i].Index != b.Interfaces[i].Index || a.Interfaces[i].Name != b.Interfaces[i].Name {
 			return false
 		}
 	}

@@ -18,6 +18,9 @@ func TestArgvEnablesBoolFlag(t *testing.T) {
 		{name: "assigned false", args: []string{"--discover-json=false"}, flag: "discover-json", want: false},
 		{name: "does not match timeout", args: []string{"--discover-timeout", "3"}, flag: "discover", want: false},
 		{name: "bare discover", args: []string{"--discover"}, flag: "discover", want: true},
+		{name: "stops at terminator", args: []string{"--", "--discover-json"}, flag: "discover-json", want: false},
+		{name: "stops at non-flag", args: []string{"foo", "--discover-json"}, flag: "discover-json", want: false},
+		{name: "skips config value", args: []string{"--config", "config.yaml", "--discover-json"}, flag: "discover-json", want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

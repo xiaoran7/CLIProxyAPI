@@ -18,6 +18,7 @@ type fakeBrowser struct {
 	result      []discovery.DiscoveredService
 	err         error
 	serviceType string
+	deadline    time.Duration
 }
 
 func (f *fakeBrowser) Browse(context.Context, string, string) ([]discovery.DiscoveredService, error) {
@@ -28,8 +29,11 @@ func (f *fakeBrowser) BrowseWithFallback(context.Context) ([]discovery.Discovere
 	return f.result, f.err
 }
 
-func (f *fakeBrowser) BrowseWithFallbackServiceType(_ context.Context, serviceType string) ([]discovery.DiscoveredService, error) {
+func (f *fakeBrowser) BrowseWithFallbackServiceType(ctx context.Context, serviceType string) ([]discovery.DiscoveredService, error) {
 	f.serviceType = serviceType
+	if deadline, ok := ctx.Deadline(); ok {
+		f.deadline = time.Until(deadline)
+	}
 	return f.result, f.err
 }
 
@@ -67,6 +71,20 @@ func TestRunDiscoverCustomServiceType(t *testing.T) {
 	}
 }
 
+func TestRunDiscoverUsesExactTimeout(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	browser := &fakeBrowser{}
+	code := runDiscoverWithServiceType(2*time.Second, true, "", &stdout, &stderr, func() (discovery.Browser, error) {
+		return browser, nil
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if browser.deadline < 1500*time.Millisecond || browser.deadline > 2500*time.Millisecond {
+		t.Fatalf("browse deadline remaining = %v, want ~2s", browser.deadline)
+	}
+}
+
 func TestResolveDiscoveryInterfaceFiltersPrefersCLI(t *testing.T) {
 	include, exclude := ResolveDiscoveryInterfaceFilters([]string{"docker0"}, nil, []string{"en0"}, []string{"awdl0"})
 	if len(include) != 1 || include[0] != "docker0" || len(exclude) != 0 {
@@ -75,6 +93,19 @@ func TestResolveDiscoveryInterfaceFiltersPrefersCLI(t *testing.T) {
 	include, exclude = ResolveDiscoveryInterfaceFilters(nil, nil, []string{"docker0"}, []string{"veth0"})
 	if len(include) != 1 || include[0] != "docker0" || len(exclude) != 1 || exclude[0] != "veth0" {
 		t.Fatalf("config filters = include %v exclude %v", include, exclude)
+	}
+}
+
+func TestLoadDiscoveryScanFiltersIgnoresUnrelatedConfigWarnings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	body := "redis-usage-queue-retention-seconds: 99999\ndiscovery:\n  interfaces:\n    include:\n      - docker0\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	include, exclude := LoadDiscoveryScanFilters(path)
+	if len(include) != 1 || include[0] != "docker0" || len(exclude) != 0 {
+		t.Fatalf("loaded filters = include %v exclude %v", include, exclude)
 	}
 }
 

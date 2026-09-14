@@ -29,7 +29,7 @@ func ResolveDiscoveryStateDir() string {
 }
 
 // validateServiceType checks whether st conforms to RFC 6763 / RFC 6335 service type format.
-// Expected format: "_<name>._tcp" or "_<name>._udp" (e.g. "_ai-gateway._tcp").
+// CPA only exposes a TCP listener, so advertised types must end with ._tcp.
 func validateServiceType(st string) error {
 	st = strings.TrimSpace(st)
 	if st == "" {
@@ -38,8 +38,8 @@ func validateServiceType(st string) error {
 	if len(st) > 63 {
 		return fmt.Errorf("service type %q exceeds 63 characters", st)
 	}
-	if !strings.HasSuffix(st, "._tcp") && !strings.HasSuffix(st, "._udp") {
-		return fmt.Errorf("service type %q must end with ._tcp or ._udp", st)
+	if !strings.HasSuffix(st, "._tcp") {
+		return fmt.Errorf("service type %q must end with ._tcp", st)
 	}
 	prefix := st[:len(st)-5]
 	if !strings.HasPrefix(prefix, "_") {

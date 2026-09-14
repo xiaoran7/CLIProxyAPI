@@ -13,8 +13,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/discovery"
+	"gopkg.in/yaml.v3"
 )
 
 // DiscoverOptions configures a one-shot LAN discovery scan.
@@ -84,11 +84,18 @@ func LoadDiscoveryScanFilters(configPath string) (include, exclude []string) {
 	if errRead != nil {
 		return nil, nil
 	}
-	cfg, errParse := config.ParseConfigBytes(raw)
-	if errParse != nil || cfg == nil {
+	var payload struct {
+		Discovery struct {
+			Interfaces struct {
+				Include []string `yaml:"include"`
+				Exclude []string `yaml:"exclude"`
+			} `yaml:"interfaces"`
+		} `yaml:"discovery"`
+	}
+	if errParse := yaml.Unmarshal(raw, &payload); errParse != nil {
 		return nil, nil
 	}
-	return ParseInterfaceList(cfg.Discovery.Interfaces.Include...), ParseInterfaceList(cfg.Discovery.Interfaces.Exclude...)
+	return ParseInterfaceList(payload.Discovery.Interfaces.Include...), ParseInterfaceList(payload.Discovery.Interfaces.Exclude...)
 }
 
 // DoDiscover executes the LAN AI gateway discovery workflow and outputs results.
@@ -136,7 +143,7 @@ func runDiscoverWithOptions(opts DiscoverOptions, stdout, stderr io.Writer, newB
 		fmt.Fprintf(stdout, "Scanning LAN for AI Gateways (%s)... (timeout %v)\n", serviceType, timeout)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout+1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	browser, errBrowser := newBrowser()
