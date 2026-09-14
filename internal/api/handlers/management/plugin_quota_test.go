@@ -548,11 +548,9 @@ func TestFetchCredentialQuota_DeclarativeProbeSummaryOnly(t *testing.T) {
 	}
 }
 
-func TestFilterUsableQuotaSummaryPreservesExplicitZero(t *testing.T) {
-	summary := filterUsableQuotaSummary(
-		[]byte(`{"summary":[{"key":"balance","label":"Balance","value":0}]}`),
-	)
-	if len(summary) != 1 || summary[0].Value != 0 {
+func TestFilterUsableQuotaSummaryRequiresStringIdentifiers(t *testing.T) {
+	summary := filterUsableQuotaSummary([]byte(`{"summary":[{"key":123,"label":true,"value":1},{"key":"balance","label":"Balance","value":0}]}`))
+	if len(summary) != 1 || summary[0].Key != "balance" || summary[0].Value != 0 {
 		t.Fatalf("summary = %#v", summary)
 	}
 }

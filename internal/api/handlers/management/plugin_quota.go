@@ -545,10 +545,12 @@ func filterUsableQuotaSummary(raw []byte) []pluginapi.QuotaMetric {
 	}
 	usable := make([]pluginapi.QuotaMetric, 0, len(rawSummary.Array()))
 	for _, rawMetric := range rawSummary.Array() {
-		key := strings.TrimSpace(rawMetric.Get("key").String())
-		label := strings.TrimSpace(rawMetric.Get("label").String())
+		keyResult := rawMetric.Get("key")
+		labelResult := rawMetric.Get("label")
+		key := strings.TrimSpace(keyResult.String())
+		label := strings.TrimSpace(labelResult.String())
 		value := rawMetric.Get("value")
-		if key == "" || label == "" || value.Type != gjson.Number || math.IsNaN(value.Float()) || math.IsInf(value.Float(), 0) {
+		if keyResult.Type != gjson.String || labelResult.Type != gjson.String || key == "" || label == "" || value.Type != gjson.Number || math.IsNaN(value.Float()) || math.IsInf(value.Float(), 0) {
 			continue
 		}
 		usable = append(usable, pluginapi.QuotaMetric{
