@@ -130,7 +130,10 @@ func (a *ZeroconfAdvertiser) Start(ctx context.Context, spec ServiceSpec) (err e
 		return fmt.Errorf("discovery: no usable IP addresses found on specified interfaces")
 	}
 
-	spec.InstanceName = uniquifyInstanceName(spec.InstanceName, browseTakenNames(ctx, spec, ips))
+	spec.InstanceName = sanitizeInstanceName(spec.InstanceName)
+	if spec.InstanceName == "" {
+		spec.InstanceName = DefaultInstancePrefix + "0001"
+	}
 	if ctx != nil && ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -168,24 +171,6 @@ func (a *ZeroconfAdvertiser) Start(ctx context.Context, spec ServiceSpec) (err e
 	a.server = server
 	server = nil
 	return nil
-}
-
-func browseTakenNames(ctx context.Context, spec ServiceSpec, ips []string) map[string]struct{} {
-	if ctx == nil {
-		return nil
-	}
-	if _, ok := ctx.Deadline(); !ok {
-		// Do not install a private deadline in a service startup context. The
-		// caller may provide a deadline when a bounded collision probe is wanted.
-		return nil
-	}
-	browser := NewZeroconfBrowser(spec.Interfaces...)
-	found, err := browser.Browse(ctx, spec.ServiceType, spec.Domain)
-	if err != nil {
-		log.Debugf("discovery: name uniqueness browse failed: %v", err)
-		return nil
-	}
-	return takenInstanceNames(found, spec.Port, ips)
 }
 
 // Stop shuts down the mDNS advertisement server and sends goodbye packets.

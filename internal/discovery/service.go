@@ -90,24 +90,6 @@ func sanitizeSubtype(sub string) string {
 	return sub
 }
 
-func uniquifyInstanceName(base string, taken map[string]struct{}) string {
-	base = sanitizeInstanceName(base)
-	if base == "" {
-		base = DefaultInstancePrefix + "0001"
-	}
-	if _, exists := taken[base]; !exists {
-		return base
-	}
-	for n := 2; n <= 99; n++ {
-		suffix := fmt.Sprintf("-%d", n)
-		candidate := truncateRunesTo(base, 63-len(suffix)) + suffix
-		if _, exists := taken[candidate]; !exists {
-			return candidate
-		}
-	}
-	return base
-}
-
 func truncateRunesTo(s string, maxBytes int) string {
 	if maxBytes <= 0 {
 		return ""
@@ -120,37 +102,6 @@ func truncateRunesTo(s string, maxBytes int) string {
 		s = s[:len(s)-size]
 	}
 	return s
-}
-
-func takenInstanceNames(services []DiscoveredService, port int, ips []string) map[string]struct{} {
-	own := make(map[string]struct{}, len(ips))
-	for _, ip := range ips {
-		own[ip] = struct{}{}
-	}
-	taken := make(map[string]struct{})
-	for _, svc := range services {
-		if svc.Port == port && serviceHasOwnIP(svc, own) {
-			continue
-		}
-		if svc.InstanceName != "" {
-			taken[svc.InstanceName] = struct{}{}
-		}
-	}
-	return taken
-}
-
-func serviceHasOwnIP(svc DiscoveredService, own map[string]struct{}) bool {
-	for _, ip := range svc.IPv4 {
-		if _, ok := own[ip.String()]; ok {
-			return true
-		}
-	}
-	for _, ip := range svc.IPv6 {
-		if _, ok := own[ip.String()]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 // sanitizeInstanceName limits name to 63 bytes without breaking UTF-8 rune boundaries
@@ -207,10 +158,10 @@ func BuildServiceSpec(cfg *config.Config, port int, tlsEnabled bool) (ServiceSpe
 	stateDir := ResolveDiscoveryStateDir()
 	instanceID := GetOrGenerateInstanceID(stateDir)
 
-	// 2. Format instance name (CPA-<4-char-hex> default) with length/char sanitization
-	instanceName := sanitizeInstanceName(FormatInstanceName(discCfg.ServiceName, instanceID))
+	// 2. Format instance name (CPA-<ShortID> or <custom>-<ShortID>) within DNS label limits
+	instanceName := FormatInstanceName(discCfg.ServiceName, instanceID)
 	if instanceName == "" {
-		instanceName = "CPA-" + instanceID
+		instanceName = DefaultInstancePrefix + instanceID
 	}
 
 	// 3. Service type validation (RFC 6763 / RFC 6335)

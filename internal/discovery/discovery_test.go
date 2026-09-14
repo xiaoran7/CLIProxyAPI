@@ -77,10 +77,30 @@ func TestInstanceID_PersistenceAndFormat(t *testing.T) {
 		}
 	}
 
-	// 6. Format instance name with custom name override
+	// 6. Custom names stay unique by appending the persistent short ID
 	name2 := FormatInstanceName("My-Custom-Node", id1)
-	if name2 != "My-Custom-Node" {
-		t.Errorf("expected custom name override, got %s", name2)
+	if name2 != "My-Custom-Node-"+id1 {
+		t.Errorf("expected custom name with instance ID suffix, got %s", name2)
+	}
+}
+
+func TestFormatInstanceNameAlwaysIncludesID(t *testing.T) {
+	if got := FormatInstanceName("", "8F3B"); got != "CPA-8F3B" {
+		t.Fatalf("default name = %q, want CPA-8F3B", got)
+	}
+	if got := FormatInstanceName("office", "8F3B"); got != "office-8F3B" {
+		t.Fatalf("custom name = %q, want office-8F3B", got)
+	}
+	if got := FormatInstanceName("office-8F3B", "8F3B"); got != "office-8F3B" {
+		t.Fatalf("already-suffixed name = %q, want office-8F3B", got)
+	}
+	if got := FormatInstanceName("CPA-8F3B", "8F3B"); got != "CPA-8F3B" {
+		t.Fatalf("default-form custom name = %q, want CPA-8F3B", got)
+	}
+	long := strings.Repeat("n", 70)
+	got := FormatInstanceName(long, "8F3B")
+	if len(got) > 63 || !strings.HasSuffix(got, "-8F3B") {
+		t.Fatalf("truncated name = %q (len %d)", got, len(got))
 	}
 }
 
@@ -168,47 +188,6 @@ func TestBuildTXTRecords_OversizedAndRFCEnforcement(t *testing.T) {
 	parsed := ParseTXTRecords(records)
 	if _, ok := parsed["product"]; ok {
 		t.Errorf("oversized product key should be omitted, got %q", parsed["product"])
-	}
-}
-
-func TestUniquifyInstanceName(t *testing.T) {
-	tests := []struct {
-		name     string
-		base     string
-		taken    []string
-		expected string
-	}{
-		{name: "unused name", base: "office-gateway", expected: "office-gateway"},
-		{name: "first collision", base: "office-gateway", taken: []string{"office-gateway"}, expected: "office-gateway-2"},
-		{name: "second collision", base: "office-gateway", taken: []string{"office-gateway", "office-gateway-2"}, expected: "office-gateway-3"},
-		{name: "empty falls back", base: "   ", expected: "CPA-0001"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			taken := make(map[string]struct{}, len(tt.taken))
-			for _, name := range tt.taken {
-				taken[name] = struct{}{}
-			}
-			if got := uniquifyInstanceName(tt.base, taken); got != tt.expected {
-				t.Fatalf("uniquifyInstanceName(%q) = %q, want %q", tt.base, got, tt.expected)
-			}
-		})
-	}
-}
-
-func TestTakenInstanceNamesSkipsOwnAddress(t *testing.T) {
-	own := net.ParseIP("192.0.2.10")
-	services := []DiscoveredService{
-		{InstanceName: "office-gateway", Port: 8317, IPv4: []net.IP{own}},
-		{InstanceName: "office-gateway", Port: 8317, IPv4: []net.IP{net.ParseIP("192.0.2.11")}},
-		{InstanceName: "other", Port: 9000, IPv4: []net.IP{net.ParseIP("192.0.2.12")}},
-	}
-	taken := takenInstanceNames(services, 8317, []string{"192.0.2.10"})
-	if _, ok := taken["office-gateway"]; !ok {
-		t.Fatal("expected colliding name on a different address to be taken")
-	}
-	if _, ok := taken["other"]; !ok {
-		t.Fatal("expected other instance names to be taken")
 	}
 }
 

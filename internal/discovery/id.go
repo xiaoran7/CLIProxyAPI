@@ -98,14 +98,25 @@ func ResetCachedInstanceID() {
 	cachedIDs = make(map[string]string)
 }
 
-// FormatInstanceName returns the custom name if non-empty,
-// otherwise generates a privacy-preserving instance name: CPA-<ShortID>.
+// FormatInstanceName returns a DNS-SD instance name that always includes the
+// persistent short ID, so LAN advertisements stay unique without a startup browse.
+// An empty custom name becomes CPA-<ShortID>; a custom name becomes <name>-<ShortID>.
 func FormatInstanceName(customName, instanceID string) string {
-	if trimmed := strings.TrimSpace(customName); trimmed != "" {
-		return trimmed
-	}
 	if !isValidHex4(instanceID) {
 		instanceID = "0001"
 	}
-	return DefaultInstancePrefix + strings.ToUpper(instanceID)
+	instanceID = strings.ToUpper(instanceID)
+	suffix := "-" + instanceID
+	base := sanitizeInstanceName(customName)
+	if base == "" || strings.EqualFold(base, DefaultInstancePrefix+instanceID) {
+		return DefaultInstancePrefix + instanceID
+	}
+	if len(base) >= len(suffix) && strings.EqualFold(base[len(base)-len(suffix):], suffix) {
+		base = strings.TrimSpace(base[:len(base)-len(suffix)])
+	}
+	base = strings.TrimSpace(truncateRunesTo(base, 63-len(suffix)))
+	if base == "" {
+		return DefaultInstancePrefix + instanceID
+	}
+	return base + suffix
 }

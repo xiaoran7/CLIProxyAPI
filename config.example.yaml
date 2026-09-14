@@ -55,7 +55,7 @@ pprof:
 # To broadcast across the physical LAN, run the container with host networking (--net=host / network_mode: host).
 discovery:
   enabled: false
-  # service-name: ""                  # Custom display name (defaults to CPA-<ShortID>, e.g. CPA-8F3B)
+  # service-name: ""                  # Optional name prefix. Advertised as CPA-<ShortID> or <name>-<ShortID> (e.g. office-8F3B)
   # service-type: "_ai-gateway._tcp"  # Service type (RFC 6335 compliant)
   # subtypes:                         # DNS-SD API protocol subtypes to advertise
   #   - "_chat-completions"
