@@ -74,11 +74,12 @@ func main() {
 		discoverFlags := flag.NewFlagSet("discover", flag.ExitOnError)
 		timeoutSec := discoverFlags.Int("timeout", 3, "Discovery timeout in seconds")
 		jsonOut := discoverFlags.Bool("json", false, "Output in JSON format")
+		serviceType := discoverFlags.String("service-type", "", "DNS-SD service type (default _ai-gateway._tcp)")
 		_ = discoverFlags.Parse(os.Args[2:])
 		if !*jsonOut {
 			fmt.Fprintf(os.Stderr, "CLIProxyAPI Version: %s, Commit: %s, BuiltAt: %s\n", buildinfo.Version, buildinfo.Commit, buildinfo.BuildDate)
 		}
-		code := cmd.DoDiscover(time.Duration(*timeoutSec)*time.Second, *jsonOut)
+		code := cmd.DoDiscoverWithServiceType(time.Duration(*timeoutSec)*time.Second, *jsonOut, *serviceType)
 		os.Exit(code)
 	}
 
@@ -108,6 +109,7 @@ func main() {
 	var discoverGateways bool
 	var discoverTimeout int
 	var discoverJSON bool
+	var discoverServiceType string
 	var vertexImport string
 	var vertexImportPrefix string
 	var configPath string
@@ -131,6 +133,7 @@ func main() {
 	flag.BoolVar(&discoverGateways, "discover", false, "Discover local AI gateways and CPA instances on the LAN")
 	flag.IntVar(&discoverTimeout, "discover-timeout", 3, "Timeout in seconds for LAN discovery (default 3s)")
 	flag.BoolVar(&discoverJSON, "discover-json", false, "Output discovered gateways in JSON format")
+	flag.StringVar(&discoverServiceType, "discover-service-type", "", "DNS-SD service type for LAN discovery (default _ai-gateway._tcp)")
 	flag.StringVar(&configPath, "config", DefaultConfigPath, "Configure File Path")
 	flag.StringVar(&vertexImport, "vertex-import", "", "Import Vertex service account key JSON file")
 	flag.StringVar(&vertexImportPrefix, "vertex-import-prefix", "", "Prefix for Vertex model namespacing (use with -vertex-import)")
@@ -178,7 +181,7 @@ func main() {
 	flag.Parse()
 
 	if discoverGateways || discoverJSON {
-		code := cmd.DoDiscover(time.Duration(discoverTimeout)*time.Second, discoverJSON)
+		code := cmd.DoDiscoverWithServiceType(time.Duration(discoverTimeout)*time.Second, discoverJSON, discoverServiceType)
 		os.Exit(code)
 	}
 

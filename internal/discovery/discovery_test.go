@@ -303,8 +303,8 @@ func TestFilterUsableIPs(t *testing.T) {
 		net.ParseIP("::"),
 	}
 	usable := filterUsableIPs(ips)
-	if len(usable) != 1 || usable[0].String() != "192.0.2.10" {
-		t.Fatalf("filterUsableIPs() = %v, want [192.0.2.10]", usable)
+	if len(usable) != 2 || usable[0].String() != "192.0.2.10" || usable[1].String() != "fe80::1" {
+		t.Fatalf("filterUsableIPs() = %v, want [192.0.2.10 fe80::1]", usable)
 	}
 }
 
@@ -532,7 +532,9 @@ func TestAdvertiserAndBrowser_Integration(t *testing.T) {
 		t.Skipf("skipping live multicast test: %v", err)
 	}
 	defer func() {
-		_ = adv.Stop()
+		if errStop := adv.Stop(); errStop != nil {
+			t.Errorf("advertiser cleanup failed: %v", errStop)
+		}
 	}()
 
 	browseCtx, browseCancel := context.WithTimeout(context.Background(), 5*time.Second)

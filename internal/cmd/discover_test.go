@@ -13,8 +13,9 @@ import (
 )
 
 type fakeBrowser struct {
-	result []discovery.DiscoveredService
-	err    error
+	result      []discovery.DiscoveredService
+	err         error
+	serviceType string
 }
 
 func (f *fakeBrowser) Browse(context.Context, string, string) ([]discovery.DiscoveredService, error) {
@@ -22,6 +23,11 @@ func (f *fakeBrowser) Browse(context.Context, string, string) ([]discovery.Disco
 }
 
 func (f *fakeBrowser) BrowseWithFallback(context.Context) ([]discovery.DiscoveredService, error) {
+	return f.result, f.err
+}
+
+func (f *fakeBrowser) BrowseWithFallbackServiceType(_ context.Context, serviceType string) ([]discovery.DiscoveredService, error) {
+	f.serviceType = serviceType
 	return f.result, f.err
 }
 
@@ -42,6 +48,20 @@ func TestRunDiscoverJSONEmpty(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("gateways = %#v, want empty array", got)
+	}
+}
+
+func TestRunDiscoverCustomServiceType(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	browser := &fakeBrowser{}
+	code := runDiscoverWithServiceType(2*time.Second, true, "_custom._tcp", &stdout, &stderr, func() (discovery.Browser, error) {
+		return browser, nil
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if browser.serviceType != "_custom._tcp" {
+		t.Fatalf("service type = %q, want _custom._tcp", browser.serviceType)
 	}
 }
 

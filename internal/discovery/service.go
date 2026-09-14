@@ -173,6 +173,26 @@ func sanitizeInstanceName(name string) string {
 	return res
 }
 
+func interfaceHasIP(iface net.Interface, target net.IP) bool {
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return false
+	}
+	for _, addr := range addrs {
+		var ip net.IP
+		switch value := addr.(type) {
+		case *net.IPNet:
+			ip = value.IP
+		case *net.IPAddr:
+			ip = value.IP
+		}
+		if ip != nil && ip.Equal(target) {
+			return true
+		}
+	}
+	return false
+}
+
 // BuildServiceSpec creates a ServiceSpec from configuration, port, and TLS setting.
 func BuildServiceSpec(cfg *config.Config, port int, tlsEnabled bool) (ServiceSpec, error) {
 	if cfg == nil {
@@ -230,7 +250,6 @@ func BuildServiceSpec(cfg *config.Config, port int, tlsEnabled bool) (ServiceSpe
 	if len(ifaces) == 0 {
 		return ServiceSpec{}, fmt.Errorf("discovery: no qualified physical interfaces found matching filters (refusing fallback to all interfaces)")
 	}
-	advertisedIPs := extractInterfaceIPs(ifaces)
 	bindHost := strings.TrimSpace(cfg.Host)
 	var bindIP net.IP
 	if bindHost != "" {
@@ -242,6 +261,19 @@ func BuildServiceSpec(cfg *config.Config, port int, tlsEnabled bool) (ServiceSpe
 			return ServiceSpec{}, fmt.Errorf("discovery: LAN advertising is unavailable for loopback bind host %q", bindHost)
 		}
 	}
+	if bindIP != nil && !bindIP.IsUnspecified() {
+		filteredIfaces := make([]net.Interface, 0, 1)
+		for _, iface := range ifaces {
+			if interfaceHasIP(iface, bindIP) {
+				filteredIfaces = append(filteredIfaces, iface)
+			}
+		}
+		if len(filteredIfaces) == 0 {
+			return ServiceSpec{}, fmt.Errorf("discovery: no interface owns bind host %q", bindHost)
+		}
+		ifaces = filteredIfaces
+	}
+	advertisedIPs := extractInterfaceIPs(ifaces)
 	if bindIP != nil && !bindIP.IsUnspecified() {
 		filtered := advertisedIPs[:0]
 		for _, advertisedIP := range advertisedIPs {

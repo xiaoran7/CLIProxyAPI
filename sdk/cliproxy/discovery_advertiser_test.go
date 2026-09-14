@@ -20,7 +20,7 @@ type fakeAdvertiser struct {
 	blockStart chan struct{}
 }
 
-func (f *fakeAdvertiser) Start(_ context.Context, spec discovery.ServiceSpec) error {
+func (f *fakeAdvertiser) Start(ctx context.Context, spec discovery.ServiceSpec) error {
 	if f.entered != nil {
 		select {
 		case <-f.entered:
@@ -29,7 +29,11 @@ func (f *fakeAdvertiser) Start(_ context.Context, spec discovery.ServiceSpec) er
 		}
 	}
 	if f.blockStart != nil {
-		<-f.blockStart
+		select {
+		case <-f.blockStart:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -267,6 +271,44 @@ func TestDiscoveryManagerDisableStopsAdvertiser(t *testing.T) {
 	starts, stops, _ := adv.snapshot()
 	if starts != 1 || stops != 1 {
 		t.Fatalf("starts=%d stops=%d, want 1/1", starts, stops)
+	}
+}
+
+func TestDiscoveryManagerCanceledApplyStopsInFlightStart(t *testing.T) {
+	mgr := newTestDiscoveryManager()
+	entered := make(chan struct{})
+	block := make(chan struct{})
+	adv := &fakeAdvertiser{entered: entered, blockStart: block}
+	mgr.newAdvertiser = func() discovery.Advertiser { return adv }
+	mgr.buildSpec = func(*config.Config, int, bool) (discovery.ServiceSpec, error) {
+		return discovery.ServiceSpec{InstanceName: "n", Port: 8317}, nil
+	}
+	cfg := &config.Config{}
+	cfg.Discovery.Enabled = true
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan bool, 1)
+	go func() {
+		done <- mgr.ApplyContext(ctx, cfg, 8317, false)
+	}()
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("start did not begin")
+	}
+	cancel()
+	select {
+	case ok := <-done:
+		if ok {
+			t.Fatal("canceled apply should not commit")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled apply did not return")
+	}
+	starts, stops, _ := adv.snapshot()
+	if starts != 0 || stops == 0 {
+		t.Fatalf("starts=%d stops=%d, want starts=0 and at least one stop", starts, stops)
 	}
 }
 

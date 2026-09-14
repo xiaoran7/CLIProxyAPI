@@ -68,4 +68,5 @@ type Advertiser interface {
 type Browser interface {
 	Browse(ctx context.Context, serviceType, domain string) ([]DiscoveredService, error)
 	BrowseWithFallback(ctx context.Context) ([]DiscoveredService, error)
+	BrowseWithFallbackServiceType(ctx context.Context, serviceType string) ([]DiscoveredService, error)
 }

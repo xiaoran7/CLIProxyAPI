@@ -2,6 +2,7 @@ package cliproxy
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -16,6 +17,11 @@ type discoveryRefresh struct {
 	stop     chan struct{}
 	done     chan struct{}
 	stopOnce sync.Once
+}
+
+type discoveryStart struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 func (r *discoveryRefresh) stopAndWait() {
@@ -38,6 +44,7 @@ type discoveryAdvertiserManager struct {
 	lastTLS         bool
 	generation      uint64
 	refresh         *discoveryRefresh
+	activeStart     *discoveryStart
 	closed          bool
 	boundHost       string
 	boundPort       int
@@ -117,6 +124,7 @@ func (m *discoveryAdvertiserManager) applyContext(ctx context.Context, cfg *conf
 		m.mu.Unlock()
 		return false
 	}
+	activeStart := m.activeStart
 	m.generation++
 	applyGeneration := m.generation
 	if !m.boundEndpoint {
@@ -132,7 +140,17 @@ func (m *discoveryAdvertiserManager) applyContext(ctx context.Context, cfg *conf
 	m.lastCfg = cfg
 	m.lastPort = boundPort
 	m.lastTLS = boundTLS
+	m.mu.Unlock()
+	if activeStart != nil {
+		activeStart.cancel()
+		<-activeStart.done
+	}
 
+	m.mu.Lock()
+	if m.closed || m.generation != applyGeneration || m.lastCfg != cfg {
+		m.mu.Unlock()
+		return false
+	}
 	if !cfg.Discovery.Enabled {
 		oldAdv := m.advertiser
 		refreshStop := m.detachRefreshLocked()
@@ -148,7 +166,6 @@ func (m *discoveryAdvertiserManager) applyContext(ctx context.Context, cfg *conf
 		}
 		return true
 	}
-
 	m.ensureRefreshLocked()
 	buildSpec := m.buildSpec
 	newAdvertiser := m.newAdvertiser
@@ -179,7 +196,7 @@ func (m *discoveryAdvertiserManager) applyContext(ctx context.Context, cfg *conf
 	}
 
 	m.mu.Lock()
-	if m.closed || m.generation != applyGeneration || m.lastCfg != cfg || !cfg.Discovery.Enabled {
+	if m.closed || m.generation != applyGeneration || m.lastCfg != cfg || !cfg.Discovery.Enabled || m.activeStart != nil {
 		m.mu.Unlock()
 		return false
 	}
@@ -192,6 +209,9 @@ func (m *discoveryAdvertiserManager) applyContext(ctx context.Context, cfg *conf
 	m.advertiser = nil
 	m.generation++
 	gen := m.generation
+	startCtx, startCancel := context.WithCancel(ctx)
+	start := &discoveryStart{cancel: startCancel, done: make(chan struct{})}
+	m.activeStart = start
 	m.mu.Unlock()
 
 	if oldAdv != nil {
@@ -201,29 +221,50 @@ func (m *discoveryAdvertiserManager) applyContext(ctx context.Context, cfg *conf
 		newAdvertiser = newZeroconfAdvertiser
 	}
 	adv := newAdvertiser()
-	errStart := adv.Start(ctx, spec)
+	var errStart error
+	if adv == nil {
+		errStart = fmt.Errorf("discovery: advertiser factory returned nil")
+	} else {
+		errStart = adv.Start(startCtx, spec)
+	}
+	if errStart == nil && startCtx.Err() != nil {
+		errStart = startCtx.Err()
+	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	valid := !m.closed && m.generation == gen && m.activeStart == start && m.lastCfg == cfg && cfg.Discovery.Enabled && startCtx.Err() == nil
+	if valid && errStart == nil {
+		m.advertiser = adv
+		m.enabled = true
+		m.lastSpec = spec
+	}
+	m.mu.Unlock()
+	startCancel()
 
-	if m.generation != gen {
+	if !valid || errStart != nil {
 		if adv != nil {
-			m.mu.Unlock()
 			_ = adv.Stop()
+		}
+	}
+	m.mu.Lock()
+	if m.activeStart == start {
+		m.activeStart = nil
+	}
+	m.mu.Unlock()
+	close(start.done)
+
+	if !valid || errStart != nil {
+		if errStart != nil {
 			m.mu.Lock()
+			if m.generation == gen {
+				m.enabled = false
+			}
+			m.mu.Unlock()
+			log.Warnf("discovery: failed to start mDNS advertiser: %v (degraded, HTTP intact)", errStart)
 		}
 		return false
 	}
 
-	if errStart != nil {
-		m.enabled = false
-		log.Warnf("discovery: failed to start mDNS advertiser: %v (degraded, HTTP intact)", errStart)
-		return false
-	}
-
-	m.advertiser = adv
-	m.enabled = true
-	m.lastSpec = spec
 	log.Infof("discovery: advertising as '%s.%s' on port %d", spec.InstanceName, spec.ServiceType, boundPort)
 	return true
 }
@@ -232,6 +273,7 @@ func (m *discoveryAdvertiserManager) Shutdown() error {
 	m.mu.Lock()
 	m.closed = true
 	oldAdv := m.advertiser
+	activeStart := m.activeStart
 	refreshStop := m.detachRefreshLocked()
 	m.advertiser = nil
 	m.enabled = false
@@ -240,6 +282,10 @@ func (m *discoveryAdvertiserManager) Shutdown() error {
 	m.generation++
 	m.mu.Unlock()
 
+	if activeStart != nil {
+		activeStart.cancel()
+		<-activeStart.done
+	}
 	m.stopRefresh(refreshStop)
 	if oldAdv != nil {
 		return oldAdv.Stop()

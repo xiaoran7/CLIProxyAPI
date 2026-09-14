@@ -58,7 +58,7 @@ func extractInterfaceIPs(ifaces []net.Interface) []string {
 			case *net.IPAddr:
 				ip = v.IP
 			}
-			if ip == nil || ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() {
+			if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
 				continue
 			}
 			ips = append(ips, ip.String())
@@ -131,6 +131,9 @@ func (a *ZeroconfAdvertiser) Start(ctx context.Context, spec ServiceSpec) (err e
 	}
 
 	spec.InstanceName = uniquifyInstanceName(spec.InstanceName, browseTakenNames(ctx, spec, ips))
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
 
 	primaryService := serviceType
 	for _, sub := range spec.Subtypes {
@@ -152,6 +155,9 @@ func (a *ZeroconfAdvertiser) Start(ctx context.Context, spec ServiceSpec) (err e
 	)
 	if errRegister != nil {
 		return fmt.Errorf("discovery: failed to register primary service %s: %w", primaryService, errRegister)
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	a.mu.Lock()
@@ -453,7 +459,15 @@ func parseTXTList(value string) []string {
 
 // BrowseWithFallback discovers all AI gateways on the LAN (_ai-gateway._tcp) and prioritizes CPA instances.
 func (b *ZeroconfBrowser) BrowseWithFallback(ctx context.Context) ([]DiscoveredService, error) {
-	allGateways, errMain := b.Browse(ctx, DefaultServiceType, DefaultDomain)
+	return b.BrowseWithFallbackServiceType(ctx, DefaultServiceType)
+}
+
+// BrowseWithFallbackServiceType discovers services of the requested type and prioritizes CPA instances.
+func (b *ZeroconfBrowser) BrowseWithFallbackServiceType(ctx context.Context, serviceType string) ([]DiscoveredService, error) {
+	if strings.TrimSpace(serviceType) == "" {
+		serviceType = DefaultServiceType
+	}
+	allGateways, errMain := b.Browse(ctx, serviceType, DefaultDomain)
 	if errMain != nil && len(allGateways) == 0 {
 		return nil, errMain
 	}
@@ -545,7 +559,7 @@ func entryToDiscovered(e *zeroconf.ServiceEntry) DiscoveredService {
 func filterUsableIPs(ips []net.IP) []net.IP {
 	usable := make([]net.IP, 0, min(len(ips), maxDiscoveredAddresses))
 	for _, ip := range ips {
-		if ip == nil || ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() {
+		if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
 			continue
 		}
 		usable = append(usable, append(net.IP(nil), ip...))

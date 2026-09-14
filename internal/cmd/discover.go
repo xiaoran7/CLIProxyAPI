@@ -29,18 +29,31 @@ func newLANBrowser() (discovery.Browser, error) {
 // DoDiscover executes the LAN AI gateway discovery workflow and outputs results.
 // Returns 0 on success, 1 on error.
 func DoDiscover(timeout time.Duration, jsonOutput bool) int {
-	return runDiscover(timeout, jsonOutput, os.Stdout, os.Stderr, newLANBrowser)
+	return DoDiscoverWithServiceType(timeout, jsonOutput, discovery.DefaultServiceType)
+}
+
+// DoDiscoverWithServiceType executes LAN discovery for the requested DNS-SD service type.
+func DoDiscoverWithServiceType(timeout time.Duration, jsonOutput bool, serviceType string) int {
+	return runDiscoverWithServiceType(timeout, jsonOutput, serviceType, os.Stdout, os.Stderr, newLANBrowser)
 }
 
 func runDiscover(timeout time.Duration, jsonOutput bool, stdout, stderr io.Writer, newBrowser func() (discovery.Browser, error)) int {
+	return runDiscoverWithServiceType(timeout, jsonOutput, discovery.DefaultServiceType, stdout, stderr, newBrowser)
+}
+
+func runDiscoverWithServiceType(timeout time.Duration, jsonOutput bool, serviceType string, stdout, stderr io.Writer, newBrowser func() (discovery.Browser, error)) int {
 	if timeout <= 0 {
 		timeout = 3 * time.Second
 	} else if timeout > 60*time.Second {
 		timeout = 60 * time.Second
 	}
+	serviceType = strings.TrimSpace(serviceType)
+	if serviceType == "" {
+		serviceType = discovery.DefaultServiceType
+	}
 
 	if !jsonOutput {
-		fmt.Fprintf(stdout, "Scanning LAN for AI Gateways (%s)... (timeout %v)\n", discovery.DefaultServiceType, timeout)
+		fmt.Fprintf(stdout, "Scanning LAN for AI Gateways (%s)... (timeout %v)\n", serviceType, timeout)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout+1*time.Second)
@@ -56,7 +69,7 @@ func runDiscover(timeout time.Duration, jsonOutput bool, stdout, stderr io.Write
 		}
 		return 1
 	}
-	gateways, err := browser.BrowseWithFallback(ctx)
+	gateways, err := browser.BrowseWithFallbackServiceType(ctx, serviceType)
 	if err != nil {
 		if jsonOutput {
 			out, _ := json.MarshalIndent(map[string]any{"error": err.Error(), "gateways": []any{}}, "", "  ")
