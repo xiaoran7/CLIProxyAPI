@@ -482,7 +482,11 @@ func (h *Handler) executeQuotaProbe(c *gin.Context, auth *coreauth.Auth, probe m
 
 	var rawQuota map[string]json.RawMessage
 	if errRaw := json.Unmarshal(respBytes, &rawQuota); errRaw == nil {
-		delete(rawQuota, "summary") // Optional plugin data must not invalidate core quota fields.
+		for key := range rawQuota {
+			if strings.EqualFold(key, "summary") {
+				delete(rawQuota, key) // Optional plugin data must not invalidate core quota fields.
+			}
+		}
 		if coreQuotaJSON, errMarshal := json.Marshal(rawQuota); errMarshal == nil {
 			var quotaResp pluginapi.QuotaFetchResponse
 			if errJSON := json.Unmarshal(coreQuotaJSON, &quotaResp); errJSON == nil {
@@ -553,14 +557,21 @@ func filterUsableQuotaSummary(raw []byte) []pluginapi.QuotaMetric {
 		if keyResult.Type != gjson.String || labelResult.Type != gjson.String || key == "" || label == "" || value.Type != gjson.Number || math.IsNaN(value.Float()) || math.IsInf(value.Float(), 0) {
 			continue
 		}
-		usable = append(usable, pluginapi.QuotaMetric{
-			Key:      key,
-			Label:    label,
-			Value:    value.Float(),
-			Unit:     strings.TrimSpace(rawMetric.Get("unit").String()),
-			Format:   strings.TrimSpace(rawMetric.Get("format").String()),
-			Currency: strings.TrimSpace(rawMetric.Get("currency").String()),
-		})
+		metric := pluginapi.QuotaMetric{
+			Key:   key,
+			Label: label,
+			Value: value.Float(),
+		}
+		if unitResult := rawMetric.Get("unit"); unitResult.Type == gjson.String {
+			metric.Unit = strings.TrimSpace(unitResult.String())
+		}
+		if formatResult := rawMetric.Get("format"); formatResult.Type == gjson.String {
+			metric.Format = strings.TrimSpace(formatResult.String())
+		}
+		if currencyResult := rawMetric.Get("currency"); currencyResult.Type == gjson.String {
+			metric.Currency = strings.TrimSpace(currencyResult.String())
+		}
+		usable = append(usable, metric)
 	}
 	return usable
 }

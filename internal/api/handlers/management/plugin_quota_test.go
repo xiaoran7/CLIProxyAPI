@@ -555,6 +555,39 @@ func TestFilterUsableQuotaSummaryRequiresStringIdentifiers(t *testing.T) {
 	}
 }
 
+func TestExecuteQuotaProbeStripsSummaryKeyCaseInsensitively(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"subscription":{"plan":"ProbePro"},"Summary":"usage text"}`))
+	}))
+	defer upstream.Close()
+
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: t.TempDir()}, nil)
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/probe", nil)
+
+	quotaResp, handled, errProbe := h.executeQuotaProbe(ctx, &coreauth.Auth{}, map[string]any{
+		"url": upstream.URL,
+	})
+	if !handled || errProbe != nil {
+		t.Fatalf("executeQuotaProbe() handled=%v err=%v", handled, errProbe)
+	}
+	if quotaResp.Subscription == nil || quotaResp.Subscription.Plan != "ProbePro" {
+		t.Fatalf("unexpected response: %+v", quotaResp)
+	}
+}
+
+func TestFilterUsableQuotaSummaryOmitsNonStringOptionalMetadata(t *testing.T) {
+	summary := filterUsableQuotaSummary([]byte(`{"summary":[{"key":"balance","label":"Balance","value":42,"unit":123,"format":true,"currency":["USD"]}]}`))
+	if len(summary) != 1 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if summary[0].Unit != "" || summary[0].Format != "" || summary[0].Currency != "" {
+		t.Fatalf("summary metadata = %#v", summary[0])
+	}
+}
+
 func TestFetchCredentialQuota_DeclarativeProbeSummaryWithoutValueReturnsError(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
