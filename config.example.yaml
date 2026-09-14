@@ -291,6 +291,24 @@ codex:
   # proxy_read_timeout, is what bounds them.
   # Default: false
   stream-bootstrap-buffering: false
+  # Optional maximum duration to hold back uncommitted response headers during bootstrap buffering.
+  # When set (e.g. "20s"), if the time ceiling is reached before the first generated token,
+  # the stream is released to the client and further in-stream overloads are delivered rather
+  # than failed over. This bounds how long trickled heartbeats or early empty frames can delay
+  # response headers before streaming begins.
+  # Recommendation: If your CPA is deployed behind a reverse proxy with a strict read timeout
+  # (e.g. Nginx default proxy_read_timeout 60s or Cloudflare 100s timeout), setting this to "20s"
+  # is strongly recommended to guarantee headers commit well before proxy timeouts while retaining
+  # a comfortable 20s window to fail over early scheduling overloads.
+  # Note: The timeout check is evaluated as upstream frames arrive; it never aborts the upstream
+  # connection. Downstream headers are committed as soon as the downstream translator emits chunks
+  # (for formats that render handshake/heartbeats, headers commit immediately on release; for
+  # formats like Chat Completions and Gemini that render nothing until the first text token, headers
+  # commit when that first token arrives).
+  # When unset or set to "0", "0s", "none", "unlimited", "disabled", "off", or "never", no time ceiling
+  # is applied, and buffering relies purely on the 48-frame and 1MB byte budget.
+  # Default: "0" (unlimited)
+  stream-bootstrap-timeout: "0"
   # When true, optimize Codex Desktop, codex-tui, and codex_cli_rs requests for multi-agent v2.
   # This refreshes Codex spawn_agent model details, removes message parameter encryption,
   # normalizes encrypted agent_message content for Codex, and converts agent_message input

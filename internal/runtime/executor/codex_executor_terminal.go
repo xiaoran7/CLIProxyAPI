@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
@@ -441,6 +442,34 @@ func parseCodexRetryAfter(statusCode int, errorBody []byte, now time.Time) *time
 		}
 	}
 	return nil
+}
+
+// codexBootstrapNowMu protects codexBootstrapNow across concurrent tests and goroutines.
+var (
+	codexBootstrapNowMu sync.RWMutex
+	codexBootstrapNow   = time.Now
+)
+
+func nowCodexBootstrap() time.Time {
+	codexBootstrapNowMu.RLock()
+	fn := codexBootstrapNow
+	codexBootstrapNowMu.RUnlock()
+	if fn != nil {
+		return fn()
+	}
+	return time.Now()
+}
+
+func setCodexBootstrapNowForTest(fn func() time.Time) func() {
+	codexBootstrapNowMu.Lock()
+	orig := codexBootstrapNow
+	codexBootstrapNow = fn
+	codexBootstrapNowMu.Unlock()
+	return func() {
+		codexBootstrapNowMu.Lock()
+		codexBootstrapNow = orig
+		codexBootstrapNowMu.Unlock()
+	}
 }
 
 // codexBootstrapMaxBufferedFrames bounds how many upstream frames may be held back while probing

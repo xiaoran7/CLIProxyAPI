@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/client/grokbuild"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
@@ -137,6 +138,12 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 	}
 
 	buffering := e.cfg != nil && e.cfg.Codex.StreamBootstrapBuffering
+	var bootstrapTimeout time.Duration
+	var bootstrapStart time.Time
+	if buffering {
+		bootstrapTimeout = e.cfg.Codex.StreamBootstrapTimeoutDuration()
+		bootstrapStart = nowCodexBootstrap()
+	}
 
 	scanner := bufio.NewScanner(httpResp.Body)
 	scanner.Buffer(nil, 52_428_800) // 50MB
@@ -154,8 +161,9 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 	// is that a verbose framing spends the budget faster: the three-line event:/data:/blank shape
 	// protects roughly a third as many events as a stream of bare ": keepalive" comments does.
 	//
-	// Neither bound is a bound on time. A peer that trickles frames, or that never terminates a
-	// line, holds the downstream headers for as long as the caller's context allows.
+	// In addition to the frame and byte budgets, bootstrapTimeout bounds how long trickled
+	// frames may hold the downstream headers. A peer that never terminates a line is bounded
+	// by the caller's request context.
 	bufferedFrames := 0
 	bufferedBytes := 0
 	var initialChunks [][]byte
@@ -200,12 +208,17 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 					helps.RecordAPIResponseError(ctx, e.cfg, streamErr)
 					reporter.PublishFailure(ctx, streamErr)
 					if isCodexOverloadBootstrapFailure(terminalBody) {
-						// Transient capacity rejection smuggled into an HTTP 200 stream. Fail the
-						// attempt before the downstream headers are committed so the conductor can
-						// transparently retry on another credential, and report the status the
-						// upstream refused to put on the wire.
-						helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap overload rejection after %d buffered lines, failing over", bufferedFrames)
-						return nil, newCodexBootstrapOverloadErr(terminalBody)
+						timeSinceStart := nowCodexBootstrap().Sub(bootstrapStart)
+						timeoutReached := bootstrapTimeout > 0 && timeSinceStart >= bootstrapTimeout
+						if !timeoutReached {
+							// Transient capacity rejection smuggled into an HTTP 200 stream. Fail the
+							// attempt before the downstream headers are committed so the conductor can
+							// transparently retry on another credential, and report the status the
+							// upstream refused to put on the wire.
+							helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap overload rejection after %d buffered lines, failing over", bufferedFrames)
+							return nil, newCodexBootstrapOverloadErr(terminalBody)
+						}
+						helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap overload rejection after %d lines / %v, time budget exhausted; delivering in-stream", bufferedFrames, timeSinceStart)
 					}
 					bootstrapTerminalErr = streamErr
 					break
@@ -263,17 +276,21 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 				for i := range chunks {
 					frameBytes += len(chunks[i])
 				}
-				if bufferedFrames < codexBootstrapMaxBufferedFrames && bufferedBytes+frameBytes <= codexBootstrapMaxBufferedBytes {
+				timeSinceStart := nowCodexBootstrap().Sub(bootstrapStart)
+				timeoutReached := bootstrapTimeout > 0 && timeSinceStart >= bootstrapTimeout
+				if !timeoutReached && bufferedFrames < codexBootstrapMaxBufferedFrames && bufferedBytes+frameBytes <= codexBootstrapMaxBufferedBytes {
 					bufferedFrames++
 					bufferedBytes += frameBytes
 					bufferedChunks = append(bufferedChunks, chunks...)
 					continue
 				}
 				exhausted := "frame budget"
-				if bufferedFrames < codexBootstrapMaxBufferedFrames {
+				if timeoutReached {
+					exhausted = "time budget"
+				} else if bufferedFrames < codexBootstrapMaxBufferedFrames {
 					exhausted = "byte budget"
 				}
-				helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap %s exhausted after %d lines / %d bytes, releasing stream without overload probing", exhausted, bufferedFrames, bufferedBytes)
+				helps.LogWithRequestID(ctx).Debugf("codex executor: bootstrap %s exhausted after %d lines / %d bytes / %v, releasing stream without overload probing", exhausted, bufferedFrames, bufferedBytes, timeSinceStart)
 			}
 
 			initialChunks = chunks
