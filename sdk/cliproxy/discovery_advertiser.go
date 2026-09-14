@@ -12,6 +12,22 @@ import (
 
 const defaultDiscoveryRefreshInterval = 15 * time.Second
 
+type discoveryRefresh struct {
+	stop     chan struct{}
+	done     chan struct{}
+	stopOnce sync.Once
+}
+
+func (r *discoveryRefresh) stopAndWait() {
+	if r == nil {
+		return
+	}
+	r.stopOnce.Do(func() {
+		close(r.stop)
+	})
+	<-r.done
+}
+
 type discoveryAdvertiserManager struct {
 	mu              sync.Mutex
 	advertiser      discovery.Advertiser
@@ -21,8 +37,8 @@ type discoveryAdvertiserManager struct {
 	lastPort        int
 	lastTLS         bool
 	generation      uint64
-	refreshStop     chan struct{}
-	refreshWG       sync.WaitGroup
+	refresh         *discoveryRefresh
+	closed          bool
 	refreshInterval time.Duration
 	newAdvertiser   func() discovery.Advertiser
 	buildSpec       func(*config.Config, int, bool) (discovery.ServiceSpec, error)
@@ -78,11 +94,27 @@ func (s *Service) shutdownDiscovery() error {
 }
 
 func (m *discoveryAdvertiserManager) ApplyContext(ctx context.Context, cfg *config.Config, port int, tlsEnabled bool) bool {
-	if m == nil || cfg == nil || (ctx != nil && ctx.Err() != nil) {
+	return m.applyContext(ctx, cfg, port, tlsEnabled, nil)
+}
+
+func (m *discoveryAdvertiserManager) applyContext(ctx context.Context, cfg *config.Config, port int, tlsEnabled bool, expectedRefresh *discoveryRefresh) bool {
+	if m == nil || cfg == nil {
+		return false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
 		return false
 	}
 
 	m.mu.Lock()
+	if m.closed || (expectedRefresh != nil && (m.refresh != expectedRefresh || m.lastCfg != cfg)) {
+		m.mu.Unlock()
+		return false
+	}
+	m.generation++
+	applyGeneration := m.generation
 	m.lastCfg = cfg
 	m.lastPort = port
 	m.lastTLS = tlsEnabled
@@ -93,7 +125,6 @@ func (m *discoveryAdvertiserManager) ApplyContext(ctx context.Context, cfg *conf
 		m.advertiser = nil
 		m.enabled = false
 		m.lastSpec = discovery.ServiceSpec{}
-		m.generation++
 		m.mu.Unlock()
 
 		m.stopRefresh(refreshStop)
@@ -114,12 +145,27 @@ func (m *discoveryAdvertiserManager) ApplyContext(ctx context.Context, cfg *conf
 	}
 	spec, err := buildSpec(cfg, port, tlsEnabled)
 	if err != nil {
+		m.mu.Lock()
+		if !m.closed && m.generation == applyGeneration && m.lastCfg == cfg && cfg.Discovery.Enabled {
+			oldAdv := m.advertiser
+			m.advertiser = nil
+			m.enabled = false
+			m.lastSpec = discovery.ServiceSpec{}
+			m.generation++
+			m.mu.Unlock()
+			if oldAdv != nil {
+				log.Info("discovery: stopping stale mDNS advertisement after spec build failure")
+				_ = oldAdv.Stop()
+			}
+		} else {
+			m.mu.Unlock()
+		}
 		log.Warnf("discovery: failed to build service spec: %v", err)
 		return false
 	}
 
 	m.mu.Lock()
-	if m.lastCfg != cfg || !cfg.Discovery.Enabled {
+	if m.closed || m.generation != applyGeneration || m.lastCfg != cfg || !cfg.Discovery.Enabled {
 		m.mu.Unlock()
 		return false
 	}
@@ -170,6 +216,7 @@ func (m *discoveryAdvertiserManager) ApplyContext(ctx context.Context, cfg *conf
 
 func (m *discoveryAdvertiserManager) Shutdown() error {
 	m.mu.Lock()
+	m.closed = true
 	oldAdv := m.advertiser
 	refreshStop := m.detachRefreshLocked()
 	m.advertiser = nil
@@ -200,39 +247,39 @@ func (m *discoveryAdvertiserManager) ensureRefreshLocked() {
 	if _, ok := m.refreshPeriod(); !ok {
 		return
 	}
-	if m.refreshStop != nil {
+	if m.refresh != nil {
 		return
 	}
-	stop := make(chan struct{})
-	m.refreshStop = stop
+	refresh := &discoveryRefresh{
+		stop: make(chan struct{}),
+		done: make(chan struct{}),
+	}
+	m.refresh = refresh
 	interval, _ := m.refreshPeriod()
-	m.refreshWG.Add(1)
 	go func() {
-		defer m.refreshWG.Done()
-		m.refreshLoop(stop, interval)
+		defer close(refresh.done)
+		m.refreshLoop(refresh, interval)
 	}()
 }
 
-func (m *discoveryAdvertiserManager) detachRefreshLocked() chan struct{} {
-	stop := m.refreshStop
-	m.refreshStop = nil
-	return stop
+func (m *discoveryAdvertiserManager) detachRefreshLocked() *discoveryRefresh {
+	refresh := m.refresh
+	m.refresh = nil
+	return refresh
 }
 
-func (m *discoveryAdvertiserManager) stopRefresh(stop chan struct{}) {
-	if stop == nil {
-		return
+func (m *discoveryAdvertiserManager) stopRefresh(refresh *discoveryRefresh) {
+	if refresh != nil {
+		refresh.stopAndWait()
 	}
-	close(stop)
-	m.refreshWG.Wait()
 }
 
-func (m *discoveryAdvertiserManager) refreshLoop(stop <-chan struct{}, interval time.Duration) {
+func (m *discoveryAdvertiserManager) refreshLoop(refresh *discoveryRefresh, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
-		case <-stop:
+		case <-refresh.stop:
 			return
 		case <-ticker.C:
 			m.mu.Lock()
@@ -243,7 +290,7 @@ func (m *discoveryAdvertiserManager) refreshLoop(stop <-chan struct{}, interval 
 			if cfg == nil || !cfg.Discovery.Enabled {
 				continue
 			}
-			_ = m.ApplyContext(context.Background(), cfg, port, tlsEnabled)
+			_ = m.applyContext(context.Background(), cfg, port, tlsEnabled, refresh)
 		}
 	}
 }

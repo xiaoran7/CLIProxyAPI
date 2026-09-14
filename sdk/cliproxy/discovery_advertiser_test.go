@@ -132,6 +132,92 @@ func TestDiscoveryManagerRestartsOnIPChange(t *testing.T) {
 	}
 }
 
+func TestDiscoveryManagerStopsAdvertiserOnBuildFailure(t *testing.T) {
+	mgr := newTestDiscoveryManager()
+	adv := &fakeAdvertiser{}
+	buildErr := false
+	mgr.newAdvertiser = func() discovery.Advertiser { return adv }
+	mgr.buildSpec = func(*config.Config, int, bool) (discovery.ServiceSpec, error) {
+		if buildErr {
+			return discovery.ServiceSpec{}, context.Canceled
+		}
+		return discovery.ServiceSpec{InstanceName: "n", Port: 8317}, nil
+	}
+	cfg := &config.Config{}
+	cfg.Discovery.Enabled = true
+	if !mgr.ApplyContext(context.Background(), cfg, 8317, false) {
+		t.Fatal("initial apply failed")
+	}
+	buildErr = true
+	if mgr.ApplyContext(context.Background(), cfg, 8317, false) {
+		t.Fatal("expected build failure")
+	}
+	starts, stops, _ := adv.snapshot()
+	if starts != 1 || stops != 1 {
+		t.Fatalf("starts=%d stops=%d, want 1/1", starts, stops)
+	}
+}
+
+func TestDiscoveryManagerRejectsApplyAfterShutdown(t *testing.T) {
+	mgr := newTestDiscoveryManager()
+	called := false
+	mgr.buildSpec = func(*config.Config, int, bool) (discovery.ServiceSpec, error) {
+		called = true
+		return discovery.ServiceSpec{}, nil
+	}
+	if err := mgr.Shutdown(); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+	cfg := &config.Config{}
+	cfg.Discovery.Enabled = true
+	if mgr.ApplyContext(context.Background(), cfg, 8317, false) {
+		t.Fatal("apply after shutdown unexpectedly succeeded")
+	}
+	if called {
+		t.Fatal("buildSpec called after shutdown")
+	}
+}
+
+func TestDiscoveryRefreshStopIsIdempotent(t *testing.T) {
+	refresh := &discoveryRefresh{
+		stop: make(chan struct{}),
+		done: make(chan struct{}),
+	}
+	close(refresh.done)
+	refresh.stopAndWait()
+	refresh.stopAndWait()
+}
+
+func TestDiscoveryManagerConcurrentShutdownIsSafe(t *testing.T) {
+	mgr := newDiscoveryAdvertiserManager()
+	mgr.refreshInterval = time.Millisecond
+	adv := &fakeAdvertiser{}
+	mgr.newAdvertiser = func() discovery.Advertiser { return adv }
+	mgr.buildSpec = func(*config.Config, int, bool) (discovery.ServiceSpec, error) {
+		return discovery.ServiceSpec{InstanceName: "n", Port: 8317}, nil
+	}
+	cfg := &config.Config{}
+	cfg.Discovery.Enabled = true
+	if !mgr.ApplyContext(context.Background(), cfg, 8317, false) {
+		t.Fatal("initial apply failed")
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := mgr.Shutdown(); err != nil {
+				t.Errorf("shutdown: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if mgr.ApplyContext(context.Background(), cfg, 8317, false) {
+		t.Fatal("apply after concurrent shutdown unexpectedly succeeded")
+	}
+}
+
 func TestDiscoveryManagerDisableStopsAdvertiser(t *testing.T) {
 	mgr := newTestDiscoveryManager()
 	adv := &fakeAdvertiser{}

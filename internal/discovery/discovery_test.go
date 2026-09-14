@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/libp2p/zeroconf/v2"
 )
 
 func TestInstanceID_PersistenceAndFormat(t *testing.T) {
@@ -126,6 +128,13 @@ func TestBuildTXTRecords_SizeAndKeys(t *testing.T) {
 	}
 	if totalBytes > 400 {
 		t.Errorf("TXT records exceed 400 bytes limit: %d bytes", totalBytes)
+	}
+}
+
+func TestParseTXTRecords_NormalizesKeys(t *testing.T) {
+	parsed := ParseTXTRecords([]string{"TLS=1", "API_OpenAI=/v1", "Product=cliproxyapi"})
+	if parsed["tls"] != "1" || parsed["api_openai"] != "/v1" || parsed["product"] != "cliproxyapi" {
+		t.Fatalf("parsed TXT records = %#v", parsed)
 	}
 }
 
@@ -300,6 +309,14 @@ func TestInterfaceFiltering_Helpers(t *testing.T) {
 		if isVirtualOrTunnel(name) {
 			t.Errorf("expected %s to be recognized as physical interface", name)
 		}
+		if !isLikelyPhysicalLAN(name) {
+			t.Errorf("expected %s to be accepted as a likely physical LAN interface", name)
+		}
+	}
+	for _, name := range []string{"bridge100", "p2p0", "ppp0", "mystery0"} {
+		if isLikelyPhysicalLAN(name) {
+			t.Errorf("expected %s not to be accepted by the default physical LAN allow-list", name)
+		}
 	}
 
 	// Test matchesAny
@@ -311,6 +328,18 @@ func TestInterfaceFiltering_Helpers(t *testing.T) {
 	}
 	if matchesAny("wlan0", []string{"docker*", "utun*"}) {
 		t.Errorf("expected wlan0 not to match")
+	}
+}
+
+func TestBrowseEntryWithinLimits(t *testing.T) {
+	if !browseEntryWithinLimits(&zeroconf.ServiceEntry{Text: []string{"product=cliproxyapi"}}) {
+		t.Fatal("expected a small TXT entry to be accepted")
+	}
+	if browseEntryWithinLimits(&zeroconf.ServiceEntry{Text: []string{strings.Repeat("x", maxTXTRecordBytes+1)}}) {
+		t.Fatal("expected an oversized TXT record to be rejected")
+	}
+	if browseEntryWithinLimits(&zeroconf.ServiceEntry{Text: make([]string, maxBrowseTXTRecords+1)}) {
+		t.Fatal("expected too many TXT records to be rejected")
 	}
 }
 

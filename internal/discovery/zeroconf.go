@@ -222,10 +222,34 @@ func NewZeroconfBrowser(ifaces ...net.Interface) *ZeroconfBrowser {
 	return &ZeroconfBrowser{options: opts}
 }
 
-const maxDiscoveredServices = 256
+const (
+	maxDiscoveredServices = 256
+	maxBrowseTXTRecords   = 64
+	maxBrowseTXTBytes     = 16 * 1024
+)
+
+func browseEntryWithinLimits(entry *zeroconf.ServiceEntry) bool {
+	if entry == nil || len(entry.Text) > maxBrowseTXTRecords {
+		return false
+	}
+	total := 0
+	for _, record := range entry.Text {
+		if len(record) > maxTXTRecordBytes {
+			return false
+		}
+		total += len(record) + 1
+		if total > maxBrowseTXTBytes {
+			return false
+		}
+	}
+	return true
+}
 
 // Browse performs a standard mDNS browse query for the given service type.
 func (b *ZeroconfBrowser) Browse(ctx context.Context, serviceType, domain string, timeout time.Duration) ([]DiscoveredService, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if domain == "" {
 		domain = DefaultDomain
 	}
@@ -254,22 +278,29 @@ func (b *ZeroconfBrowser) Browse(ctx context.Context, serviceType, domain string
 	doneCh := make(chan struct{})
 	go func() {
 		defer close(doneCh)
+		accepted := 0
 		for entry := range entries {
-			if entry == nil {
+			// Keep draining the channel so zeroconf can shut down cleanly, but
+			// stop parsing attacker-controlled entries after the result cap.
+			if accepted >= maxDiscoveredServices {
+				continue
+			}
+			if !browseEntryWithinLimits(entry) {
 				continue
 			}
 			svc := entryToDiscovered(entry)
-			if len(svc.IPv4) == 0 && len(svc.IPv6) == 0 {
+			if svc.Port == 0 || (len(svc.IPv4) == 0 && len(svc.IPv6) == 0) {
 				continue
 			}
 			key := fmt.Sprintf("%s:%s:%d", svc.InstanceName, svc.Host, svc.Port)
 			mu.Lock()
-			if !seen[key] {
-				seen[key] = true
-				if len(discovered) < maxDiscoveredServices {
-					discovered = append(discovered, svc)
-				}
+			if _, ok := seen[key]; ok || len(seen) >= maxDiscoveredServices {
+				mu.Unlock()
+				continue
 			}
+			seen[key] = true
+			discovered = append(discovered, svc)
+			accepted++
 			mu.Unlock()
 		}
 	}()

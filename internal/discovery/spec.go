@@ -152,10 +152,14 @@ func ParseTXTRecords(txt []string) map[string]string {
 	result := make(map[string]string, len(txt))
 	for _, entry := range txt {
 		parts := strings.SplitN(entry, "=", 2)
+		key := strings.ToLower(strings.TrimSpace(parts[0]))
+		if key == "" {
+			continue
+		}
 		if len(parts) == 2 {
-			result[parts[0]] = parts[1]
-		} else if len(parts) == 1 && parts[0] != "" {
-			result[parts[0]] = ""
+			result[key] = parts[1]
+		} else if len(parts) == 1 {
+			result[key] = ""
 		}
 	}
 	return result

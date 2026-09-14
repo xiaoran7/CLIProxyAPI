@@ -54,9 +54,10 @@ func FilterInterfaces(include, exclude []string) ([]net.Interface, error) {
 			continue
 		}
 
-		// 4. Default exclude: virtual, container, VPN tunnels (unless explicitly in include list)
-		if len(include) == 0 || !matchesAny(name, include) {
-			if isVirtualOrTunnel(name) {
+		// 4. Default allow-list: only common physical LAN adapter names are
+		// accepted unless the user explicitly provides an include list.
+		if len(include) == 0 {
+			if isVirtualOrTunnel(name) || !isLikelyPhysicalLAN(name) {
 				continue
 			}
 		}
@@ -97,6 +98,17 @@ func FilterInterfaces(include, exclude []string) ([]net.Interface, error) {
 
 func isVirtualOrTunnel(name string) bool {
 	for _, prefix := range IgnoredInterfacePrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func isLikelyPhysicalLAN(name string) bool {
+	for _, prefix := range []string{
+		"en", "eth", "em", "igb", "ix", "re", "wl", "wlan", "wifi", "wi-fi", "ethernet",
+	} {
 		if strings.HasPrefix(name, prefix) {
 			return true
 		}

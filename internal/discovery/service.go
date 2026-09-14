@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -230,8 +231,28 @@ func BuildServiceSpec(cfg *config.Config, port int, tlsEnabled bool) (ServiceSpe
 		return ServiceSpec{}, fmt.Errorf("discovery: no qualified physical interfaces found matching filters (refusing fallback to all interfaces)")
 	}
 	advertisedIPs := extractInterfaceIPs(ifaces)
+	bindHost := strings.TrimSpace(cfg.Host)
+	var bindIP net.IP
+	if bindHost != "" {
+		bindIP = net.ParseIP(bindHost)
+		if bindIP == nil {
+			return ServiceSpec{}, fmt.Errorf("discovery: refusing LAN advertising for non-IP bind host %q", bindHost)
+		}
+		if bindIP.IsLoopback() {
+			return ServiceSpec{}, fmt.Errorf("discovery: LAN advertising is unavailable for loopback bind host %q", bindHost)
+		}
+	}
+	if bindIP != nil && !bindIP.IsUnspecified() {
+		filtered := advertisedIPs[:0]
+		for _, advertisedIP := range advertisedIPs {
+			if net.ParseIP(advertisedIP).Equal(bindIP) {
+				filtered = append(filtered, advertisedIP)
+			}
+		}
+		advertisedIPs = filtered
+	}
 	if len(advertisedIPs) == 0 {
-		return ServiceSpec{}, fmt.Errorf("discovery: no usable IP addresses found on specified interfaces")
+		return ServiceSpec{}, fmt.Errorf("discovery: no advertised address matches bind host %q", bindHost)
 	}
 
 	// 6. Build TXT records

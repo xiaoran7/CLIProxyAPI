@@ -85,7 +85,8 @@ func main() {
 	// For legacy --discover-json flag or JSON requests, keep stdout clean
 	isJSONDiscover := false
 	for _, arg := range os.Args[1:] {
-		if arg == "-discover-json" || arg == "--discover-json" {
+		if arg == "-discover-json" || arg == "--discover-json" ||
+			strings.HasPrefix(arg, "-discover-json=") || strings.HasPrefix(arg, "--discover-json=") {
 			isJSONDiscover = true
 			break
 		}
