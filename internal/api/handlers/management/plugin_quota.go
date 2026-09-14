@@ -15,6 +15,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
+	xcurrency "golang.org/x/text/currency"
 )
 
 type credentialQuotaRequest struct {
@@ -474,7 +475,6 @@ func (h *Handler) executeQuotaProbe(c *gin.Context, auth *coreauth.Auth, probe m
 		if errMap != nil {
 			return pluginapi.QuotaFetchResponse{}, true, fmt.Errorf("probe response mapping failed: %w", errMap)
 		}
-		mappedResp.Summary = filterUsableQuotaSummary(respBytes)
 		if mappedResp.ServerTimeOffsetMs == 0 {
 			mappedResp.ServerTimeOffsetMs = serverOffsetMs
 		}
@@ -580,12 +580,19 @@ func filterUsableQuotaSummary(raw []byte) []pluginapi.QuotaMetric {
 			metric.Unit = strings.TrimSpace(unitResult.String())
 		}
 		if formatResult := rawMetric.Get("format"); formatResult.Type == gjson.String {
-			if format := strings.TrimSpace(formatResult.String()); format == "number" || format == "currency" {
+			format := strings.TrimSpace(formatResult.String())
+			switch format {
+			case "number":
 				metric.Format = format
+			case "currency":
+				if currencyResult := rawMetric.Get("currency"); currencyResult.Type == gjson.String {
+					code := strings.ToUpper(strings.TrimSpace(currencyResult.String()))
+					if _, err := xcurrency.ParseISO(code); err == nil {
+						metric.Format = format
+						metric.Currency = code
+					}
+				}
 			}
-		}
-		if currencyResult := rawMetric.Get("currency"); metric.Format == "currency" && currencyResult.Type == gjson.String {
-			metric.Currency = strings.TrimSpace(currencyResult.String())
 		}
 		usable = append(usable, metric)
 	}
@@ -801,7 +808,9 @@ func mapProbeResponse(respBytes []byte, mapping map[string]any) (pluginapi.Quota
 		totalBuckets += len(g.Buckets)
 	}
 	hasPlan := out.Subscription != nil && strings.TrimSpace(out.Subscription.Plan) != ""
-	if totalBuckets == 0 && !hasPlan {
+	out.Summary = filterUsableQuotaSummary(respBytes)
+	hasSummary := len(out.Summary) > 0
+	if totalBuckets == 0 && !hasPlan && !hasSummary {
 		return out, fmt.Errorf("response mapping did not match any valid quota fields in upstream response")
 	}
 	return out, nil

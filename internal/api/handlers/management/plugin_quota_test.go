@@ -578,6 +578,32 @@ func TestExecuteQuotaProbeStripsSummaryKeyCaseInsensitively(t *testing.T) {
 	}
 }
 
+func TestMapProbeResponseAcceptsSummaryOnly(t *testing.T) {
+	resp, err := mapProbeResponse([]byte(`{"summary":[{"key":"balance","label":"Balance","value":42}]}`), map[string]any{"plan": "missing.plan"})
+	if err != nil {
+		t.Fatalf("mapProbeResponse() error = %v", err)
+	}
+	if len(resp.Summary) != 1 || resp.Summary[0].Key != "balance" || resp.Summary[0].Value != 42 {
+		t.Fatalf("summary = %#v", resp.Summary)
+	}
+}
+
+func TestFilterUsableQuotaSummaryRequiresValidCurrencyCode(t *testing.T) {
+	summary := filterUsableQuotaSummary([]byte(`{"summary":[
+		{"key":"invalid","label":"Invalid","value":1,"format":"currency","currency":"US"},
+		{"key":"valid","label":"Valid","value":2,"format":"currency","currency":"USD"}
+	]}`))
+	if len(summary) != 2 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if summary[0].Format != "" || summary[0].Currency != "" {
+		t.Fatalf("invalid currency metadata = %#v", summary[0])
+	}
+	if summary[1].Format != "currency" || summary[1].Currency != "USD" {
+		t.Fatalf("valid currency metadata = %#v", summary[1])
+	}
+}
+
 func TestFilterUsableQuotaSummaryOmitsNonStringOptionalMetadata(t *testing.T) {
 	summary := filterUsableQuotaSummary([]byte(`{"summary":[{"key":"balance","label":"Balance","value":42,"unit":123,"format":true,"currency":["USD"]}]}`))
 	if len(summary) != 1 {
