@@ -49,6 +49,25 @@ pprof:
   enable: false
   addr: "127.0.0.1:8316"
 
+# Enable local network mDNS / DNS-SD service discovery (RFC 6762 / RFC 6763).
+# When enabled, broadcasts _ai-gateway._tcp with API protocol subtypes on the local network.
+# NOTE for Docker users: Link-local multicast (224.0.0.251) cannot cross default NAT bridge networks.
+# To broadcast across the physical LAN, run the container with host networking (--net=host / network_mode: host).
+discovery:
+  enabled: false
+  # service-name: ""                  # Optional name prefix. Advertised as CPA-<ShortID> or <name>-<ShortID> (e.g. office-8F3B)
+  # service-type: "_ai-gateway._tcp"  # Service type (RFC 6335 compliant)
+  # subtypes:                         # DNS-SD API protocol subtypes to advertise
+  #   - "_chat-completions"
+  #   - "_responses"
+  #   - "_messages"
+  #   - "_generate-content"
+  #   - "_interactions"
+  # interfaces:
+  #   include: []                     # White-listed interfaces (empty: auto-detect physical interfaces)
+  #   exclude: []                     # Additional interface patterns to exclude
+  # auth-required: true               # Advertise that credentials are required
+
 # Credential concurrency is configured by Home in Home mode. The synthesized Home config is
 # authoritative and local values, including the values below, are ignored. Do not use local
 # configuration to override a Home concurrency policy.

@@ -67,6 +67,9 @@ type Service struct {
 	// pprofServer manages the optional pprof HTTP debug server.
 	pprofServer *pprofServer
 
+	// discoveryManager manages local network mDNS / DNS-SD service advertising.
+	discoveryManager *discoveryAdvertiserManager
+
 	// serverErr channel for server startup/shutdown errors.
 	serverErr chan error
 
