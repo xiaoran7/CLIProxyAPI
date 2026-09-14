@@ -29,6 +29,8 @@ func TestDevinAuthenticatorHeadlessManualTokenLogin(t *testing.T) {
 		case "/v3/self":
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"user_name":"token-user","user_id":"uid-token","org_id":"org-token"}`))
+		case devinauth.DevinGetUserStatusPath:
+			w.WriteHeader(http.StatusServiceUnavailable)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -37,6 +39,7 @@ func TestDevinAuthenticatorHeadlessManualTokenLogin(t *testing.T) {
 
 	authSvc := devinauth.NewDevinAuthService(mockServer.Client())
 	authSvc.SetAPIBaseURL(mockServer.URL)
+	authSvc.SetServerBaseURL(mockServer.URL)
 
 	authenticator := NewDevinAuthenticator()
 	authenticator.AuthService = authSvc
@@ -111,6 +114,9 @@ func TestDevinAuthenticatorHeadlessManualCodeLogin(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"user_name":"test-user","user_id":"uid-123","org_id":"org-456"}`))
 
+		case devinauth.DevinGetUserStatusPath:
+			w.WriteHeader(http.StatusServiceUnavailable)
+
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -119,6 +125,7 @@ func TestDevinAuthenticatorHeadlessManualCodeLogin(t *testing.T) {
 
 	authSvc := devinauth.NewDevinAuthService(mockServer.Client())
 	authSvc.SetAPIBaseURL(mockServer.URL)
+	authSvc.SetServerBaseURL(mockServer.URL)
 
 	authenticator := NewDevinAuthenticator()
 	authenticator.AuthService = authSvc
@@ -172,6 +179,9 @@ func TestDevinAuthenticatorHeadlessManualCallbackURLLogin(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"user_name":"url-user","user_id":"uid-url","org_id":"org-url"}`))
 
+		case devinauth.DevinGetUserStatusPath:
+			w.WriteHeader(http.StatusServiceUnavailable)
+
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -180,6 +190,7 @@ func TestDevinAuthenticatorHeadlessManualCallbackURLLogin(t *testing.T) {
 
 	authSvc := devinauth.NewDevinAuthService(mockServer.Client())
 	authSvc.SetAPIBaseURL(mockServer.URL)
+	authSvc.SetServerBaseURL(mockServer.URL)
 
 	authenticator := NewDevinAuthenticator()
 	authenticator.AuthService = authSvc
