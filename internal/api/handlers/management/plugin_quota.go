@@ -518,8 +518,9 @@ func (h *Handler) executeQuotaProbe(c *gin.Context, auth *coreauth.Auth, probe m
 			}
 		}
 		quotaResp.Groups = filteredGroups
+		quotaResp.Summary = filterUsableQuotaSummary(respBytes, quotaResp.Summary)
 		hasValidBuckets := len(filteredGroups) > 0
-		hasValidSummary := hasUsableQuotaSummary(quotaResp.Summary)
+		hasValidSummary := len(quotaResp.Summary) > 0
 		if hasPlan || hasValidBuckets || hasValidSummary {
 			if quotaResp.ServerTimeOffsetMs == 0 {
 				quotaResp.ServerTimeOffsetMs = serverOffsetMs
@@ -531,13 +532,28 @@ func (h *Handler) executeQuotaProbe(c *gin.Context, auth *coreauth.Auth, probe m
 	return pluginapi.QuotaFetchResponse{}, true, fmt.Errorf("upstream probe response does not match normalized quota shape or declared mapping")
 }
 
-func hasUsableQuotaSummary(summary []pluginapi.QuotaMetric) bool {
-	for _, metric := range summary {
-		if strings.TrimSpace(metric.Key) != "" && strings.TrimSpace(metric.Label) != "" && !math.IsNaN(metric.Value) && !math.IsInf(metric.Value, 0) {
-			return true
-		}
+func filterUsableQuotaSummary(raw []byte, summary []pluginapi.QuotaMetric) []pluginapi.QuotaMetric {
+	rawSummary := gjson.GetBytes(raw, "summary")
+	if !rawSummary.IsArray() {
+		return nil
 	}
-	return false
+	usable := make([]pluginapi.QuotaMetric, 0, len(summary))
+	for index, rawMetric := range rawSummary.Array() {
+		if index >= len(summary) {
+			break
+		}
+		value := rawMetric.Get("value")
+		if value.Type != gjson.Number || math.IsNaN(value.Float()) || math.IsInf(value.Float(), 0) {
+			continue
+		}
+		metric := summary[index]
+		if strings.TrimSpace(metric.Key) == "" || strings.TrimSpace(metric.Label) == "" {
+			continue
+		}
+		metric.Value = value.Float()
+		usable = append(usable, metric)
+	}
+	return usable
 }
 
 func parseNumericFraction(res gjson.Result) (float64, bool) {
