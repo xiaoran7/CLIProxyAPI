@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,7 +12,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/singleflight"
@@ -26,18 +24,16 @@ var (
 
 var metaRefreshGroup singleflight.Group
 
+const metaUserAgent = "muse-build/1.3.0 (interactive; macos-aarch64; build ac7280f2aca67769d1455a8847bb502b617d50f6)"
+
 // MetaExecutor implements the cliproxyauth.ProviderExecutor for Meta Muse models (api.meta.ai).
 type MetaExecutor struct {
-	cfg    *config.Config
-	compat *OpenAICompatExecutor
+	cfg *config.Config
 }
 
 // NewMetaExecutor constructs a new Meta executor.
 func NewMetaExecutor(cfg *config.Config) *MetaExecutor {
-	return &MetaExecutor{
-		cfg:    cfg,
-		compat: NewOpenAICompatExecutor("meta", cfg),
-	}
+	return &MetaExecutor{cfg: cfg}
 }
 
 // Identifier returns the provider identifier "meta".
@@ -56,7 +52,8 @@ func (e *MetaExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Auth
 	} else {
 		req.Header.Del("Authorization")
 	}
-	req.Header.Set("User-Agent", "muse-code/1.0.2")
+	req.Header.Set("User-Agent", metaUserAgent)
+	req.Header.Set("X-Client-Id:", "tbh:tui")
 
 	var attrs map[string]string
 	if auth != nil {
@@ -84,65 +81,6 @@ func (e *MetaExecutor) HttpRequest(ctx context.Context, auth *cliproxyauth.Auth,
 	}
 	httpClient := helps.NewProxyAwareHTTPClient(ctx, e.cfg, enriched, 0)
 	return httpClient.Do(httpReq)
-}
-
-// Execute executes a non-streaming completion against the Meta API.
-func (e *MetaExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
-	enriched, err := e.ensureAuth(ctx, auth)
-	if err != nil {
-		return cliproxyexecutor.Response{}, err
-	}
-	resp, err := e.compat.Execute(ctx, enriched, req, opts)
-	if err != nil {
-		var se statusErr
-		if errors.As(err, &se) && se.code == http.StatusTooManyRequests {
-			body := []byte(se.msg)
-			if retryAfter := parseMetaRetryAfter(se.code, body, time.Now()); retryAfter != nil {
-				se.retryAfter = retryAfter
-			}
-			if isMetaSubscriptionQuota(se.code, body) {
-				return resp, metaRateLimitError{statusErr: se, credentialScoped: true}
-			}
-			if se.retryAfter != nil {
-				return resp, se
-			}
-		}
-	}
-	return resp, err
-}
-
-// ExecuteStream executes a streaming request against the Meta API.
-func (e *MetaExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
-	enriched, err := e.ensureAuth(ctx, auth)
-	if err != nil {
-		return nil, err
-	}
-	streamRes, err := e.compat.ExecuteStream(ctx, enriched, req, opts)
-	if err != nil {
-		var se statusErr
-		if errors.As(err, &se) && se.code == http.StatusTooManyRequests {
-			body := []byte(se.msg)
-			if retryAfter := parseMetaRetryAfter(se.code, body, time.Now()); retryAfter != nil {
-				se.retryAfter = retryAfter
-			}
-			if isMetaSubscriptionQuota(se.code, body) {
-				return streamRes, metaRateLimitError{statusErr: se, credentialScoped: true}
-			}
-			if se.retryAfter != nil {
-				return streamRes, se
-			}
-		}
-	}
-	return streamRes, err
-}
-
-// CountTokens counts tokens using standard OpenAI token counting.
-func (e *MetaExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
-	enriched, err := e.ensureAuth(ctx, auth)
-	if err != nil {
-		return cliproxyexecutor.Response{}, err
-	}
-	return e.compat.CountTokens(ctx, enriched, req, opts)
 }
 
 // Refresh mints an API key from a DCA token if needed.
@@ -307,7 +245,7 @@ func (e *MetaExecutor) enrichAuth(auth *cliproxyauth.Auth) *cliproxyauth.Auth {
 		cloned.Attributes["api_key"] = token
 	}
 	if _, hasHeader := cloned.Attributes["header:User-Agent"]; !hasHeader {
-		cloned.Attributes["header:User-Agent"] = "muse-code/1.0.2"
+		cloned.Attributes["header:User-Agent"] = metaUserAgent
 	}
 	return cloned
 }

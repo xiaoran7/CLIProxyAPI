@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,10 +17,12 @@ import (
 	metaauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/meta"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
+	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator"
 	sdkauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/auth"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
+	"github.com/tidwall/gjson"
 )
 
 func TestMetaExecutor_Identifier(t *testing.T) {
@@ -129,7 +132,7 @@ func TestMetaExecutor_ExecuteSuccessAndRateLimit(t *testing.T) {
 			return
 		}
 
-		if r.URL.Path == "/chat/completions" {
+		if r.URL.Path == "/responses" {
 			// Check user agent
 			if ua := r.Header.Get("User-Agent"); ua != "muse-code/1.0.2" {
 				t.Errorf("expected User-Agent muse-code/1.0.2, got %s", ua)
@@ -197,6 +200,36 @@ func TestMetaExecutor_ExecuteSuccessAndRateLimit(t *testing.T) {
 func mapToJSON(m map[string]any) string {
 	b, _ := json.Marshal(m)
 	return string(b)
+}
+
+func writeMetaResponsesOK(w http.ResponseWriter, text string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	payload, _ := json.Marshal(map[string]any{
+		"type": "response.completed",
+		"response": map[string]any{
+			"id":     "resp_1",
+			"object": "response",
+			"status": "completed",
+			"model":  "muse-spark-1.3",
+			"output": []map[string]any{
+				{
+					"type": "message",
+					"role": "assistant",
+					"content": []map[string]any{
+						{"type": "output_text", "text": text},
+					},
+				},
+			},
+			"usage": map[string]any{
+				"input_tokens":  1,
+				"output_tokens": 1,
+				"total_tokens":  2,
+			},
+		},
+	})
+	_, _ = w.Write([]byte("data: "))
+	_, _ = w.Write(payload)
+	_, _ = w.Write([]byte("\n\n"))
 }
 
 func TestMetaExecutor_Refresh_RequiresManagerAcceptance(t *testing.T) {
@@ -412,25 +445,12 @@ func TestMetaExecutor_Execute_DCARecovery(t *testing.T) {
 			})
 			return
 		}
-		if r.URL.Path == "/chat/completions" {
+		if r.URL.Path == "/responses" {
 			if r.Header.Get("Authorization") != "Bearer LLM|auto-recovered-key" {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id":      "chatcmpl-123",
-				"object":  "chat.completion",
-				"created": time.Now().Unix(),
-				"model":   "muse-spark-1.3",
-				"choices": []map[string]any{
-					{
-						"index":         0,
-						"message":       map[string]any{"role": "assistant", "content": "hello world"},
-						"finish_reason": "stop",
-					},
-				},
-			})
+			writeMetaResponsesOK(w, "hello world")
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -487,7 +507,7 @@ func TestMetaExecutorManagerRecoversUnauthorizedKey(t *testing.T) {
 			_, _ = w.Write([]byte(`{"error":{"message":"key revoked"}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"id":"ok","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"recovered"},"finish_reason":"stop"}]}`))
+		writeMetaResponsesOK(w, "recovered")
 	}))
 	defer server.Close()
 	t.Setenv("META_MINT_URL", server.URL+"/key")
@@ -608,7 +628,7 @@ func TestMetaExecutor_RequestAuthPreparer(t *testing.T) {
 			_, _ = w.Write([]byte(`{"error":{"message":"unauthorized"}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"id":"ok","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"hello"}}]}`))
+		writeMetaResponsesOK(w, "hello")
 	}))
 	defer server.Close()
 
@@ -787,5 +807,161 @@ func TestMetaMintRejectsRemovedOrReloadedCredential(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestMetaExecutor_ExecuteShapesResponsesRequest(t *testing.T) {
+	var gotPath string
+	var gotAuth string
+	var gotUA string
+	var gotBody []byte
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotUA = r.Header.Get("User-Agent")
+		var errRead error
+		gotBody, errRead = io.ReadAll(r.Body)
+		if errRead != nil {
+			t.Fatalf("read body: %v", errRead)
+		}
+		writeMetaResponsesOK(w, "ok")
+	}))
+	defer server.Close()
+
+	exec := NewMetaExecutor(&config.Config{})
+	auth := &cliproxyauth.Auth{
+		Provider: "meta",
+		Attributes: map[string]string{
+			"api_key":  "meta-token",
+			"base_url": server.URL,
+		},
+	}
+
+	resp, err := exec.Execute(context.Background(), auth, cliproxyexecutor.Request{
+		Model:   "muse-spark-1.3",
+		Payload: []byte(`{"model":"muse-spark-1.3","messages":[{"role":"user","content":"hello"}]}`),
+	}, cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FromString("openai"),
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if gotPath != "/responses" {
+		t.Fatalf("path = %q, want /responses", gotPath)
+	}
+	if gotAuth != "Bearer meta-token" {
+		t.Fatalf("Authorization = %q, want Bearer meta-token", gotAuth)
+	}
+	if gotUA != metaUserAgent {
+		t.Fatalf("User-Agent = %q, want %q", gotUA, metaUserAgent)
+	}
+	if gjson.GetBytes(gotBody, "messages").Exists() {
+		t.Fatalf("request still uses chat completions messages: %s", gotBody)
+	}
+	if !gjson.GetBytes(gotBody, "input").Exists() {
+		t.Fatalf("request missing responses input: %s", gotBody)
+	}
+	if !gjson.GetBytes(gotBody, "stream").Bool() {
+		t.Fatalf("stream = false, want true")
+	}
+	if gjson.GetBytes(gotBody, "model").String() != "muse-spark-1.3" {
+		t.Fatalf("model = %q, want muse-spark-1.3", gjson.GetBytes(gotBody, "model").String())
+	}
+	if len(resp.Payload) == 0 {
+		t.Fatal("expected non-empty translated payload")
+	}
+}
+
+func TestMetaExecutor_ExecuteStreamUsesResponses(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		writeMetaResponsesOK(w, "streamed")
+	}))
+	defer server.Close()
+
+	exec := NewMetaExecutor(&config.Config{})
+	auth := &cliproxyauth.Auth{
+		Provider: "meta",
+		Attributes: map[string]string{
+			"api_key":  "meta-token",
+			"base_url": server.URL,
+		},
+	}
+
+	result, err := exec.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{
+		Model:   "muse-spark-1.3",
+		Payload: []byte(`{"model":"muse-spark-1.3","messages":[{"role":"user","content":"hello"}]}`),
+	}, cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FromString("openai"),
+		Stream:       true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteStream() error = %v", err)
+	}
+	if gotPath != "/responses" {
+		t.Fatalf("path = %q, want /responses", gotPath)
+	}
+	if result == nil {
+		t.Fatal("expected stream result")
+	}
+	gotChunk := false
+	for chunk := range result.Chunks {
+		if chunk.Err != nil {
+			t.Fatalf("stream chunk error: %v", chunk.Err)
+		}
+		if len(chunk.Payload) > 0 {
+			gotChunk = true
+		}
+	}
+	if !gotChunk {
+		t.Fatal("expected at least one stream payload chunk")
+	}
+}
+
+func TestMetaExecutor_PreservesPreviousResponseID(t *testing.T) {
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		writeMetaResponsesOK(w, "ok")
+	}))
+	defer server.Close()
+
+	_, err := NewMetaExecutor(&config.Config{}).Execute(context.Background(), &cliproxyauth.Auth{
+		Attributes: map[string]string{"api_key": "meta-token", "base_url": server.URL},
+	}, cliproxyexecutor.Request{
+		Model:   "muse-spark-1.3",
+		Payload: []byte(`{"model":"muse-spark-1.3","input":"hello","previous_response_id":"resp_prev"}`),
+	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("openai-response")})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got := gjson.GetBytes(gotBody, "previous_response_id").String(); got != "resp_prev" {
+		t.Fatalf("previous_response_id = %q, want resp_prev", got)
+	}
+}
+
+func TestMetaExecutor_CompactNotSupported(t *testing.T) {
+	exec := NewMetaExecutor(&config.Config{})
+	auth := &cliproxyauth.Auth{Attributes: map[string]string{"api_key": "meta-token", "base_url": "https://api.meta.ai/v1"}}
+	req := cliproxyexecutor.Request{Model: "muse-spark-1.3", Payload: []byte(`{"model":"muse-spark-1.3"}`)}
+	opts := cliproxyexecutor.Options{Alt: "responses/compact", SourceFormat: sdktranslator.FromString("openai-response")}
+
+	_, err := exec.Execute(context.Background(), auth, req, opts)
+	if err == nil {
+		t.Fatal("expected compact execute error")
+	}
+	var se statusErr
+	if !errors.As(err, &se) || se.StatusCode() != http.StatusNotImplemented {
+		t.Fatalf("Execute compact error = %v, want 501 statusErr", err)
+	}
+
+	_, err = exec.ExecuteStream(context.Background(), auth, req, opts)
+	if err == nil {
+		t.Fatal("expected compact stream error")
+	}
+	if !errors.As(err, &se) || se.StatusCode() != http.StatusNotImplemented {
+		t.Fatalf("ExecuteStream compact error = %v, want 501 statusErr", err)
 	}
 }
