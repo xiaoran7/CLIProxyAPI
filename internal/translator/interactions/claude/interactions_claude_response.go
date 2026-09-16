@@ -101,6 +101,11 @@ func ConvertInteractionsResponseToClaudeNonStream(_ context.Context, modelName s
 	if sawToolCall {
 		out, _ = sjson.SetBytes(out, "stop_reason", "tool_use")
 	}
+	status := firstNonEmpty(interaction.Get("status").String(), root.Get("status").String())
+	finishReason := firstNonEmpty(interaction.Get("finish_reason").String(), root.Get("finish_reason").String())
+	if status == "incomplete" || finishReason == "length" || finishReason == "max_tokens" {
+		out, _ = sjson.SetBytes(out, "stop_reason", "max_tokens")
+	}
 	out = setClaudeUsageFromInteractions(out, "usage", translatorcommon.InteractionsUsage(root))
 	return out
 }
@@ -276,6 +281,12 @@ func appendClaudeMessageDelta(out [][]byte, root gjson.Result, st *interactionsT
 	payload := []byte(`{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":0,"output_tokens":0}}`)
 	if st.SawToolCall {
 		payload, _ = sjson.SetBytes(payload, "delta.stop_reason", "tool_use")
+	}
+	interaction := root.Get("interaction")
+	status := firstNonEmpty(interaction.Get("status").String(), root.Get("status").String())
+	finishReason := firstNonEmpty(interaction.Get("finish_reason").String(), root.Get("finish_reason").String())
+	if status == "incomplete" || finishReason == "length" || finishReason == "max_tokens" {
+		payload, _ = sjson.SetBytes(payload, "delta.stop_reason", "max_tokens")
 	}
 	payload = setClaudeUsageFromInteractions(payload, "usage", translatorcommon.InteractionsUsage(root))
 	out = append(out, translatorcommon.AppendSSEEventBytes(nil, "message_delta", payload, 3))

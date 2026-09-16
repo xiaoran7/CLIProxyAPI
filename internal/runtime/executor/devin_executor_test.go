@@ -1280,3 +1280,173 @@ func TestDevinExecutorOpenAIToolCallAndResultViaInteractions(t *testing.T) {
 		t.Fatalf("tool result content = %q, want package main", got)
 	}
 }
+
+func TestStreamDevinFrames_StopReasonMaxTokens(t *testing.T) {
+	// Frame with StopReason = 3 (MAX_TOKENS) and partial content
+	var f1 []byte
+	f1 = protowire.AppendTag(f1, 3, protowire.BytesType)
+	f1 = protowire.AppendString(f1, "cut short")
+	f1 = protowire.AppendTag(f1, 5, protowire.VarintType)
+	f1 = protowire.AppendVarint(f1, 3)
+
+	var buf bytes.Buffer
+	buf.Write(helps.WrapConnectEnvelope(f1))
+	buf.Write(helps.WrapConnectEnvelopeWithFlag(helps.ConnectFlagEndStream, []byte(`{}`)))
+
+	e := &DevinExecutor{}
+	out := make(chan cliproxyexecutor.StreamChunk, 20)
+	opts := cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FormatInteractions,
+	}
+
+	go func() {
+		defer close(out)
+		e.streamDevinFrames(
+			context.Background(),
+			&buf,
+			cliproxyexecutor.Request{Model: "devin/swe-2"},
+			opts,
+			"swe-2-high",
+			sdktranslator.FormatInteractions,
+			nil,
+			out,
+		)
+	}()
+
+	var completedEvent gjson.Result
+	for chunk := range out {
+		if chunk.Err != nil {
+			t.Fatalf("unexpected chunk error: %v", chunk.Err)
+		}
+		raw := string(chunk.Payload)
+		if strings.HasPrefix(raw, "data: ") && !strings.Contains(raw, "[DONE]") {
+			data := strings.TrimPrefix(raw, "data: ")
+			data = strings.TrimSpace(data)
+			parsed := gjson.Parse(data)
+			if parsed.Get("event_type").String() == "interaction.completed" {
+				completedEvent = parsed
+			}
+		}
+	}
+
+	if !completedEvent.Exists() {
+		t.Fatalf("interaction.completed event not found")
+	}
+	if got := completedEvent.Get("interaction.status").String(); got != "incomplete" {
+		t.Fatalf("interaction.status = %q, want incomplete. Event: %s", got, completedEvent.Raw)
+	}
+	if got := completedEvent.Get("interaction.finish_reason").String(); got != "length" {
+		t.Fatalf("interaction.finish_reason = %q, want length. Event: %s", got, completedEvent.Raw)
+	}
+}
+
+func TestConsumeDevinFramesToInteractions_StopReasonMaxTokens(t *testing.T) {
+	// Frame with StopReason = 3 (MAX_TOKENS) and partial content
+	var f1 []byte
+	f1 = protowire.AppendTag(f1, 3, protowire.BytesType)
+	f1 = protowire.AppendString(f1, "cut short")
+	f1 = protowire.AppendTag(f1, 5, protowire.VarintType)
+	f1 = protowire.AppendVarint(f1, 3)
+
+	var buf bytes.Buffer
+	buf.Write(helps.WrapConnectEnvelope(f1))
+	buf.Write(helps.WrapConnectEnvelopeWithFlag(helps.ConnectFlagEndStream, []byte(`{}`)))
+
+	out, _, err := consumeDevinFramesToInteractions(&buf, "devin/swe-2", "swe-2-high")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	parsed := gjson.ParseBytes(out)
+	if got := parsed.Get("status").String(); got != "incomplete" {
+		t.Fatalf("status = %q, want incomplete. Output: %s", got, string(out))
+	}
+	if got := parsed.Get("finish_reason").String(); got != "length" {
+		t.Fatalf("finish_reason = %q, want length. Output: %s", got, string(out))
+	}
+}
+
+func TestStreamDevinFrames_StopReasonContentFilter(t *testing.T) {
+	// Frame with StopReason = 11 (CONTENT_FILTER)
+	var f1 []byte
+	f1 = protowire.AppendTag(f1, 3, protowire.BytesType)
+	f1 = protowire.AppendString(f1, "blocked")
+	f1 = protowire.AppendTag(f1, 5, protowire.VarintType)
+	f1 = protowire.AppendVarint(f1, 11)
+
+	var buf bytes.Buffer
+	buf.Write(helps.WrapConnectEnvelope(f1))
+	buf.Write(helps.WrapConnectEnvelopeWithFlag(helps.ConnectFlagEndStream, []byte(`{}`)))
+
+	e := &DevinExecutor{}
+	out := make(chan cliproxyexecutor.StreamChunk, 20)
+	opts := cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FormatInteractions,
+	}
+
+	go func() {
+		defer close(out)
+		e.streamDevinFrames(
+			context.Background(),
+			&buf,
+			cliproxyexecutor.Request{Model: "devin/swe-2"},
+			opts,
+			"swe-2-high",
+			sdktranslator.FormatInteractions,
+			nil,
+			out,
+		)
+	}()
+
+	var completedEvent gjson.Result
+	for chunk := range out {
+		if chunk.Err != nil {
+			t.Fatalf("unexpected chunk error: %v", chunk.Err)
+		}
+		raw := string(chunk.Payload)
+		if strings.HasPrefix(raw, "data: ") && !strings.Contains(raw, "[DONE]") {
+			data := strings.TrimPrefix(raw, "data: ")
+			data = strings.TrimSpace(data)
+			parsed := gjson.Parse(data)
+			if parsed.Get("event_type").String() == "interaction.completed" {
+				completedEvent = parsed
+			}
+		}
+	}
+
+	if !completedEvent.Exists() {
+		t.Fatalf("interaction.completed event not found")
+	}
+	if got := completedEvent.Get("interaction.status").String(); got != "incomplete" {
+		t.Fatalf("interaction.status = %q, want incomplete", got)
+	}
+	if got := completedEvent.Get("interaction.finish_reason").String(); got != "content_filter" {
+		t.Fatalf("interaction.finish_reason = %q, want content_filter", got)
+	}
+}
+
+func TestConsumeDevinFramesToInteractions_StopReasonContentFilter(t *testing.T) {
+	// Frame with StopReason = 11 (CONTENT_FILTER)
+	var f1 []byte
+	f1 = protowire.AppendTag(f1, 3, protowire.BytesType)
+	f1 = protowire.AppendString(f1, "blocked")
+	f1 = protowire.AppendTag(f1, 5, protowire.VarintType)
+	f1 = protowire.AppendVarint(f1, 11)
+
+	var buf bytes.Buffer
+	buf.Write(helps.WrapConnectEnvelope(f1))
+	buf.Write(helps.WrapConnectEnvelopeWithFlag(helps.ConnectFlagEndStream, []byte(`{}`)))
+
+	out, _, err := consumeDevinFramesToInteractions(&buf, "devin/swe-2", "swe-2-high")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	parsed := gjson.ParseBytes(out)
+	if got := parsed.Get("status").String(); got != "incomplete" {
+		t.Fatalf("status = %q, want incomplete. Output: %s", got, string(out))
+	}
+	if got := parsed.Get("finish_reason").String(); got != "content_filter" {
+		t.Fatalf("finish_reason = %q, want content_filter. Output: %s", got, string(out))
+	}
+}

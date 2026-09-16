@@ -536,6 +536,7 @@ func (e *DevinExecutor) streamDevinFrames(
 
 	thoughtStepIndex := -1
 	var streamErr error
+	var lastStopReason uint64
 	sawEOS := false
 
 	// 2. Consume streaming Connect-proto frames
@@ -571,6 +572,9 @@ func (e *DevinExecutor) streamDevinFrames(
 		if errParse != nil {
 			log.Debugf("devin executor: parse frame error: %v", errParse)
 			continue
+		}
+		if frameRes.StopReason != 0 {
+			lastStopReason = frameRes.StopReason
 		}
 
 		if frameRes.Usage != nil {
@@ -820,9 +824,27 @@ func (e *DevinExecutor) streamDevinFrames(
 	}
 
 	// 5. Emit interaction.completed with final usage
+	completionStatus := "completed"
+	var completionFinishReason string
+	switch lastStopReason {
+	case 1: // INCOMPLETE
+		completionStatus = "incomplete"
+		completionFinishReason = "length"
+	case 3: // MAX_TOKENS
+		completionStatus = "incomplete"
+		completionFinishReason = "length"
+	case 11: // CONTENT_FILTER
+		completionStatus = "incomplete"
+		completionFinishReason = "content_filter"
+	}
+
 	completedEvent := []byte(`{"event_type":"interaction.completed","interaction":{"id":"","model":"","status":"completed","usage":{"total_input_tokens":0,"total_output_tokens":0,"total_cached_tokens":0}}}`)
 	completedEvent, _ = sjson.SetBytes(completedEvent, "interaction.id", interactionID)
 	completedEvent, _ = sjson.SetBytes(completedEvent, "interaction.model", req.Model)
+	completedEvent, _ = sjson.SetBytes(completedEvent, "interaction.status", completionStatus)
+	if completionFinishReason != "" {
+		completedEvent, _ = sjson.SetBytes(completedEvent, "interaction.finish_reason", completionFinishReason)
+	}
 	if finalUsage != nil {
 		totalInput := finalUsage.PromptTokens + finalUsage.CachedTokens
 		totalOutput := finalUsage.CompletionTokens
@@ -920,6 +942,7 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 	var accumulatedSignature []byte
 	var signatureType string
 	var unknownFields []int
+	var lastStopReason uint64
 	seenUnknown := make(map[int]bool)
 	framesCount := 0
 	sawEOS := false
@@ -968,6 +991,9 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 		frameRes, errParse := helps.ParseDevinFrame(payload)
 		if errParse != nil {
 			continue
+		}
+		if frameRes.StopReason != 0 {
+			lastStopReason = frameRes.StopReason
 		}
 
 		for _, uf := range frameRes.UnknownFieldNumbers {
@@ -1083,9 +1109,27 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 		return nil, respLog, truncErr
 	}
 
+	completionStatus := "completed"
+	var completionFinishReason string
+	switch lastStopReason {
+	case 1: // INCOMPLETE
+		completionStatus = "incomplete"
+		completionFinishReason = "length"
+	case 3: // MAX_TOKENS
+		completionStatus = "incomplete"
+		completionFinishReason = "length"
+	case 11: // CONTENT_FILTER
+		completionStatus = "incomplete"
+		completionFinishReason = "content_filter"
+	}
+
 	out := []byte(`{"id":"","model":"","status":"completed","steps":[],"usage":{"total_input_tokens":0,"total_output_tokens":0,"total_cached_tokens":0}}`)
 	out, _ = sjson.SetBytes(out, "id", interactionID)
 	out, _ = sjson.SetBytes(out, "model", model)
+	out, _ = sjson.SetBytes(out, "status", completionStatus)
+	if completionFinishReason != "" {
+		out, _ = sjson.SetBytes(out, "finish_reason", completionFinishReason)
+	}
 
 	var steps [][]byte
 

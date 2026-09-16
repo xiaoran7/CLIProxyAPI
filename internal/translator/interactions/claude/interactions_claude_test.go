@@ -275,6 +275,37 @@ func TestConvertInteractionsResponseToClaudeNonStream(t *testing.T) {
 	}
 }
 
+func TestConvertInteractionsResponseToClaude_IncompleteMaxTokens(t *testing.T) {
+	// Non-stream
+	raw := []byte(`{"id":"interaction_1","model":"devin/swe-2","status":"incomplete","finish_reason":"length","steps":[{"type":"model_output","content":[{"type":"text","text":"cut short"}]}],"usage":{"total_input_tokens":3,"total_output_tokens":4}}`)
+	out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+	if got := gjson.GetBytes(out, "stop_reason").String(); got != "max_tokens" {
+		t.Fatalf("stop_reason = %q, want max_tokens. Output: %s", got, string(out))
+	}
+
+	// Stream
+	var param any
+	chunks := [][]byte{
+		[]byte(`data: {"event_type":"interaction.created","interaction":{"id":"i1","model":"devin/swe-2"}}`),
+		[]byte(`data: {"event_type":"step.start","index":0,"step":{"type":"model_output"}}`),
+		[]byte(`data: {"event_type":"step.delta","index":0,"delta":{"type":"text","text":"cut short"}}`),
+		[]byte(`data: {"event_type":"step.stop","index":0}`),
+		[]byte(`data: {"event_type":"interaction.completed","interaction":{"id":"i1","status":"incomplete","finish_reason":"length"}}`),
+		[]byte(`data: [DONE]`),
+	}
+	var outStream [][]byte
+	for _, chunk := range chunks {
+		outStream = append(outStream, ConvertInteractionsResponseToClaude(context.Background(), "devin/swe-2", nil, nil, chunk, &param)...)
+	}
+	msgDelta := findClaudeEventPayload(outStream, "message_delta")
+	if msgDelta == nil {
+		t.Fatalf("missing message_delta event")
+	}
+	if got := gjson.GetBytes(msgDelta, "delta.stop_reason").String(); got != "max_tokens" {
+		t.Fatalf("delta.stop_reason = %q, want max_tokens. Payload: %s", got, string(msgDelta))
+	}
+}
+
 func findClaudeEventPayload(events [][]byte, eventName string) []byte {
 	prefix := []byte("data:")
 	for _, event := range events {
