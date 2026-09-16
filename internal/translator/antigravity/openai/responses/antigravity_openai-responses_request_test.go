@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
 	sigcompat "github.com/router-for-me/CLIProxyAPI/v7/internal/signature"
 	"github.com/tidwall/gjson"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -837,5 +838,143 @@ func TestConvertOpenAIResponsesRequestToAntigravity_OrphanFunctionCallOutputBeco
 	}
 	if bashResponseID != "call_1789387253098037589_85" {
 		t.Fatalf("bash functionResponse.id = %q; output=%s", bashResponseID, string(out))
+	}
+}
+
+func TestConvertOpenAIResponsesRequestToAntigravity_WebSearch(t *testing.T) {
+	capableModel := "ag-websearch-test-model"
+	incapableModel := "ag-websearch-incapable-model"
+
+	reg := registry.GetGlobalRegistry()
+	reg.RegisterClient("ag-search-test-client", "antigravity", []*registry.ModelInfo{
+		{ID: capableModel, SupportsWebSearch: true},
+		{ID: incapableModel, SupportsWebSearch: false},
+	})
+	t.Cleanup(func() {
+		reg.UnregisterClient("ag-search-test-client")
+	})
+
+	input := []byte(`{
+		"model": "` + capableModel + `",
+		"input": "What is the newest Go release?",
+		"tools": [{
+			"type": "web_search",
+			"filters": {
+				"allowed_domains": ["go.dev"]
+			}
+		}]
+	}`)
+
+	out := ConvertOpenAIResponsesRequestToAntigravity(capableModel, input, false)
+	parsed := gjson.ParseBytes(out)
+
+	if parsed.Get("requestType").String() != "web_search" {
+		t.Fatalf("expected requestType web_search, got %q. Output: %s", parsed.Get("requestType").String(), out)
+	}
+	if query := parsed.Get("request.contents.0.parts.0.text").String(); query != "What is the newest Go release?" {
+		t.Fatalf("expected query 'What is the newest Go release?', got %q", query)
+	}
+	if maxResult := parsed.Get("request.tools.0.googleSearch.enhancedContent.imageSearch.maxResultCount").Int(); maxResult != 5 {
+		t.Fatalf("expected maxResultCount 5, got %d", maxResult)
+	}
+	domains := parsed.Get("request.tools.0.googleSearch.includedDomains").Array()
+	if len(domains) != 1 || domains[0].String() != "go.dev" {
+		t.Fatalf("expected includedDomains ['go.dev'], got %s", parsed.Get("request.tools.0.googleSearch.includedDomains").Raw)
+	}
+
+	// Incapable model should not build web_search envelope
+	incapableInput := []byte(`{
+		"model": "` + incapableModel + `",
+		"input": "What is the newest Go release?",
+		"tools": [{"type": "web_search"}]
+	}`)
+	incapableOut := ConvertOpenAIResponsesRequestToAntigravity(incapableModel, incapableInput, false)
+	if gjson.GetBytes(incapableOut, "requestType").String() == "web_search" {
+		t.Fatalf("incapable model should not build web_search requestType envelope, got: %s", incapableOut)
+	}
+}
+
+func TestConvertOpenAIResponsesRequestToAntigravity_MixedToolsSuppressesGoogleSearch(t *testing.T) {
+	modelID := "ag-mixed-tools-model"
+
+	reg := registry.GetGlobalRegistry()
+	reg.RegisterClient("client-ag-mixed", "antigravity", []*registry.ModelInfo{
+		{ID: modelID, SupportsWebSearch: true},
+	})
+	t.Cleanup(func() {
+		reg.UnregisterClient("client-ag-mixed")
+	})
+
+	input := []byte(`{
+		"model": "` + modelID + `",
+		"input": "Search weather and lookup local data",
+		"tools": [
+			{"type": "web_search"},
+			{"type": "function", "name": "lookup_data", "description": "Lookup data", "parameters": {"type": "object", "properties": {"k": {"type": "string"}}}}
+		]
+	}`)
+
+	out := ConvertOpenAIResponsesRequestToAntigravity(modelID, input, false)
+	parsed := gjson.ParseBytes(out)
+
+	// 1. Must not build independent web_search requestType envelope
+	if parsed.Get("requestType").String() == "web_search" {
+		t.Fatalf("mixed tools must not build independent web_search requestType, got: %s", out)
+	}
+
+	// 2. Must not contain native googleSearch block in request.tools
+	for _, tool := range parsed.Get("request.tools").Array() {
+		if tool.Get("googleSearch").Exists() {
+			t.Fatalf("mixed tools must not inject native googleSearch into chat request: %s", out)
+		}
+	}
+
+	// 3. Must preserve functionDeclarations for lookup_data
+	fnFound := false
+	for _, tool := range parsed.Get("request.tools").Array() {
+		for _, fn := range tool.Get("functionDeclarations").Array() {
+			if fn.Get("name").String() == "lookup_data" {
+				fnFound = true
+				break
+			}
+		}
+	}
+	if !fnFound {
+		t.Fatalf("custom function lookup_data should be preserved in request.tools: %s", out)
+	}
+}
+
+func TestConvertOpenAIResponsesRequestToAntigravity_CrossProviderCapabilityIsolation(t *testing.T) {
+	modelID := "gemini-cross-prov-search-iso"
+
+	reg := registry.GetGlobalRegistry()
+	// AI Studio client supports search on this model
+	reg.RegisterClient("client-aistudio-search", "aistudio", []*registry.ModelInfo{
+		{ID: modelID, SupportsWebSearch: true},
+	})
+	// Antigravity client does NOT support search on this model
+	reg.RegisterClient("client-antigravity-nosearch", "antigravity", []*registry.ModelInfo{
+		{ID: modelID, SupportsWebSearch: false},
+	})
+	t.Cleanup(func() {
+		reg.UnregisterClient("client-aistudio-search")
+		reg.UnregisterClient("client-antigravity-nosearch")
+	})
+
+	input := []byte(`{
+		"model": "` + modelID + `",
+		"input": "Search web",
+		"tools": [{"type": "web_search"}]
+	}`)
+
+	// Antigravity dedicated request builder must not build web_search envelope
+	// by borrowing AI Studio's capability
+	if shouldBuildAntigravityResponsesWebSearchRequest(modelID, input) {
+		t.Fatalf("shouldBuildAntigravityResponsesWebSearchRequest should be false for Antigravity route when Antigravity model lacks search capability")
+	}
+
+	out := ConvertOpenAIResponsesRequestToAntigravity(modelID, input, false)
+	if gjson.GetBytes(out, "requestType").String() == "web_search" {
+		t.Fatalf("ConvertOpenAIResponsesRequestToAntigravity should not build web_search requestType envelope when Antigravity route lacks capability: %s", out)
 	}
 }
