@@ -321,3 +321,225 @@ func findClaudeEventPayload(events [][]byte, eventName string) []byte {
 	}
 	return nil
 }
+
+func TestConvertInteractionsResponseToClaude_PreservesCacheReadUsage(t *testing.T) {
+	t.Run("streaming_cache_hit", func(t *testing.T) {
+		var param any
+		chunks := [][]byte{
+			[]byte(`data: {"event_type":"interaction.created","interaction":{"id":"i1","model":"devin/swe-2"}}`),
+			[]byte(`data: {"event_type":"step.start","index":0,"step":{"type":"model_output"}}`),
+			[]byte(`data: {"event_type":"step.delta","index":0,"delta":{"type":"text","text":"hello"}}`),
+			[]byte(`data: {"event_type":"step.stop","index":0}`),
+			[]byte(`data: {"event_type":"interaction.completed","interaction":{"id":"i1","model":"devin/swe-2","status":"completed","usage":{"total_input_tokens":10411,"total_output_tokens":76,"total_cached_tokens":10340,"total_tokens":10487}}}`),
+			[]byte(`data: [DONE]`),
+		}
+		var outStream [][]byte
+		for _, chunk := range chunks {
+			outStream = append(outStream, ConvertInteractionsResponseToClaude(context.Background(), "devin/swe-2", nil, nil, chunk, &param)...)
+		}
+		msgDelta := findClaudeEventPayload(outStream, "message_delta")
+		if msgDelta == nil {
+			t.Fatalf("missing message_delta event")
+		}
+		usage := gjson.GetBytes(msgDelta, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 71 {
+			t.Fatalf("usage.input_tokens = %d, want 71. Payload: %s", got, string(msgDelta))
+		}
+		if got := usage.Get("output_tokens").Int(); got != 76 {
+			t.Fatalf("usage.output_tokens = %d, want 76. Payload: %s", got, string(msgDelta))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 10340 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 10340. Payload: %s", got, string(msgDelta))
+		}
+	})
+
+	t.Run("non_streaming_cache_hit", func(t *testing.T) {
+		raw := []byte(`{"id":"i2","model":"devin/glm-5-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"total_input_tokens":96724,"total_output_tokens":269,"total_cached_tokens":30784,"total_tokens":96993}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/glm-5-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 65940 {
+			t.Fatalf("usage.input_tokens = %d, want 65940. Output: %s", got, string(out))
+		}
+		if got := usage.Get("output_tokens").Int(); got != 269 {
+			t.Fatalf("usage.output_tokens = %d, want 269. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 30784 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 30784. Output: %s", got, string(out))
+		}
+	})
+
+	t.Run("zero_cache_tokens", func(t *testing.T) {
+		raw := []byte(`{"id":"i3","model":"devin/swe-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"total_input_tokens":100,"total_output_tokens":50,"total_cached_tokens":0,"total_tokens":150}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 100 {
+			t.Fatalf("usage.input_tokens = %d, want 100. Output: %s", got, string(out))
+		}
+		if got := usage.Get("output_tokens").Int(); got != 50 {
+			t.Fatalf("usage.output_tokens = %d, want 50. Output: %s", got, string(out))
+		}
+		if usage.Get("cache_read_input_tokens").Exists() {
+			t.Fatalf("usage.cache_read_input_tokens should not be present when zero. Output: %s", string(out))
+		}
+	})
+
+	t.Run("explicit_uncached_and_cache_creation", func(t *testing.T) {
+		raw := []byte(`{"id":"i4","model":"devin/swe-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"input_tokens":71,"total_input_tokens":10411,"total_output_tokens":76,"cache_read_input_tokens":10340,"cache_creation_input_tokens":25,"total_tokens":10487}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 71 {
+			t.Fatalf("usage.input_tokens = %d, want 71. Output: %s", got, string(out))
+		}
+		if got := usage.Get("output_tokens").Int(); got != 76 {
+			t.Fatalf("usage.output_tokens = %d, want 76. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 10340 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 10340. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_creation_input_tokens").Int(); got != 25 {
+			t.Fatalf("usage.cache_creation_input_tokens = %d, want 25. Output: %s", got, string(out))
+		}
+	})
+
+	t.Run("explicit_uncached_with_cache_write_in_total", func(t *testing.T) {
+		// Total input (10436) = uncached (71) + read (10340) + write (25)
+		raw := []byte(`{"id":"i5","model":"devin/swe-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"input_tokens":71,"total_input_tokens":10436,"total_output_tokens":76,"cache_read_input_tokens":10340,"cache_creation_input_tokens":25,"total_tokens":10512}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 71 {
+			t.Fatalf("usage.input_tokens = %d, want 71. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 10340 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 10340. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_creation_input_tokens").Int(); got != 25 {
+			t.Fatalf("usage.cache_creation_input_tokens = %d, want 25. Output: %s", got, string(out))
+		}
+	})
+
+	t.Run("full_cache_hit", func(t *testing.T) {
+		raw := []byte(`{"id":"i6","model":"devin/swe-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"total_input_tokens":500,"total_output_tokens":50,"total_cached_tokens":500,"total_tokens":550}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 0 {
+			t.Fatalf("usage.input_tokens = %d, want 0. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 500 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 500. Output: %s", got, string(out))
+		}
+	})
+
+	t.Run("cached_tokens_exceeds_input", func(t *testing.T) {
+		raw := []byte(`{"id":"i7","model":"devin/swe-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"total_input_tokens":50,"total_output_tokens":50,"total_cached_tokens":100,"total_tokens":150}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 0 {
+			t.Fatalf("usage.input_tokens = %d, want 0. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 100 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 100. Output: %s", got, string(out))
+		}
+	})
+
+	t.Run("explicit_uncached_without_total_input_tokens", func(t *testing.T) {
+		raw := []byte(`{"id":"i8","model":"devin/swe-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"input_tokens":71,"output_tokens":76,"cache_read_input_tokens":10340}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 71 {
+			t.Fatalf("usage.input_tokens = %d, want 71. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 10340 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 10340. Output: %s", got, string(out))
+		}
+	})
+
+	t.Run("explicit_uncached_without_total_input_tokens_greater", func(t *testing.T) {
+		raw := []byte(`{"id":"i8_gt","model":"devin/swe-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"input_tokens":100,"output_tokens":30,"cache_read_input_tokens":80}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 100 {
+			t.Fatalf("usage.input_tokens = %d, want 100. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 80 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 80. Output: %s", got, string(out))
+		}
+	})
+
+	t.Run("explicit_uncached_without_total_input_tokens_equal", func(t *testing.T) {
+		raw := []byte(`{"id":"i8_eq","model":"devin/swe-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"input_tokens":80,"output_tokens":30,"cache_read_input_tokens":80}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 80 {
+			t.Fatalf("usage.input_tokens = %d, want 80. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 80 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 80. Output: %s", got, string(out))
+		}
+	})
+
+	t.Run("explicit_uncached_zero_with_total", func(t *testing.T) {
+		raw := []byte(`{"id":"i10","model":"devin/swe-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"input_tokens":0,"total_input_tokens":500,"output_tokens":30,"cache_read_input_tokens":500}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 0 {
+			t.Fatalf("usage.input_tokens = %d, want 0. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 500 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 500. Output: %s", got, string(out))
+		}
+	})
+
+	t.Run("explicit_uncached_equal_to_total_input", func(t *testing.T) {
+		raw := []byte(`{"id":"i11","model":"devin/swe-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"input_tokens":100,"total_input_tokens":100,"output_tokens":30,"cache_read_input_tokens":20}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 100 {
+			t.Fatalf("usage.input_tokens = %d, want 100. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 20 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 20. Output: %s", got, string(out))
+		}
+	})
+
+	t.Run("explicit_uncached_zero_with_partial_cache", func(t *testing.T) {
+		raw := []byte(`{"id":"i12","model":"devin/swe-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"input_tokens":0,"total_input_tokens":500,"output_tokens":30,"cache_read_input_tokens":200}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 0 {
+			t.Fatalf("usage.input_tokens = %d, want 0. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 200 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 200. Output: %s", got, string(out))
+		}
+	})
+
+	t.Run("inclusive_total_without_input_tokens_large_scale", func(t *testing.T) {
+		raw := []byte(`{"id":"i13","model":"devin/swe-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"total_input_tokens":10436,"output_tokens":76,"cache_read_input_tokens":10340,"cache_creation_input_tokens":25}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 71 {
+			t.Fatalf("usage.input_tokens = %d, want 71. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 10340 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 10340. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_creation_input_tokens").Int(); got != 25 {
+			t.Fatalf("usage.cache_creation_input_tokens = %d, want 25. Output: %s", got, string(out))
+		}
+	})
+
+	t.Run("prompt_tokens_fallback", func(t *testing.T) {
+		raw := []byte(`{"id":"i14","model":"devin/swe-2","status":"completed","steps":[{"type":"model_output","content":[{"type":"text","text":"response text"}]}],"usage":{"prompt_tokens":100,"output_tokens":20,"cached_tokens":30}}`)
+		out := ConvertInteractionsResponseToClaudeNonStream(context.Background(), "devin/swe-2", nil, nil, raw, nil)
+		usage := gjson.GetBytes(out, "usage")
+		if got := usage.Get("input_tokens").Int(); got != 70 {
+			t.Fatalf("usage.input_tokens = %d, want 70. Output: %s", got, string(out))
+		}
+		if got := usage.Get("output_tokens").Int(); got != 20 {
+			t.Fatalf("usage.output_tokens = %d, want 20. Output: %s", got, string(out))
+		}
+		if got := usage.Get("cache_read_input_tokens").Int(); got != 30 {
+			t.Fatalf("usage.cache_read_input_tokens = %d, want 30. Output: %s", got, string(out))
+		}
+	})
+}
