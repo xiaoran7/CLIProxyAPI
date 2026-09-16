@@ -32,25 +32,82 @@ func shouldBuildAntigravityResponsesWebSearchRequest(model string, payload []byt
 		AllowsResponsesWebSearchToolChoice(root)
 }
 
-func buildAntigravityResponsesWebSearchRequest(model string, payload []byte) []byte {
-	root := gjson.ParseBytes(payload)
-	query := ExtractResponsesWebSearchQuery(root)
-	includedDomains := ExtractResponsesWebSearchAllowedDomains(root)
-	out := []byte(`{"model":"","requestType":"web_search","request":{"contents":[{"role":"user","parts":[{"text":""}]}],"systemInstruction":{"role":"user","parts":[{"text":""}]},"tools":[{"googleSearch":{"enhancedContent":{"imageSearch":{"maxResultCount":5}}}}],"generationConfig":{"candidateCount":1}}}`)
-	out, _ = sjson.SetBytes(out, "model", model)
-	out, _ = sjson.SetBytes(out, "request.contents.0.parts.0.text", query)
-	out, _ = sjson.SetBytes(out, "request.systemInstruction.parts.0.text", antigravityWebSearchSystemInstruction)
+func buildAntigravityResponsesWebSearchRequest(model string, payload []byte, stream bool) []byte {
+	includedDomains := ExtractResponsesWebSearchAllowedDomains(gjson.ParseBytes(payload))
+	rawJSON := ConvertOpenAIResponsesRequestToGemini(model, payload, stream)
+	rawJSON = rewriteOpenAIResponsesReasoningForAntigravityClaude(model, payload, rawJSON)
+	out := ConvertGeminiRequestToAntigravity(model, rawJSON, stream)
+	out, _ = sjson.SetBytes(out, "requestType", "web_search")
+	out = ensureAntigravityResponsesWebSearchTool(out, includedDomains)
+	out = ensureAntigravityResponsesWebSearchSystemInstruction(out)
+	return enableAntigravityResponsesThinkingSummary(payload, out)
+}
+
+func ensureAntigravityResponsesWebSearchTool(payload []byte, includedDomains []string) []byte {
+	googleSearchTool := []byte(`{"googleSearch":{"enhancedContent":{"imageSearch":{"maxResultCount":5}}}}`)
 	if len(includedDomains) > 0 {
-		if domainsJSON, err := json.Marshal(includedDomains); err == nil {
-			out, _ = sjson.SetRawBytes(out, "request.tools.0.googleSearch.includedDomains", domainsJSON)
+		if domainsJSON, errMarshal := json.Marshal(includedDomains); errMarshal == nil {
+			googleSearchTool, _ = sjson.SetRawBytes(googleSearchTool, "googleSearch.includedDomains", domainsJSON)
 		}
 	}
-	return out
+
+	tools := gjson.GetBytes(payload, "request.tools")
+	if !tools.IsArray() {
+		payload, _ = sjson.SetRawBytes(payload, "request.tools", translatorcommon.JoinRawArray([][]byte{googleSearchTool}))
+		return payload
+	}
+
+	replaced := false
+	filtered := make([][]byte, 0, len(tools.Array()))
+	for _, tool := range tools.Array() {
+		if tool.Get("googleSearch").Exists() {
+			if !replaced {
+				filtered = append(filtered, googleSearchTool)
+				replaced = true
+			}
+			continue
+		}
+		filtered = append(filtered, []byte(tool.Raw))
+	}
+	if !replaced {
+		filtered = append([][]byte{googleSearchTool}, filtered...)
+	}
+	payload, _ = sjson.SetRawBytes(payload, "request.tools", translatorcommon.JoinRawArray(filtered))
+	return payload
+}
+
+func ensureAntigravityResponsesWebSearchSystemInstruction(payload []byte) []byte {
+	searchPart := []byte(`{"text":""}`)
+	searchPart, _ = sjson.SetBytes(searchPart, "text", antigravityWebSearchSystemInstruction)
+
+	sys := gjson.GetBytes(payload, "request.systemInstruction")
+	if !sys.Exists() {
+		instr := []byte(`{"role":"user","parts":[]}`)
+		instr, _ = sjson.SetRawBytes(instr, "parts", translatorcommon.JoinRawArray([][]byte{searchPart}))
+		payload, _ = sjson.SetRawBytes(payload, "request.systemInstruction", instr)
+		return payload
+	}
+
+	var parts [][]byte
+	alreadyPresent := false
+	if sys.Get("parts").IsArray() {
+		for _, part := range sys.Get("parts").Array() {
+			if part.Get("text").String() == antigravityWebSearchSystemInstruction {
+				alreadyPresent = true
+			}
+			parts = append(parts, []byte(part.Raw))
+		}
+	}
+	if !alreadyPresent {
+		parts = append(parts, searchPart)
+	}
+	payload, _ = sjson.SetRawBytes(payload, "request.systemInstruction.parts", translatorcommon.JoinRawArray(parts))
+	return payload
 }
 
 func ConvertOpenAIResponsesRequestToAntigravity(modelName string, inputRawJSON []byte, stream bool) []byte {
 	if shouldBuildAntigravityResponsesWebSearchRequest(modelName, inputRawJSON) {
-		return buildAntigravityResponsesWebSearchRequest(modelName, inputRawJSON)
+		return buildAntigravityResponsesWebSearchRequest(modelName, inputRawJSON, stream)
 	}
 	rawJSON := inputRawJSON
 	rawJSON = ConvertOpenAIResponsesRequestToGemini(modelName, rawJSON, stream)

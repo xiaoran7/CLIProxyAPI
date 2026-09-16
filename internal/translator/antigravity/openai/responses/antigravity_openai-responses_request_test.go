@@ -978,3 +978,159 @@ func TestConvertOpenAIResponsesRequestToAntigravity_CrossProviderCapabilityIsola
 		t.Fatalf("ConvertOpenAIResponsesRequestToAntigravity should not build web_search requestType envelope when Antigravity route lacks capability: %s", out)
 	}
 }
+
+func registerAntigravityResponsesWebSearchModel(t *testing.T, clientID, modelID string) {
+	t.Helper()
+	reg := registry.GetGlobalRegistry()
+	reg.RegisterClient(clientID, "antigravity", []*registry.ModelInfo{
+		{ID: modelID, SupportsWebSearch: true},
+	})
+	t.Cleanup(func() {
+		reg.UnregisterClient(clientID)
+	})
+}
+
+func TestConvertOpenAIResponsesRequestToAntigravity_WebSearchPreservesMultiTurnContents(t *testing.T) {
+	modelID := "ag-websearch-multiturn-model"
+	registerAntigravityResponsesWebSearchModel(t, "ag-search-multiturn-client", modelID)
+
+	input := []byte(`{
+		"model": "` + modelID + `",
+		"reasoning": {"effort": "high"},
+		"input": [
+			{
+				"role": "user",
+				"content": [{"type": "input_text", "text": "We are discussing Paris."}]
+			},
+			{
+				"role": "assistant",
+				"content": [{"type": "output_text", "text": "Paris is the capital of France."}]
+			},
+			{
+				"role": "user",
+				"content": [{"type": "input_text", "text": "How is the weather there tomorrow?"}]
+			}
+		],
+		"tools": [{"type": "web_search"}]
+	}`)
+
+	out := ConvertOpenAIResponsesRequestToAntigravity(modelID, input, false)
+	parsed := gjson.ParseBytes(out)
+	if parsed.Get("requestType").String() != "web_search" {
+		t.Fatalf("expected requestType web_search, got %q. Output: %s", parsed.Get("requestType").String(), out)
+	}
+
+	contents := parsed.Get("request.contents").Array()
+	if len(contents) != 3 {
+		t.Fatalf("request.contents count = %d, want 3. Output: %s", len(contents), out)
+	}
+	if contents[0].Get("role").String() != "user" || contents[0].Get("parts.0.text").String() != "We are discussing Paris." {
+		t.Fatalf("first turn not preserved. Output: %s", out)
+	}
+	if contents[1].Get("role").String() != "model" || contents[1].Get("parts.0.text").String() != "Paris is the capital of France." {
+		t.Fatalf("assistant turn not preserved as model. Output: %s", out)
+	}
+	if contents[2].Get("role").String() != "user" || contents[2].Get("parts.0.text").String() != "How is the weather there tomorrow?" {
+		t.Fatalf("current user turn not preserved. Output: %s", out)
+	}
+
+	if parsed.Get("request.generationConfig.thinkingConfig.thinkingLevel").String() != "high" {
+		t.Fatalf("thinkingLevel not preserved. Output: %s", out)
+	}
+	if !parsed.Get("request.generationConfig.thinkingConfig.includeThoughts").Bool() {
+		t.Fatalf("includeThoughts should be enabled from reasoning.effort. Output: %s", out)
+	}
+	if parsed.Get("request.tools.0.googleSearch.enhancedContent.imageSearch.maxResultCount").Int() != 5 {
+		t.Fatalf("expected maxResultCount 5, got %d. Output: %s", parsed.Get("request.tools.0.googleSearch.enhancedContent.imageSearch.maxResultCount").Int(), out)
+	}
+}
+
+func TestConvertOpenAIResponsesRequestToAntigravity_WebSearchPreservesInstructions(t *testing.T) {
+	modelID := "ag-websearch-instructions-model"
+	registerAntigravityResponsesWebSearchModel(t, "ag-search-instructions-client", modelID)
+
+	const userInstructions = "Answer as a travel concierge. Use metric units."
+	input := []byte(`{
+		"model": "` + modelID + `",
+		"instructions": "` + userInstructions + `",
+		"input": "How is the weather in Paris tomorrow?",
+		"tools": [{"type": "web_search"}]
+	}`)
+
+	out := ConvertOpenAIResponsesRequestToAntigravity(modelID, input, false)
+	parsed := gjson.ParseBytes(out)
+	if parsed.Get("requestType").String() != "web_search" {
+		t.Fatalf("expected requestType web_search, got %q. Output: %s", parsed.Get("requestType").String(), out)
+	}
+
+	foundUserInstructions := false
+	for _, part := range parsed.Get("request.systemInstruction.parts").Array() {
+		if part.Get("text").String() == userInstructions {
+			foundUserInstructions = true
+			break
+		}
+	}
+	if !foundUserInstructions {
+		t.Fatalf("user instructions missing from request.systemInstruction. Output: %s", out)
+	}
+	if parsed.Get("request.contents.0.parts.0.text").String() != "How is the weather in Paris tomorrow?" {
+		t.Fatalf("user query not preserved. Output: %s", out)
+	}
+}
+
+func TestConvertOpenAIResponsesRequestToAntigravity_WebSearchToolChoiceAutoPreservesContext(t *testing.T) {
+	modelID := "ag-websearch-toolchoice-auto-model"
+	registerAntigravityResponsesWebSearchModel(t, "ag-search-toolchoice-auto-client", modelID)
+
+	input := []byte(`{
+		"model": "` + modelID + `",
+		"instructions": "Keep answers concise.",
+		"tool_choice": "auto",
+		"input": [
+			{
+				"role": "user",
+				"content": [{"type": "input_text", "text": "We are discussing Paris."}]
+			},
+			{
+				"role": "assistant",
+				"content": [{"type": "output_text", "text": "Understood."}]
+			},
+			{
+				"role": "user",
+				"content": [{"type": "input_text", "text": "How is the weather there tomorrow?"}]
+			}
+		],
+		"tools": [{"type": "web_search"}]
+	}`)
+
+	out := ConvertOpenAIResponsesRequestToAntigravity(modelID, input, false)
+	parsed := gjson.ParseBytes(out)
+	if parsed.Get("requestType").String() != "web_search" {
+		t.Fatalf("expected requestType web_search with tool_choice auto, got %q. Output: %s", parsed.Get("requestType").String(), out)
+	}
+
+	contents := parsed.Get("request.contents").Array()
+	if len(contents) != 3 {
+		t.Fatalf("request.contents count = %d, want 3. Output: %s", len(contents), out)
+	}
+	if contents[0].Get("parts.0.text").String() != "We are discussing Paris." {
+		t.Fatalf("conversation context dropped with tool_choice auto. Output: %s", out)
+	}
+	if contents[2].Get("parts.0.text").String() != "How is the weather there tomorrow?" {
+		t.Fatalf("current query dropped with tool_choice auto. Output: %s", out)
+	}
+
+	foundUserInstructions := false
+	for _, part := range parsed.Get("request.systemInstruction.parts").Array() {
+		if part.Get("text").String() == "Keep answers concise." {
+			foundUserInstructions = true
+			break
+		}
+	}
+	if !foundUserInstructions {
+		t.Fatalf("user instructions missing with tool_choice auto. Output: %s", out)
+	}
+	if parsed.Get("request.tools.0.googleSearch.enhancedContent.imageSearch.maxResultCount").Int() != 5 {
+		t.Fatalf("expected maxResultCount 5, got %d. Output: %s", parsed.Get("request.tools.0.googleSearch.enhancedContent.imageSearch.maxResultCount").Int(), out)
+	}
+}
