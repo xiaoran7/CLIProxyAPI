@@ -462,6 +462,9 @@ func (e *DevinExecutor) streamDevinFrames(
 		name      string
 	}
 	activeToolSlots := make(map[int]*devinActiveToolSlot)
+	activeCallByID := make(map[string]*devinActiveToolSlot)
+	var activeCallSlot *devinActiveToolSlot
+	toolCallCount := 0
 	thinkingBuf := &helps.UTF8SplitBuffer{}
 	contentBuf := &helps.UTF8SplitBuffer{}
 	var accumulatedThinking strings.Builder
@@ -583,10 +586,6 @@ func (e *DevinExecutor) streamDevinFrames(
 	}
 
 	emitToolCall := func(tc helps.DevinToolCallDelta) bool {
-		if tc.Index < 0 || tc.Index >= maxDevinToolCalls {
-			log.Warnf("devin executor: tool call index %d out of bounds (max %d), dropping", tc.Index, maxDevinToolCalls)
-			return true
-		}
 		if thoughtStarted {
 			stopEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.stop","index":0}`), "index", stepIndex)
 			_ = emitInteractionsEvent(stopEvent)
@@ -600,16 +599,24 @@ func (e *DevinExecutor) streamDevinFrames(
 			stepIndex++
 		}
 
-		slot, exists := activeToolSlots[tc.Index]
-		if exists && slot.id != "" && tc.ID != "" && tc.ID != slot.id {
-			stopEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.stop","index":0}`), "index", slot.stepIndex)
-			if !emitInteractionsEvent(stopEvent) {
-				return false
-			}
-			exists = false
+		argsChunk := tc.Arguments
+		if argsChunk == "" {
+			argsChunk = tc.InvalidJSONStr
 		}
 
-		if !exists {
+		var slot *devinActiveToolSlot
+		if tc.ID != "" {
+			slot = activeCallByID[tc.ID]
+		} else if activeCallSlot != nil {
+			slot = activeCallSlot
+		}
+
+		if slot == nil {
+			if toolCallCount >= maxDevinToolCalls {
+				log.Warnf("devin executor: total tool calls exceeded max %d, dropping", maxDevinToolCalls)
+				return true
+			}
+			toolCallCount++
 			sIdx := stepIndex
 			stepIndex++
 			slot = &devinActiveToolSlot{
@@ -617,7 +624,11 @@ func (e *DevinExecutor) streamDevinFrames(
 				id:        tc.ID,
 				name:      tc.Name,
 			}
-			activeToolSlots[tc.Index] = slot
+			activeToolSlots[sIdx] = slot
+			if tc.ID != "" {
+				activeCallByID[tc.ID] = slot
+			}
+			activeCallSlot = slot
 			startEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.start","index":0,"step":{"type":"function_call","name":"","id":"","call_id":"","arguments":{}}}`), "index", sIdx)
 			startEvent, _ = sjson.SetBytes(startEvent, "step.name", tc.Name)
 			startEvent, _ = sjson.SetBytes(startEvent, "step.id", tc.ID)
@@ -626,9 +637,11 @@ func (e *DevinExecutor) streamDevinFrames(
 				return false
 			}
 		} else {
+			activeCallSlot = slot
 			updated := false
 			if slot.id == "" && tc.ID != "" {
 				slot.id = tc.ID
+				activeCallByID[tc.ID] = slot
 				updated = true
 			}
 			if slot.name == "" && tc.Name != "" {
@@ -644,9 +657,9 @@ func (e *DevinExecutor) streamDevinFrames(
 			}
 		}
 
-		if tc.Arguments != "" {
+		if argsChunk != "" {
 			deltaEvent, _ := sjson.SetBytes([]byte(`{"event_type":"step.delta","index":0,"delta":{"type":"arguments_delta","arguments":""}}`), "index", slot.stepIndex)
-			deltaEvent, _ = translatorcommon.SetStringWithoutHTMLEscape(deltaEvent, "delta.arguments", tc.Arguments)
+			deltaEvent, _ = translatorcommon.SetStringWithoutHTMLEscape(deltaEvent, "delta.arguments", argsChunk)
 			if !emitInteractionsEvent(deltaEvent) {
 				return false
 			}
@@ -674,6 +687,8 @@ func (e *DevinExecutor) streamDevinFrames(
 				_ = emitInteractionsEvent(stopEvent)
 			}
 			clear(activeToolSlots)
+			clear(activeCallByID)
+			activeCallSlot = nil
 		}
 	}
 
@@ -728,6 +743,9 @@ func (e *DevinExecutor) streamDevinFrames(
 				}
 				if frameRes.Usage.CachedTokens > 0 {
 					finalUsage.CachedTokens = frameRes.Usage.CachedTokens
+				}
+				if frameRes.Usage.CacheWriteTokens > 0 {
+					finalUsage.CacheWriteTokens = frameRes.Usage.CacheWriteTokens
 				}
 				if frameRes.Usage.RequestID != "" {
 					finalUsage.RequestID = frameRes.Usage.RequestID
@@ -915,6 +933,9 @@ func (e *DevinExecutor) streamDevinFrames(
 		completedEvent, _ = sjson.SetBytes(completedEvent, "interaction.usage.total_input_tokens", totalInput)
 		completedEvent, _ = sjson.SetBytes(completedEvent, "interaction.usage.total_output_tokens", totalOutput)
 		completedEvent, _ = sjson.SetBytes(completedEvent, "interaction.usage.total_cached_tokens", finalUsage.CachedTokens)
+		if finalUsage.CacheWriteTokens > 0 {
+			completedEvent, _ = sjson.SetBytes(completedEvent, "interaction.usage.cache_write_tokens", finalUsage.CacheWriteTokens)
+		}
 		completedEvent, _ = sjson.SetBytes(completedEvent, "interaction.usage.total_tokens", totalTokens)
 		if detail, ok := helps.ParseInteractionsStreamUsage(completedEvent); ok {
 			if reporter != nil {
@@ -976,7 +997,8 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 		args strings.Builder
 	}
 	var toolBuilders []*devinToolCallBuilder
-	slotToBuilderIndex := make(map[int]int)
+	callIDToBuilderIndex := make(map[string]int)
+	lastBuilderIdx := -1
 
 	getToolCalls := func() []helps.DevinToolCall {
 		if len(toolBuilders) == 0 {
@@ -1078,6 +1100,9 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 				if frameRes.Usage.CachedTokens > 0 {
 					finalUsage.CachedTokens = frameRes.Usage.CachedTokens
 				}
+				if frameRes.Usage.CacheWriteTokens > 0 {
+					finalUsage.CacheWriteTokens = frameRes.Usage.CacheWriteTokens
+				}
 				if frameRes.Usage.RequestID != "" {
 					finalUsage.RequestID = frameRes.Usage.RequestID
 				}
@@ -1123,32 +1148,47 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 			textParts = append(textParts, frameRes.ContentText)
 		}
 		for _, tc := range frameRes.ToolCallDeltas {
-			slotIdx := tc.Index
-			if slotIdx < 0 || slotIdx >= maxDevinToolCalls {
-				log.Warnf("devin executor: tool call index %d out of bounds (max %d), dropping", slotIdx, maxDevinToolCalls)
-				continue
+			argsChunk := tc.Arguments
+			if argsChunk == "" {
+				argsChunk = tc.InvalidJSONStr
 			}
-			bIdx, exists := slotToBuilderIndex[slotIdx]
-			if exists && tc.ID != "" && toolBuilders[bIdx].id != "" && tc.ID != toolBuilders[bIdx].id {
-				exists = false
+
+			var bIdx int
+			var exists bool
+			if tc.ID != "" {
+				bIdx, exists = callIDToBuilderIndex[tc.ID]
+			} else if lastBuilderIdx >= 0 {
+				bIdx = lastBuilderIdx
+				exists = true
 			}
+
 			if !exists {
 				if len(toolBuilders) >= maxDevinToolCalls {
 					log.Warnf("devin executor: total tool calls exceeded max %d, dropping", maxDevinToolCalls)
 					continue
 				}
 				bIdx = len(toolBuilders)
-				toolBuilders = append(toolBuilders, &devinToolCallBuilder{})
-				slotToBuilderIndex[slotIdx] = bIdx
+				toolBuilders = append(toolBuilders, &devinToolCallBuilder{
+					id:   tc.ID,
+					name: tc.Name,
+				})
+				if tc.ID != "" {
+					callIDToBuilderIndex[tc.ID] = bIdx
+				}
+				lastBuilderIdx = bIdx
+			} else {
+				lastBuilderIdx = bIdx
+				if toolBuilders[bIdx].id == "" && tc.ID != "" {
+					toolBuilders[bIdx].id = tc.ID
+					callIDToBuilderIndex[tc.ID] = bIdx
+				}
+				if tc.Name != "" {
+					toolBuilders[bIdx].name = tc.Name
+				}
 			}
-			if tc.ID != "" {
-				toolBuilders[bIdx].id = tc.ID
-			}
-			if tc.Name != "" {
-				toolBuilders[bIdx].name = tc.Name
-			}
-			if tc.Arguments != "" {
-				toolBuilders[bIdx].args.WriteString(tc.Arguments)
+
+			if argsChunk != "" {
+				toolBuilders[bIdx].args.WriteString(argsChunk)
 			}
 		}
 	}
@@ -1221,8 +1261,12 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 		fnStep, _ = sjson.SetBytes(fnStep, "name", tc.Name)
 		fnStep, _ = sjson.SetBytes(fnStep, "id", tc.ID)
 		fnStep, _ = sjson.SetBytes(fnStep, "call_id", tc.ID)
-		if tc.Arguments != "" && json.Valid([]byte(tc.Arguments)) {
-			fnStep, _ = sjson.SetRawBytes(fnStep, "arguments", []byte(tc.Arguments))
+		if tc.Arguments != "" {
+			if json.Valid([]byte(tc.Arguments)) {
+				fnStep, _ = sjson.SetRawBytes(fnStep, "arguments", []byte(tc.Arguments))
+			} else {
+				fnStep, _ = translatorcommon.SetStringWithoutHTMLEscape(fnStep, "arguments", tc.Arguments)
+			}
 		}
 		steps = append(steps, fnStep)
 	}
@@ -1248,6 +1292,9 @@ func consumeDevinFramesToInteractions(body io.Reader, model, chatModelUID string
 		out, _ = sjson.SetBytes(out, "usage.total_input_tokens", totalInput)
 		out, _ = sjson.SetBytes(out, "usage.total_output_tokens", totalOutput)
 		out, _ = sjson.SetBytes(out, "usage.total_cached_tokens", finalUsage.CachedTokens)
+		if finalUsage.CacheWriteTokens > 0 {
+			out, _ = sjson.SetBytes(out, "usage.cache_write_tokens", finalUsage.CacheWriteTokens)
+		}
 		out, _ = sjson.SetBytes(out, "usage.total_tokens", totalTokens)
 	}
 

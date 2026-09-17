@@ -780,8 +780,6 @@ func TestConsumeDevinFramesToInteractions_MultiToolCallsNoPanic(t *testing.T) {
 	tc0 = protowire.AppendString(tc0, "tool_0")
 	tc0 = protowire.AppendTag(tc0, 3, protowire.BytesType)
 	tc0 = protowire.AppendString(tc0, `{"a":`)
-	tc0 = protowire.AppendTag(tc0, 4, protowire.VarintType)
-	tc0 = protowire.AppendVarint(tc0, 0) // index 0
 
 	var f1 []byte
 	f1 = protowire.AppendTag(f1, 6, protowire.BytesType)
@@ -796,8 +794,6 @@ func TestConsumeDevinFramesToInteractions_MultiToolCallsNoPanic(t *testing.T) {
 	tc1 = protowire.AppendString(tc1, "tool_1")
 	tc1 = protowire.AppendTag(tc1, 3, protowire.BytesType)
 	tc1 = protowire.AppendString(tc1, `{"b": 2}`)
-	tc1 = protowire.AppendTag(tc1, 4, protowire.VarintType)
-	tc1 = protowire.AppendVarint(tc1, 1) // index 1
 
 	var f2 []byte
 	f2 = protowire.AppendTag(f2, 6, protowire.BytesType)
@@ -806,10 +802,10 @@ func TestConsumeDevinFramesToInteractions_MultiToolCallsNoPanic(t *testing.T) {
 
 	// Frame 3: tool call 0 continuation
 	var tc0Cont []byte
+	tc0Cont = protowire.AppendTag(tc0Cont, 1, protowire.BytesType)
+	tc0Cont = protowire.AppendString(tc0Cont, "call_0")
 	tc0Cont = protowire.AppendTag(tc0Cont, 3, protowire.BytesType)
 	tc0Cont = protowire.AppendString(tc0Cont, `1}`)
-	tc0Cont = protowire.AppendTag(tc0Cont, 4, protowire.VarintType)
-	tc0Cont = protowire.AppendVarint(tc0Cont, 0) // index 0
 
 	var f3 []byte
 	f3 = protowire.AppendTag(f3, 6, protowire.BytesType)
@@ -954,14 +950,12 @@ func TestStreamDevinFrames_SequentialToolCallsSameIndexDifferentID(t *testing.T)
 	tc0 = protowire.AppendString(tc0, "title")
 	tc0 = protowire.AppendTag(tc0, 3, protowire.BytesType)
 	tc0 = protowire.AppendString(tc0, `{"title": "Triage issue 5802"}`)
-	tc0 = protowire.AppendTag(tc0, 4, protowire.VarintType)
-	tc0 = protowire.AppendVarint(tc0, 0) // index 0
 
 	var f1 []byte
 	f1 = protowire.AppendTag(f1, 6, protowire.BytesType)
 	f1 = protowire.AppendBytes(f1, tc0)
 
-	// Frame 2: bash_1 (same index 0, but different ID)
+	// Frame 2: bash_1
 	var tc1 []byte
 	tc1 = protowire.AppendTag(tc1, 1, protowire.BytesType)
 	tc1 = protowire.AppendString(tc1, "bash_1")
@@ -969,8 +963,6 @@ func TestStreamDevinFrames_SequentialToolCallsSameIndexDifferentID(t *testing.T)
 	tc1 = protowire.AppendString(tc1, "bash")
 	tc1 = protowire.AppendTag(tc1, 3, protowire.BytesType)
 	tc1 = protowire.AppendString(tc1, `{"command": "gh issue view 5802 2>&1 | head -100"}`)
-	tc1 = protowire.AppendTag(tc1, 4, protowire.VarintType)
-	tc1 = protowire.AppendVarint(tc1, 0) // index 0
 
 	var f2 []byte
 	f2 = protowire.AppendTag(f2, 6, protowire.BytesType)
@@ -1072,8 +1064,6 @@ func TestConsumeDevinFramesToInteractions_SequentialToolCallsSameIndexDifferentI
 	tc0 = protowire.AppendString(tc0, "title")
 	tc0 = protowire.AppendTag(tc0, 3, protowire.BytesType)
 	tc0 = protowire.AppendString(tc0, `{"title": "Triage issue 5802"}`)
-	tc0 = protowire.AppendTag(tc0, 4, protowire.VarintType)
-	tc0 = protowire.AppendVarint(tc0, 0)
 
 	var f1 []byte
 	f1 = protowire.AppendTag(f1, 6, protowire.BytesType)
@@ -1086,8 +1076,6 @@ func TestConsumeDevinFramesToInteractions_SequentialToolCallsSameIndexDifferentI
 	tc1 = protowire.AppendString(tc1, "bash")
 	tc1 = protowire.AppendTag(tc1, 3, protowire.BytesType)
 	tc1 = protowire.AppendString(tc1, `{"command": "gh issue view 5802 2>&1 | head -100"}`)
-	tc1 = protowire.AppendTag(tc1, 4, protowire.VarintType)
-	tc1 = protowire.AppendVarint(tc1, 0)
 
 	var f2 []byte
 	f2 = protowire.AppendTag(f2, 6, protowire.BytesType)
@@ -1129,7 +1117,7 @@ func TestConsumeDevinFramesToInteractions_SequentialToolCallsSameIndexDifferentI
 
 func TestConsumeDevinFramesToInteractions_ToolCallsLimit128(t *testing.T) {
 	var buf bytes.Buffer
-	// Create 135 tool calls across sequential ID switches on index 0
+	// Create 135 tool calls across sequential ID switches
 	for i := 0; i < 135; i++ {
 		var tc []byte
 		tc = protowire.AppendTag(tc, 1, protowire.BytesType)
@@ -1138,8 +1126,6 @@ func TestConsumeDevinFramesToInteractions_ToolCallsLimit128(t *testing.T) {
 		tc = protowire.AppendString(tc, fmt.Sprintf("tool_%d", i))
 		tc = protowire.AppendTag(tc, 3, protowire.BytesType)
 		tc = protowire.AppendString(tc, `{"param":1}`)
-		tc = protowire.AppendTag(tc, 4, protowire.VarintType)
-		tc = protowire.AppendVarint(tc, 0)
 
 		var f []byte
 		f = protowire.AppendTag(f, 6, protowire.BytesType)
@@ -1166,8 +1152,6 @@ func TestStreamDevinFrames_SameIDDoesNotDuplicateStart(t *testing.T) {
 	tc0 = protowire.AppendString(tc0, "tool_1")
 	tc0 = protowire.AppendTag(tc0, 3, protowire.BytesType)
 	tc0 = protowire.AppendString(tc0, `{"a":`)
-	tc0 = protowire.AppendTag(tc0, 4, protowire.VarintType)
-	tc0 = protowire.AppendVarint(tc0, 0)
 
 	var f1 []byte
 	f1 = protowire.AppendTag(f1, 6, protowire.BytesType)
@@ -1181,8 +1165,6 @@ func TestStreamDevinFrames_SameIDDoesNotDuplicateStart(t *testing.T) {
 	tc1 = protowire.AppendString(tc1, "tool_1")
 	tc1 = protowire.AppendTag(tc1, 3, protowire.BytesType)
 	tc1 = protowire.AppendString(tc1, `1}`)
-	tc1 = protowire.AppendTag(tc1, 4, protowire.VarintType)
-	tc1 = protowire.AppendVarint(tc1, 0)
 
 	var f2 []byte
 	f2 = protowire.AppendTag(f2, 6, protowire.BytesType)
@@ -2835,4 +2817,403 @@ func TestDevinExecutor_SupplementImagesEdgeCases(t *testing.T) {
 			t.Errorf("missing header for image 2: %s", prompts[0].Content)
 		}
 	})
+}
+
+func TestRegressionIssue5910_ToolCallAggregationByCallID(t *testing.T) {
+	// Frame 1: call_1 start + partial args
+	var tc1 []byte
+	tc1 = protowire.AppendTag(tc1, 1, protowire.BytesType)
+	tc1 = protowire.AppendString(tc1, "call_1")
+	tc1 = protowire.AppendTag(tc1, 2, protowire.BytesType)
+	tc1 = protowire.AppendString(tc1, "tool_1")
+	tc1 = protowire.AppendTag(tc1, 3, protowire.BytesType)
+	tc1 = protowire.AppendString(tc1, `{"a":`)
+
+	var f1 []byte
+	f1 = protowire.AppendTag(f1, 6, protowire.BytesType)
+	f1 = protowire.AppendBytes(f1, tc1)
+
+	// Frame 2: call_2 start + args
+	var tc2 []byte
+	tc2 = protowire.AppendTag(tc2, 1, protowire.BytesType)
+	tc2 = protowire.AppendString(tc2, "call_2")
+	tc2 = protowire.AppendTag(tc2, 2, protowire.BytesType)
+	tc2 = protowire.AppendString(tc2, "tool_2")
+	tc2 = protowire.AppendTag(tc2, 3, protowire.BytesType)
+	tc2 = protowire.AppendString(tc2, `{"b":2}`)
+
+	var f2 []byte
+	f2 = protowire.AppendTag(f2, 6, protowire.BytesType)
+	f2 = protowire.AppendBytes(f2, tc2)
+
+	// Frame 3: call_1 continuation args
+	var tc1Cont []byte
+	tc1Cont = protowire.AppendTag(tc1Cont, 1, protowire.BytesType)
+	tc1Cont = protowire.AppendString(tc1Cont, "call_1")
+	tc1Cont = protowire.AppendTag(tc1Cont, 3, protowire.BytesType)
+	tc1Cont = protowire.AppendString(tc1Cont, `1}`)
+
+	var f3 []byte
+	f3 = protowire.AppendTag(f3, 6, protowire.BytesType)
+	f3 = protowire.AppendBytes(f3, tc1Cont)
+
+	var buf bytes.Buffer
+	buf.Write(helps.WrapConnectEnvelope(f1))
+	buf.Write(helps.WrapConnectEnvelope(f2))
+	buf.Write(helps.WrapConnectEnvelope(f3))
+	buf.Write(helps.WrapConnectEnvelopeWithFlag(helps.ConnectFlagEndStream, []byte(`{}`)))
+
+	_, respLog, err := consumeDevinFramesToInteractions(&buf, "devin/swe-2", "chat-model-uid")
+	if err != nil {
+		t.Fatalf("consumeDevinFramesToInteractions failed: %v", err)
+	}
+
+	if len(respLog.ToolCalls) != 2 {
+		t.Fatalf("expected 2 tool calls, got %d", len(respLog.ToolCalls))
+	}
+	if respLog.ToolCalls[0].ID != "call_1" || respLog.ToolCalls[0].Arguments != `{"a":1}` {
+		t.Errorf("tool call 0 = %+v, want call_1 with args {\"a\":1}", respLog.ToolCalls[0])
+	}
+	if respLog.ToolCalls[1].ID != "call_2" || respLog.ToolCalls[1].Arguments != `{"b":2}` {
+		t.Errorf("tool call 1 = %+v, want call_2 with args {\"b\":2}", respLog.ToolCalls[1])
+	}
+}
+
+func TestRegressionIssue5910_CustomToolCallInvalidJSONStr(t *testing.T) {
+	// Upstream Devin sends raw arguments for custom tool calls in field 4 (invalid_json_str),
+	// parse error in field 5 (invalid_json_err), and custom flag in field 6 (is_custom_tool_call).
+	var tc []byte
+	tc = protowire.AppendTag(tc, 1, protowire.BytesType)
+	tc = protowire.AppendString(tc, "call_custom_1")
+	tc = protowire.AppendTag(tc, 2, protowire.BytesType)
+	tc = protowire.AppendString(tc, "bash")
+	// Field 4: invalid_json_str = "ls -la"
+	tc = protowire.AppendTag(tc, 4, protowire.BytesType)
+	tc = protowire.AppendString(tc, "ls -la")
+	// Field 5: invalid_json_err = "not valid json"
+	tc = protowire.AppendTag(tc, 5, protowire.BytesType)
+	tc = protowire.AppendString(tc, "not valid json")
+	// Field 6: is_custom_tool_call = true
+	tc = protowire.AppendTag(tc, 6, protowire.VarintType)
+	tc = protowire.AppendVarint(tc, 1)
+
+	var f1 []byte
+	f1 = protowire.AppendTag(f1, 6, protowire.BytesType)
+	f1 = protowire.AppendBytes(f1, tc)
+
+	var buf bytes.Buffer
+	buf.Write(helps.WrapConnectEnvelope(f1))
+	buf.Write(helps.WrapConnectEnvelopeWithFlag(helps.ConnectFlagEndStream, []byte(`{}`)))
+
+	interactionsJSON, respLog, err := consumeDevinFramesToInteractions(&buf, "devin/swe-2", "chat-model-uid")
+	if err != nil {
+		t.Fatalf("consumeDevinFramesToInteractions failed: %v", err)
+	}
+
+	if len(respLog.ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(respLog.ToolCalls))
+	}
+	if respLog.ToolCalls[0].Arguments != "ls -la" {
+		t.Errorf("expected Arguments %q from invalid_json_str, got %q", "ls -la", respLog.ToolCalls[0].Arguments)
+	}
+
+	steps := gjson.GetBytes(interactionsJSON, "steps").Array()
+	if len(steps) != 1 {
+		t.Fatalf("expected 1 step in interactions JSON, got %d", len(steps))
+	}
+	if steps[0].Get("name").String() != "bash" || steps[0].Get("id").String() != "call_custom_1" {
+		t.Errorf("unexpected step 0: %s", steps[0].Raw)
+	}
+	if steps[0].Get("arguments").String() != "ls -la" {
+		t.Errorf("expected step 0 arguments %q, got %q", "ls -la", steps[0].Get("arguments").String())
+	}
+
+	// Also verify streaming receives raw arguments for custom tool call
+	var streamBuf bytes.Buffer
+	streamBuf.Write(helps.WrapConnectEnvelope(f1))
+	streamBuf.Write(helps.WrapConnectEnvelopeWithFlag(helps.ConnectFlagEndStream, []byte(`{}`)))
+
+	exec := NewDevinExecutor(&config.Config{})
+	out := make(chan cliproxyexecutor.StreamChunk, 50)
+	opts := cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FormatInteractions,
+	}
+
+	go func() {
+		defer close(out)
+		exec.streamDevinFrames(
+			context.Background(),
+			&streamBuf,
+			cliproxyexecutor.Request{Model: "devin/swe-2"},
+			opts,
+			"chat-model-uid",
+			sdktranslator.FormatInteractions,
+			nil,
+			out,
+		)
+	}()
+
+	var streamArgs strings.Builder
+	for chunk := range out {
+		if chunk.Err != nil {
+			t.Fatalf("unexpected stream error: %v", chunk.Err)
+		}
+		lines := strings.Split(string(chunk.Payload), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "data: ") {
+				data := strings.TrimPrefix(line, "data: ")
+				if gjson.Get(data, "event_type").String() == "step.delta" && gjson.Get(data, "delta.type").String() == "arguments_delta" {
+					streamArgs.WriteString(gjson.Get(data, "delta.arguments").String())
+				}
+			}
+		}
+	}
+
+	if streamArgs.String() != "ls -la" {
+		t.Errorf("expected stream delta arguments %q, got %q", "ls -la", streamArgs.String())
+	}
+}
+
+func TestRegressionIssue5910_StreamInterleavedToolCallsByCallID(t *testing.T) {
+	// Frame 1: call_1 start + partial args
+	var tc1 []byte
+	tc1 = protowire.AppendTag(tc1, 1, protowire.BytesType)
+	tc1 = protowire.AppendString(tc1, "call_1")
+	tc1 = protowire.AppendTag(tc1, 2, protowire.BytesType)
+	tc1 = protowire.AppendString(tc1, "tool_1")
+	tc1 = protowire.AppendTag(tc1, 3, protowire.BytesType)
+	tc1 = protowire.AppendString(tc1, `{"a":`)
+
+	var f1 []byte
+	f1 = protowire.AppendTag(f1, 6, protowire.BytesType)
+	f1 = protowire.AppendBytes(f1, tc1)
+
+	// Frame 2: call_2 start + full args
+	var tc2 []byte
+	tc2 = protowire.AppendTag(tc2, 1, protowire.BytesType)
+	tc2 = protowire.AppendString(tc2, "call_2")
+	tc2 = protowire.AppendTag(tc2, 2, protowire.BytesType)
+	tc2 = protowire.AppendString(tc2, "tool_2")
+	tc2 = protowire.AppendTag(tc2, 3, protowire.BytesType)
+	tc2 = protowire.AppendString(tc2, `{"b":2}`)
+
+	var f2 []byte
+	f2 = protowire.AppendTag(f2, 6, protowire.BytesType)
+	f2 = protowire.AppendBytes(f2, tc2)
+
+	// Frame 3: call_1 continuation args
+	var tc1Cont []byte
+	tc1Cont = protowire.AppendTag(tc1Cont, 1, protowire.BytesType)
+	tc1Cont = protowire.AppendString(tc1Cont, "call_1")
+	tc1Cont = protowire.AppendTag(tc1Cont, 3, protowire.BytesType)
+	tc1Cont = protowire.AppendString(tc1Cont, `1}`)
+
+	var f3 []byte
+	f3 = protowire.AppendTag(f3, 6, protowire.BytesType)
+	f3 = protowire.AppendBytes(f3, tc1Cont)
+
+	var buf bytes.Buffer
+	buf.Write(helps.WrapConnectEnvelope(f1))
+	buf.Write(helps.WrapConnectEnvelope(f2))
+	buf.Write(helps.WrapConnectEnvelope(f3))
+	buf.Write(helps.WrapConnectEnvelopeWithFlag(helps.ConnectFlagEndStream, []byte(`{}`)))
+
+	exec := NewDevinExecutor(&config.Config{})
+	out := make(chan cliproxyexecutor.StreamChunk, 50)
+	opts := cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FormatInteractions,
+	}
+
+	go func() {
+		defer close(out)
+		exec.streamDevinFrames(
+			context.Background(),
+			&buf,
+			cliproxyexecutor.Request{Model: "devin/swe-2"},
+			opts,
+			"chat-model-uid",
+			sdktranslator.FormatInteractions,
+			nil,
+			out,
+		)
+	}()
+
+	var chunks []cliproxyexecutor.StreamChunk
+	for chunk := range out {
+		if chunk.Err != nil {
+			t.Fatalf("unexpected chunk error: %v", chunk.Err)
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	var events []gjson.Result
+	for _, chunk := range chunks {
+		lines := strings.Split(string(chunk.Payload), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "data: ") {
+				data := strings.TrimPrefix(line, "data: ")
+				if strings.TrimSpace(data) != "[DONE]" {
+					events = append(events, gjson.Parse(data))
+				}
+			}
+		}
+	}
+
+	var toolCallsStarted []string
+	var toolCallsStopped []int64
+	stepArgs := make(map[int64]*strings.Builder)
+	for _, ev := range events {
+		eventType := ev.Get("event_type").String()
+		if eventType == "step.start" && ev.Get("step.type").String() == "function_call" {
+			idx := ev.Get("index").Int()
+			toolCallsStarted = append(toolCallsStarted, fmt.Sprintf("index:%d,id:%s,name:%s", idx, ev.Get("step.id").String(), ev.Get("step.name").String()))
+			stepArgs[idx] = &strings.Builder{}
+		} else if eventType == "step.delta" && ev.Get("delta.type").String() == "arguments_delta" {
+			idx := ev.Get("index").Int()
+			if b, ok := stepArgs[idx]; ok {
+				b.WriteString(ev.Get("delta.arguments").String())
+			}
+		} else if eventType == "step.stop" {
+			toolCallsStopped = append(toolCallsStopped, ev.Get("index").Int())
+		}
+	}
+
+	if len(toolCallsStarted) != 2 {
+		t.Fatalf("expected exactly 2 tool calls started, got %d: %v", len(toolCallsStarted), toolCallsStarted)
+	}
+	if toolCallsStarted[0] != "index:0,id:call_1,name:tool_1" {
+		t.Errorf("tool call 0 = %q, want index:0,id:call_1,name:tool_1", toolCallsStarted[0])
+	}
+	if toolCallsStarted[1] != "index:1,id:call_2,name:tool_2" {
+		t.Errorf("tool call 1 = %q, want index:1,id:call_2,name:tool_2", toolCallsStarted[1])
+	}
+
+	if len(toolCallsStopped) != 2 {
+		t.Fatalf("expected exactly 2 tool calls stopped, got %d: %v", len(toolCallsStopped), toolCallsStopped)
+	}
+	if toolCallsStopped[0] != 0 || toolCallsStopped[1] != 1 {
+		t.Errorf("tool calls stopped indices = %v, want [0, 1]", toolCallsStopped)
+	}
+
+	if stepArgs[0].String() != `{"a":1}` {
+		t.Errorf("stepArgs[0] = %q, want {\"a\":1}", stepArgs[0].String())
+	}
+	if stepArgs[1].String() != `{"b":2}` {
+		t.Errorf("stepArgs[1] = %q, want {\"b\":2}", stepArgs[1].String())
+	}
+}
+
+func TestRegressionIssue5910_UsageStatsCacheWriteTokensInResponses(t *testing.T) {
+	// Frame 1 with Usage Field 7
+	var f7Bytes []byte
+	// Field 2: prompt tokens = 3
+	f7Bytes = protowire.AppendTag(f7Bytes, 2, protowire.VarintType)
+	f7Bytes = protowire.AppendVarint(f7Bytes, 3)
+	// Field 3: completion tokens = 10
+	f7Bytes = protowire.AppendTag(f7Bytes, 3, protowire.VarintType)
+	f7Bytes = protowire.AppendVarint(f7Bytes, 10)
+	// Field 4: cache_write_tokens = 14361
+	f7Bytes = protowire.AppendTag(f7Bytes, 4, protowire.VarintType)
+	f7Bytes = protowire.AppendVarint(f7Bytes, 14361)
+	// Field 5: cached tokens = 50
+	f7Bytes = protowire.AppendTag(f7Bytes, 5, protowire.VarintType)
+	f7Bytes = protowire.AppendVarint(f7Bytes, 50)
+
+	var frame []byte
+	frame = protowire.AppendTag(frame, 7, protowire.BytesType)
+	frame = protowire.AppendBytes(frame, f7Bytes)
+
+	var buf bytes.Buffer
+	buf.Write(helps.WrapConnectEnvelope(frame))
+	buf.Write(helps.WrapConnectEnvelopeWithFlag(helps.ConnectFlagEndStream, []byte(`{}`)))
+
+	// 1. Non-streaming test
+	interactionsJSON, respLog, err := consumeDevinFramesToInteractions(&buf, "devin/swe-2", "chat-model-uid")
+	if err != nil {
+		t.Fatalf("consumeDevinFramesToInteractions failed: %v", err)
+	}
+
+	if respLog.Usage == nil {
+		t.Fatal("expected non-nil respLog.Usage")
+	}
+	if respLog.Usage.PromptTokens != 3 {
+		t.Errorf("respLog.Usage.PromptTokens = %d, want 3", respLog.Usage.PromptTokens)
+	}
+	if respLog.Usage.CacheWriteTokens != 14361 {
+		t.Errorf("respLog.Usage.CacheWriteTokens = %d, want 14361", respLog.Usage.CacheWriteTokens)
+	}
+
+	root := gjson.ParseBytes(interactionsJSON)
+	if root.Get("usage.total_input_tokens").Int() != 53 {
+		t.Errorf("usage.total_input_tokens = %d, want 53", root.Get("usage.total_input_tokens").Int())
+	}
+	if root.Get("usage.cache_write_tokens").Int() != 14361 {
+		t.Errorf("usage.cache_write_tokens = %d, want 14361", root.Get("usage.cache_write_tokens").Int())
+	}
+	detail := helps.ParseInteractionsUsage(interactionsJSON)
+	if detail.CacheCreationTokens != 14361 {
+		t.Errorf("ParseInteractionsUsage CacheCreationTokens = %d, want 14361", detail.CacheCreationTokens)
+	}
+	if detail.InputTokens != 53 {
+		t.Errorf("ParseInteractionsUsage InputTokens = %d, want 53", detail.InputTokens)
+	}
+
+	// 2. Streaming test
+	var streamBuf bytes.Buffer
+	streamBuf.Write(helps.WrapConnectEnvelope(frame))
+	streamBuf.Write(helps.WrapConnectEnvelopeWithFlag(helps.ConnectFlagEndStream, []byte(`{}`)))
+
+	exec := NewDevinExecutor(&config.Config{})
+	out := make(chan cliproxyexecutor.StreamChunk, 50)
+	opts := cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FormatInteractions,
+	}
+
+	go func() {
+		defer close(out)
+		exec.streamDevinFrames(
+			context.Background(),
+			&streamBuf,
+			cliproxyexecutor.Request{Model: "devin/swe-2"},
+			opts,
+			"chat-model-uid",
+			sdktranslator.FormatInteractions,
+			nil,
+			out,
+		)
+	}()
+
+	var completedEvent []byte
+	for chunk := range out {
+		if chunk.Err != nil {
+			t.Fatalf("unexpected chunk error: %v", chunk.Err)
+		}
+		lines := strings.Split(string(chunk.Payload), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "data: ") {
+				data := []byte(strings.TrimPrefix(line, "data: "))
+				if gjson.GetBytes(data, "event_type").String() == "interaction.completed" {
+					completedEvent = data
+				}
+			}
+		}
+	}
+
+	if len(completedEvent) == 0 {
+		t.Fatal("expected interaction.completed event in stream")
+	}
+	cRoot := gjson.ParseBytes(completedEvent)
+	if cRoot.Get("interaction.usage.cache_write_tokens").Int() != 14361 {
+		t.Errorf("interaction.usage.cache_write_tokens = %d, want 14361", cRoot.Get("interaction.usage.cache_write_tokens").Int())
+	}
+	sDetail, ok := helps.ParseInteractionsStreamUsage(completedEvent)
+	if !ok {
+		t.Fatal("ParseInteractionsStreamUsage returned false")
+	}
+	if sDetail.CacheCreationTokens != 14361 {
+		t.Errorf("ParseInteractionsStreamUsage CacheCreationTokens = %d, want 14361", sDetail.CacheCreationTokens)
+	}
+	if sDetail.InputTokens != 53 {
+		t.Errorf("ParseInteractionsStreamUsage InputTokens = %d, want 53", sDetail.InputTokens)
+	}
 }
