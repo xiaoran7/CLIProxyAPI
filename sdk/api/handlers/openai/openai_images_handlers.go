@@ -301,6 +301,8 @@ func xaiImagesAspectRatio(raw string, fallback string) string {
 		return "9:16"
 	case "9:20":
 		return "9:20"
+	case "20:9":
+		return "20:9"
 	case "4:3":
 		return "4:3"
 	case "3:4":
@@ -325,6 +327,8 @@ func xaiImagesAspectRatioFromSize(size string, fallback string) string {
 		return "9:16"
 	case "9:20":
 		return "9:20"
+	case "20:9":
+		return "20:9"
 	case "1536x1024", "3:2":
 		return "3:2"
 	case "1024x1536", "2:3":
