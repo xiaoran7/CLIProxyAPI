@@ -3217,3 +3217,429 @@ func TestRegressionIssue5910_UsageStatsCacheWriteTokensInResponses(t *testing.T)
 		t.Errorf("ParseInteractionsStreamUsage InputTokens = %d, want 53", sDetail.InputTokens)
 	}
 }
+
+func TestDevinExecutor_FunctionResult_Regression_Issue5911(t *testing.T) {
+	t.Run("structured_results_projected_to_plain_text", func(t *testing.T) {
+		// Case 1: Array of text content blocks
+		payloadBlocks := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_call", "id": "call_1", "name": "read"},
+				{
+					"type": "function_result",
+					"call_id": "call_1",
+					"result": [
+						{"type": "text", "text": "hello "},
+						{"type": "text", "text": "world"}
+					]
+				}
+			]
+		}`)
+		_, prompts1, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadBlocks, nil)
+		if len(prompts1) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts1))
+		}
+		if prompts1[1].Source != 4 || prompts1[1].ToolCallID != "call_1" {
+			t.Fatalf("expected tool prompt source=4 tool_call_id=call_1, got source=%d id=%s", prompts1[1].Source, prompts1[1].ToolCallID)
+		}
+		if strings.Contains(prompts1[1].Content, `[{"type":`) || strings.Contains(prompts1[1].Content, `"text":`) {
+			t.Errorf("structured result has JSON scaffolding: %q", prompts1[1].Content)
+		}
+		if !strings.Contains(prompts1[1].Content, "hello") || !strings.Contains(prompts1[1].Content, "world") {
+			t.Errorf("structured result missing extracted text: %q", prompts1[1].Content)
+		}
+
+		// Case 2: Object with type=text and text field
+		payloadObject := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_call", "id": "call_2", "name": "read"},
+				{
+					"type": "function_result",
+					"call_id": "call_2",
+					"result": {"type": "text", "text": "single object output"}
+				}
+			]
+		}`)
+		_, prompts2, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadObject, nil)
+		if len(prompts2) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts2))
+		}
+		if prompts2[1].Content != "single object output" {
+			t.Errorf("expected plain text 'single object output', got %q", prompts2[1].Content)
+		}
+
+		// Case 3: Object with nested content array
+		payloadNested := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_call", "id": "call_3", "name": "read"},
+				{
+					"type": "function_result",
+					"call_id": "call_3",
+					"result": {"content": [{"type": "text", "text": "nested content text"}]}
+				}
+			]
+		}`)
+		_, prompts3, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadNested, nil)
+		if len(prompts3) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts3))
+		}
+		if prompts3[1].Content != "nested content text" {
+			t.Errorf("expected plain text 'nested content text', got %q", prompts3[1].Content)
+		}
+
+		// Case 4: Business object with output/result fields alongside business fields is preserved in full JSON
+		payloadBusiness := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_call", "id": "call_4", "name": "exec"},
+				{
+					"type": "function_result",
+					"call_id": "call_4",
+					"result": {"output": "permission denied", "exit_code": 1, "retryable": false}
+				}
+			]
+		}`)
+		_, prompts4, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadBusiness, nil)
+		if len(prompts4) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts4))
+		}
+		if !strings.Contains(prompts4[1].Content, "permission denied") ||
+			!strings.Contains(prompts4[1].Content, `"exit_code": 1`) ||
+			!strings.Contains(prompts4[1].Content, `"retryable": false`) {
+			t.Errorf("expected full business object to be preserved, got %q", prompts4[1].Content)
+		}
+
+		// Case 5: Business object with id, name, content is preserved in full JSON
+		payloadBusinessReport := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_call", "id": "call_5", "name": "get_report"},
+				{
+					"type": "function_result",
+					"call_id": "call_5",
+					"result": {"id": 42, "name": "report", "content": "body"}
+				}
+			]
+		}`)
+		_, prompts5, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadBusinessReport, nil)
+		if len(prompts5) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts5))
+		}
+		if !strings.Contains(prompts5[1].Content, `"id": 42`) && !strings.Contains(prompts5[1].Content, `"id":42`) ||
+			!strings.Contains(prompts5[1].Content, `"name": "report"`) && !strings.Contains(prompts5[1].Content, `"name":"report"`) ||
+			!strings.Contains(prompts5[1].Content, `"content": "body"`) && !strings.Contains(prompts5[1].Content, `"content":"body"`) {
+			t.Errorf("expected full business report object to be preserved, got %q", prompts5[1].Content)
+		}
+
+		// Case 6: Pure business string array is preserved as raw JSON
+		payloadStringArray := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_call", "id": "call_6", "name": "list"},
+				{
+					"type": "function_result",
+					"call_id": "call_6",
+					"result": ["a", "b"]
+				}
+			]
+		}`)
+		_, prompts6, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadStringArray, nil)
+		if len(prompts6) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts6))
+		}
+		if !strings.Contains(prompts6[1].Content, `"a"`) || !strings.Contains(prompts6[1].Content, `"b"`) || !strings.Contains(prompts6[1].Content, `[`) {
+			t.Errorf("expected string array to be preserved as raw JSON, got %q", prompts6[1].Content)
+		}
+
+		// Case 7: Mixed string and business object array is preserved as raw JSON
+		payloadMixedArray := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_call", "id": "call_7", "name": "run"},
+				{
+					"type": "function_result",
+					"call_id": "call_7",
+					"result": ["ok", {"exit_code": 0}]
+				}
+			]
+		}`)
+		_, prompts7, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadMixedArray, nil)
+		if len(prompts7) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts7))
+		}
+		if !strings.Contains(prompts7[1].Content, `"ok"`) || !strings.Contains(prompts7[1].Content, `"exit_code": 0`) {
+			t.Errorf("expected mixed array to be preserved as raw JSON, got %q", prompts7[1].Content)
+		}
+	})
+
+	t.Run("empty_results_get_placeholder", func(t *testing.T) {
+		// Case 1: Empty string result
+		payloadEmptyStr := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_call", "id": "call_1", "name": "noop"},
+				{"type": "function_result", "call_id": "call_1", "result": ""}
+			]
+		}`)
+		_, prompts1, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadEmptyStr, nil)
+		if len(prompts1) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts1))
+		}
+		if prompts1[1].Content == "" {
+			t.Errorf("expected non-empty placeholder for empty string result, got empty string")
+		}
+
+		// Case 2: Absent result/output/content
+		payloadAbsent := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_call", "id": "call_2", "name": "noop"},
+				{"type": "function_result", "call_id": "call_2"}
+			]
+		}`)
+		_, prompts2, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadAbsent, nil)
+		if len(prompts2) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts2))
+		}
+		if prompts2[1].Content == "" {
+			t.Errorf("expected non-empty placeholder for absent result, got empty string")
+		}
+
+		// Case 3: Array with empty wrapper content block
+		payloadEmptyWrapper := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_call", "id": "call_3", "name": "noop"},
+				{"type": "function_result", "call_id": "call_3", "result": [{"type": "tool_result", "content": ""}]}
+			]
+		}`)
+		_, prompts3, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadEmptyWrapper, nil)
+		if len(prompts3) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts3))
+		}
+		if prompts3[1].Content != "{}" {
+			t.Errorf("expected placeholder '{}' for empty wrapper result, got %q", prompts3[1].Content)
+		}
+
+		// Case 4: Array with whitespace-only content
+		payloadWhitespaceWrapper := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_call", "id": "call_4", "name": "noop"},
+				{"type": "function_result", "call_id": "call_4", "result": [{"type": "text", "text": "   "}]}
+			]
+		}`)
+		_, prompts4, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadWhitespaceWrapper, nil)
+		if len(prompts4) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts4))
+		}
+		if prompts4[1].Content != "{}" {
+			t.Errorf("expected placeholder '{}' for whitespace wrapper result, got %q", prompts4[1].Content)
+		}
+	})
+
+	t.Run("orphaned_results_sent_as_user_text", func(t *testing.T) {
+		// Case 1: Interactions payload with trimmed function_call
+		payloadTrimmed := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_result", "call_id": "call_trimmed", "result": "orphaned data"}
+			]
+		}`)
+		_, prompts1, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadTrimmed, nil)
+		if len(prompts1) != 1 {
+			t.Fatalf("expected 1 prompt, got %d", len(prompts1))
+		}
+		if prompts1[0].Source != 1 {
+			t.Errorf("expected orphaned function_result to be source=1 (user text), got source=%d", prompts1[0].Source)
+		}
+		if prompts1[0].Content != "orphaned data" {
+			t.Errorf("expected content 'orphaned data', got %q", prompts1[0].Content)
+		}
+
+		// Case 2: Messages fallback with assistant.tool_calls properly matched
+		payloadMessagesMatched := []byte(`{
+			"model": "devin/swe-2",
+			"messages": [
+				{
+					"role": "assistant",
+					"content": "",
+					"tool_calls": [
+						{
+							"id": "call_msg_1",
+							"type": "function",
+							"function": {"name": "read_file", "arguments": "{\"path\":\"a.txt\"}"}
+						}
+					]
+				},
+				{
+					"role": "tool",
+					"tool_call_id": "call_msg_1",
+					"content": "file content here"
+				}
+			]
+		}`)
+		_, prompts2, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadMessagesMatched, nil)
+		if len(prompts2) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts2))
+		}
+		if prompts2[0].Source != 2 || len(prompts2[0].ToolCalls) != 1 || prompts2[0].ToolCalls[0].ID != "call_msg_1" {
+			t.Errorf("assistant tool_calls not parsed: %+v", prompts2[0])
+		}
+		if prompts2[0].ToolCalls[0].Arguments != `{"path":"a.txt"}` {
+			t.Errorf("expected tool arguments %q, got %q", `{"path":"a.txt"}`, prompts2[0].ToolCalls[0].Arguments)
+		}
+		if prompts2[1].Source != 4 || prompts2[1].ToolCallID != "call_msg_1" {
+			t.Errorf("expected tool prompt source=4 tool_call_id=call_msg_1, got source=%d id=%s", prompts2[1].Source, prompts2[1].ToolCallID)
+		}
+		if prompts2[1].Content != "file content here" {
+			t.Errorf("expected content 'file content here', got %q", prompts2[1].Content)
+		}
+
+		// Case 3: Messages fallback with orphaned tool message
+		payloadMessagesOrphan := []byte(`{
+			"model": "devin/swe-2",
+			"messages": [
+				{
+					"role": "tool",
+					"tool_call_id": "call_orphan",
+					"content": "orphaned tool message"
+				}
+			]
+		}`)
+		_, prompts3, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadMessagesOrphan, nil)
+		if len(prompts3) != 1 {
+			t.Fatalf("expected 1 prompt, got %d", len(prompts3))
+		}
+		if prompts3[0].Source != 1 {
+			t.Errorf("expected orphaned tool message to be source=1 (user text), got source=%d", prompts3[0].Source)
+		}
+		if prompts3[0].Content != "orphaned tool message" {
+			t.Errorf("expected content 'orphaned tool message', got %q", prompts3[0].Content)
+		}
+
+		// Case 4: Multiple calls and results pairing with extra orphan result
+		payloadMulti := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_call", "id": "call_A", "name": "f1"},
+				{"type": "function_call", "id": "call_B", "name": "f2"},
+				{"type": "function_result", "call_id": "call_A", "result": "res_A"},
+				{"type": "function_result", "call_id": "call_B", "result": "res_B"},
+				{"type": "function_result", "call_id": "call_C", "result": "res_C_extra"}
+			]
+		}`)
+		_, prompts4, _, _, _, _, _, _, _ := parseInteractionsPayload(payloadMulti, nil)
+		if len(prompts4) != 4 {
+			t.Fatalf("expected 4 prompts (1 assistant with 2 calls, 2 tool results, 1 user text orphan), got %d", len(prompts4))
+		}
+		if prompts4[1].Source != 4 || prompts4[1].ToolCallID != "call_A" || prompts4[1].Content != "res_A" {
+			t.Errorf("call_A prompt mismatch: %+v", prompts4[1])
+		}
+		if prompts4[2].Source != 4 || prompts4[2].ToolCallID != "call_B" || prompts4[2].Content != "res_B" {
+			t.Errorf("call_B prompt mismatch: %+v", prompts4[2])
+		}
+		if prompts4[3].Source != 1 || prompts4[3].Content != "res_C_extra" {
+			t.Errorf("expected extra call_C to be source=1 user text, got: %+v", prompts4[3])
+		}
+
+		// Case 5: Orphaned tool result does not steal subsequent user message's image in supplementImagesFromOriginal
+		origWithUserImg := []byte(`{
+			"messages": [
+				{
+					"role": "tool",
+					"tool_call_id": "call_orphan_img",
+					"content": "text only orphan"
+				},
+				{
+					"role": "user",
+					"content": [
+						{"type": "text", "text": "user message with picture"},
+						{
+							"type": "image",
+							"source": {
+								"type": "base64",
+								"media_type": "image/png",
+								"data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+							}
+						}
+					]
+				}
+			]
+		}`)
+		interactionsOrphanAndUser := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_result", "call_id": "call_orphan_img", "result": "text only orphan"},
+				{"type": "user_input", "content": [{"type": "text", "text": "user message with picture"}]}
+			]
+		}`)
+		_, prompts5, _, _, _, _, _, _, _ := parseInteractionsPayload(interactionsOrphanAndUser, origWithUserImg)
+		if len(prompts5) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts5))
+		}
+		// Prompt 0 is downgraded orphaned tool result
+		if prompts5[0].Source != 1 || prompts5[0].OriginalToolCallID != "call_orphan_img" {
+			t.Errorf("prompts5[0] expected source=1 orphaned tool, got: %+v", prompts5[0])
+		}
+		if len(prompts5[0].Images) != 0 {
+			t.Errorf("orphaned tool result should not have stolen user images, got %d images", len(prompts5[0].Images))
+		}
+		// Prompt 1 is real user turn
+		if prompts5[1].Source != 1 {
+			t.Errorf("prompts5[1] expected source=1 user turn, got: %+v", prompts5[1])
+		}
+		if len(prompts5[1].Images) != 1 {
+			t.Errorf("user turn should have received 1 image from originalRequest, got %d", len(prompts5[1].Images))
+		}
+		if !strings.Contains(prompts5[1].Content, "[Image 1: pasted_image_1.png]") {
+			t.Errorf("user turn content missing image header: %q", prompts5[1].Content)
+		}
+
+		// Case 6: Orphaned tool result without any ID does not steal subsequent user message's image
+		origWithNoID := []byte(`{
+			"messages": [
+				{
+					"role": "tool",
+					"content": "no id orphan text"
+				},
+				{
+					"role": "user",
+					"content": [
+						{"type": "text", "text": "user message"},
+						{
+							"type": "image",
+							"source": {
+								"type": "base64",
+								"media_type": "image/png",
+								"data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+							}
+						}
+					]
+				}
+			]
+		}`)
+		interactionsNoID := []byte(`{
+			"model": "devin/swe-2",
+			"input": [
+				{"type": "function_result", "result": "no id orphan text"},
+				{"type": "user_input", "content": [{"type": "text", "text": "user message"}]}
+			]
+		}`)
+		_, prompts6, _, _, _, _, _, _, _ := parseInteractionsPayload(interactionsNoID, origWithNoID)
+		if len(prompts6) != 2 {
+			t.Fatalf("expected 2 prompts, got %d", len(prompts6))
+		}
+		if prompts6[0].Source != 1 || !prompts6[0].IsOrphanedTool {
+			t.Errorf("expected prompt 0 to be marked orphaned tool, got: %+v", prompts6[0])
+		}
+		if len(prompts6[0].Images) != 0 {
+			t.Errorf("orphaned tool result with no ID stole user image: %+v", prompts6[0].Images)
+		}
+		if len(prompts6[1].Images) != 1 {
+			t.Errorf("user message should have 1 image, got %d", len(prompts6[1].Images))
+		}
+	})
+}

@@ -84,15 +84,17 @@ type DevinImage struct {
 
 // DevinPrompt represents a single turn in the request history (repeated Field 3).
 type DevinPrompt struct {
-	MessageID     string
-	Source        int // 1=user, 2=assistant, 4=tool
-	Content       string
-	Images        []DevinImage
-	ToolCalls     []DevinToolCall
-	ToolCallID    string // For source=4 (tool result)
-	Thinking      string
-	Signature     []byte
-	SignatureType string
+	MessageID          string
+	Source             int // 1=user, 2=assistant, 4=tool
+	Content            string
+	Images             []DevinImage
+	ToolCalls          []DevinToolCall
+	ToolCallID         string // For source=4 (tool result)
+	OriginalToolCallID string // Retained when downgraded from source=4 to source=1
+	IsOrphanedTool     bool   // Explicit flag marking downgraded tool results
+	Thinking           string
+	Signature          []byte
+	SignatureType      string
 }
 
 // DevinUsage captures token accounting from response Field 7.
