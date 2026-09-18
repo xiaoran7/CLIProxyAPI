@@ -183,14 +183,21 @@ func (r *UsageReporter) accessTokenFingerprint() string {
 	return r.accessTokenHash
 }
 
-// ObserveCodexResponseModel stores the model reported by a codex upstream event and
+// ObserveResponseModel stores the model reported by an upstream response or event and
 // ignores payloads without one; the substitution warning is emitted at publish time.
-func (r *UsageReporter) ObserveCodexResponseModel(payload []byte) {
+func (r *UsageReporter) ObserveResponseModel(payload []byte) {
 	if r == nil || r.responseModelFinal.Load() {
 		return
 	}
-	served, terminal := extractCodexResponseModelEvent(payload)
+	provider := ""
+	if r != nil {
+		provider = r.provider
+	}
+	served, terminal := extractResponseModelEvent(payload, provider)
 	if served == "" {
+		if terminal {
+			r.responseModelFinal.Store(true)
+		}
 		return
 	}
 	r.responseModelMu.Lock()
@@ -201,28 +208,59 @@ func (r *UsageReporter) ObserveCodexResponseModel(payload []byte) {
 	}
 }
 
-// warnCodexModelSubstitution warns about a silent upstream model swap, throttled per
+// ObserveCodexResponseModel stores the model reported by a codex upstream event and
+// ignores payloads without one; the substitution warning is emitted at publish time.
+func (r *UsageReporter) ObserveCodexResponseModel(payload []byte) {
+	r.ObserveResponseModel(payload)
+}
+
+// SetResponseModel sets the reported model directly if valid and not already marked final.
+func (r *UsageReporter) SetResponseModel(model string) {
+	if r == nil || r.responseModelFinal.Load() {
+		return
+	}
+	model = strings.TrimSpace(model)
+	if model == "" || len(model) > maxResponseModelLength {
+		return
+	}
+	r.responseModelMu.Lock()
+	r.responseModel = model
+	r.responseModelMu.Unlock()
+}
+
+// warnModelSubstitution warns about a silent upstream model swap, throttled per
 // credential and model pair, and labels the credential by index only, never by account.
-func (r *UsageReporter) warnCodexModelSubstitution(ctx context.Context) {
+func (r *UsageReporter) warnModelSubstitution(ctx context.Context) {
 	if r == nil {
 		return
 	}
 	served := r.ResponseModel()
-	if served == "" || !IsCodexModelSubstituted(r.model, served) {
+	if served == "" || !IsModelSubstituted(r.model, served) {
 		return
 	}
 	// The throttle key uses the same normalized names as the substitution check, so
 	// aliases of one pair share a window instead of each warning on its own.
-	requested := normalizeCodexModelName(r.model)
-	servedNormalized := normalizeCodexModelName(served)
+	requested := normalizeModelName(r.model)
+	servedNormalized := normalizeModelName(served)
+	providerName := r.provider
+	if providerName == "" {
+		providerName = "codex"
+	}
 	if !codexModelSubstitutionWarns.allow(codexModelSubstitutionKey{
+		provider:  providerName,
 		authID:    r.authID,
 		requested: requested,
 		served:    servedNormalized,
 	}) {
 		return
 	}
-	LogWithRequestID(ctx).Warnf("codex executor: upstream served model %q for requested model %q (auth_index=%s)", served, r.model, r.authIndexForLog())
+	LogWithRequestID(ctx).Warnf("%s executor: upstream served model %q for requested model %q (auth_index=%s)", providerName, served, r.model, r.authIndexForLog())
+}
+
+// warnCodexModelSubstitution warns about a silent upstream model swap, throttled per
+// credential and model pair, and labels the credential by index only, never by account.
+func (r *UsageReporter) warnCodexModelSubstitution(ctx context.Context) {
+	r.warnModelSubstitution(ctx)
 }
 
 // authIndexForLog labels the credential without exposing its file name or account.
@@ -499,7 +537,7 @@ func (r *UsageReporter) EnsurePublished(ctx context.Context) {
 // observability warnings that belong to the attempt rather than to a single event.
 func (r *UsageReporter) publishAttemptRecord(ctx context.Context, record usage.Record) {
 	r.publishRecord(ctx, record)
-	r.warnCodexModelSubstitution(ctx)
+	r.warnModelSubstitution(ctx)
 }
 
 func (r *UsageReporter) publishRecord(ctx context.Context, record usage.Record) {
@@ -731,8 +769,9 @@ func resolveUsageAuthType(auth *cliproxyauth.Auth) string {
 
 // StreamUsageBuffer keeps the latest usage detail observed in a stream.
 type StreamUsageBuffer struct {
-	detail usage.Detail
-	ok     bool
+	detail        usage.Detail
+	ok            bool
+	responseModel string
 }
 
 var (
@@ -772,6 +811,11 @@ func (b *StreamUsageBuffer) ObserveOpenAIStream(line []byte) {
 	hasUsageCandidate := bytes.Contains(payload, openAIStreamUsageMarker)
 	needTier := b.detail.ResponseServiceTier == "" || hasUsageCandidate
 	hasTierCandidate := needTier && bytes.Contains(payload, openAIStreamServiceTierMarker)
+	if b.responseModel == "" {
+		if model, _ := extractGenericResponseModelEvent(payload); model != "" {
+			b.responseModel = model
+		}
+	}
 	if !hasUsageCandidate && !hasTierCandidate {
 		return
 	}
@@ -799,6 +843,13 @@ func (b *StreamUsageBuffer) ObserveClaudeStream(line []byte) {
 	if b == nil {
 		return
 	}
+	if b.responseModel == "" {
+		if payload := jsonPayload(line); len(payload) > 0 {
+			if model, _ := extractClaudeResponseModelEvent(payload); model != "" {
+				b.responseModel = model
+			}
+		}
+	}
 	if detail, ok := ParseClaudeStreamUsage(line); ok {
 		ObserveMergedStreamUsage(b, detail)
 	}
@@ -809,6 +860,9 @@ func (b *StreamUsageBuffer) Publish(ctx context.Context, reporter *UsageReporter
 	if b == nil || !b.ok || reporter == nil {
 		return false
 	}
+	if b.responseModel != "" && reporter.ResponseModel() == "" {
+		reporter.SetResponseModel(b.responseModel)
+	}
 	reporter.Publish(ctx, b.detail)
 	return true
 }
@@ -817,6 +871,9 @@ func (b *StreamUsageBuffer) Publish(ctx context.Context, reporter *UsageReporter
 func (b *StreamUsageBuffer) PublishFailure(ctx context.Context, reporter *UsageReporter, errs ...error) bool {
 	if b == nil || reporter == nil {
 		return false
+	}
+	if b.responseModel != "" && reporter.ResponseModel() == "" {
+		reporter.SetResponseModel(b.responseModel)
 	}
 	reporter.PublishFailureWithDetail(ctx, b.detail, errs...)
 	return true
@@ -828,6 +885,14 @@ func (b *StreamUsageBuffer) Detail() (usage.Detail, bool) {
 		return usage.Detail{}, false
 	}
 	return b.detail, true
+}
+
+// ResponseModel returns the latest model observed in the stream buffer.
+func (b *StreamUsageBuffer) ResponseModel() string {
+	if b == nil {
+		return ""
+	}
+	return b.responseModel
 }
 
 func ParseCodexUsage(data []byte) (usage.Detail, bool) {

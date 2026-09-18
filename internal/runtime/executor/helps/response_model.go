@@ -10,18 +10,159 @@ import (
 )
 
 const (
-	// maxCodexResponseModelLength is a defensive bound on an upstream-controlled string
-	// reaching logs and usage records; known codex model ids stay under ~30 bytes.
-	maxCodexResponseModelLength = 128
+	// maxResponseModelLength is a defensive bound on an upstream-controlled string
+	// reaching logs and usage records; known model ids stay under ~128 bytes.
+	maxResponseModelLength      = 128
+	maxCodexResponseModelLength = maxResponseModelLength
 
-	// codexModelSubstitutionWarnWindow bounds how often one credential and model pair
+	// modelSubstitutionWarnWindow bounds how often one credential and model pair
 	// warns: on an affected credential every request is substituted.
-	codexModelSubstitutionWarnWindow = 10 * time.Minute
+	modelSubstitutionWarnWindow      = 10 * time.Minute
+	codexModelSubstitutionWarnWindow = modelSubstitutionWarnWindow
 
-	// codexModelSubstitutionWarnMaxEntries caps the throttle state, naturally bounded by
+	// modelSubstitutionWarnMaxEntries caps the throttle state, naturally bounded by
 	// credentials times models; memory safety wins over perfect throttling.
-	codexModelSubstitutionWarnMaxEntries = 1024
+	modelSubstitutionWarnMaxEntries      = 1024
+	codexModelSubstitutionWarnMaxEntries = modelSubstitutionWarnMaxEntries
 )
+
+// extractResponseModelEvent returns the model an upstream reports serving, read
+// from a raw JSON frame or an SSE line, and whether the event terminates the response.
+func extractResponseModelEvent(payload []byte, provider string) (model string, terminal bool) {
+	data := jsonPayload(payload)
+	if len(data) == 0 {
+		return "", false
+	}
+	normProvider := strings.ToLower(strings.TrimSpace(provider))
+	switch normProvider {
+	case "codex":
+		return extractCodexResponseModelEvent(payload)
+	case "claude":
+		return extractClaudeResponseModelEvent(data)
+	case "gemini", "vertex", "aistudio", "antigravity":
+		return extractGeminiResponseModelEvent(data)
+	default:
+		return extractGenericResponseModelEvent(data)
+	}
+}
+
+// extractClaudeResponseModelEvent extracts the response model from an Anthropic Claude response.
+func extractClaudeResponseModelEvent(data []byte) (model string, terminal bool) {
+	eventType := gjson.GetBytes(data, "type").String()
+	switch eventType {
+	case "message_start":
+		m := gjson.GetBytes(data, "message.model")
+		if m.Type == gjson.String {
+			s := strings.TrimSpace(m.String())
+			if len(s) <= maxResponseModelLength {
+				return s, false
+			}
+		}
+		return "", false
+	case "message_stop":
+		return "", true
+	case "message":
+		m := gjson.GetBytes(data, "model")
+		if m.Type == gjson.String {
+			s := strings.TrimSpace(m.String())
+			if len(s) <= maxResponseModelLength {
+				return s, true
+			}
+		}
+		return "", true
+	default:
+		if !gjson.ValidBytes(data) {
+			return "", false
+		}
+		if m := gjson.GetBytes(data, "message.model"); m.Type == gjson.String {
+			s := strings.TrimSpace(m.String())
+			if len(s) <= maxResponseModelLength {
+				return s, false
+			}
+		} else if m := gjson.GetBytes(data, "model"); m.Type == gjson.String {
+			s := strings.TrimSpace(m.String())
+			if len(s) <= maxResponseModelLength {
+				return s, false
+			}
+		}
+		return "", false
+	}
+}
+
+// extractGeminiResponseModelEvent extracts the response model from a Google Gemini / Vertex / AIStudio response.
+func extractGeminiResponseModelEvent(data []byte) (model string, terminal bool) {
+	if !gjson.ValidBytes(data) {
+		return "", false
+	}
+	m := gjson.GetBytes(data, "response.modelVersion")
+	if !m.Exists() || m.Type != gjson.String {
+		m = gjson.GetBytes(data, "modelVersion")
+	}
+	if !m.Exists() || m.Type != gjson.String {
+		m = gjson.GetBytes(data, "model")
+	}
+	var served string
+	if m.Type == gjson.String {
+		served = strings.TrimSpace(m.String())
+		if len(served) > maxResponseModelLength {
+			served = ""
+		}
+	}
+	cand := gjson.GetBytes(data, "candidates.0.finishReason")
+	if !cand.Exists() {
+		cand = gjson.GetBytes(data, "response.candidates.0.finishReason")
+	}
+	terminal = cand.Exists() && cand.String() != ""
+	return served, terminal
+}
+
+// extractGenericResponseModelEvent extracts the response model from standard JSON / SSE responses.
+func extractGenericResponseModelEvent(data []byte) (model string, terminal bool) {
+	if !gjson.ValidBytes(data) {
+		return "", false
+	}
+	if m := gjson.GetBytes(data, "response.model"); m.Type == gjson.String {
+		served := strings.TrimSpace(m.String())
+		if len(served) <= maxResponseModelLength {
+			eventType := gjson.GetBytes(data, "type").String()
+			terminal := eventType == "response.completed" || eventType == "response.done" || eventType == "response.incomplete"
+			return served, terminal
+		}
+	}
+	if m := gjson.GetBytes(data, "modelVersion"); m.Type == gjson.String {
+		served := strings.TrimSpace(m.String())
+		if len(served) <= maxResponseModelLength {
+			cand := gjson.GetBytes(data, "candidates.0.finishReason")
+			return served, cand.Exists() && cand.String() != ""
+		}
+	}
+	if m := gjson.GetBytes(data, "response.modelVersion"); m.Type == gjson.String {
+		served := strings.TrimSpace(m.String())
+		if len(served) <= maxResponseModelLength {
+			cand := gjson.GetBytes(data, "response.candidates.0.finishReason")
+			return served, cand.Exists() && cand.String() != ""
+		}
+	}
+	if m := gjson.GetBytes(data, "message.model"); m.Type == gjson.String {
+		served := strings.TrimSpace(m.String())
+		if len(served) <= maxResponseModelLength {
+			return served, false
+		}
+	}
+	if m := gjson.GetBytes(data, "model"); m.Type == gjson.String {
+		served := strings.TrimSpace(m.String())
+		if len(served) <= maxResponseModelLength {
+			objectType := gjson.GetBytes(data, "object").String()
+			finishReason := gjson.GetBytes(data, "choices.0.finish_reason").String()
+			terminal := objectType == "chat.completion" || finishReason != ""
+			return served, terminal
+		}
+	}
+	if gjson.GetBytes(data, "type").String() == "message_stop" {
+		return "", true
+	}
+	return "", false
+}
 
 // extractCodexResponseModelEvent returns the model a codex upstream reports serving, read
 // from a raw JSON frame or an SSE line, and whether the event terminates the response.
@@ -65,57 +206,113 @@ func codexResponseModelEventKind(eventType string) (carriesModel bool, terminal 
 	}
 }
 
+// normalizeModelName lower-cases a model id and drops its thinking suffix,
+// which never reaches the upstream request body.
+func normalizeModelName(model string) string {
+	return strings.TrimSpace(thinking.ParseSuffix(strings.ToLower(strings.TrimSpace(model))).ModelName)
+}
+
 // normalizeCodexModelName lower-cases a model id and drops its thinking suffix,
 // which never reaches the upstream request body.
 func normalizeCodexModelName(model string) string {
-	return strings.TrimSpace(thinking.ParseSuffix(strings.ToLower(strings.TrimSpace(model))).ModelName)
+	return normalizeModelName(model)
+}
+
+func stripModelProviderPrefix(model string) string {
+	if idx := strings.LastIndex(model, "/"); idx >= 0 && idx < len(model)-1 {
+		return model[idx+1:]
+	}
+	return model
 }
 
 // IsCodexModelSubstituted reports whether the upstream served a model other than the
 // requested one; a dated alias pins a snapshot of the same model and is accepted.
 func IsCodexModelSubstituted(requested, served string) bool {
-	servedModel := normalizeCodexModelName(served)
+	return IsModelSubstituted(requested, served)
+}
+
+// IsModelSubstituted reports whether the upstream served a model other than the
+// requested one for any provider; dated aliases and snapshot pins are accepted.
+func IsModelSubstituted(requested, served string) bool {
+	servedModel := normalizeModelName(served)
 	if servedModel == "" {
 		return false
 	}
-	requestedModel := normalizeCodexModelName(requested)
+	requestedModel := normalizeModelName(requested)
 	if requestedModel == "" {
 		return false
 	}
 	if requestedModel == servedModel {
 		return false
 	}
-	return !isCodexDatedModelAlias(requestedModel, servedModel) &&
-		!isCodexDatedModelAlias(servedModel, requestedModel)
+
+	if isDatedModelAlias(requestedModel, servedModel) || isDatedModelAlias(servedModel, requestedModel) {
+		return false
+	}
+
+	cleanReq := stripModelProviderPrefix(requestedModel)
+	cleanSrv := stripModelProviderPrefix(servedModel)
+	if cleanReq == cleanSrv {
+		return false
+	}
+	if isDatedModelAlias(cleanReq, cleanSrv) || isDatedModelAlias(cleanSrv, cleanReq) {
+		return false
+	}
+
+	reqNoLatest := strings.TrimSuffix(cleanReq, "-latest")
+	srvNoLatest := strings.TrimSuffix(cleanSrv, "-latest")
+	if reqNoLatest == srvNoLatest {
+		return false
+	}
+	if isDatedModelAlias(reqNoLatest, srvNoLatest) || isDatedModelAlias(srvNoLatest, reqNoLatest) {
+		return false
+	}
+
+	return true
+}
+
+func isDatedModelAlias(base, dated string) bool {
+	prefix := base + "-"
+	if !strings.HasPrefix(dated, prefix) {
+		return false
+	}
+	suffix := dated[len(prefix):]
+	return isModelDateSuffix(suffix) || isModelNumericVersionSuffix(suffix)
 }
 
 // isCodexDatedModelAlias reports whether dated is base plus a release date suffix,
 // which upstreams use to pin the exact snapshot of the same model.
 func isCodexDatedModelAlias(base, dated string) bool {
-	prefix := base + "-"
-	if !strings.HasPrefix(dated, prefix) {
-		return false
-	}
-	return isCodexModelDateSuffix(dated[len(prefix):])
+	return isDatedModelAlias(base, dated)
 }
 
-// isCodexModelDateSuffix reports whether suffix is a YYYY-MM-DD or YYYYMMDD date.
-func isCodexModelDateSuffix(suffix string) bool {
+func isModelDateSuffix(suffix string) bool {
 	switch len(suffix) {
 	case len("YYYY-MM-DD"):
 		if suffix[4] != '-' || suffix[7] != '-' {
 			return false
 		}
-		return isCodexModelDigits(suffix[:4]) && isCodexModelDigits(suffix[5:7]) && isCodexModelDigits(suffix[8:])
+		return isModelDigits(suffix[:4]) && isModelDigits(suffix[5:7]) && isModelDigits(suffix[8:])
 	case len("YYYYMMDD"):
-		return isCodexModelDigits(suffix)
+		return isModelDigits(suffix)
 	default:
 		return false
 	}
 }
 
-// isCodexModelDigits reports whether value is a non-empty run of ASCII digits.
-func isCodexModelDigits(value string) bool {
+// isCodexModelDateSuffix reports whether suffix is a YYYY-MM-DD or YYYYMMDD date.
+func isCodexModelDateSuffix(suffix string) bool {
+	return isModelDateSuffix(suffix)
+}
+
+func isModelNumericVersionSuffix(suffix string) bool {
+	if len(suffix) == 3 && isModelDigits(suffix) {
+		return true
+	}
+	return false
+}
+
+func isModelDigits(value string) bool {
 	if value == "" {
 		return false
 	}
@@ -127,7 +324,13 @@ func isCodexModelDigits(value string) bool {
 	return true
 }
 
+// isCodexModelDigits reports whether value is a non-empty run of ASCII digits.
+func isCodexModelDigits(value string) bool {
+	return isModelDigits(value)
+}
+
 type codexModelSubstitutionKey struct {
+	provider  string
 	authID    string
 	requested string
 	served    string

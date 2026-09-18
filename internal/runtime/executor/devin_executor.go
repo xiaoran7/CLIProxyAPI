@@ -289,6 +289,7 @@ func (e *DevinExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 		return resp, errConsume
 	}
 
+	reporter.ObserveResponseModel(interactionsJSON)
 	reporter.Publish(ctx, helps.ParseInteractionsUsage(interactionsJSON))
 
 	targetFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
@@ -704,6 +705,9 @@ func (e *DevinExecutor) streamDevinFrames(
 			break
 		}
 		streamFrameCount++
+		if reporter != nil {
+			reporter.ObserveResponseModel(payload)
+		}
 
 		// EOS Trailer
 		if flag&helps.ConnectFlagEndStream != 0 {
