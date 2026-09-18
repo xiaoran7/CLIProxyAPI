@@ -39,7 +39,7 @@ func extractResponseModelEvent(payload []byte, provider string) (model string, t
 		return extractCodexResponseModelEvent(payload)
 	case "claude":
 		return extractClaudeResponseModelEvent(data)
-	case "gemini", "vertex", "aistudio", "antigravity":
+	case "gemini", "gemini-interactions", "vertex", "aistudio", "antigravity":
 		return extractGeminiResponseModelEvent(data)
 	default:
 		return extractGenericResponseModelEvent(data)
@@ -99,6 +99,9 @@ func extractGeminiResponseModelEvent(data []byte) (model string, terminal bool) 
 		m = gjson.GetBytes(data, "modelVersion")
 	}
 	if !m.Exists() || m.Type != gjson.String {
+		m = gjson.GetBytes(data, "interaction.model")
+	}
+	if !m.Exists() || m.Type != gjson.String {
 		m = gjson.GetBytes(data, "model")
 	}
 	var served string
@@ -113,6 +116,14 @@ func extractGeminiResponseModelEvent(data []byte) (model string, terminal bool) 
 		cand = gjson.GetBytes(data, "response.candidates.0.finishReason")
 	}
 	terminal = cand.Exists() && cand.String() != ""
+	if !terminal {
+		eventType := gjson.GetBytes(data, "event_type").String()
+		if eventType == "" {
+			eventType = gjson.GetBytes(data, "type").String()
+		}
+		status := gjson.GetBytes(data, "interaction.status").String()
+		terminal = isInteractionsTerminal(eventType, status)
+	}
 	return served, terminal
 }
 
@@ -126,6 +137,18 @@ func extractGenericResponseModelEvent(data []byte) (model string, terminal bool)
 		if len(served) <= maxResponseModelLength {
 			eventType := gjson.GetBytes(data, "type").String()
 			terminal := eventType == "response.completed" || eventType == "response.done" || eventType == "response.incomplete"
+			return served, terminal
+		}
+	}
+	if m := gjson.GetBytes(data, "interaction.model"); m.Type == gjson.String {
+		served := strings.TrimSpace(m.String())
+		if len(served) <= maxResponseModelLength {
+			eventType := gjson.GetBytes(data, "event_type").String()
+			if eventType == "" {
+				eventType = gjson.GetBytes(data, "type").String()
+			}
+			status := gjson.GetBytes(data, "interaction.status").String()
+			terminal := isInteractionsTerminal(eventType, status)
 			return served, terminal
 		}
 	}
@@ -154,14 +177,32 @@ func extractGenericResponseModelEvent(data []byte) (model string, terminal bool)
 		if len(served) <= maxResponseModelLength {
 			objectType := gjson.GetBytes(data, "object").String()
 			finishReason := gjson.GetBytes(data, "choices.0.finish_reason").String()
-			terminal := objectType == "chat.completion" || finishReason != ""
+			status := gjson.GetBytes(data, "status").String()
+			terminal := objectType == "chat.completion" || finishReason != "" || status == "completed" || status == "incomplete"
 			return served, terminal
 		}
 	}
-	if gjson.GetBytes(data, "type").String() == "message_stop" {
+	eventType := gjson.GetBytes(data, "event_type").String()
+	if eventType == "" {
+		eventType = gjson.GetBytes(data, "type").String()
+	}
+	status := gjson.GetBytes(data, "interaction.status").String()
+	if isInteractionsTerminal(eventType, status) || eventType == "message_stop" {
 		return "", true
 	}
 	return "", false
+}
+
+func isInteractionsTerminal(eventType, status string) bool {
+	switch eventType {
+	case "interaction.completed", "interaction.done", "interaction.failed", "interaction.cancelled":
+		return true
+	}
+	switch status {
+	case "completed", "incomplete", "cancelled", "failed":
+		return true
+	}
+	return false
 }
 
 // extractCodexResponseModelEvent returns the model a codex upstream reports serving, read

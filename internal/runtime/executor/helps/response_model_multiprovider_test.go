@@ -80,6 +80,34 @@ func TestExtractResponseModelMultiProvider(t *testing.T) {
 			wantModel:    "gemini-3.7-flash",
 			wantTerminal: false,
 		},
+		{
+			name:         "gemini interactions sse interaction.completed with model",
+			provider:     "gemini",
+			payload:      `data: {"event_type":"interaction.completed","interaction":{"id":"i1","status":"requires_action","usage":{"total_input_tokens":2,"total_output_tokens":3,"total_tokens":5},"service_tier":"standard","model":"gemini-3.1-flash-lite"}}`,
+			wantModel:    "gemini-3.1-flash-lite",
+			wantTerminal: true,
+		},
+		{
+			name:         "gemini interactions sse interaction.created with model",
+			provider:     "gemini",
+			payload:      `data: {"event_type":"interaction.created","interaction":{"id":"i1","model":"gemini-3.1-flash-lite"}}`,
+			wantModel:    "gemini-3.1-flash-lite",
+			wantTerminal: false,
+		},
+		{
+			name:         "gemini interactions sse interaction.completed without model",
+			provider:     "gemini",
+			payload:      `data: {"event_type":"interaction.completed","interaction":{"id":"i1","status":"completed"}}`,
+			wantModel:    "",
+			wantTerminal: true,
+		},
+		{
+			name:         "gemini-interactions provider sse interaction.completed with model",
+			provider:     "gemini-interactions",
+			payload:      `data: {"event_type":"interaction.completed","interaction":{"id":"i1","status":"completed","model":"gemini-3.1-flash-lite"}}`,
+			wantModel:    "gemini-3.1-flash-lite",
+			wantTerminal: true,
+		},
 		// OpenAI / OpenAICompat format tests
 		{
 			name:         "openai sse chat completion chunk",
@@ -116,6 +144,13 @@ func TestExtractResponseModelMultiProvider(t *testing.T) {
 			provider:     "custom",
 			payload:      `{"model":"custom-model-v1","object":"chat.completion"}`,
 			wantModel:    "custom-model-v1",
+			wantTerminal: true,
+		},
+		{
+			name:         "generic interactions sse interaction.completed with model",
+			provider:     "custom",
+			payload:      `data: {"event_type":"interaction.completed","interaction":{"model":"custom-model-v2"}}`,
+			wantModel:    "custom-model-v2",
 			wantTerminal: true,
 		},
 	}
@@ -198,6 +233,13 @@ func TestUsageReporterMultiProviderSubstitutionWarning(t *testing.T) {
 			served:      "gpt-4o-mini",
 			streamChunk: `data: {"id":"chatcmpl-1","model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"hi"}}]}`,
 			expectedLog: `openai executor: upstream served model "gpt-4o-mini" for requested model "gpt-4o"`,
+		},
+		{
+			provider:    "gemini-interactions",
+			requested:   "gemini-2.5-pro",
+			served:      "gemini-3.1-flash-lite",
+			streamChunk: `data: {"event_type":"interaction.completed","interaction":{"id":"i1","status":"completed","service_tier":"standard","model":"gemini-3.1-flash-lite"}}`,
+			expectedLog: `gemini-interactions executor: upstream served model "gemini-3.1-flash-lite" for requested model "gemini-2.5-pro"`,
 		},
 	}
 

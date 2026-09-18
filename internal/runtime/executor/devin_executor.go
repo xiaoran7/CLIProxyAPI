@@ -289,7 +289,9 @@ func (e *DevinExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 		return resp, errConsume
 	}
 
-	reporter.ObserveResponseModel(interactionsJSON)
+	if respLog != nil && respLog.Usage != nil && respLog.Usage.ModelName != "" {
+		reporter.SetResponseModel(respLog.Usage.ModelName)
+	}
 	reporter.Publish(ctx, helps.ParseInteractionsUsage(interactionsJSON))
 
 	targetFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
@@ -453,6 +455,9 @@ func (e *DevinExecutor) streamDevinFrames(
 	reporter *helps.UsageReporter,
 	out chan<- cliproxyexecutor.StreamChunk,
 ) {
+	if reporter != nil {
+		defer reporter.EnsurePublished(ctx)
+	}
 	interactionID := fmt.Sprintf("interaction_%s", uuid.New().String()[:12])
 	stepIndex := 0
 	thoughtStarted := false
@@ -705,9 +710,6 @@ func (e *DevinExecutor) streamDevinFrames(
 			break
 		}
 		streamFrameCount++
-		if reporter != nil {
-			reporter.ObserveResponseModel(payload)
-		}
 
 		// EOS Trailer
 		if flag&helps.ConnectFlagEndStream != 0 {
@@ -738,6 +740,9 @@ func (e *DevinExecutor) streamDevinFrames(
 		if frameRes.Usage != nil {
 			if finalUsage == nil {
 				finalUsage = frameRes.Usage
+				if reporter != nil && finalUsage.ModelName != "" {
+					reporter.SetResponseModel(finalUsage.ModelName)
+				}
 			} else {
 				if frameRes.Usage.PromptTokens > 0 {
 					finalUsage.PromptTokens = frameRes.Usage.PromptTokens
@@ -756,6 +761,9 @@ func (e *DevinExecutor) streamDevinFrames(
 				}
 				if frameRes.Usage.ModelName != "" {
 					finalUsage.ModelName = frameRes.Usage.ModelName
+					if reporter != nil {
+						reporter.SetResponseModel(frameRes.Usage.ModelName)
+					}
 				}
 				if len(frameRes.Usage.Headers) > 0 {
 					if finalUsage.Headers == nil {
@@ -943,6 +951,9 @@ func (e *DevinExecutor) streamDevinFrames(
 		completedEvent, _ = sjson.SetBytes(completedEvent, "interaction.usage.total_tokens", totalTokens)
 		if detail, ok := helps.ParseInteractionsStreamUsage(completedEvent); ok {
 			if reporter != nil {
+				if finalUsage != nil && finalUsage.ModelName != "" {
+					reporter.SetResponseModel(finalUsage.ModelName)
+				}
 				reporter.Publish(ctx, detail)
 			}
 		}
