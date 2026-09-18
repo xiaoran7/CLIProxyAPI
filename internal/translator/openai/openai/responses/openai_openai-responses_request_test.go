@@ -2379,3 +2379,47 @@ func TestConvertOpenAIResponsesRequestToOpenAIChatCompletions_MultipleOutputsWit
 		}
 	}
 }
+
+func TestConvertOpenAIResponsesRequestToOpenAIChatCompletions_MapsMaxOutputTokensToMaxTokens(t *testing.T) {
+	raw := []byte(`{
+		"model": "gpt-5.4",
+		"input": "hello",
+		"max_output_tokens": 1024
+	}`)
+
+	out := ConvertOpenAIResponsesRequestToOpenAIChatCompletions("gpt-5.4", raw, false)
+
+	if got := gjson.GetBytes(out, "max_tokens").Int(); got != 1024 {
+		t.Fatalf("max_tokens = %d, want 1024; output=%s", got, string(out))
+	}
+	if gjson.GetBytes(out, "max_completion_tokens").Exists() {
+		t.Fatalf("max_completion_tokens should be absent; output=%s", string(out))
+	}
+
+	rawWithoutLimit := []byte(`{
+		"model": "gpt-5.4",
+		"input": "hello"
+	}`)
+
+	outWithoutLimit := ConvertOpenAIResponsesRequestToOpenAIChatCompletions("gpt-5.4", rawWithoutLimit, false)
+	if gjson.GetBytes(outWithoutLimit, "max_completion_tokens").Exists() {
+		t.Fatalf("max_completion_tokens should be absent when omitted; output=%s", string(outWithoutLimit))
+	}
+	if gjson.GetBytes(outWithoutLimit, "max_tokens").Exists() {
+		t.Fatalf("max_tokens should be absent when omitted; output=%s", string(outWithoutLimit))
+	}
+
+	rawNull := []byte(`{
+		"model": "gpt-5.4",
+		"input": "hello",
+		"max_output_tokens": null
+	}`)
+
+	outNull := ConvertOpenAIResponsesRequestToOpenAIChatCompletions("gpt-5.4", rawNull, false)
+	if got := gjson.GetBytes(outNull, "max_tokens"); !got.Exists() || got.Type != gjson.Null {
+		t.Fatalf("max_tokens = %v, want null; output=%s", got, string(outNull))
+	}
+	if gjson.GetBytes(outNull, "max_completion_tokens").Exists() {
+		t.Fatalf("max_completion_tokens should be absent; output=%s", string(outNull))
+	}
+}

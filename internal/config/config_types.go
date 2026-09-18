@@ -862,6 +862,10 @@ type OpenAICompatibilityModel struct {
 	// Default false keeps the normal signature validation behavior.
 	IsCompat bool `yaml:"is-compat,omitempty" json:"is-compat,omitempty"`
 
+	// UseMaxCompletionTokens emits max_completion_tokens instead of legacy max_tokens for this model.
+	// Default false preserves max_tokens for older compatible upstreams.
+	UseMaxCompletionTokens bool `yaml:"use-max-completion-tokens,omitempty" json:"use-max-completion-tokens,omitempty"`
+
 	// Thinking configures the thinking/reasoning capability for this model.
 	// If nil, the model defaults to level-based reasoning with levels ["low", "medium", "high"].
 	Thinking *registry.ThinkingSupport `yaml:"thinking,omitempty" json:"thinking,omitempty"`
@@ -871,9 +875,10 @@ func (m OpenAICompatibilityModel) GetName() string { return m.Name }
 
 func (m OpenAICompatibilityModel) GetAlias() string { return m.Alias }
 
-func (m OpenAICompatibilityModel) GetDisplayName() string   { return m.DisplayName }
-func (m OpenAICompatibilityModel) GetMaxContextLength() int { return m.MaxContextLength }
-func (m OpenAICompatibilityModel) GetForceMapping() bool    { return m.ForceMapping }
-func (m OpenAICompatibilityModel) GetIsCompat() bool        { return m.IsCompat }
+func (m OpenAICompatibilityModel) GetDisplayName() string          { return m.DisplayName }
+func (m OpenAICompatibilityModel) GetMaxContextLength() int        { return m.MaxContextLength }
+func (m OpenAICompatibilityModel) GetForceMapping() bool           { return m.ForceMapping }
+func (m OpenAICompatibilityModel) GetIsCompat() bool               { return m.IsCompat }
+func (m OpenAICompatibilityModel) GetUseMaxCompletionTokens() bool { return m.UseMaxCompletionTokens }
 
 func (m OpenAICompatibilityModel) GetThinking() *registry.ThinkingSupport { return m.Thinking }

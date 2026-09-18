@@ -54,7 +54,11 @@ func ConvertOpenAIResponsesRequestToOpenAIChatCompletions(modelName string, inpu
 
 	// Map generation parameters from responses format to chat completions format
 	if maxTokens := root.Get("max_output_tokens"); maxTokens.Exists() {
-		out, _ = sjson.SetBytes(out, "max_tokens", maxTokens.Int())
+		if maxTokens.Raw != "" {
+			out, _ = sjson.SetRawBytes(out, "max_tokens", []byte(maxTokens.Raw))
+		} else {
+			out, _ = sjson.SetBytes(out, "max_tokens", maxTokens.Value())
+		}
 	}
 
 	// Convert instructions to system message
