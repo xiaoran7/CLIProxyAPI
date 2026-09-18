@@ -34,6 +34,7 @@ type xaiPreparedRequest struct {
 	sessionID             string
 	replayScope           xaiReasoningReplayScope
 	filterInternalXSearch bool
+	webSearchAlias        string
 }
 
 type xaiNamespaceToolRef struct {
@@ -97,6 +98,11 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
 	clientDeclaredTools := collectXAIClientDeclaredToolKeys(body)
 	body = normalizeXAIToolsWithFold(body, shouldFold)
 	body = promoteXAIAdditionalTools(body)
+	var webSearchAlias string
+	if xaiHasClientWebSearchFunction(body, namespaceTools) {
+		webSearchAlias = xaiResolveClientWebSearchAlias(body)
+		body = aliasXAIClientWebSearchFunction(body, webSearchAlias, namespaceTools)
+	}
 	// Drop choices that point at tools removed by normalizeXAITools before any
 	// configured x_search injection, so no surviving choice references a deleted tool.
 	body = normalizeXAINamespaceToolChoiceWithFold(body, shouldFold)
@@ -120,6 +126,9 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
 	}
 	body = normalizeXAIInputCustomToolCalls(body)
 	body = normalizeXAIInputNamespaceToolCallsWithFold(body, shouldFold)
+	if webSearchAlias != "" {
+		body = aliasXAIClientWebSearchInput(body, webSearchAlias, namespaceTools)
+	}
 	body = normalizeXAIInputReasoningItems(body)
 	body = sanitizeXAIInputEncryptedContent(body)
 	body = normalizeCodexInstructions(body)
@@ -146,6 +155,7 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
 		sessionID:             sessionID,
 		replayScope:           replayScope,
 		filterInternalXSearch: xaiRequestHasNativeXSearch(body),
+		webSearchAlias:        webSearchAlias,
 	}, nil
 }
 
@@ -680,6 +690,163 @@ func ensureXAINativeXSearchAllowedTools(body []byte) []byte {
 	}
 	body, _ = sjson.SetRawBytes(body, "tool_choice.tools.-1", xaiXSearchToolJSON)
 	return body
+}
+
+// xaiHasClientWebSearchFunction reports whether body declares a client function
+// or custom tool named "web_search" (without namespace), excluding folded namespace dispatchers.
+func xaiHasClientWebSearchFunction(body []byte, namespaceTools map[string]xaiNamespaceToolRef) bool {
+	if !gjson.ValidBytes(body) {
+		return false
+	}
+	tools := gjson.GetBytes(body, "tools")
+	if !tools.IsArray() {
+		return false
+	}
+	for _, tool := range tools.Array() {
+		toolType := strings.TrimSpace(tool.Get("type").String())
+		name := strings.TrimSpace(tool.Get("name").String())
+		if (toolType == xaiFunctionToolType || toolType == xaiCustomToolType) && name == xaiWebSearchToolType {
+			if _, isNamespace := namespaceTools[name]; isNamespace {
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// xaiBodyHasToolNamed reports whether any tool in tools or input has the given name.
+func xaiBodyHasToolNamed(body []byte, name string) bool {
+	tools := gjson.GetBytes(body, "tools")
+	if tools.IsArray() {
+		for _, tool := range tools.Array() {
+			if strings.TrimSpace(tool.Get("name").String()) == name {
+				return true
+			}
+			if nested := tool.Get("tools"); nested.IsArray() {
+				for _, child := range nested.Array() {
+					if strings.TrimSpace(child.Get("name").String()) == name {
+						return true
+					}
+				}
+			}
+		}
+	}
+	input := gjson.GetBytes(body, "input")
+	if input.IsArray() {
+		for _, item := range input.Array() {
+			if strings.TrimSpace(item.Get("name").String()) == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// xaiResolveClientWebSearchAlias picks a candidate alias that does not collide
+// with any client tool already present in the request.
+func xaiResolveClientWebSearchAlias(body []byte) string {
+	candidate := xaiClientWebSearchAlias
+	if !xaiBodyHasToolNamed(body, candidate) {
+		return candidate
+	}
+	for i := 1; ; i++ {
+		next := fmt.Sprintf("%s_%d", xaiClientWebSearchAlias, i)
+		if !xaiBodyHasToolNamed(body, next) {
+			return next
+		}
+	}
+}
+
+// aliasXAIClientWebSearchInput renames client-declared function calls named
+// "web_search" to alias in replayed input history.
+func aliasXAIClientWebSearchInput(body []byte, alias string, namespaceTools map[string]xaiNamespaceToolRef) []byte {
+	if !gjson.ValidBytes(body) || alias == "" {
+		return body
+	}
+	if _, isNamespace := namespaceTools[xaiWebSearchToolType]; isNamespace {
+		return body
+	}
+	input := gjson.GetBytes(body, "input")
+	if !input.IsArray() {
+		return body
+	}
+	for idx, item := range input.Array() {
+		itemType := strings.TrimSpace(item.Get("type").String())
+		itemName := strings.TrimSpace(item.Get("name").String())
+		itemNamespace := strings.TrimSpace(item.Get("namespace").String())
+		if (itemType == "function_call" || itemType == "custom_tool_call" || itemType == "function_call_output") &&
+			itemName == xaiWebSearchToolType && itemNamespace == "" {
+			body, _ = sjson.SetBytes(body, fmt.Sprintf("input.%d.name", idx), alias)
+		}
+	}
+	return body
+}
+
+// aliasXAIClientWebSearchFunction renames client-declared function tools named
+// "web_search" to a non-colliding alias in tools declarations, tool_choice,
+// and replayed input history to prevent xAI from hijacking them into hosted
+// server-side search. Namespace dispatcher tools named "web_search" are untouched.
+func aliasXAIClientWebSearchFunction(body []byte, alias string, namespaceTools map[string]xaiNamespaceToolRef) []byte {
+	if !gjson.ValidBytes(body) || alias == "" {
+		return body
+	}
+	// 1. Alias in tools (excluding namespace dispatchers)
+	tools := gjson.GetBytes(body, "tools")
+	if tools.IsArray() {
+		for idx, tool := range tools.Array() {
+			toolType := strings.TrimSpace(tool.Get("type").String())
+			name := strings.TrimSpace(tool.Get("name").String())
+			if (toolType == xaiFunctionToolType || toolType == xaiCustomToolType) && name == xaiWebSearchToolType {
+				if _, isNamespace := namespaceTools[name]; isNamespace {
+					continue
+				}
+				body, _ = sjson.SetBytes(body, fmt.Sprintf("tools.%d.name", idx), alias)
+			}
+		}
+	}
+
+	// 2. Alias in tool_choice (only when unnamespaced and not a namespace dispatcher)
+	choice := gjson.GetBytes(body, "tool_choice")
+	if choice.IsObject() {
+		if fnName := choice.Get("function.name"); fnName.Exists() && strings.TrimSpace(fnName.String()) == xaiWebSearchToolType {
+			if strings.TrimSpace(choice.Get("function.namespace").String()) == "" {
+				if _, isNamespace := namespaceTools[xaiWebSearchToolType]; !isNamespace {
+					body, _ = sjson.SetBytes(body, "tool_choice.function.name", alias)
+				}
+			}
+		}
+		if name := choice.Get("name"); name.Exists() && strings.TrimSpace(name.String()) == xaiWebSearchToolType {
+			if strings.TrimSpace(choice.Get("namespace").String()) == "" {
+				choiceType := strings.TrimSpace(choice.Get("type").String())
+				if choiceType == xaiFunctionToolType || choiceType == "tool" {
+					if _, isNamespace := namespaceTools[xaiWebSearchToolType]; !isNamespace {
+						body, _ = sjson.SetBytes(body, "tool_choice.name", alias)
+					}
+				}
+			}
+		}
+		if allowed := choice.Get("tools"); allowed.IsArray() {
+			for idx, allowedTool := range allowed.Array() {
+				if strings.TrimSpace(allowedTool.Get("namespace").String()) != "" {
+					continue
+				}
+				if _, isNamespace := namespaceTools[xaiWebSearchToolType]; isNamespace {
+					continue
+				}
+				allowedType := strings.TrimSpace(allowedTool.Get("type").String())
+				allowedName := strings.TrimSpace(allowedTool.Get("name").String())
+				if (allowedType == xaiFunctionToolType || allowedType == "tool") && allowedName == xaiWebSearchToolType {
+					body, _ = sjson.SetBytes(body, fmt.Sprintf("tool_choice.tools.%d.name", idx), alias)
+				} else if allowedName == xaiWebSearchToolType && allowedType != xaiWebSearchToolType {
+					body, _ = sjson.SetBytes(body, fmt.Sprintf("tool_choice.tools.%d.name", idx), alias)
+				}
+			}
+		}
+	}
+
+	// 3. Alias in input (conversation history, only when unnamespaced)
+	return aliasXAIClientWebSearchInput(body, alias, namespaceTools)
 }
 
 // normalizeXAIForcedWebSearchToolChoice rewrites web_search choices into a
