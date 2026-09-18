@@ -116,39 +116,6 @@ func ConvertOpenAIRequestToGemini(modelName string, inputRawJSON []byte, _ bool)
 		arr := messages.Array()
 		systemParts := make([][]byte, 0, 2)
 		contentItems := make([][]byte, 0, len(arr))
-		// First pass: assistant tool_calls id->name map
-		tcID2Name := map[string]string{}
-		for i := 0; i < len(arr); i++ {
-			m := arr[i]
-			if m.Get("role").String() == "assistant" {
-				tcs := m.Get("tool_calls")
-				if tcs.IsArray() {
-					for _, tc := range tcs.Array() {
-						if tc.Get("type").String() == "function" {
-							id := tc.Get("id").String()
-							name := tc.Get("function.name").String()
-							if id != "" && name != "" {
-								tcID2Name[id] = name
-							}
-						}
-					}
-				}
-			}
-		}
-
-		// Second pass build systemInstruction/tool responses cache
-		toolResponses := map[string]string{} // tool_call_id -> response text
-		for i := 0; i < len(arr); i++ {
-			m := arr[i]
-			role := m.Get("role").String()
-			if role == "tool" {
-				toolCallID := m.Get("tool_call_id").String()
-				if toolCallID != "" {
-					c := m.Get("content")
-					toolResponses[toolCallID] = c.Raw
-				}
-			}
-		}
 
 		hasEncounteredConversation := false
 		for i := 0; i < len(arr); i++ {
@@ -254,7 +221,11 @@ func ConvertOpenAIRequestToGemini(modelName string, inputRawJSON []byte, _ bool)
 				// Tool calls -> single model content with functionCall parts.
 				tcs := m.Get("tool_calls")
 				if tcs.IsArray() {
-					functionIDs := make([]string, 0)
+					type assistantToolCall struct {
+						id   string
+						name string
+					}
+					toolCalls := make([]assistantToolCall, 0)
 					for _, tc := range tcs.Array() {
 						if tc.Get("type").String() != "function" {
 							continue
@@ -269,27 +240,42 @@ func ConvertOpenAIRequestToGemini(modelName string, inputRawJSON []byte, _ bool)
 						part, _ = sjson.SetRawBytes(part, "functionCall.args", []byte(tc.Get("function.arguments").String()))
 						part, _ = sjson.SetBytes(part, "thoughtSignature", openAIToolCallGeminiThoughtSignature(tc))
 						partItems = append(partItems, part)
-						if functionID != "" {
-							functionIDs = append(functionIDs, functionID)
-						}
+						toolCalls = append(toolCalls, assistantToolCall{
+							id:   functionID,
+							name: functionName,
+						})
 					}
 					if len(partItems) > 0 {
 						contentItems = append(contentItems, geminiContentNode("model", partItems))
 					}
 
-					// Append a single tool content combining name + response per function.
-					responseParts := make([][]byte, 0, len(functionIDs))
-					for _, functionID := range functionIDs {
-						if name, ok := tcID2Name[functionID]; ok {
-							part := []byte(`{"functionResponse":{"name":"","response":{"result":""}}}`)
-							part, _ = sjson.SetBytes(part, "functionResponse.name", util.SanitizeFunctionName(name))
-							response := toolResponses[functionID]
-							if response == "" {
-								response = "{}"
-							}
-							part, _ = sjson.SetBytes(part, "functionResponse.response.result", []byte(response))
-							responseParts = append(responseParts, part)
+					// Collect tool responses scoped to this assistant turn.
+					turnToolResponses := map[string]string{}
+					for j := i + 1; j < len(arr); j++ {
+						nextRole := arr[j].Get("role").String()
+						if nextRole == "assistant" {
+							break
 						}
+						if nextRole == "tool" {
+							callID := arr[j].Get("tool_call_id").String()
+							if callID != "" {
+								c := arr[j].Get("content")
+								turnToolResponses[callID] = c.Raw
+							}
+						}
+					}
+
+					// Append a single tool content combining name + response per function.
+					responseParts := make([][]byte, 0, len(toolCalls))
+					for _, call := range toolCalls {
+						part := []byte(`{"functionResponse":{"name":"","response":{"result":""}}}`)
+						part, _ = sjson.SetBytes(part, "functionResponse.name", call.name)
+						response := turnToolResponses[call.id]
+						if response == "" {
+							response = "{}"
+						}
+						part, _ = sjson.SetBytes(part, "functionResponse.response.result", []byte(response))
+						responseParts = append(responseParts, part)
 					}
 					if len(responseParts) > 0 {
 						contentItems = append(contentItems, geminiContentNode("user", responseParts))
