@@ -99,3 +99,57 @@ func TestStreamResponseModelObserver_FinishFlushesIncompleteLine(t *testing.T) {
 		t.Fatalf("ResponseModel() = %q, want %q", got, "dall-e-3")
 	}
 }
+
+func TestStreamResponseModelObserver_RepeatedEmptyDataBounded(t *testing.T) {
+	// Repeated "data:\n" without an empty line must not grow memory unbounded.
+	// The budget and line count limits must drop the event, keep frame bounded,
+	// and resume parsing normally after the event boundary.
+	reporter := newMultiProviderTestReporter(context.Background(), "openai-compat", "dall-e-3", nil)
+	observer := NewStreamResponseModelObserver(reporter)
+
+	// Feed 5000 empty data lines in chunks
+	emptyDataChunk := strings.Repeat("data:\n", 100)
+	for range 50 {
+		observer.Feed([]byte(emptyDataChunk))
+	}
+
+	// Frame must be cleared due to event overflow, keeping memory strictly bounded
+	if len(observer.frame) > defaultMaxLinesPerStreamEvent {
+		t.Fatalf("frame len = %d, exceeded max lines per event %d", len(observer.frame), defaultMaxLinesPerStreamEvent)
+	}
+	if len(observer.frame) != 0 {
+		t.Fatalf("expected frame to be dropped after overflow, got len = %d", len(observer.frame))
+	}
+
+	// Terminate the overflowed event and feed a valid event
+	observer.Feed([]byte("\n\nevent: completion\ndata: {\"model\":\"dall-e-3\"}\n\n"))
+	observer.Finish()
+
+	if got := reporter.ResponseModel(); got != "dall-e-3" {
+		t.Fatalf("ResponseModel() = %q, want %q", got, "dall-e-3")
+	}
+}
+
+func TestStreamResponseModelObserver_EventOverflowDropsEventUntilBoundary(t *testing.T) {
+	// A multi-line event exceeding maxBound must be discarded up to the event boundary.
+	reporter := newMultiProviderTestReporter(context.Background(), "openai-compat", "dall-e-3", nil)
+	observer := NewStreamResponseModelObserver(reporter)
+
+	// Send an event with lines totaling well over 64 KiB
+	line := "data: " + strings.Repeat("x", 1024) + "\n"
+	for range 100 {
+		observer.Feed([]byte(line))
+	}
+
+	if len(observer.frame) != 0 {
+		t.Fatalf("expected frame to be dropped after overflow, got len = %d", len(observer.frame))
+	}
+
+	// Event boundary, followed by a valid event
+	observer.Feed([]byte("\n\ndata: {\"model\":\"dall-e-3\"}\n\n"))
+	observer.Finish()
+
+	if got := reporter.ResponseModel(); got != "dall-e-3" {
+		t.Fatalf("ResponseModel() = %q, want %q", got, "dall-e-3")
+	}
+}

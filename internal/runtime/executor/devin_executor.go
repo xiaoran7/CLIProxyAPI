@@ -246,6 +246,9 @@ func (e *DevinExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, re
 	if errPrep != nil {
 		return resp, errPrep
 	}
+	if chatModelUID != "" {
+		reporter.SetUpstreamModel(chatModelUID)
+	}
 
 	authID, authLabel, authType, authValue := devinAuthLogFields(auth)
 	helps.RecordAPIRequest(ctx, e.cfg, helps.UpstreamRequestLog{
@@ -314,6 +317,9 @@ func (e *DevinExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 	httpReq, chatModelUID, logBody, errPrep := e.prepareDevinHTTPRequest(ctx, auth, req, opts)
 	if errPrep != nil {
 		return nil, errPrep
+	}
+	if chatModelUID != "" {
+		reporter.SetUpstreamModel(chatModelUID)
 	}
 
 	authID, authLabel, authType, authValue := devinAuthLogFields(auth)
@@ -456,6 +462,9 @@ func (e *DevinExecutor) streamDevinFrames(
 	out chan<- cliproxyexecutor.StreamChunk,
 ) {
 	if reporter != nil {
+		if chatModelUID != "" {
+			reporter.SetUpstreamModel(chatModelUID)
+		}
 		defer reporter.EnsurePublished(ctx)
 	}
 	interactionID := fmt.Sprintf("interaction_%s", uuid.New().String()[:12])

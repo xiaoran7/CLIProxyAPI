@@ -4,18 +4,23 @@ import (
 	"bytes"
 )
 
-const defaultMaxStreamModelBufferBound = 64 * 1024
+const (
+	defaultMaxStreamModelBufferBound = 64 * 1024
+	defaultMaxLinesPerStreamEvent    = 2048
+	streamEventLineOverhead          = 32
+)
 
 // StreamResponseModelObserver accumulates streaming chunks using a bounded buffer
 // and extracts complete SSE lines or events to observe the response model,
 // ensuring extraction does not depend on network chunk boundaries.
 type StreamResponseModelObserver struct {
-	reporter   *UsageReporter
-	buf        []byte
-	frame      [][]byte
-	frameBytes int
-	maxBound   int
-	overflow   bool
+	reporter      *UsageReporter
+	buf           []byte
+	frame         [][]byte
+	frameBytes    int
+	maxBound      int
+	overflow      bool
+	eventOverflow bool
 }
 
 // NewStreamResponseModelObserver creates an observer for tracking response models
@@ -25,6 +30,13 @@ func NewStreamResponseModelObserver(reporter *UsageReporter) *StreamResponseMode
 		reporter: reporter,
 		maxBound: defaultMaxStreamModelBufferBound,
 	}
+}
+
+func (o *StreamResponseModelObserver) bound() int {
+	if o == nil || o.maxBound <= 0 {
+		return defaultMaxStreamModelBufferBound
+	}
+	return o.maxBound
 }
 
 // Feed ingests a raw chunk of bytes from a stream, splitting into lines and events.
@@ -52,9 +64,14 @@ func (o *StreamResponseModelObserver) Feed(chunk []byte) {
 
 		idx := bytes.IndexByte(chunk, '\n')
 		if idx < 0 {
-			if len(o.buf)+len(chunk) > o.maxBound {
+			if len(o.buf)+len(chunk) > o.bound() {
 				o.overflow = true
 				o.buf = o.buf[:0]
+				if len(o.frame) > 0 {
+					o.eventOverflow = true
+					o.frame = nil
+					o.frameBytes = 0
+				}
 			} else {
 				o.buf = append(o.buf, chunk...)
 			}
@@ -63,8 +80,13 @@ func (o *StreamResponseModelObserver) Feed(chunk []byte) {
 
 		linePart := chunk[:idx]
 		chunk = chunk[idx+1:]
-		if len(o.buf)+len(linePart) > o.maxBound {
+		if len(o.buf)+len(linePart) > o.bound() {
 			o.buf = o.buf[:0]
+			if len(o.frame) > 0 {
+				o.eventOverflow = true
+				o.frame = nil
+				o.frameBytes = 0
+			}
 			continue
 		}
 
@@ -106,20 +128,35 @@ func (o *StreamResponseModelObserver) handleLine(line []byte) {
 		return
 	}
 
+	if o.eventOverflow {
+		return
+	}
+
 	// Always attempt to observe the line directly (e.g. data: {"model":"..."}, {"model":"..."}).
 	o.reporter.ObserveResponseModel(line)
 
 	if bytes.HasPrefix(trimmed, []byte("data:")) {
 		dataPayload := bytes.TrimPrefix(trimmed, []byte("data:"))
 		dataPayload = bytes.TrimPrefix(dataPayload, []byte(" "))
-		if o.frameBytes+len(dataPayload) <= o.maxBound {
-			o.frame = append(o.frame, bytes.Clone(dataPayload))
-			o.frameBytes += len(dataPayload)
+		lineCost := len(dataPayload) + streamEventLineOverhead
+		if o.frameBytes+lineCost > o.bound() || len(o.frame) >= defaultMaxLinesPerStreamEvent {
+			o.eventOverflow = true
+			o.frame = nil
+			o.frameBytes = 0
+			return
 		}
+		o.frame = append(o.frame, bytes.Clone(dataPayload))
+		o.frameBytes += lineCost
 	}
 }
 
 func (o *StreamResponseModelObserver) flushEvent() {
+	if o.eventOverflow {
+		o.eventOverflow = false
+		o.frame = nil
+		o.frameBytes = 0
+		return
+	}
 	if len(o.frame) == 0 {
 		return
 	}
@@ -127,6 +164,6 @@ func (o *StreamResponseModelObserver) flushEvent() {
 		joined := bytes.Join(o.frame, []byte("\n"))
 		o.reporter.ObserveResponseModel(joined)
 	}
-	o.frame = o.frame[:0]
+	o.frame = nil
 	o.frameBytes = 0
 }
