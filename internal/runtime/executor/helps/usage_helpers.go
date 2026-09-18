@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -50,6 +51,13 @@ type UsageReporter struct {
 	ttftStart           time.Time
 	ttftSet             bool
 	once                sync.Once
+
+	responseModelMu sync.RWMutex
+	// responseModel holds the latest model name reported by the upstream response.
+	responseModel string
+	// responseModelFinal marks that a terminal event already reported the served
+	// model, so later frames skip parsing entirely.
+	responseModelFinal atomic.Bool
 }
 
 type usageExecutor interface {
@@ -173,6 +181,69 @@ func (r *UsageReporter) accessTokenFingerprint() string {
 	r.authMu.RLock()
 	defer r.authMu.RUnlock()
 	return r.accessTokenHash
+}
+
+// ObserveCodexResponseModel stores the model reported by a codex upstream event and
+// ignores payloads without one; the substitution warning is emitted at publish time.
+func (r *UsageReporter) ObserveCodexResponseModel(payload []byte) {
+	if r == nil || r.responseModelFinal.Load() {
+		return
+	}
+	served, terminal := extractCodexResponseModelEvent(payload)
+	if served == "" {
+		return
+	}
+	r.responseModelMu.Lock()
+	r.responseModel = served
+	r.responseModelMu.Unlock()
+	if terminal {
+		r.responseModelFinal.Store(true)
+	}
+}
+
+// warnCodexModelSubstitution warns about a silent upstream model swap, throttled per
+// credential and model pair, and labels the credential by index only, never by account.
+func (r *UsageReporter) warnCodexModelSubstitution(ctx context.Context) {
+	if r == nil {
+		return
+	}
+	served := r.ResponseModel()
+	if served == "" || !IsCodexModelSubstituted(r.model, served) {
+		return
+	}
+	// The throttle key uses the same normalized names as the substitution check, so
+	// aliases of one pair share a window instead of each warning on its own.
+	requested := normalizeCodexModelName(r.model)
+	servedNormalized := normalizeCodexModelName(served)
+	if !codexModelSubstitutionWarns.allow(codexModelSubstitutionKey{
+		authID:    r.authID,
+		requested: requested,
+		served:    servedNormalized,
+	}) {
+		return
+	}
+	LogWithRequestID(ctx).Warnf("codex executor: upstream served model %q for requested model %q (auth_index=%s)", served, r.model, r.authIndexForLog())
+}
+
+// authIndexForLog labels the credential without exposing its file name or account.
+func (r *UsageReporter) authIndexForLog() string {
+	if r == nil {
+		return "nil"
+	}
+	if authIndex := strings.TrimSpace(r.authIndex); authIndex != "" {
+		return authIndex
+	}
+	return "nil"
+}
+
+// ResponseModel returns the latest model reported by the upstream response.
+func (r *UsageReporter) ResponseModel() string {
+	if r == nil {
+		return ""
+	}
+	r.responseModelMu.RLock()
+	defer r.responseModelMu.RUnlock()
+	return r.responseModel
 }
 
 func ExecutorTypeName(executor any) string {
@@ -392,7 +463,7 @@ func (r *UsageReporter) publishWithOutcome(ctx context.Context, detail usage.Det
 	}
 	detail = normalizeUsageDetailTotal(detail, r.provider, r.executorType)
 	r.once.Do(func() {
-		r.publishRecord(ctx, r.buildRecord(detail, failed, fail))
+		r.publishAttemptRecord(ctx, r.buildRecord(detail, failed, fail))
 	})
 }
 
@@ -420,8 +491,15 @@ func (r *UsageReporter) EnsurePublished(ctx context.Context) {
 		return
 	}
 	r.once.Do(func() {
-		r.publishRecord(ctx, r.buildRecord(usage.Detail{}, false, usage.Failure{}))
+		r.publishAttemptRecord(ctx, r.buildRecord(usage.Detail{}, false, usage.Failure{}))
 	})
+}
+
+// publishAttemptRecord emits the record for one upstream attempt and the
+// observability warnings that belong to the attempt rather than to a single event.
+func (r *UsageReporter) publishAttemptRecord(ctx context.Context, record usage.Record) {
+	r.publishRecord(ctx, record)
+	r.warnCodexModelSubstitution(ctx)
 }
 
 func (r *UsageReporter) publishRecord(ctx context.Context, record usage.Record) {
@@ -444,6 +522,12 @@ func (r *UsageReporter) buildRecordForModel(model string, detail usage.Detail, f
 	if r == nil {
 		return usage.Record{Model: model, Detail: detail, Failed: failed, Fail: fail, Generate: usage.GenerateFlag(true)}
 	}
+	// Additional-model records describe a side model (image generation tool usage) that
+	// the upstream response model never refers to, so they must stay empty.
+	responseModel := ""
+	if model == r.model {
+		responseModel = r.ResponseModel()
+	}
 	return usage.Record{
 		Provider:            r.provider,
 		BaseURL:             r.baseURL,
@@ -461,6 +545,7 @@ func (r *UsageReporter) buildRecordForModel(model string, detail usage.Detail, f
 		ReasoningEffort:     r.reasoning,
 		ServiceTier:         r.serviceTier,
 		ResponseServiceTier: strings.TrimSpace(detail.ResponseServiceTier),
+		ResponseModel:       responseModel,
 		Generate:            usage.GenerateFlag(r.generate),
 		Stream:              r.stream,
 		RequestedAt:         r.requestedAt,
