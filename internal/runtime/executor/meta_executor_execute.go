@@ -137,6 +137,9 @@ func (e *MetaExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req
 	if errCompleted != nil {
 		return resp, errCompleted
 	}
+	if len(out.sourceEvent) > 0 {
+		reporter.ObserveResponseModel(out.sourceEvent)
+	}
 	if detail, ok := helps.ParseCodexUsage(out.sourceEvent); ok {
 		reporter.Publish(ctx, detail)
 	} else {

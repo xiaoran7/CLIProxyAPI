@@ -658,7 +658,9 @@ func (e *OpenAICompatExecutor) executeImagesStream(ctx context.Context, auth *cl
 	out := make(chan cliproxyexecutor.StreamChunk)
 	go func() {
 		defer close(out)
+		observer := helps.NewStreamResponseModelObserver(reporter)
 		defer func() {
+			observer.Finish()
 			if errClose := httpResp.Body.Close(); errClose != nil {
 				log.Errorf("openai compat executor: close response body error: %v", errClose)
 			}
@@ -670,7 +672,7 @@ func (e *OpenAICompatExecutor) executeImagesStream(ctx context.Context, auth *cl
 			if n > 0 {
 				chunk := bytes.Clone(buffer[:n])
 				helps.AppendAPIResponseChunk(ctx, e.cfg, chunk)
-				reporter.ObserveResponseModel(chunk)
+				observer.Feed(chunk)
 				select {
 				case out <- cliproxyexecutor.StreamChunk{Payload: chunk}:
 				case <-ctx.Done():

@@ -133,6 +133,7 @@ func (e *KimiExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req
 
 	// Strip kimi- prefix and any [1m] suffix for upstream API
 	upstreamModel := normalizeKimiUpstreamModel(baseModel)
+	reporter.SetUpstreamModel(upstreamModel)
 	body, err = sjson.SetBytes(body, "model", upstreamModel)
 	if err != nil {
 		return resp, fmt.Errorf("kimi executor: failed to set model in payload: %w", err)
@@ -259,6 +260,7 @@ func (e *KimiExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Aut
 
 	// Strip kimi- prefix and any [1m] suffix for upstream API
 	upstreamModel := normalizeKimiUpstreamModel(baseModel)
+	reporter.SetUpstreamModel(upstreamModel)
 	body, err = sjson.SetBytes(body, "model", upstreamModel)
 	if err != nil {
 		return nil, fmt.Errorf("kimi executor: failed to set model in payload: %w", err)
@@ -393,6 +395,7 @@ func (e *KimiExecutor) executeResponses(ctx context.Context, auth *cliproxyauth.
 
 	body := bytes.Clone(req.Payload)
 	upstreamModel := normalizeKimiUpstreamModel(baseModel)
+	reporter.SetUpstreamModel(upstreamModel)
 	var errSet error
 	body, errSet = sjson.SetBytes(body, "model", upstreamModel)
 	if errSet != nil {
@@ -503,6 +506,7 @@ func (e *KimiExecutor) executeResponsesStream(ctx context.Context, auth *cliprox
 
 	body := bytes.Clone(req.Payload)
 	upstreamModel := normalizeKimiUpstreamModel(baseModel)
+	reporter.SetUpstreamModel(upstreamModel)
 	var errSet error
 	body, errSet = sjson.SetBytes(body, "model", upstreamModel)
 	if errSet != nil {

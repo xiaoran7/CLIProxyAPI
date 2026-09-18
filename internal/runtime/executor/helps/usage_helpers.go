@@ -58,6 +58,11 @@ type UsageReporter struct {
 	// responseModelFinal marks that a terminal event already reported the served
 	// model, so later frames skip parsing entirely.
 	responseModelFinal atomic.Bool
+
+	upstreamModelMu sync.RWMutex
+	// upstreamModel holds the canonical upstream model expected to be served when
+	// it differs from the requested model (e.g. local Kimi model mappings).
+	upstreamModel string
 }
 
 type usageExecutor interface {
@@ -228,6 +233,34 @@ func (r *UsageReporter) SetResponseModel(model string) {
 	r.responseModelMu.Unlock()
 }
 
+// SetUpstreamModel records the upstream model expected to be served when it differs
+// from the requested model (e.g. due to provider-specific mapping or canonicalization).
+// Model substitution detection compares the response against this upstream model,
+// while usage accounting preserves the client's requested model.
+func (r *UsageReporter) SetUpstreamModel(model string) {
+	if r == nil {
+		return
+	}
+	r.upstreamModelMu.Lock()
+	r.upstreamModel = strings.TrimSpace(model)
+	r.upstreamModelMu.Unlock()
+}
+
+// UpstreamModel returns the expected upstream model, or an empty string if not explicitly set.
+func (r *UsageReporter) UpstreamModel() string {
+	if r == nil {
+		return ""
+	}
+	r.upstreamModelMu.RLock()
+	defer r.upstreamModelMu.RUnlock()
+	return r.upstreamModel
+}
+
+// IsResponseModelFinal reports whether the response model was already finalized by a terminal event.
+func (r *UsageReporter) IsResponseModelFinal() bool {
+	return r != nil && r.responseModelFinal.Load()
+}
+
 // warnModelSubstitution warns about a silent upstream model swap, throttled per
 // credential and model pair, and labels the credential by index only, never by account.
 func (r *UsageReporter) warnModelSubstitution(ctx context.Context) {
@@ -235,12 +268,19 @@ func (r *UsageReporter) warnModelSubstitution(ctx context.Context) {
 		return
 	}
 	served := r.ResponseModel()
-	if served == "" || !IsModelSubstituted(r.model, served) {
+	expectedModel := r.UpstreamModel()
+	if expectedModel == "" {
+		expectedModel = r.model
+	}
+	if served == "" || !IsModelSubstituted(expectedModel, served) {
+		return
+	}
+	if r.model != "" && !IsModelSubstituted(r.model, served) {
 		return
 	}
 	// The throttle key uses the same normalized names as the substitution check, so
 	// aliases of one pair share a window instead of each warning on its own.
-	requested := normalizeModelName(r.model)
+	requested := normalizeModelName(expectedModel)
 	servedNormalized := normalizeModelName(served)
 	providerName := r.provider
 	if providerName == "" {
