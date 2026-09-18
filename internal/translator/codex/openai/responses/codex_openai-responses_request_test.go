@@ -789,3 +789,97 @@ func convertSystemRoleToDeveloperPreviousRootPathRewriteForBenchmark(rawJSON []b
 
 	return result
 }
+
+func TestConvertOpenAIResponsesRequestToCodex_ServiceTier(t *testing.T) {
+	tests := []struct {
+		name       string
+		tierJSON   string
+		wantExists bool
+		wantTier   string
+	}{
+		{
+			name:       "priority preserved",
+			tierJSON:   `"priority"`,
+			wantExists: true,
+			wantTier:   "priority",
+		},
+		{
+			name:       "priority case insensitive and trimmed",
+			tierJSON:   `" Priority "`,
+			wantExists: true,
+			wantTier:   "priority",
+		},
+		{
+			name:       "fast normalized to priority",
+			tierJSON:   `"fast"`,
+			wantExists: true,
+			wantTier:   "priority",
+		},
+		{
+			name:       "ultrafast preserved",
+			tierJSON:   `"ultrafast"`,
+			wantExists: true,
+			wantTier:   "ultrafast",
+		},
+		{
+			name:       "ultrafast case insensitive and trimmed",
+			tierJSON:   `" UltraFast "`,
+			wantExists: true,
+			wantTier:   "ultrafast",
+		},
+		{
+			name:       "standard stripped",
+			tierJSON:   `"standard"`,
+			wantExists: false,
+		},
+		{
+			name:       "default stripped",
+			tierJSON:   `"default"`,
+			wantExists: false,
+		},
+		{
+			name:       "flex stripped",
+			tierJSON:   `"flex"`,
+			wantExists: false,
+		},
+		{
+			name:       "non-string stripped",
+			tierJSON:   `123`,
+			wantExists: false,
+		},
+		{
+			name:       "null stripped",
+			tierJSON:   `null`,
+			wantExists: false,
+		},
+		{
+			name:       "bool stripped",
+			tierJSON:   `true`,
+			wantExists: false,
+		},
+		{
+			name:       "empty string stripped",
+			tierJSON:   `""`,
+			wantExists: false,
+		},
+		{
+			name:       "whitespace string stripped",
+			tierJSON:   `"   "`,
+			wantExists: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inputJSON := []byte(fmt.Sprintf(`{"model":"gpt-5.6","service_tier":%s,"input":[{"type":"message","role":"user","content":"hello"}]}`, tt.tierJSON))
+			output := ConvertOpenAIResponsesRequestToCodex("gpt-5.6", inputJSON, true)
+			res := gjson.GetBytes(output, "service_tier")
+			if res.Exists() != tt.wantExists {
+				t.Fatalf("service_tier exists = %v, want %v; output: %s", res.Exists(), tt.wantExists, string(output))
+			}
+			if tt.wantExists && res.String() != tt.wantTier {
+				t.Fatalf("service_tier = %q, want %q; output: %s", res.String(), tt.wantTier, string(output))
+			}
+		})
+	}
+}
