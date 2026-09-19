@@ -670,3 +670,332 @@ func TestConvertOpenAIRequestToGemini_ParallelAndOutOfOrderToolResponses(t *test
 		t.Fatalf("ValidateGeminiFunctionCallPairing failed: %v; output=%s", errPairing, out)
 	}
 }
+
+func TestConvertOpenAIRequestToGemini_ToolChoice(t *testing.T) {
+	t.Run("named function maps to toolConfig mode ANY and allowedFunctionNames", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "Call tool_a."}],
+			"tool_choice": {"type": "function", "function": {"name": "tool_a"}},
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		allowed := gjson.GetBytes(result, "toolConfig.functionCallingConfig.allowedFunctionNames").Array()
+		if mode != "ANY" {
+			t.Fatalf("expected toolConfig.functionCallingConfig.mode = 'ANY', got %q. Output: %s", mode, result)
+		}
+		if len(allowed) != 1 || allowed[0].String() != "tool_a" {
+			t.Fatalf("expected allowedFunctionNames = ['tool_a'], got %v. Output: %s", allowed, result)
+		}
+	})
+
+	t.Run("none maps to mode NONE", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": "none",
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		if mode != "NONE" {
+			t.Fatalf("expected toolConfig.functionCallingConfig.mode = 'NONE', got %q. Output: %s", mode, result)
+		}
+	})
+
+	t.Run("auto maps to mode AUTO", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": "auto",
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		if mode != "AUTO" {
+			t.Fatalf("expected toolConfig.functionCallingConfig.mode = 'AUTO', got %q. Output: %s", mode, result)
+		}
+	})
+
+	t.Run("required maps to mode ANY", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": "required",
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		if mode != "ANY" {
+			t.Fatalf("expected toolConfig.functionCallingConfig.mode = 'ANY', got %q. Output: %s", mode, result)
+		}
+	})
+
+	t.Run("parallel_tool_calls false fails closed to NONE", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": "auto",
+			"parallel_tool_calls": false,
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		if mode != "NONE" {
+			t.Fatalf("expected toolConfig.functionCallingConfig.mode = 'NONE', got %q. Output: %s", mode, result)
+		}
+	})
+
+	t.Run("required tool_choice with parallel_tool_calls false fails closed to NONE", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": "required",
+			"parallel_tool_calls": false,
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		if mode != "NONE" {
+			t.Fatalf("expected toolConfig.functionCallingConfig.mode = 'NONE', got %q. Output: %s", mode, result)
+		}
+	})
+
+	t.Run("parallel_tool_calls null does not fail closed to NONE", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": "auto",
+			"parallel_tool_calls": null,
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		if mode != "AUTO" {
+			t.Fatalf("expected toolConfig.functionCallingConfig.mode = 'AUTO', got %q. Output: %s", mode, result)
+		}
+	})
+
+	t.Run("parallel_tool_calls true does not fail closed to NONE", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": "auto",
+			"parallel_tool_calls": true,
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		if mode != "AUTO" {
+			t.Fatalf("expected toolConfig.functionCallingConfig.mode = 'AUTO', got %q. Output: %s", mode, result)
+		}
+	})
+
+	t.Run("allowed_tools filters function declarations and sets AUTO mode without allowedFunctionNames", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": {
+				"type": "allowed_tools",
+				"allowed_tools": {
+					"mode": "auto",
+					"tools": [{"type": "function", "function": {"name": "tool_b"}}]
+				}
+			},
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}},
+				{"type": "function", "function": {"name": "tool_b", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		allowed := gjson.GetBytes(result, "toolConfig.functionCallingConfig.allowedFunctionNames")
+		if mode != "AUTO" {
+			t.Fatalf("expected mode = 'AUTO', got %q. Output: %s", mode, result)
+		}
+		if allowed.Exists() {
+			t.Fatalf("expected allowedFunctionNames to not be set for AUTO mode, got %v", allowed.Value())
+		}
+		decls := gjson.GetBytes(result, "tools.0.functionDeclarations").Array()
+		if len(decls) != 1 || decls[0].Get("name").String() != "tool_b" {
+			t.Fatalf("expected functionDeclarations to contain only tool_b, got %v", decls)
+		}
+	})
+
+	t.Run("allowed_tools with required mode sets mode ANY and allowedFunctionNames", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": {
+				"type": "allowed_tools",
+				"allowed_tools": {
+					"mode": "required",
+					"tools": [{"type": "function", "function": {"name": "tool_b"}}]
+				}
+			},
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}},
+				{"type": "function", "function": {"name": "tool_b", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		allowed := gjson.GetBytes(result, "toolConfig.functionCallingConfig.allowedFunctionNames").Array()
+		if mode != "ANY" {
+			t.Fatalf("expected mode = 'ANY', got %q. Output: %s", mode, result)
+		}
+		if len(allowed) != 1 || allowed[0].String() != "tool_b" {
+			t.Fatalf("expected allowedFunctionNames = ['tool_b'], got %v", allowed)
+		}
+	})
+
+	t.Run("empty allowed_tools fails closed to NONE", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": {
+				"type": "allowed_tools",
+				"allowed_tools": {
+					"tools": []
+				}
+			},
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		if mode != "NONE" {
+			t.Fatalf("expected mode = 'NONE', got %q. Output: %s", mode, result)
+		}
+	})
+
+	t.Run("function choice with missing name fails closed to NONE", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": {"type": "function", "function": {}},
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		if mode != "NONE" {
+			t.Fatalf("expected mode = 'NONE', got %q. Output: %s", mode, result)
+		}
+	})
+
+	t.Run("allowed_tools matches exact original name and does not conflate sanitization", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": {
+				"type": "allowed_tools",
+				"allowed_tools": {
+					"tools": [{"type": "function", "function": {"name": "1tool"}}]
+				}
+			},
+			"tools": [
+				{"type": "function", "function": {"name": "_1tool", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		if mode != "NONE" {
+			t.Fatalf("expected mode = 'NONE' when exact original name not found, got %q. Output: %s", mode, result)
+		}
+	})
+
+	t.Run("sanitized name collision fails closed to NONE", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": "auto",
+			"tools": [
+				{"type": "function", "function": {"name": "1tool", "parameters": {"type": "object", "properties": {}}}},
+				{"type": "function", "function": {"name": "_1tool", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		if mode != "NONE" {
+			t.Fatalf("expected mode = 'NONE' on name collision, got %q. Output: %s", mode, result)
+		}
+	})
+
+	t.Run("undeclared function choice fails closed to NONE", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": {"type": "function", "function": {"name": "undeclared_tool"}},
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		if mode != "NONE" {
+			t.Fatalf("expected mode = 'NONE' for undeclared function, got %q. Output: %s", mode, result)
+		}
+	})
+
+	t.Run("allowed_tools filtering avoids false collision when excluded tool collides", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": {
+				"type": "allowed_tools",
+				"allowed_tools": {
+					"mode": "auto",
+					"tools": [{"type": "function", "function": {"name": "_1tool"}}]
+				}
+			},
+			"tools": [
+				{"type": "function", "function": {"name": "1tool", "parameters": {"type": "object", "properties": {}}}},
+				{"type": "function", "function": {"name": "_1tool", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		mode := gjson.GetBytes(result, "toolConfig.functionCallingConfig.mode").String()
+		if mode != "AUTO" {
+			t.Fatalf("expected mode = 'AUTO', got %q. Output: %s", mode, result)
+		}
+		decls := gjson.GetBytes(result, "tools.0.functionDeclarations").Array()
+		if len(decls) != 1 || decls[0].Get("name").String() != "_1tool" {
+			t.Fatalf("expected only _1tool to remain in functionDeclarations, got: %v", decls)
+		}
+	})
+
+	t.Run("tool_choice null does not create toolConfig or fail closed", func(t *testing.T) {
+		inputJSON := `{
+			"model": "gemini-3.1-pro-high",
+			"messages": [{"role": "user", "content": "test"}],
+			"tool_choice": null,
+			"tools": [
+				{"type": "function", "function": {"name": "tool_a", "parameters": {"type": "object", "properties": {}}}}
+			]
+		}`
+		result := ConvertOpenAIRequestToGemini("gemini-3.1-pro-high", []byte(inputJSON), false)
+		if gjson.GetBytes(result, "toolConfig").Exists() {
+			t.Fatalf("expected toolConfig not to be set when tool_choice is null, got: %s", result)
+		}
+	})
+}
