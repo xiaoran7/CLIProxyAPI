@@ -631,6 +631,7 @@ func (h *Handler) PutClaudeKeys(c *gin.Context) {
 func (h *Handler) PatchClaudeKey(c *gin.Context) {
 	type claudeKeyPatch struct {
 		APIKey                  *string                          `json:"api-key"`
+		Priority                *int                             `json:"priority"`
 		FingerprintProfile      *string                          `json:"fingerprint-profile"`
 		Weight                  json.RawMessage                  `json:"weight"`
 		Prefix                  *string                          `json:"prefix"`
@@ -683,6 +684,9 @@ func (h *Handler) PatchClaudeKey(c *gin.Context) {
 		(body.Value.ProxyURL != nil && strings.TrimSpace(*body.Value.ProxyURL) != oldEntry.ProxyURL)
 	if body.Value.APIKey != nil {
 		entry.APIKey = strings.TrimSpace(*body.Value.APIKey)
+	}
+	if body.Value.Priority != nil {
+		entry.Priority = *body.Value.Priority
 	}
 	if body.Value.FingerprintProfile != nil {
 		if rejectInvalidFingerprintProfile(c, "fingerprint-profile", *body.Value.FingerprintProfile) {
