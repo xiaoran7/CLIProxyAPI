@@ -2,6 +2,7 @@ package chat_completions
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/signature"
@@ -1153,4 +1154,53 @@ func TestConvertOpenAIRequestToGemini_ToolStrictMapsToValidatedMode(t *testing.T
 			t.Fatalf("expected toolConfig not to be set when no strict tools and no tool_choice, got: %s", result)
 		}
 	})
+}
+
+func TestConvertOpenAIRequestToGemini_ParametersJsonSchema_PreservesAdditionalPropertiesAndPattern_Issue5959(t *testing.T) {
+	inputJSON := []byte(`{
+		"model": "gemini-2.5-flash",
+		"messages": [{"role": "user", "content": "Use the submit tool."}],
+		"tools": [
+			{
+				"type": "function",
+				"function": {
+					"name": "submit",
+					"description": "Submit a bounded schema test value.",
+					"parameters": {
+						"$schema": "https://json-schema.org/draft/2020-12/schema",
+						"type": "object",
+						"additionalProperties": false,
+						"properties": {
+							"recipient": {
+								"type": "string",
+								"pattern": "^(alice|bob)$"
+							},
+							"amount": {
+								"type": "number"
+							}
+						},
+						"required": ["recipient", "amount"]
+					}
+				}
+			}
+		]
+	}`)
+
+	output := ConvertOpenAIRequestToGemini("gemini-2.5-flash", inputJSON, false)
+	schema := gjson.GetBytes(output, "tools.0.functionDeclarations.0.parametersJsonSchema")
+	if !schema.Exists() {
+		t.Fatalf("parametersJsonSchema missing. Output: %s", output)
+	}
+	if got := schema.Get("additionalProperties"); !got.Exists() || got.Type != gjson.False {
+		t.Fatalf("additionalProperties should be preserved as false, got: %v. Schema: %s", got, schema.Raw)
+	}
+	if got := schema.Get("properties.recipient.pattern"); !got.Exists() || got.String() != "^(alice|bob)$" {
+		t.Fatalf("pattern should be preserved, got: %v. Schema: %s", got, schema.Raw)
+	}
+	if schema.Get("description").Exists() && schema.Get("description").String() == "No extra properties allowed" {
+		t.Fatalf("additionalProperties: false should not be converted to description hint. Schema: %s", schema.Raw)
+	}
+	if got := schema.Get("properties.recipient.description"); got.Exists() && strings.Contains(got.String(), "pattern:") {
+		t.Fatalf("pattern should not be converted to description hint. Schema: %s", schema.Raw)
+	}
 }
