@@ -1292,7 +1292,7 @@ func (m *Manager) findAllAntigravityCreditsCandidateAuths(ctx context.Context, r
 			continue
 		}
 		providerKey := executorKeyFromAuth(auth)
-		executor, ok := m.executors[providerKey]
+		executor, ok := m.executorLocked(providerKey)
 		if !ok {
 			continue
 		}

@@ -402,7 +402,7 @@ func (s *authScheduler) pickSingleWithStrategy(ctx context.Context, provider, mo
 	if s == nil {
 		return nil, &Error{Code: "auth_not_found", Message: "no auth available"}
 	}
-	providerKey := strings.ToLower(strings.TrimSpace(provider))
+	providerKey := canonicalSchedulingProvider(provider)
 	modelKey := canonicalModelKey(model)
 	pinnedAuthID := pinnedAuthIDFromMetadata(opts.Metadata)
 	eligibility := authSelectionEligibilityForRequest(ctx, opts)
@@ -730,7 +730,7 @@ func normalizeProviderKeys(providers []string) []string {
 	seen := make(map[string]struct{}, len(providers))
 	out := make([]string, 0, len(providers))
 	for _, provider := range providers {
-		providerKey := strings.ToLower(strings.TrimSpace(provider))
+		providerKey := canonicalSchedulingProvider(provider)
 		if providerKey == "" {
 			continue
 		}
