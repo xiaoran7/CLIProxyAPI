@@ -3753,7 +3753,7 @@
       "name": "grok-4.7",
       "description": "SpaceXAI's frontier model for coding, agentic tasks, and knowledge work.",
       "context_length": 500000,
-      "max_completion_tokens": 65536,
+      "max_completion_tokens": 500000,
       "thinking": {
         "zero_allowed": false,
         "levels": [
