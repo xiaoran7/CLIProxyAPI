@@ -208,7 +208,7 @@ func convertOpenAIRequestToClaude(modelName string, inputRawJSON []byte, stream,
 					contentBlocks = append(contentBlocks, part)
 				} else if contentResult.Exists() && contentResult.IsArray() {
 					contentResult.ForEach(func(_, part gjson.Result) bool {
-						claudePart := convertOpenAIContentPartToClaudePart(part, true)
+						claudePart := convertOpenAIContentPartToClaudePart(part)
 						if claudePart != "" {
 							contentBlocks = append(contentBlocks, []byte(claudePart))
 						}
@@ -288,13 +288,9 @@ func convertOpenAIRequestToClaude(modelName string, inputRawJSON []byte, stream,
 					msg, _ = sjson.SetBytes(msg, "content.0.content", toolResultContent)
 				}
 				// Anthropic rejects cache_control inside tool_result.content, so
-				// the first source part marker is hoisted onto the tool_result
-				// block. Setting it before AttachMessageCacheControl keeps the
-				// part-level marker winning over a message-level one.
-				if cc := firstPartCacheControl(toolContentResult); cc != "" {
-					msg, _ = sjson.SetRawBytes(msg, "content.0.cache_control", []byte(cc))
-				}
-				msg = common.AttachMessageCacheControl(msg, targetMsg)
+				// part-level or message-level cache_control is hoisted onto the
+				// tool_result block itself.
+				msg = common.AttachToolMessageCacheControl(msg, targetMsg)
 				messageAccumulator.Append(msg)
 			}
 			return true
@@ -459,16 +455,15 @@ func convertOpenAIRequestToClaude(modelName string, inputRawJSON []byte, stream,
 	return out
 }
 
-func convertOpenAIContentPartToClaudePart(part gjson.Result, allowCacheControl bool) string {
-	var claudePart []byte
+func convertOpenAIContentPartToClaudePartRaw(part gjson.Result) []byte {
 	switch part.Get("type").String() {
 	case "text":
 		textPart := []byte(`{"type":"text","text":""}`)
 		textPart, _ = sjson.SetBytes(textPart, "text", part.Get("text").String())
-		claudePart = textPart
+		return textPart
 
 	case "image_url":
-		claudePart = []byte(convertOpenAIImageURLToClaudePart(part.Get("image_url.url").String()))
+		return []byte(convertOpenAIImageURLToClaudePart(part.Get("image_url.url").String()))
 
 	case "file":
 		fileData := part.Get("file.file_data").String()
@@ -481,18 +476,17 @@ func convertOpenAIContentPartToClaudePart(part gjson.Result, allowCacheControl b
 				docPart := []byte(`{"type":"document","source":{"type":"base64","media_type":"","data":""}}`)
 				docPart, _ = sjson.SetBytes(docPart, "source.media_type", mediaType)
 				docPart, _ = sjson.SetBytes(docPart, "source.data", data)
-				claudePart = docPart
+				return docPart
 			}
 		}
 	}
+	return nil
+}
 
+func convertOpenAIContentPartToClaudePart(part gjson.Result) string {
+	claudePart := convertOpenAIContentPartToClaudePartRaw(part)
 	if len(claudePart) == 0 {
 		return ""
-	}
-	if !allowCacheControl {
-		// tool_result.content parts reject cache_control upstream; the marker
-		// is hoisted onto the tool_result block by the caller instead.
-		return string(claudePart)
 	}
 	return string(common.AttachCacheControl(claudePart, part))
 }
@@ -544,9 +538,8 @@ func convertOpenAIToolResultContent(content gjson.Result) (string, bool) {
 				return true
 			}
 
-			claudePart := convertOpenAIContentPartToClaudePart(part, false)
-			if claudePart != "" {
-				claudeParts = append(claudeParts, []byte(claudePart))
+			if claudePart := convertOpenAIContentPartToClaudePartRaw(part); len(claudePart) > 0 {
+				claudeParts = append(claudeParts, claudePart)
 			}
 			return true
 		})
@@ -559,36 +552,13 @@ func convertOpenAIToolResultContent(content gjson.Result) (string, bool) {
 	}
 
 	if content.IsObject() {
-		claudePart := convertOpenAIContentPartToClaudePart(content, false)
-		if claudePart != "" {
-			return string(common.JoinRawArray([][]byte{[]byte(claudePart)})), true
+		if claudePart := convertOpenAIContentPartToClaudePartRaw(content); len(claudePart) > 0 {
+			return string(common.JoinRawArray([][]byte{claudePart})), true
 		}
 		return content.Raw, false
 	}
 
 	return content.Raw, false
-}
-
-// firstPartCacheControl returns the raw cache_control object from the first
-// content part that carries one, or "" when none does.
-func firstPartCacheControl(content gjson.Result) string {
-	if content.IsArray() {
-		var raw string
-		content.ForEach(func(_, part gjson.Result) bool {
-			if cc := part.Get("cache_control"); cc.Exists() && cc.IsObject() {
-				raw = cc.Raw
-				return false
-			}
-			return true
-		})
-		return raw
-	}
-	if content.IsObject() {
-		if cc := content.Get("cache_control"); cc.Exists() && cc.IsObject() {
-			return cc.Raw
-		}
-	}
-	return ""
 }
 
 // firstExisting returns the first result that exists, or an empty result.
