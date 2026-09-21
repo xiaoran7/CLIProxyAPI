@@ -3805,6 +3805,37 @@
   ],
   "xai": [
     {
+      "id": "grok-4.7",
+      "native_capabilities": {
+        "web_search": true
+      },
+      "object": "model",
+      "created": 1790000000,
+      "owned_by": "xai",
+      "type": "xai",
+      "display_name": "Grok 4.7",
+      "name": "grok-4.7",
+      "description": "SpaceXAI's frontier model for coding, agentic tasks, and knowledge work.",
+      "context_length": 500000,
+      "max_completion_tokens": 65536,
+      "thinking": {
+        "zero_allowed": false,
+        "levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "supportedInputModalities": [
+        "text",
+        "image"
+      ],
+      "supportedOutputModalities": [
+        "text"
+      ]
+    },
+    {
       "id": "grok-4.6",
       "native_capabilities": {
         "web_search": true
