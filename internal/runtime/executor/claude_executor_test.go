@@ -7990,8 +7990,7 @@ func TestClaudeCodeCLIBetas_MatchesObservedClientMatrix(t *testing.T) {
 				"interleaved-thinking-2025-05-14,redact-thinking-2026-02-12," +
 				"thinking-token-count-2026-05-13,context-management-2025-06-27," +
 				"prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20," +
-				"effort-2025-11-24,fallback-credit-2026-06-01," +
-				"extended-cache-ttl-2025-04-11",
+				"effort-2025-11-24,extended-cache-ttl-2025-04-11",
 		},
 		{
 			name:  "oauth precedes context-1m",
@@ -8122,7 +8121,7 @@ func TestClaudeCodeCLIBetas_MatchesObservedClientMatrix(t *testing.T) {
 				"interleaved-thinking-2025-05-14,redact-thinking-2026-02-12," +
 				"thinking-token-count-2026-05-13,context-management-2025-06-27," +
 				"prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07," +
-				"advisor-tool-2026-03-01,effort-2025-11-24,fallback-credit-2026-06-01," +
+				"advisor-tool-2026-03-01,effort-2025-11-24," +
 				"afk-mode-2026-01-31,extended-cache-ttl-2025-04-11",
 		},
 		{
@@ -8134,7 +8133,7 @@ func TestClaudeCodeCLIBetas_MatchesObservedClientMatrix(t *testing.T) {
 				"interleaved-thinking-2025-05-14,redact-thinking-2026-02-12," +
 				"thinking-token-count-2026-05-13,context-management-2025-06-27," +
 				"prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07," +
-				"effort-2025-11-24,fallback-credit-2026-06-01,fast-mode-2026-02-01," +
+				"effort-2025-11-24,fast-mode-2026-02-01," +
 				"afk-mode-2026-01-31,extended-cache-ttl-2025-04-11",
 		},
 		{
@@ -8145,7 +8144,7 @@ func TestClaudeCodeCLIBetas_MatchesObservedClientMatrix(t *testing.T) {
 				"interleaved-thinking-2025-05-14,redact-thinking-2026-02-12," +
 				"thinking-token-count-2026-05-13,context-management-2025-06-27," +
 				"prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07," +
-				"effort-2025-11-24,fallback-credit-2026-06-01,extended-cache-ttl-2025-04-11",
+				"effort-2025-11-24,extended-cache-ttl-2025-04-11",
 		},
 		{
 			name: "thinking display updates emits thinking-display-updates beta and drops redact-thinking",
@@ -8168,7 +8167,7 @@ func TestClaudeCodeCLIBetas_MatchesObservedClientMatrix(t *testing.T) {
 				"interleaved-thinking-2025-05-14,redact-thinking-2026-02-12," +
 				"thinking-token-count-2026-05-13,context-management-2025-06-27," +
 				"prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07," +
-				"effort-2025-11-24,fallback-credit-2026-06-01",
+				"effort-2025-11-24",
 		},
 		{
 			name:  "probe request max_tokens=1 omits effort and extended-cache-ttl betas",
@@ -8177,8 +8176,7 @@ func TestClaudeCodeCLIBetas_MatchesObservedClientMatrix(t *testing.T) {
 			want: "claude-code-20250219,oauth-2025-04-20," +
 				"interleaved-thinking-2025-05-14,redact-thinking-2026-02-12," +
 				"thinking-token-count-2026-05-13,context-management-2025-06-27," +
-				"prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07," +
-				"fallback-credit-2026-06-01",
+				"prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07",
 		},
 		{
 			name:      "haiku model omits effort beta even if requested",
@@ -8189,7 +8187,7 @@ func TestClaudeCodeCLIBetas_MatchesObservedClientMatrix(t *testing.T) {
 				"interleaved-thinking-2025-05-14,redact-thinking-2026-02-12," +
 				"thinking-token-count-2026-05-13,context-management-2025-06-27," +
 				"prompt-caching-scope-2026-01-05," +
-				"fallback-credit-2026-06-01,extended-cache-ttl-2025-04-11",
+				"extended-cache-ttl-2025-04-11",
 		},
 		{
 			name:      "disabled thinking omits effort beta even if requested",
@@ -8200,7 +8198,39 @@ func TestClaudeCodeCLIBetas_MatchesObservedClientMatrix(t *testing.T) {
 				"interleaved-thinking-2025-05-14,redact-thinking-2026-02-12," +
 				"thinking-token-count-2026-05-13,context-management-2025-06-27," +
 				"prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07," +
-				"fallback-credit-2026-06-01,extended-cache-ttl-2025-04-11",
+				"extended-cache-ttl-2025-04-11",
+		},
+		{
+			name:  "body with fallback_credit_token automatically adds fallback-credit beta",
+			body:  `{"model":"claude-sonnet-5","fallback_credit_token":"fct_12345"}`,
+			oauth: true,
+			want: "claude-code-20250219,oauth-2025-04-20," +
+				"interleaved-thinking-2025-05-14,redact-thinking-2026-02-12," +
+				"thinking-token-count-2026-05-13,context-management-2025-06-27," +
+				"prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07," +
+				"effort-2025-11-24,fallback-credit-2026-06-01,extended-cache-ttl-2025-04-11",
+		},
+		{
+			name:  "oauth body with fallbacks automatically adds fallback-credit beta",
+			body:  `{"model":"claude-fable-5-1","fallbacks":[{"model":"claude-opus-5"}]}`,
+			oauth: true,
+			want: "claude-code-20250219,oauth-2025-04-20," +
+				"interleaved-thinking-2025-05-14,redact-thinking-2026-02-12," +
+				"thinking-token-count-2026-05-13,context-management-2025-06-27," +
+				"prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07," +
+				"effort-2025-11-24,server-side-fallback-2026-06-01,fallback-credit-2026-06-01," +
+				"extended-cache-ttl-2025-04-11",
+		},
+		{
+			name:      "requested fallback-credit beta is honored",
+			body:      `{"model":"claude-sonnet-5"}`,
+			requested: map[string]bool{claudeFallbackCreditBeta: true},
+			oauth:     true,
+			want: "claude-code-20250219,oauth-2025-04-20," +
+				"interleaved-thinking-2025-05-14,redact-thinking-2026-02-12," +
+				"thinking-token-count-2026-05-13,context-management-2025-06-27," +
+				"prompt-caching-scope-2026-01-05,mid-conversation-system-2026-04-07," +
+				"effort-2025-11-24,fallback-credit-2026-06-01,extended-cache-ttl-2025-04-11",
 		},
 	}
 
