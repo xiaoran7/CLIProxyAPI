@@ -31,15 +31,16 @@ func TestApplyClaudeHeaders_ForwardsUnmanagedCallerBetas(t *testing.T) {
 		t.Fatalf("NewRequest() error = %v", errReq)
 	}
 	incoming := http.Header{}
-	incoming.Set("Anthropic-Beta", "per-turn-control-2026-07-01,mid-conversation-tool-changes-2026-07-01")
+	incoming.Set("Anthropic-Beta", "per-turn-control-2026-07-01")
 	if errHeaders := applyClaudeHeaders(req, auth, auth.Attributes[cliproxyauth.AttributeAPIKey], false, nil, []byte(`{"model":"claude-fable-5-1"}`), &config.Config{}, incoming, false); errHeaders != nil {
 		t.Fatalf("applyClaudeHeaders() error = %v", errHeaders)
 	}
 	betas := req.Header.Get("Anthropic-Beta")
-	for _, want := range []string{"per-turn-control-2026-07-01", "mid-conversation-tool-changes-2026-07-01"} {
-		if !strings.Contains(betas, want) {
-			t.Fatalf("Anthropic-Beta = %q, want unmanaged caller beta %q forwarded", betas, want)
-		}
+	if !strings.Contains(betas, "per-turn-control-2026-07-01") {
+		t.Fatalf("Anthropic-Beta = %q, want unmanaged caller beta forwarded", betas)
+	}
+	if !strings.Contains(betas, "mid-conversation-system-2026-04-07,mid-conversation-tool-changes-2026-07-01,effort-2025-11-24") {
+		t.Fatalf("Anthropic-Beta = %q, want 2.1.280 tool-changes beta between mid-conversation-system and effort", betas)
 	}
 }
 

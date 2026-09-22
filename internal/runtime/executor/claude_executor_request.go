@@ -40,6 +40,7 @@ const (
 	claudeCodeBeta                   = "claude-code-20250219"
 	claudeContext1MBeta              = "context-1m-2025-08-07"
 	claudeMidConvSystemBeta          = "mid-conversation-system-2026-04-07"
+	claudeMidConvToolChangesBeta     = "mid-conversation-tool-changes-2026-07-01"
 	claudeAdvisorToolBeta            = "advisor-tool-2026-03-01"
 	claudeAdvancedToolUseBeta        = "advanced-tool-use-2025-11-20"
 	claudeEffortBeta                 = "effort-2025-11-24"
@@ -89,6 +90,7 @@ var claudeManagedBetaSet = func() map[string]bool {
 		claudeCodeBeta,
 		claudeContext1MBeta,
 		claudeMidConvSystemBeta,
+		claudeMidConvToolChangesBeta,
 		claudeAdvisorToolBeta,
 		claudeAdvancedToolUseBeta,
 		claudeEffortBeta,
@@ -115,11 +117,13 @@ func isManagedClaudeBeta(beta string) bool {
 }
 
 // claudeCodeCLIBetas assembles the Anthropic-Beta baseline the way Claude Code
-// 2.1.258 does: the list is per-request, not a fixed string. requested holds the
+// 2.1.280 does: the list is per-request, not a fixed string. requested holds the
 // betas the caller asked for, which decide the capability flags below.
 //
 // Verified against api.anthropic.com with native 2.1.258 captures on interactive,
 // non-interactive, subagent, and multi-model paths (Sonnet, Opus, Fable, Haiku).
+// Claude Code 2.1.280 (measured 2026-09-23) inserts mid-conversation-tool-changes
+// immediately after mid-conversation-system on the same non-legacy models.
 // The full observed order is:
 //
 //	 1 claude-code-20250219
@@ -131,22 +135,23 @@ func isManagedClaudeBeta(beta string) bool {
 //	 7 context-management-2025-06-27
 //	 8 prompt-caching-scope-2026-01-05
 //	 9 mid-conversation-system-2026-04-07  models accepting a role=system turn
-//	10 advisor-tool-2026-03-01             requests declaring advisor tools or requesting advisor beta
-//	11 advanced-tool-use-2025-11-20       requests using tool search or another advanced tool-use feature
-//	12 effort-2025-11-24                  effort-supporting models with active thinking
-//	13 server-side-fallback-2026-06-01    requests with fallbacks or requested
-//	14 fallback-credit-2026-06-01         requests with fallback tokens, fallbacks, or requested
-//	15 structured-outputs-2025-12-15      structured output requests
-//	16 thinking-display-updates-2026-08-18 requests with thinking.display=updates
-//	17 fast-mode-2026-02-01               speed:fast requests only
-//	18 afk-mode-2026-01-31                auto-mode sessions, forwarded when the caller sends it
-//	19 extended-cache-ttl-2025-04-11      OAuth credentials (omitted on subagent & probe)
-//	20 cache-diagnosis-2026-04-07         requests with diagnostics only
+//	10 mid-conversation-tool-changes-2026-07-01  same models as mid-conversation-system
+//	11 advisor-tool-2026-03-01             requests declaring advisor tools or requesting advisor beta
+//	12 advanced-tool-use-2025-11-20       requests using tool search or another advanced tool-use feature
+//	13 effort-2025-11-24                  effort-supporting models with active thinking
+//	14 server-side-fallback-2026-06-01    requests with fallbacks or requested
+//	15 fallback-credit-2026-06-01         requests with fallback tokens, fallbacks, or requested
+//	16 structured-outputs-2025-12-15      structured output requests
+//	17 thinking-display-updates-2026-08-18 requests with thinking.display=updates
+//	18 fast-mode-2026-02-01               speed:fast requests only
+//	19 afk-mode-2026-01-31                auto-mode sessions, forwarded when the caller sends it
+//	20 extended-cache-ttl-2025-04-11      OAuth credentials (omitted on subagent & probe)
+//	21 cache-diagnosis-2026-04-07         requests with diagnostics only
 //
 // An empty body keeps the optimistic role=system default, matching the cloaking
 // policy for unknown and future model IDs.
 func claudeCodeCLIBetas(body []byte, requested map[string]bool, oauthToken bool) string {
-	betas := make([]string, 0, len(claudeCodeCLIConstantBetas)+len(claudeCodeTrailingBetas)+9)
+	betas := make([]string, 0, len(claudeCodeCLIConstantBetas)+len(claudeCodeTrailingBetas)+10)
 	betas = append(betas, claudeCodeBeta)
 	if oauthToken {
 		betas = append(betas, claudeOAuthBeta)
@@ -163,6 +168,7 @@ func claudeCodeCLIBetas(body []byte, requested map[string]bool, oauthToken bool)
 	}
 	if !claudeUsesLegacySystemReminder(body) {
 		betas = append(betas, claudeMidConvSystemBeta)
+		betas = append(betas, claudeMidConvToolChangesBeta)
 	}
 	if requested[claudeAdvisorToolBeta] || claudeBodyHasAdvisorTool(body) {
 		betas = append(betas, claudeAdvisorToolBeta)
@@ -1032,7 +1038,7 @@ func applyClaudeHeadersWithNativeProfile(
 		}
 	}
 	applyBetaHeader := func() {
-		// Enforce strict native Claude Code 2.1.258 model & turn beta gating:
+		// Enforce strict native Claude Code 2.1.280 model & turn beta gating:
 		if !claudeRequestSupportsEffort(body, nil) {
 			baseBetas = withoutClaudeBeta(baseBetas, claudeEffortBeta)
 		}
@@ -1123,7 +1129,7 @@ func applyClaudeHeadersWithNativeProfile(
 	identityHeader("Anthropic-Version", "2023-06-01")
 	identityHeader("Anthropic-Dangerous-Direct-Browser-Access", "true")
 	identityHeader("X-App", "cli")
-	// Values below match Claude Code 2.1.258 / @anthropic-ai/sdk 0.112.1.
+	// Values below match Claude Code 2.1.280 / @anthropic-ai/sdk 0.112.1.
 	identityHeader("X-Stainless-Retry-Count", "0")
 	identityHeader("X-Stainless-Runtime", "node")
 	identityHeader("X-Stainless-Lang", "js")
