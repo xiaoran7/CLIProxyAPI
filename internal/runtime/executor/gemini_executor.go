@@ -609,7 +609,7 @@ func (e *GeminiExecutor) executeInteractionsStream(ctx context.Context, auth *cl
 			return true
 		}
 		for scanner.Scan() {
-			line := bytes.Clone(scanner.Bytes())
+			line := scanner.Bytes()
 			helps.AppendAPIResponseChunk(ctx, e.cfg, line)
 			trimmed := bytes.TrimSpace(line)
 			if len(trimmed) == 0 {
