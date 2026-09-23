@@ -2423,6 +2423,35 @@ func TestUsageAdapterPropagatesResponseModelServiceTierAndStream(t *testing.T) {
 	}
 }
 
+func TestUsageAdapterPropagatesRequestIDAndTraceID(t *testing.T) {
+	var gotRecord pluginapi.UsageRecord
+	plugin := usagePluginFunc(func(ctx context.Context, record pluginapi.UsageRecord) {
+		gotRecord = record
+	})
+	host := newHostWithRecords(capabilityRecord{
+		id: "usage-request-trace-id",
+		plugin: pluginapi.Plugin{Capabilities: pluginapi.Capabilities{
+			UsagePlugin: plugin,
+		}},
+	})
+	host.RegisterUsagePlugins()
+
+	adapter := &usageAdapter{host: host, pluginID: "usage-request-trace-id", plugin: plugin}
+	adapter.HandleUsage(context.Background(), coreusage.Record{
+		RequestID: "b5db448b-3d6d-495c-9c71-f925b68926cb",
+		TraceID:   "00000001",
+		Provider:  "codex",
+		Model:     "gpt-5.6-luna",
+	})
+
+	if gotRecord.RequestID != "b5db448b-3d6d-495c-9c71-f925b68926cb" {
+		t.Fatalf("plugin RequestID = %q, want b5db448b-3d6d-495c-9c71-f925b68926cb", gotRecord.RequestID)
+	}
+	if gotRecord.TraceID != "00000001" {
+		t.Fatalf("plugin TraceID = %q, want 00000001", gotRecord.TraceID)
+	}
+}
+
 func TestUsageAdapterPreservesExplicitGenerateFalse(t *testing.T) {
 	var gotGenerate bool
 	plugin := usagePluginFunc(func(ctx context.Context, record pluginapi.UsageRecord) {
