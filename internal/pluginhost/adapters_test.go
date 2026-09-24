@@ -2953,7 +2953,8 @@ func TestExecutorAdapterMethods(t *testing.T) {
 			}
 			return pluginapi.AuthRefreshResponse{
 				Auth: pluginapi.AuthData{
-					Metadata: map[string]any{"token": "new"},
+					Metadata:   map[string]any{"token": "new", "priority": float64(0)},
+					Attributes: map[string]string{"priority": "0"},
 				},
 			}, nil
 		},
@@ -3016,7 +3017,12 @@ func TestExecutorAdapterMethods(t *testing.T) {
 	auth := &coreauth.Auth{
 		ID:       "auth-1",
 		Provider: "plugin-provider",
-		Metadata: map[string]any{"old": "value"},
+		Metadata: map[string]any{"old": "value", "priority": float64(1)},
+		Attributes: map[string]string{
+			coreauth.AttributeSourceBackend: coreauth.AuthSourceFile,
+			coreauth.AttributeFilePriority:  "true",
+			"priority":                      "1",
+		},
 	}
 	req := coreexecutor.Request{
 		Model:   "model-1",
@@ -3076,6 +3082,9 @@ func TestExecutorAdapterMethods(t *testing.T) {
 	}
 	if refreshed.Metadata["token"] != "new" {
 		t.Fatalf("Refresh() metadata = %#v, want token=new", refreshed.Metadata)
+	}
+	if refreshed.Attributes["priority"] != "1" || refreshed.Metadata["priority"] != float64(1) {
+		t.Fatalf("Refresh() priority = %q/%v, want 1/1", refreshed.Attributes["priority"], refreshed.Metadata["priority"])
 	}
 
 	count, errCountTokens := adapter.CountTokens(context.Background(), auth, req, opts)
