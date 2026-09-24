@@ -328,7 +328,14 @@ func applyAntigravityReasoningReplayCache(ctx context.Context, modelName string,
 func applyAntigravityReasoningReplayItems(payload []byte, items [][]byte, toolSchemas map[string]any) ([]byte, bool) {
 	updated := payload
 	changed := false
-	index := newAntigravityReplayRequestIndex(payload)
+	tracker := newAntigravityReplayContextHashLogTracker()
+	defer func() {
+		if tracker != nil && tracker.rejections > 1 {
+			log.Debugf("antigravity replay: suppressed %d repeated context-hash rejections across %d parts in same request",
+				tracker.rejections-1, len(tracker.loggedKeys))
+		}
+	}()
+	index := newAntigravityReplayRequestIndexWithTracker(payload, tracker)
 	for len(items) > 0 {
 		batch := newAntigravityReplayBatch(index)
 		handled := 0
@@ -350,7 +357,7 @@ func applyAntigravityReasoningReplayItems(payload []byte, items [][]byte, toolSc
 			if len(items) == 0 {
 				break
 			}
-			index = newAntigravityReplayRequestIndex(updated)
+			index = newAntigravityReplayRequestIndexWithTracker(updated, tracker)
 			// Retry the first unhandled item against the freshly flushed payload.
 			// It may only have rejected the batch because a prior stable-ID restore
 			// made the old context index stale.
@@ -366,7 +373,7 @@ func applyAntigravityReasoningReplayItems(payload []byte, items [][]byte, toolSc
 		changed = itemChanged || changed
 		items = items[1:]
 		if len(items) > 0 && itemChanged {
-			index = newAntigravityReplayRequestIndex(updated)
+			index = newAntigravityReplayRequestIndexWithTracker(updated, tracker)
 		}
 	}
 	return updated, changed
@@ -960,8 +967,15 @@ func (i *antigravityReplayRequestIndex) functionCallPartLocationForReplayWithSch
 		// The candidate ID matched exactly, so callID+name+args are already proven
 		// identical. Only the surrounding context drifted, which invalidates the
 		// cached signature but not the tool identity.
-		log.Debugf("antigravity replay: exact tool ID match for %q at contents[%d].parts[%d] rejected by context hash (opaque_id=%t)",
-			name, location.contentIndex, location.partIndex, util.IsGeminiClaudeToolUseID(candidateID))
+		key := antigravityReplayPartKey{contentIndex: location.contentIndex, partIndex: location.partIndex}
+		i.logTracker.rejections++
+		if !i.logTracker.loggedKeys[key] {
+			if len(i.logTracker.loggedKeys) == 0 {
+				log.Debugf("antigravity replay: exact tool ID match for %q at contents[%d].parts[%d] rejected by context hash (opaque_id=%t)",
+					name, location.contentIndex, location.partIndex, util.IsGeminiClaudeToolUseID(candidateID))
+			}
+			i.logTracker.loggedKeys[key] = true
+		}
 		return antigravityReplayIndexedPart{}, false
 	}
 
@@ -1287,6 +1301,17 @@ type antigravityReplayIndexedContent struct {
 // alias the payload bytes and memoizes context fingerprints lazily, so it must
 // be discarded and rebuilt as soon as the payload changes, and it must never be
 // shared across goroutines.
+type antigravityReplayContextHashLogTracker struct {
+	rejections int
+	loggedKeys map[antigravityReplayPartKey]bool
+}
+
+func newAntigravityReplayContextHashLogTracker() *antigravityReplayContextHashLogTracker {
+	return &antigravityReplayContextHashLogTracker{
+		loggedKeys: make(map[antigravityReplayPartKey]bool),
+	}
+}
+
 type antigravityReplayRequestIndex struct {
 	validContents               bool
 	contents                    []antigravityReplayIndexedContent
@@ -1295,14 +1320,23 @@ type antigravityReplayRequestIndex struct {
 	functionResponseContentByID map[string]int
 	functionResponsePartsByID   map[string][]antigravityReplayPartKey
 	contextFingerprints         *antigravityReplayContextFingerprints
+	logTracker                  *antigravityReplayContextHashLogTracker
 }
 
 func newAntigravityReplayRequestIndex(payload []byte) *antigravityReplayRequestIndex {
+	return newAntigravityReplayRequestIndexWithTracker(payload, nil)
+}
+
+func newAntigravityReplayRequestIndexWithTracker(payload []byte, tracker *antigravityReplayContextHashLogTracker) *antigravityReplayRequestIndex {
+	if tracker == nil {
+		tracker = newAntigravityReplayContextHashLogTracker()
+	}
 	index := &antigravityReplayRequestIndex{
 		functionCallsByID:           make(map[string]antigravityReplayIndexedPart),
 		functionCallCountsByID:      make(map[string]int),
 		functionResponseContentByID: make(map[string]int),
 		functionResponsePartsByID:   make(map[string][]antigravityReplayPartKey),
+		logTracker:                  tracker,
 	}
 	contentsResult := util.GetGJSONBytesNoCopy(payload, "request.contents")
 	index.validContents = contentsResult.IsArray()
