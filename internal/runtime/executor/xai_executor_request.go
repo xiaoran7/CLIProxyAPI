@@ -132,7 +132,7 @@ func (e *XAIExecutor) prepareResponsesRequestTo(ctx context.Context, req cliprox
 	body = normalizeXAIInputReasoningItems(body)
 	body = sanitizeXAIInputEncryptedContent(body)
 	body = normalizeCodexInstructions(body)
-	body = sanitizeXAIResponsesBody(body, baseModel)
+	body = sanitizeXAIResponsesBody(body, baseModel, req)
 	body = normalizeXAIImageRefs(body)
 
 	sessionID, errSession := xaiResolveComposerSessionID(ctx, req, opts, baseModel)
@@ -635,12 +635,18 @@ func xaiCompareGrokVersion(a, b xaiGrokVersion) int {
 	return 0
 }
 
-func sanitizeXAIResponsesBody(body []byte, model string) []byte {
+func sanitizeXAIResponsesBody(body []byte, model string, req cliproxyexecutor.Request) []byte {
 	// stop is supported by Chat Completions but not by xAI's Responses API.
 	body, _ = sjson.DeleteBytes(body, "stop")
-	if !xaiSupportsReasoningEffort(model) {
+	var supportsReasoningEffort bool
+	if info, ok := cliproxyauth.ResolvedModelInfo(req); ok {
+		supportsReasoningEffort = info.Thinking != nil && len(info.Thinking.Levels) > 0
+	} else {
+		supportsReasoningEffort = xaiSupportsReasoningEffort(model)
+	}
+	if !supportsReasoningEffort {
 		if gjson.GetBytes(body, "reasoning.effort").Exists() {
-			log.Debugf("xai: stripping reasoning.effort for model %s (no thinking levels in model registry)", model)
+			log.Debugf("xai: stripping reasoning.effort for model %s (no thinking levels in model capabilities)", model)
 		}
 		body, _ = sjson.DeleteBytes(body, "reasoning.effort")
 		if reasoning := gjson.GetBytes(body, "reasoning"); reasoning.Exists() && reasoning.IsObject() && len(reasoning.Map()) == 0 {

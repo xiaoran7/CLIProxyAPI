@@ -20,6 +20,7 @@ import (
 	xaiauth "github.com/router-for-me/CLIProxyAPI/v7/internal/auth/xai"
 	internalcache "github.com/router-for-me/CLIProxyAPI/v7/internal/cache"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
 	_ "github.com/router-for-me/CLIProxyAPI/v7/internal/translator"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
@@ -3006,6 +3007,71 @@ func TestXAIExecutorOmitsUnsupportedReasoningEffort(t *testing.T) {
 
 	if gjson.GetBytes(gotBody, "reasoning").Exists() {
 		t.Fatalf("unsupported xAI model must omit reasoning key: %s", string(gotBody))
+	}
+}
+
+func TestXAIExecutorUsesResolvedThinkingSupport(t *testing.T) {
+	const remoteModel = "grok-home-only-thinking-test"
+	if registry.LookupModelInfo(remoteModel, "xai") != nil {
+		t.Fatal("test model must be absent from the local registry")
+	}
+	levels := &registry.ThinkingSupport{Levels: []string{"low", "medium", "high"}}
+	tests := []struct {
+		name        string
+		model       string
+		metadataKey string
+		thinking    *registry.ThinkingSupport
+		wantEffort  string
+	}{
+		{
+			name: "home-only model", model: remoteModel,
+			metadataKey: "cliproxy.resolved_home_model_info", thinking: levels, wantEffort: "high",
+		},
+		{
+			name: "configured API-key model", model: remoteModel,
+			metadataKey: "cliproxy.resolved_api_key_model_info", thinking: levels, wantEffort: "high",
+		},
+		{
+			name: "home disables local thinking support", model: "grok-4.5",
+			metadataKey: "cliproxy.resolved_home_model_info",
+		},
+		{
+			name: "home supplies no thinking levels", model: "grok-4.5",
+			metadataKey: "cliproxy.resolved_home_model_info", thinking: &registry.ThinkingSupport{},
+		},
+		{name: "local supported fallback", model: "grok-4.5", wantEffort: "high"},
+		{name: "local unknown fallback", model: remoteModel},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exec := NewXAIExecutor(&config.Config{
+				Payload: config.PayloadConfig{
+					// Re-add effort after canonical thinking processing to exercise the final sanitizer.
+					Override: []config.PayloadRule{{
+						Models: []config.PayloadModelRule{{Name: tt.model}},
+						Params: map[string]any{"reasoning.effort": "high"},
+					}},
+				},
+			})
+			req := cliproxyexecutor.Request{
+				Model:   tt.model,
+				Payload: []byte(fmt.Sprintf(`{"model":%q,"input":"hello","reasoning":{"effort":"high"}}`, tt.model)),
+			}
+			if tt.metadataKey != "" {
+				req.Metadata = map[string]any{
+					tt.metadataKey: &registry.ModelInfo{ID: tt.model, Type: "xai", Thinking: tt.thinking},
+				}
+			}
+			prepared, errPrepare := exec.prepareResponsesRequest(t.Context(), req, cliproxyexecutor.Options{
+				SourceFormat: sdktranslator.FormatOpenAIResponse,
+			}, false)
+			if errPrepare != nil {
+				t.Fatalf("prepareResponsesRequest() error = %v", errPrepare)
+			}
+			if got := gjson.GetBytes(prepared.body, "reasoning.effort").String(); got != tt.wantEffort {
+				t.Fatalf("reasoning.effort = %q, want %q; body=%s", got, tt.wantEffort, prepared.body)
+			}
+		})
 	}
 }
 
