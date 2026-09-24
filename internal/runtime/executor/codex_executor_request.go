@@ -379,16 +379,16 @@ const codexRoutingHintHeader = "X-Codex-Routing-Hint"
 // translated request carries service_tier=priority only in the body. Whether
 // the backend needs the header to grant priority is undocumented.
 //
-// The hint is derived from the final upstream body so it cannot disagree with
-// the model and tier actually sent after aliasing and payload rules; a hint a
-// native client forwarded names what the client asked for and is replaced.
+// The model is the resolved model written to the upstream body, while the tier
+// is read from the final body so payload rules cannot make the hint stale. A
+// hint forwarded by a native client names its original model and is replaced.
 // Operator configuration keeps precedence: when an auth "header:" rule for the
 // hint resolves to a value (static, or a "$Header" reference the request
 // carries), that value is sent, and callers apply models.json override_header
 // afterwards. A rule that resolves to nothing falls back to the derived hint.
 // API-key requests are not touched, matching native Codex, which sends no hint
 // to API-key providers.
-func applyCodexRoutingHint(ctx context.Context, headers http.Header, auth *cliproxyauth.Auth, upstreamBody []byte, clientHeaders http.Header) {
+func applyCodexRoutingHint(ctx context.Context, headers http.Header, auth *cliproxyauth.Auth, baseModel string, upstreamBody []byte, clientHeaders http.Header) {
 	if codexAuthUsesAPIKey(auth) {
 		return
 	}
@@ -397,7 +397,7 @@ func applyCodexRoutingHint(ctx context.Context, headers http.Header, auth *clipr
 		headers.Set(codexRoutingHintHeader, operatorHint)
 		return
 	}
-	model := strings.TrimSpace(gjson.GetBytes(upstreamBody, "model").String())
+	model := strings.TrimSpace(baseModel)
 	if model == "" {
 		return
 	}

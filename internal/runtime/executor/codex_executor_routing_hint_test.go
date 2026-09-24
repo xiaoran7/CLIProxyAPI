@@ -17,6 +17,7 @@ import (
 
 type capturedCodexRequest struct {
 	path        string
+	model       gjson.Result
 	routingHint string
 	hasHint     bool
 	serviceTier gjson.Result
@@ -27,6 +28,7 @@ func newCodexRoutingHintServer(t *testing.T, captured *capturedCodexRequest) *ht
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		captured.path = r.URL.Path
+		captured.model = gjson.GetBytes(body, "model")
 		_, captured.hasHint = r.Header[http.CanonicalHeaderKey(codexRoutingHintHeader)]
 		captured.routingHint = r.Header.Get(codexRoutingHintHeader)
 		captured.serviceTier = gjson.GetBytes(body, "service_tier")
@@ -61,17 +63,21 @@ func codexAPIKeyTestAuth(baseURL string) *cliproxyauth.Auth {
 func TestCodexExecutorRoutingHintCarriesRequestedTier(t *testing.T) {
 	const fastClaude = `{"model":"gpt-5.5","max_tokens":64,"speed":"fast","messages":[{"role":"user","content":"hi"}]}`
 	const plainClaude = `{"model":"gpt-5.5","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`
+	const aliasedClaude = `{"model":"client-alias","max_tokens":64,"speed":"fast","messages":[{"role":"user","content":"hi"}]}`
 
 	cases := []struct {
 		name     string
 		apiKey   bool
 		stream   bool
+		model    string
 		payload  string
 		wantHint string
 		wantTier string
 	}{
 		{name: "oauth stream fast", stream: true, payload: fastClaude, wantHint: "model=gpt-5.5;tier=priority", wantTier: "priority"},
 		{name: "oauth non-stream fast", stream: false, payload: fastClaude, wantHint: "model=gpt-5.5;tier=priority", wantTier: "priority"},
+		{name: "oauth stream alias and thinking suffix", stream: true, model: "gpt-5.5(low)", payload: aliasedClaude, wantHint: "model=gpt-5.5;tier=priority", wantTier: "priority"},
+		{name: "oauth non-stream alias and thinking suffix", model: "gpt-5.5(low)", payload: aliasedClaude, wantHint: "model=gpt-5.5;tier=priority", wantTier: "priority"},
 		{name: "oauth stream standard", stream: true, payload: plainClaude, wantHint: "model=gpt-5.5"},
 		{name: "api key keeps body tier without hint", apiKey: true, stream: true, payload: fastClaude, wantTier: "priority"},
 	}
@@ -86,7 +92,11 @@ func TestCodexExecutorRoutingHintCarriesRequestedTier(t *testing.T) {
 				auth = codexAPIKeyTestAuth(server.URL)
 			}
 			executor := NewCodexExecutor(&config.Config{})
-			req := cliproxyexecutor.Request{Model: "gpt-5.5", Payload: []byte(tc.payload)}
+			model := tc.model
+			if model == "" {
+				model = "gpt-5.5"
+			}
+			req := cliproxyexecutor.Request{Model: model, Payload: []byte(tc.payload)}
 			opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("claude"), Stream: tc.stream}
 
 			if tc.stream {
@@ -103,6 +113,9 @@ func TestCodexExecutorRoutingHintCarriesRequestedTier(t *testing.T) {
 				t.Fatalf("Execute error: %v", err)
 			}
 
+			if captured.model.Type != gjson.String || captured.model.String() != "gpt-5.5" {
+				t.Fatalf("body model = %s, want gpt-5.5", captured.model.Raw)
+			}
 			if tc.wantHint == "" {
 				if captured.hasHint {
 					t.Fatalf("routing hint = %q, want header absent", captured.routingHint)
@@ -128,8 +141,8 @@ func TestCodexExecutorCompactRoutingHintCarriesRequestedTier(t *testing.T) {
 
 	executor := NewCodexExecutor(&config.Config{})
 	_, err := executor.Execute(context.Background(), codexOAuthTestAuth(server.URL), cliproxyexecutor.Request{
-		Model:   "gpt-5.5",
-		Payload: []byte(`{"model":"gpt-5.5","service_tier":"priority","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}]}`),
+		Model:   "gpt-5.5(low)",
+		Payload: []byte(`{"model":"client-alias","service_tier":"priority","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}]}`),
 	}, cliproxyexecutor.Options{
 		SourceFormat: sdktranslator.FromString("openai-response"),
 		Alt:          "responses/compact",
@@ -140,8 +153,14 @@ func TestCodexExecutorCompactRoutingHintCarriesRequestedTier(t *testing.T) {
 	if captured.path != "/responses/compact" {
 		t.Fatalf("upstream path = %q, want /responses/compact", captured.path)
 	}
-	if captured.routingHint != "model=gpt-5.5;tier=priority" {
-		t.Fatalf("routing hint = %q, want %q", captured.routingHint, "model=gpt-5.5;tier=priority")
+	if captured.model.Type != gjson.String || captured.model.String() != "gpt-5.5" {
+		t.Fatalf("body model = %s, want gpt-5.5", captured.model.Raw)
+	}
+	if captured.serviceTier.String() != "priority" {
+		t.Fatalf("body service_tier = %q, want priority", captured.serviceTier.String())
+	}
+	if captured.routingHint != "model="+captured.model.String()+";tier="+captured.serviceTier.String() {
+		t.Fatalf("routing hint = %q, does not match body model %q and tier %q", captured.routingHint, captured.model.String(), captured.serviceTier.String())
 	}
 }
 
@@ -178,7 +197,7 @@ func TestApplyCodexRoutingHint(t *testing.T) {
 	t.Run("replaces a hint that did not come from an operator rule", func(t *testing.T) {
 		headers := http.Header{}
 		headers.Set(codexRoutingHintHeader, "model=gpt-5.4-client")
-		applyCodexRoutingHint(context.Background(), headers, oauth, []byte(`{"model":"gpt-5.5","service_tier":"priority"}`), nil)
+		applyCodexRoutingHint(context.Background(), headers, oauth, "gpt-5.5", []byte(`{"model":"gpt-5.5","service_tier":"priority"}`), nil)
 		if got := headers.Get(codexRoutingHintHeader); got != "model=gpt-5.5;tier=priority" {
 			t.Fatalf("routing hint = %q, want %q", got, "model=gpt-5.5;tier=priority")
 		}
@@ -189,7 +208,7 @@ func TestApplyCodexRoutingHint(t *testing.T) {
 		operator.Attributes["header:x-codex-routing-hint"] = "model=operator"
 		headers := http.Header{}
 		headers.Set(codexRoutingHintHeader, "model=operator")
-		applyCodexRoutingHint(context.Background(), headers, operator, []byte(`{"model":"gpt-5.5","service_tier":"priority"}`), nil)
+		applyCodexRoutingHint(context.Background(), headers, operator, "gpt-5.5", []byte(`{"model":"gpt-5.5","service_tier":"priority"}`), nil)
 		if got := headers.Get(codexRoutingHintHeader); got != "model=operator" {
 			t.Fatalf("routing hint = %q, want operator value kept", got)
 		}
@@ -200,7 +219,7 @@ func TestApplyCodexRoutingHint(t *testing.T) {
 		operator.Attributes["header:X-Codex-Routing-Hint"] = "$X-Operator-Hint"
 		headers := http.Header{}
 		headers.Set(codexRoutingHintHeader, "model=gpt-5.4-client")
-		applyCodexRoutingHint(context.Background(), headers, operator, []byte(`{"model":"gpt-5.5","service_tier":"priority"}`), nil)
+		applyCodexRoutingHint(context.Background(), headers, operator, "gpt-5.5", []byte(`{"model":"gpt-5.5","service_tier":"priority"}`), nil)
 		if got := headers.Get(codexRoutingHintHeader); got != "model=gpt-5.5;tier=priority" {
 			t.Fatalf("routing hint = %q, want %q", got, "model=gpt-5.5;tier=priority")
 		}
@@ -209,16 +228,16 @@ func TestApplyCodexRoutingHint(t *testing.T) {
 	t.Run("leaves API-key requests untouched", func(t *testing.T) {
 		headers := http.Header{}
 		headers.Set(codexRoutingHintHeader, "model=client")
-		applyCodexRoutingHint(context.Background(), headers, codexAPIKeyTestAuth(""), []byte(`{"model":"gpt-5.5","service_tier":"priority"}`), nil)
+		applyCodexRoutingHint(context.Background(), headers, codexAPIKeyTestAuth(""), "gpt-5.5", []byte(`{"model":"gpt-5.5","service_tier":"priority"}`), nil)
 		if got := headers.Get(codexRoutingHintHeader); got != "model=client" {
 			t.Fatalf("routing hint = %q, want API-key headers unchanged", got)
 		}
 	})
 
-	t.Run("drops a forwarded hint when the body has no model", func(t *testing.T) {
+	t.Run("drops a forwarded hint when the resolved model is empty", func(t *testing.T) {
 		headers := http.Header{}
 		headers.Set(codexRoutingHintHeader, "model=gpt-5.4-client")
-		applyCodexRoutingHint(context.Background(), headers, oauth, []byte(`{"service_tier":"priority"}`), nil)
+		applyCodexRoutingHint(context.Background(), headers, oauth, "", []byte(`{"model":"gpt-5.5","service_tier":"priority"}`), nil)
 		if _, ok := headers[http.CanonicalHeaderKey(codexRoutingHintHeader)]; ok {
 			t.Fatalf("routing hint = %q, want header absent", headers.Get(codexRoutingHintHeader))
 		}
@@ -226,7 +245,7 @@ func TestApplyCodexRoutingHint(t *testing.T) {
 
 	t.Run("ignores a non-string tier", func(t *testing.T) {
 		headers := http.Header{}
-		applyCodexRoutingHint(context.Background(), headers, oauth, []byte(`{"model":"gpt-5.5","service_tier":null}`), nil)
+		applyCodexRoutingHint(context.Background(), headers, oauth, "gpt-5.5", []byte(`{"model":"gpt-5.5","service_tier":null}`), nil)
 		if got := headers.Get(codexRoutingHintHeader); got != "model=gpt-5.5" {
 			t.Fatalf("routing hint = %q, want %q", got, "model=gpt-5.5")
 		}

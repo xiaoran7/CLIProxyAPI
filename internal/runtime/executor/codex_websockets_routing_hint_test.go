@@ -16,6 +16,7 @@ import (
 
 type codexWebsocketHintFrame struct {
 	conn               int
+	model              string
 	tier               string
 	previousResponseID string
 }
@@ -48,6 +49,7 @@ func newCodexWebsocketHintServer(t *testing.T, rec *codexWebsocketHintRecorder) 
 			rec.mu.Lock()
 			rec.frames = append(rec.frames, codexWebsocketHintFrame{
 				conn:               connIndex,
+				model:              gjson.GetBytes(payload, "model").String(),
 				tier:               gjson.GetBytes(payload, "service_tier").String(),
 				previousResponseID: gjson.GetBytes(payload, "previous_response_id").String(),
 			})
@@ -99,9 +101,9 @@ func TestCodexWebsocketsFastToggleKeepsIncrementalConnection(t *testing.T) {
 		t.Fatalf("handshakes = %q, want %q", rec.handshakes, wantHandshakes)
 	}
 	wantFrames := []codexWebsocketHintFrame{
-		{conn: 0},
-		{conn: 0, tier: "priority", previousResponseID: "resp-1"},
-		{conn: 1, tier: "priority"},
+		{conn: 0, model: "gpt-5.5"},
+		{conn: 0, model: "gpt-5.5", tier: "priority", previousResponseID: "resp-1"},
+		{conn: 1, model: "gpt-5.5", tier: "priority"},
 	}
 	if len(rec.frames) != len(wantFrames) {
 		t.Fatalf("frames = %+v, want %+v", rec.frames, wantFrames)
@@ -189,7 +191,7 @@ func TestCodexWebsocketsRoutingHintOverridesForwardedClientHint(t *testing.T) {
 	clientHeaders.Set(codexRoutingHintHeader, "model=gpt-5.4-client")
 
 	_, err := exec.Execute(context.Background(), auth, cliproxyexecutor.Request{
-		Model:   "gpt-5.5",
+		Model:   "gpt-5.5(low)",
 		Payload: []byte(`{"model":"gpt-5.4-client","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}]}`),
 	}, cliproxyexecutor.Options{
 		SourceFormat: sdktranslator.FromString("openai-response"),
@@ -204,7 +206,44 @@ func TestCodexWebsocketsRoutingHintOverridesForwardedClientHint(t *testing.T) {
 	if len(rec.handshakes) != 1 || rec.handshakes[0] != "model=gpt-5.5;tier=priority" {
 		t.Fatalf("handshakes = %q, want [\"model=gpt-5.5;tier=priority\"]", rec.handshakes)
 	}
-	if len(rec.frames) != 1 || rec.frames[0].tier != "priority" {
-		t.Fatalf("frames = %+v, want one frame with service_tier=priority", rec.frames)
+	if len(rec.frames) != 1 || rec.frames[0].model != "gpt-5.5" || rec.frames[0].tier != "priority" {
+		t.Fatalf("frames = %+v, want one frame with model=gpt-5.5 and service_tier=priority", rec.frames)
+	}
+	if rec.handshakes[0] != "model="+rec.frames[0].model+";tier="+rec.frames[0].tier {
+		t.Fatalf("handshake hint = %q, does not match frame %+v", rec.handshakes[0], rec.frames[0])
+	}
+}
+
+func TestCodexWebsocketsStreamRoutingHintMatchesBodyModel(t *testing.T) {
+	var rec codexWebsocketHintRecorder
+	server := newCodexWebsocketHintServer(t, &rec)
+	defer server.Close()
+
+	exec := NewCodexWebsocketsExecutor(&config.Config{SDKConfig: config.SDKConfig{DisableImageGeneration: config.DisableImageGenerationAll}})
+	auth := codexOAuthTestAuth(server.URL)
+	auth.ID = "codex-oauth-stream-test"
+	result, err := exec.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{
+		Model:   "gpt-5.5(low)",
+		Payload: []byte(`{"model":"client-alias","service_tier":"priority","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}]}`),
+	}, cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("openai-response"), Stream: true})
+	if err != nil {
+		t.Fatalf("ExecuteStream error: %v", err)
+	}
+	for chunk := range result.Chunks {
+		if chunk.Err != nil {
+			t.Fatalf("stream chunk error: %v", chunk.Err)
+		}
+	}
+
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if len(rec.handshakes) != 1 || len(rec.frames) != 1 {
+		t.Fatalf("handshakes = %q, frames = %+v, want one each", rec.handshakes, rec.frames)
+	}
+	if rec.frames[0].model != "gpt-5.5" || rec.frames[0].tier != "priority" {
+		t.Fatalf("frame = %+v, want model=gpt-5.5 and service_tier=priority", rec.frames[0])
+	}
+	if rec.handshakes[0] != "model="+rec.frames[0].model+";tier="+rec.frames[0].tier {
+		t.Fatalf("handshake hint = %q, does not match frame %+v", rec.handshakes[0], rec.frames[0])
 	}
 }
