@@ -34,6 +34,32 @@ func init() {
 	}
 }
 
+const devinBuiltinSWE16SlowID = "devin/swe-1-6-slow"
+
+func devinBuiltinSWE16SlowModelInfo() *ModelInfo {
+	return &ModelInfo{
+		ID:                         devinBuiltinSWE16SlowID,
+		Object:                     "model",
+		Type:                       "devin",
+		OwnedBy:                    "cognition",
+		DisplayName:                "SWE-1.6 Slow",
+		ContextLength:              200000,
+		MaxCompletionTokens:        64000,
+		InputTokenLimit:            200000,
+		OutputTokenLimit:           64000,
+		SupportedInputModalities:   []string{"text", "image"},
+		SupportedOutputModalities:  []string{"text"},
+		SupportedGenerationMethods: []string{"generateContent", "countTokens"},
+	}
+}
+
+// WithDevinBuiltins injects hard-coded Devin model definitions that should
+// not depend on remote or embedded devin_models.json updates. Built-ins replace
+// any matching IDs already present in the provided slice.
+func WithDevinBuiltins(models []*ModelInfo) []*ModelInfo {
+	return upsertModelInfos(models, devinBuiltinSWE16SlowModelInfo())
+}
+
 // GetDevinModels returns the active Devin model catalog.
 // It prioritizes the dynamic/embedded devin_models.json catalog, then models.json's devin section,
 // and finally hardcoded staticDevinModels.
@@ -43,14 +69,14 @@ func GetDevinModels() []*ModelInfo {
 	devinCatalogStore.mu.RUnlock()
 
 	if len(models) > 0 {
-		return cloneModelInfos(models)
+		return WithDevinBuiltins(cloneModelInfos(models))
 	}
 
 	if m := getModels(); m != nil && len(m.Devin) > 0 {
-		return cloneModelInfos(m.Devin)
+		return WithDevinBuiltins(cloneModelInfos(m.Devin))
 	}
 
-	return cloneModelInfos(staticDevinModels)
+	return WithDevinBuiltins(cloneModelInfos(staticDevinModels))
 }
 
 // LookupDevinModel looks up a model definition from the active Devin catalog.
@@ -71,6 +97,12 @@ func LookupDevinModel(modelID string) *ModelInfo {
 	}
 
 	for _, m := range models {
+		mClean := strings.ToLower(strings.TrimPrefix(m.ID, "devin/"))
+		if mClean == clean {
+			return cloneModelInfo(m)
+		}
+	}
+	for _, m := range WithDevinBuiltins(nil) {
 		mClean := strings.ToLower(strings.TrimPrefix(m.ID, "devin/"))
 		if mClean == clean {
 			return cloneModelInfo(m)
@@ -104,6 +136,8 @@ func loadDevinModelsFromBytes(data []byte, source string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("%s: %w", source, err)
 	}
+
+	models = WithDevinBuiltins(models)
 
 	clonedData := append([]byte(nil), data...)
 	devinCatalogStore.mu.Lock()

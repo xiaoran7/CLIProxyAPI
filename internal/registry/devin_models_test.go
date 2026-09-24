@@ -125,6 +125,7 @@ func TestEmbeddedDevinModelsLoadedOnStartup(t *testing.T) {
 
 	expectedIDs := []string{
 		"devin/swe-2",
+		"devin/swe-1-6-slow",
 		"devin/glm-5-2",
 		"devin/glm-5-3",
 		"devin/deepseek-v4-flash",
@@ -189,8 +190,21 @@ func TestDevinModelsRemoteFetchFallback(t *testing.T) {
 	tryRefreshDevinModels(context.Background(), "test succeeding refresh")
 
 	updatedModels := GetDevinModels()
-	if len(updatedModels) != 1 || updatedModels[0].ID != "devin/custom-test-model" {
-		t.Fatalf("expected catalog to be updated to custom-test-model, got: %+v", updatedModels)
+	foundCustom := false
+	foundBuiltinSlow := false
+	for _, m := range updatedModels {
+		if m != nil && m.ID == "devin/custom-test-model" {
+			foundCustom = true
+		}
+		if m != nil && (m.ID == "devin/swe-1-6-slow" || m.ID == "swe-1-6-slow") {
+			foundBuiltinSlow = true
+		}
+	}
+	if !foundCustom {
+		t.Fatalf("expected catalog to be updated to include custom-test-model, got: %+v", updatedModels)
+	}
+	if !foundBuiltinSlow {
+		t.Fatalf("expected catalog to retain builtin swe-1-6-slow, got: %+v", updatedModels)
 	}
 
 	// Restore original embedded data for following tests
@@ -235,5 +249,105 @@ func TestFetchDevinModelsFromRemote_ContextNotCanceledBeforeRead_Issue6095(t *te
 	expectedSource := ts.URL + "/devin_models.json"
 	if source != expectedSource {
 		t.Fatalf("expected source %q, got %q", expectedSource, source)
+	}
+}
+
+func TestDevinSWE16Slow_Issue6111(t *testing.T) {
+	// Verify that devin/swe-1-6-slow is present in GetDevinModels
+	models := GetDevinModels()
+	var found *ModelInfo
+	for _, m := range models {
+		if m != nil && m.ID == "devin/swe-1-6-slow" {
+			found = m
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("devin/swe-1-6-slow missing from GetDevinModels()")
+	}
+
+	// Verify LookupDevinModel with and without prefix
+	lookupWithPrefix := LookupDevinModel("devin/swe-1-6-slow")
+	if lookupWithPrefix == nil {
+		t.Errorf("LookupDevinModel(\"devin/swe-1-6-slow\") returned nil")
+	}
+	lookupWithoutPrefix := LookupDevinModel("swe-1-6-slow")
+	if lookupWithoutPrefix == nil {
+		t.Errorf("LookupDevinModel(\"swe-1-6-slow\") returned nil")
+	}
+
+	// Verify model metadata
+	if lookupWithPrefix != nil {
+		if lookupWithPrefix.ID != "devin/swe-1-6-slow" {
+			t.Errorf("expected ID 'devin/swe-1-6-slow', got %q", lookupWithPrefix.ID)
+		}
+		if lookupWithPrefix.DisplayName != "SWE-1.6 Slow" {
+			t.Errorf("expected DisplayName 'SWE-1.6 Slow', got %q", lookupWithPrefix.DisplayName)
+		}
+		if lookupWithPrefix.Type != "devin" {
+			t.Errorf("expected Type 'devin', got %q", lookupWithPrefix.Type)
+		}
+		if lookupWithPrefix.OwnedBy != "cognition" {
+			t.Errorf("expected OwnedBy 'cognition', got %q", lookupWithPrefix.OwnedBy)
+		}
+	}
+
+	// Verify persistence even if dynamic update loads payload without swe-1-6-slow
+	payloadWithoutSlow := []byte(`{"devin": [{"id": "devin/swe-2", "display_name": "SWE-2"}]}`)
+	if _, errUpdate := loadDevinModelsFromBytes(payloadWithoutSlow, "test-dynamic-update"); errUpdate != nil {
+		t.Fatalf("loadDevinModelsFromBytes failed: %v", errUpdate)
+	}
+	defer func() {
+		// Restore embedded models after test
+		if _, errRestore := loadDevinModelsFromBytes(embeddedDevinModelsJSON, "embed"); errRestore != nil {
+			t.Errorf("loadDevinModelsFromBytes restore failed: %v", errRestore)
+		}
+	}()
+
+	modelsAfterUpdate := GetDevinModels()
+	foundAfter := false
+	for _, m := range modelsAfterUpdate {
+		if m != nil && m.ID == "devin/swe-1-6-slow" {
+			foundAfter = true
+			break
+		}
+	}
+	if !foundAfter {
+		t.Errorf("devin/swe-1-6-slow missing from GetDevinModels() after dynamic update")
+	}
+	if LookupDevinModel("devin/swe-1-6-slow") == nil {
+		t.Errorf("LookupDevinModel(\"devin/swe-1-6-slow\") returned nil after dynamic update")
+	}
+}
+
+func TestWithDevinBuiltins(t *testing.T) {
+	// Test WithDevinBuiltins with nil slice
+	builtins := WithDevinBuiltins(nil)
+	if len(builtins) != 1 {
+		t.Fatalf("expected 1 builtin model, got %d", len(builtins))
+	}
+	if builtins[0].ID != "devin/swe-1-6-slow" {
+		t.Errorf("expected ID 'devin/swe-1-6-slow', got %q", builtins[0].ID)
+	}
+
+	// Test WithDevinBuiltins preserves existing models and injects swe-1-6-slow
+	existing := []*ModelInfo{
+		{ID: "devin/swe-2", DisplayName: "SWE-2"},
+	}
+	merged := WithDevinBuiltins(existing)
+	if len(merged) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(merged))
+	}
+
+	// Test WithDevinBuiltins replaces duplicate
+	duplicate := []*ModelInfo{
+		{ID: "devin/swe-1-6-slow", DisplayName: "Old Display Name"},
+	}
+	replaced := WithDevinBuiltins(duplicate)
+	if len(replaced) != 1 {
+		t.Fatalf("expected 1 model after deduplication, got %d", len(replaced))
+	}
+	if replaced[0].DisplayName != "SWE-1.6 Slow" {
+		t.Errorf("expected DisplayName 'SWE-1.6 Slow', got %q", replaced[0].DisplayName)
 	}
 }
