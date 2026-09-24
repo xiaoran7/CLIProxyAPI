@@ -113,6 +113,27 @@ func antigravityReasoningReplayScopeFromRequest(ctx context.Context, modelName s
 	return antigravityReasoningReplayScope{}
 }
 
+func antigravitySessionHeaderValue(headers http.Header, names ...string) string {
+	if headers == nil {
+		return ""
+	}
+	for _, name := range names {
+		if value := strings.TrimSpace(headers.Get(name)); value != "" {
+			return value
+		}
+		for key, values := range headers {
+			if strings.EqualFold(key, name) {
+				for _, v := range values {
+					if trimmed := strings.TrimSpace(v); trimmed != "" {
+						return trimmed
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func antigravityReasoningReplayClientSessionKey(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) string {
 	for _, raw := range [][]byte{opts.OriginalRequest, req.Payload} {
 		if scope, ok := helps.ClaudeCodeExecutionScope(ctx, raw, opts.Headers); ok {
@@ -122,7 +143,7 @@ func antigravityReasoningReplayClientSessionKey(ctx context.Context, req cliprox
 			return scope
 		}
 	}
-	if value := strings.TrimSpace(opts.Headers.Get("Session-Id")); value != "" {
+	if value := antigravitySessionHeaderValue(opts.Headers, "Session-Id", "Session_id"); value != "" {
 		return "responses:" + value
 	}
 	for _, raw := range [][]byte{opts.OriginalRequest, req.Payload} {
