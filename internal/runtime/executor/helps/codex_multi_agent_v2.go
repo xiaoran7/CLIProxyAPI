@@ -170,6 +170,10 @@ func OptimizeCodexMultiAgentV2Request(ctx context.Context, headers http.Header, 
 // enabled, also converts agent_message items into portable message/user input,
 // proactively stripping author, recipient, and internal passthrough metadata.
 func OptimizeCodexMultiAgentV2RequestForAuth(ctx context.Context, headers http.Header, payload []byte, cfg *config.Config, auth *cliproxyauth.Auth, model string) ([]byte, bool) {
+	if auth != nil && auth.AuthKind() == cliproxyauth.AuthKindAPIKey {
+		cfg = cfg.ForAPIKey()
+	}
+	payload = multiagentv2.RewriteCodexOrphanDelegationInputForConfig(ctx, headers, payload, cfg)
 	updated, optimized := multiagentv2.OptimizeCodexMultiAgentV2Request(ctx, headers, payload, cfg)
 	if cliproxyauth.CodexAPIKeyModelIsCompat(cfg, auth, model) {
 		updated = multiagentv2.RewriteCodexMultiAgentV2Input(ctx, headers, updated, cfg, true)

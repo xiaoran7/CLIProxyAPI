@@ -385,7 +385,7 @@ func (h *Handler) DeletePlugin(c *gin.Context) {
 	h.mu.Lock()
 	delete(h.cfg.Plugins.Configs, id)
 	if configured {
-		if errSave := config.SaveConfigPreserveComments(h.configFilePath, h.cfg); errSave != nil {
+		if errSave := config.SaveConfigPreserveComments(h.configFilePath, h.cfg, c.GetBool(ConfigV8ContextKey)); errSave != nil {
 			h.mu.Unlock()
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":        "config_save_failed",

@@ -1316,6 +1316,9 @@ type claudeCloakSettings struct {
 }
 
 func resolveClaudeWirePolicy(cfg *config.Config, auth *cliproxyauth.Auth, apiKey string, confirmedClaudeCode bool) (claudeWirePolicy, claudeCloakSettings) {
+	if auth != nil && auth.AuthKind() == cliproxyauth.AuthKindAPIKey {
+		cfg = cfg.ForAPIKey()
+	}
 	cloakCfg := resolveClaudeKeyCloakConfig(cfg, auth)
 	attrMode, attrStrict, attrWords, attrCache := getCloakConfigFromAuth(auth)
 

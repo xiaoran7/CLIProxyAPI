@@ -430,6 +430,9 @@ func codexOperatorHeaderValue(ctx context.Context, auth *cliproxyauth.Auth, clie
 }
 
 func isCodexCloakingDisabled(cfg *config.Config, auth *cliproxyauth.Auth) bool {
+	if auth != nil && auth.AuthKind() == cliproxyauth.AuthKindAPIKey {
+		cfg = cfg.ForAPIKey()
+	}
 	if auth != nil && len(auth.Attributes) > 0 {
 		if val, ok := auth.Attributes[cliproxyauth.AttributeCodexDisableCloaking]; ok {
 			if parsed, errParse := strconv.ParseBool(strings.TrimSpace(val)); errParse == nil {

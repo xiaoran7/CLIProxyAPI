@@ -70,6 +70,13 @@ func (e *pluginRefreshCompatExecutor) Identifier() string {
 	return ""
 }
 
+func (e pluginRefreshCompatExecutor) ForAPIKey() coreauth.ProviderExecutor {
+	if scoped, ok := e.inner.(coreauth.APIKeyConfigExecutor); ok {
+		e.inner = scoped.ForAPIKey()
+	}
+	return &e
+}
+
 func (e *pluginRefreshCompatExecutor) Execute(ctx context.Context, auth *coreauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 	if e == nil || e.inner == nil {
 		return cliproxyexecutor.Response{}, fmt.Errorf("plugin refresh compat executor is unavailable")
