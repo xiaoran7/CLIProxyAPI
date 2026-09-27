@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/api/handlers/management"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/api/handlers/management"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 )
 
 func TestManagementV8RoutesShareAccessControl(t *testing.T) {

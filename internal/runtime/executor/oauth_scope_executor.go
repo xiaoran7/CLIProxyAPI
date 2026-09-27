@@ -1,6 +1,6 @@
 package executor
 
-import cliproxyauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
+import cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 
 // ForAPIKey binds configuration once after credential selection. Value receivers
 // copy executor configuration while preserving shared transport/session stores.

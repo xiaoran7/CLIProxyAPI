@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/api/handlers/management"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/api/handlers/management"
 )
 
 // registerManagementV8Routes defines the v8 contract independently of v0.

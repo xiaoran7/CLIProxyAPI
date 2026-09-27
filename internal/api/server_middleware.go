@@ -5,12 +5,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	codexlive "github.com/router-for-me/CLIProxyAPI/v7/internal/client/codex/live"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/home"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/safemode"
-	sdkaccess "github.com/router-for-me/CLIProxyAPI/v7/sdk/access"
+	codexlive "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/live"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/safemode"
+	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
 	log "github.com/sirupsen/logrus"
 )
 
