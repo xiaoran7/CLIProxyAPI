@@ -835,7 +835,6 @@ oauth:
     codex:
       # Experimental full-duplex Codex Responses WebSocket steering (default: false).
       # Keeps one upstream account/model per socket; accepted input is never replayed.
-      # See STEERING.md for limitations.
       response-steering: false
       # When true, and routing.strategy is fill-first or routing.session-affinity is true,
       # remap Codex prompt_cache_key and installation identity per selected auth.
@@ -1176,56 +1175,3 @@ plugins:
 #     switch-project: true
 #     switch-preview-model: true
 # antigravity-credits moved to oauth.providers.antigravity.antigravity-credits.
-
-# Independent v8 configuration API; paths and JSON bodies follow the v8 tree:
-#   /v8/management/config                      GET / PUT / PATCH JSON
-#   /v8/management/config.yaml                 GET / PUT YAML
-#   /v8/management/config/<section>/<field>     GET / PUT / PATCH / DELETE
-#   /v8/management/config/access/api-keys      Client authentication keys
-#   /v8/management/config/api-keys             Upstream provider groups
-#   /v8/management/config/api-keys/codex       Codex upstream groups
-#   /v8/management/config/observability/logs/debug   Boolean debug setting
-#   /v8/management/config/routing/retry/request-retry   Numeric retry setting
-#   /v8/management/config/plugins/configs/<id> Plugin configuration object
-# Legacy flat endpoints such as /debug, /request-retry, and /codex-api-key remain
-# under /v0/management only. v8 writes reject legacy field names and {value: ...}
-# envelopes: PUT a field's value directly, or PATCH a new-layout object.
-# PUT replaces its target; PATCH merges objects and replaces lists/scalars.
-# Optional per-key null overrides inherit the group value. DELETE removes a field.
-#
-# Independent v8 operational API (all paths below start with /v8/management):
-#   /server/latest-version                    GET latest release information
-#   /requests/api-call                        POST an authenticated upstream call
-#   /routing/cooldown/reset                    POST clear credential cooldown
-#   /routing/model-definitions/<channel>      GET model definitions
-#   /observability/logs                       GET / DELETE application logs
-#   /observability/logs/errors                GET error-log files
-#   /observability/logs/errors/<name>         GET an error-log file
-#   /observability/logs/requests/<id>          GET a request log
-#   /observability/usage/api-keys              GET API-key usage
-#   /observability/usage/queue                 GET queued usage events
-#   /credentials/quota/providers              GET quota providers
-#   /credentials/quota/fetch                  POST fetch credential quota
-#   /credentials/quota/reset                  POST reset credential quota
-#   /credentials                              GET / POST / DELETE credential files
-#   /credentials/models                       GET credential models
-#   /credentials/download                     GET a credential file
-#   /credentials/status                       PATCH credential status
-#   /credentials/fields                       PATCH credential fields
-#   /credentials/refresh                      POST refresh credentials
-#   /oauth/import?provider=vertex             POST import a Vertex credential
-#   /oauth/auth-url?provider=<provider>        GET start built-in or plugin OAuth
-#   /oauth/status                             GET login status
-#   /oauth/session                            DELETE cancel a login session
-#   /oauth/callback                           GET / POST OAuth callback
-#   /plugins                                  GET installed plugins
-#   /plugins/<id>                             DELETE a plugin
-#   /plugins/store                            GET the plugin store
-#   /plugins/store/<id>/install                POST install or update a plugin
-#   /plugins/<id>/quota                        GET / POST / DELETE plugin quota
-# OAuth login providers: claude, codex, antigravity, kimi, kimi-ai, xai, devin,
-# meta, or a registered plugin provider ID. The provider query parameter is required
-# for login and import. Status and cancellation identify the session by state;
-# callbacks accept provider in the GET query or POST JSON, or infer it from state.
-# Operational bodies retain the corresponding business operation's fields.
-# Plugin-defined HTTP extensions keep their declared /v0/management routes.
