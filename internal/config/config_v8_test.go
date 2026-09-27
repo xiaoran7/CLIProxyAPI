@@ -258,6 +258,34 @@ openai-compatibility:
 	}
 }
 
+func TestV8MigrationDropsIgnoredLegacySections(t *testing.T) {
+	raw := []byte("home: {enabled: true, host: ignored.example}\nenable-gemini-cli-endpoint: true\nproxy-url: old\n")
+	unchanged, changed, err := NormalizeConfigLayout(raw, false)
+	if err != nil || changed || string(unchanged) != string(raw) {
+		t.Fatalf("read-only normalization changed the legacy file: changed=%v error=%v", changed, err)
+	}
+	migrated, changed, err := NormalizeConfigLayout(raw, true)
+	if err != nil || !changed {
+		t.Fatalf("migrate legacy file: changed=%v error=%v", changed, err)
+	}
+	var doc yaml.Node
+	if err = yaml.Unmarshal(migrated, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"home", "enable-gemini-cli-endpoint", "proxy-url"} {
+		if yamlPath(doc.Content[0], key) != nil {
+			t.Fatalf("legacy section %s remained after migration", key)
+		}
+	}
+	if err = ValidateV8Config(migrated); err != nil {
+		t.Fatalf("migrated file is invalid: %v", err)
+	}
+	cfg, err := ParseConfigBytes(migrated)
+	if err != nil || cfg.ProxyURL != "old" || cfg.Home.Enabled {
+		t.Fatalf("migration changed effective settings: cfg=%+v error=%v", cfg, err)
+	}
+}
+
 func TestV8MigrationPreservesEmptyLegacyContainers(t *testing.T) {
 	for _, section := range []configPath{
 		{"tls", "server.tls"}, {"remote-management", "management"},
@@ -453,6 +481,7 @@ func TestV8ValidationRejectsLegacyWriteLayout(t *testing.T) {
 	for _, raw := range []string{
 		"debug: true", "server: {port: 8317}\nport: 8318", "api-keys: [client]",
 		"codex-api-key: []", "codex: {}", "quota-exceeded: {antigravity-credits: true}",
+		"home: {enabled: true}", "enable-gemini-cli-endpoint: true", "unknown-root: true",
 		"<<: {debug: true}",
 	} {
 		t.Run(raw, func(t *testing.T) {

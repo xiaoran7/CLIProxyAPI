@@ -399,6 +399,10 @@ func NormalizeConfigLayout(data []byte, migrate bool) ([]byte, bool, error) {
 		changed = true
 	}
 	if migrate {
+		// These old root settings are no longer read by the runtime. Drop only
+		// known obsolete keys so unrelated unknown settings still fail validation.
+		deleteYAMLPath(root, "home")
+		deleteYAMLPath(root, "enable-gemini-cli-endpoint")
 		setYAMLPath(root, "config-version", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: "8"})
 		changed = true
 	}
