@@ -13,6 +13,36 @@ func boolPtr(b bool) *bool {
 	return &b
 }
 
+func TestCodexV8OAuthCloakingDoesNotAffectAPIKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name, settings, keyOption string
+		wantAPI                   bool
+	}{
+		{"legacy global", "codex: {disable-codex-cloaking: true}\n", "", true},
+		{"oauth only", "oauth: {providers: {codex: {disable-codex-cloaking: true}}}\n", "", false},
+		{"explicit key override", "oauth: {providers: {codex: {disable-codex-cloaking: true}}}\n", ", disable-codex-cloaking: true", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := tc.settings + "api-keys: {codex: [{name: independent, base-url: 'https://example.invalid/v1', keys: [{api-key: test-key" + tc.keyOption + "}]}]}\n"
+			cfg, err := config.ParseConfigBytes([]byte(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			oauth := &cliproxyauth.Auth{Provider: "codex", Metadata: map[string]any{"access_token": "test-oauth"}}
+			if !isCodexCloakingDisabled(cfg, oauth) {
+				t.Fatal("OAuth setting was not applied")
+			}
+			key := &cliproxyauth.Auth{Provider: "codex", Attributes: map[string]string{"api_key": "test-key", "base_url": "https://example.invalid/v1"}}
+			if isCodexCloakingDisabled(cfg, key) != tc.wantAPI {
+				t.Fatal("wrong API-key cloaking policy")
+			}
+			if !cfg.Codex.DisableCodexCloaking {
+				t.Fatal("shared configuration was mutated")
+			}
+		})
+	}
+}
+
 func TestCodexPerCredentialDisableCloaking_HTTP_ExplicitTrue(t *testing.T) {
 	cfg := &config.Config{
 		Codex: config.CodexConfig{

@@ -147,8 +147,10 @@ func (h *Handler) managementCallbackURL(path string) (string, error) {
 
 func pluginAuthProviderFromPath(path string) (string, bool) {
 	path = strings.TrimSpace(path)
-	const prefix = "/v0/management/"
-	const suffix = "-auth-url"
+	prefix, suffix := "/v0/management/", "-auth-url"
+	if strings.HasPrefix(path, "/v8/management/oauth/providers/") {
+		prefix, suffix = "/v8/management/oauth/providers/", "/auth-url"
+	}
 	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
 		return "", false
 	}
@@ -185,7 +187,11 @@ func (h *Handler) ServePluginAuthURL(c *gin.Context) bool {
 	}
 
 	ctx := PopulateAuthContext(context.Background(), c)
-	baseURL, errBaseURL := h.managementCallbackURL("/v0/management/oauth-callback")
+	callbackPath := "/v0/management/oauth-callback"
+	if strings.HasPrefix(c.Request.URL.Path, "/v8/management/oauth/providers/") {
+		callbackPath = "/v8/management/oauth/callback"
+	}
+	baseURL, errBaseURL := h.managementCallbackURL(callbackPath)
 	if errBaseURL != nil {
 		log.WithError(errBaseURL).Error("failed to compute plugin auth callback URL")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate authorization url"})

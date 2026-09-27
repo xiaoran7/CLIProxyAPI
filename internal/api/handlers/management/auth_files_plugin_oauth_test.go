@@ -362,3 +362,34 @@ func TestServePluginAuthURLPassesQueryParamsAsMetadata(t *testing.T) {
 		t.Fatalf("capturedReq.Metadata = %#v, want nil for request without query", capturedReq.Metadata)
 	}
 }
+
+func TestV8PluginOAuthUsesIndependentCallback(t *testing.T) {
+	host := pluginhost.New()
+	var captured pluginapi.AuthLoginStartRequest
+	host.RegisterPluginForTest("v8-login-plugin", pluginapi.Plugin{
+		Capabilities: pluginapi.Capabilities{AuthProvider: &testAuthProvider{
+			identifier: "custom-sso",
+			startLogin: func(_ context.Context, req pluginapi.AuthLoginStartRequest) (pluginapi.AuthLoginStartResponse, error) {
+				captured = req
+				return pluginapi.AuthLoginStartResponse{Provider: req.Provider, URL: "https://login.example.com", State: "state-v8-1234567890", ExpiresAt: time.Now().Add(time.Hour)}, nil
+			},
+		}},
+	})
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: t.TempDir(), Port: 8317}, nil)
+	h.SetPluginHost(host)
+	router := gin.New()
+	router.GET("/v8/management/oauth/providers/:provider/auth-url", h.StartOAuthV8)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v8/management/oauth/providers/custom-sso/auth-url?region=eu", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if captured.BaseURL != "http://127.0.0.1:8317/v8/management/oauth/callback" || captured.Provider != "custom-sso" || captured.Metadata["region"] != "eu" {
+		t.Fatalf("incorrect v8 login request: %#v", captured)
+	}
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v8/management/oauth/providers/unknown/auth-url", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("unknown provider status=%d", response.Code)
+	}
+}
