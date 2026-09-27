@@ -399,10 +399,11 @@ func NormalizeConfigLayout(data []byte, migrate bool) ([]byte, bool, error) {
 		changed = true
 	}
 	if migrate {
-		// These old root settings are no longer read by the runtime. Drop only
-		// known obsolete keys so unrelated unknown settings still fail validation.
-		deleteYAMLPath(root, "home")
-		deleteYAMLPath(root, "enable-gemini-cli-endpoint")
+		// Existing unknown sections are ignored by the runtime. Retain their
+		// contents as comments while keeping new v8 writes strictly validated.
+		if err := commentUnknownV8Sections(root); err != nil {
+			return nil, false, err
+		}
 		setYAMLPath(root, "config-version", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: "8"})
 		changed = true
 	}
@@ -411,6 +412,39 @@ func NormalizeConfigLayout(data []byte, migrate bool) ([]byte, bool, error) {
 	}
 	out, err := yaml.Marshal(&doc)
 	return out, true, err
+}
+
+func v8AllowedRoots() map[string]bool {
+	allowed := map[string]bool{"config-version": true, "api-keys": true, "plugins": true, "quota-exceeded": true}
+	for _, path := range v8Paths {
+		section, _, _ := strings.Cut(path.current, ".")
+		allowed[section] = true
+	}
+	return allowed
+}
+
+func commentUnknownV8Sections(root *yaml.Node) error {
+	allowed := v8AllowedRoots()
+	var comments []string
+	for i := 0; i+1 < len(root.Content); {
+		if allowed[root.Content[i].Value] {
+			i += 2
+			continue
+		}
+		entry := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: root.Content[i : i+2]}
+		data, err := yaml.Marshal(entry)
+		if err != nil {
+			return err
+		}
+		text := strings.TrimSuffix(string(data), "\n")
+		comments = append(comments, "# "+strings.ReplaceAll(text, "\n", "\n# "))
+		root.Content = append(root.Content[:i], root.Content[i+2:]...)
+	}
+	// A root-level comment survives later deletion of any neighboring setting.
+	if len(comments) > 0 {
+		root.FootComment = strings.TrimSpace(root.FootComment + "\n" + strings.Join(comments, "\n"))
+	}
+	return nil
 }
 
 // The deprecated allow flag is the inverse of disable-private-remote-ips.
@@ -571,10 +605,8 @@ func ValidateV8Config(data []byte) error {
 		return err
 	}
 	root = expandConfigAliases(root)
-	allowedRoots := map[string]bool{"config-version": true, "api-keys": true, "plugins": true, "quota-exceeded": true}
+	allowedRoots := v8AllowedRoots()
 	for _, path := range v8Paths {
-		section, _, _ := strings.Cut(path.current, ".")
-		allowedRoots[section] = true
 		if legacyPath(root, path.old) != nil {
 			return fmt.Errorf("legacy field %s is not accepted by v8; use %s", path.old, path.current)
 		}
