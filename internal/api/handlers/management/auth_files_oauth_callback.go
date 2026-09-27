@@ -145,30 +145,20 @@ func (h *Handler) managementCallbackURL(path string) (string, error) {
 	return fmt.Sprintf("%s://127.0.0.1:%d%s", scheme, h.cfg.Port, path), nil
 }
 
-func pluginAuthProviderFromPath(path string) (string, bool) {
-	path = strings.TrimSpace(path)
-	prefix, suffix := "/v0/management/", "-auth-url"
-	if strings.HasPrefix(path, "/v8/management/oauth/providers/") {
-		prefix, suffix = "/v8/management/oauth/providers/", "/auth-url"
-	}
-	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
-		return "", false
-	}
-	provider := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
-	provider = strings.ToLower(strings.TrimSpace(provider))
-	if provider == "" {
-		return "", false
-	}
-	for _, r := range provider {
-		switch {
-		case r >= 'a' && r <= 'z':
-		case r >= '0' && r <= '9':
-		case r == '-':
-		default:
+func pluginAuthProviderFromURL(requestURL *url.URL) (string, bool) {
+	path := strings.TrimSpace(requestURL.Path)
+	var provider string
+	if path == "/v8/management/oauth/auth-url" {
+		provider = requestURL.Query().Get("provider")
+	} else {
+		const prefix, suffix = "/v0/management/", "-auth-url"
+		if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
 			return "", false
 		}
+		provider = strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
 	}
-	return provider, true
+	provider, errNormalize := NormalizePluginOAuthCallbackProvider(provider)
+	return provider, errNormalize == nil
 }
 
 func (h *Handler) ServePluginAuthURL(c *gin.Context) bool {
@@ -181,15 +171,17 @@ func (h *Handler) ServePluginAuthURL(c *gin.Context) bool {
 	if host == nil {
 		return false
 	}
-	provider, ok := pluginAuthProviderFromPath(c.Request.URL.Path)
+	provider, ok := pluginAuthProviderFromURL(c.Request.URL)
 	if !ok || !host.HasAuthProvider(provider) {
 		return false
 	}
 
 	ctx := PopulateAuthContext(context.Background(), c)
 	callbackPath := "/v0/management/oauth-callback"
-	if strings.HasPrefix(c.Request.URL.Path, "/v8/management/oauth/providers/") {
+	query := c.Request.URL.Query()
+	if c.Request.URL.Path == "/v8/management/oauth/auth-url" {
 		callbackPath = "/v8/management/oauth/callback"
+		query.Del("provider")
 	}
 	baseURL, errBaseURL := h.managementCallbackURL(callbackPath)
 	if errBaseURL != nil {
@@ -197,7 +189,7 @@ func (h *Handler) ServePluginAuthURL(c *gin.Context) bool {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate authorization url"})
 		return true
 	}
-	metadata := queryValuesToMetadata(c.Request.URL.Query())
+	metadata := queryValuesToMetadata(query)
 	resp, handled, errStart := host.StartLogin(ctx, provider, baseURL, metadata)
 	if !handled {
 		return false

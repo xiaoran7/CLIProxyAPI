@@ -1213,8 +1213,8 @@ plugins:
 #   /credentials/status                       PATCH credential status
 #   /credentials/fields                       PATCH credential fields
 #   /credentials/refresh                      POST refresh credentials
-#   /oauth/providers/vertex/import            POST import a Vertex credential
-#   /oauth/providers/<provider>/auth-url      GET start built-in or plugin OAuth
+#   /oauth/import?provider=vertex             POST import a Vertex credential
+#   /oauth/auth-url?provider=<provider>        GET start built-in or plugin OAuth
 #   /oauth/status                             GET login status
 #   /oauth/session                            DELETE cancel a login session
 #   /oauth/callback                           GET / POST OAuth callback
@@ -1223,5 +1223,9 @@ plugins:
 #   /plugins/store                            GET the plugin store
 #   /plugins/store/<id>/install                POST install or update a plugin
 #   /plugins/<id>/quota                        GET / POST / DELETE plugin quota
+# OAuth login providers: claude, codex, antigravity, kimi, kimi-ai, xai, devin,
+# meta, or a registered plugin provider ID. The provider query parameter is required
+# for login and import. Status and cancellation identify the session by state;
+# callbacks accept provider in the GET query or POST JSON, or infer it from state.
 # Operational bodies retain the corresponding business operation's fields.
 # Plugin-defined HTTP extensions keep their declared /v0/management routes.

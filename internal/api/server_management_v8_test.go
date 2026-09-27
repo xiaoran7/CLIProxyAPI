@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -70,6 +71,7 @@ func TestManagementV8IndependentContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg.AuthDir = t.TempDir()
 	h := management.NewHandler(cfg, path, nil)
 	h.SetLocalPassword("test-password")
 	s := &Server{cfg: cfg, engine: gin.New(), mgmt: h}
@@ -87,7 +89,7 @@ func TestManagementV8IndependentContract(t *testing.T) {
 		"GET /v0/management/debug", "PUT /v0/management/request-retry", "GET /v0/management/auth-files",
 		"GET /v8/management/observability/logs", "GET /v8/management/observability/usage/queue",
 		"GET /v8/management/credentials", "POST /v8/management/credentials",
-		"GET /v8/management/oauth/providers/:provider/auth-url", "POST /v8/management/oauth/callback",
+		"GET /v8/management/oauth/auth-url", "POST /v8/management/oauth/import", "POST /v8/management/oauth/callback",
 		"GET /v8/management/credentials/quota/providers", "POST /v8/management/routing/cooldown/reset",
 		"POST /v8/management/plugins/store/:id/install", "DELETE /v8/management/plugins/:id",
 	} {
@@ -107,8 +109,48 @@ func TestManagementV8IndependentContract(t *testing.T) {
 		}
 		return strings.TrimSpace(response.Body.String())
 	}
-	for _, legacy := range []string{"debug", "request-retry", "api-keys", "codex-api-key", "auth-files", "codex-auth-url", "plugins/test-plugin/config"} {
+	for _, legacy := range []string{"debug", "request-retry", "api-keys", "codex-api-key", "auth-files", "codex-auth-url", "oauth/providers/codex/auth-url", "plugins/test-plugin/config"} {
 		request(http.MethodGet, "/v8/management/"+legacy, "", http.StatusNotFound)
+	}
+	request(http.MethodPost, "/v8/management/oauth/providers/vertex/import", "", http.StatusNotFound)
+	for _, tc := range []struct {
+		method, url, body string
+		status            int
+	}{
+		{http.MethodGet, "/v8/management/oauth/auth-url", `{"error":"provider is required"}`, http.StatusBadRequest},
+		{http.MethodGet, "/v8/management/oauth/auth-url?provider=%20", `{"error":"provider is required"}`, http.StatusBadRequest},
+		{http.MethodGet, "/v8/management/oauth/auth-url?provider=unknown", `{"error":"provider_not_found"}`, http.StatusNotFound},
+		{http.MethodPost, "/v8/management/oauth/import", `{"error":"provider is required"}`, http.StatusBadRequest},
+		{http.MethodPost, "/v8/management/oauth/import?provider=codex", `{"error":"provider_not_found"}`, http.StatusNotFound},
+		{http.MethodPost, "/v8/management/oauth/import?provider=vertex", `{"error":"file required"}`, http.StatusBadRequest},
+		{http.MethodPost, "/v0/management/vertex/import", `{"error":"file required"}`, http.StatusBadRequest},
+	} {
+		if got := request(tc.method, tc.url, "", tc.status); got != tc.body {
+			t.Fatalf("%s: body=%s, want %s", tc.url, got, tc.body)
+		}
+	}
+	for _, tc := range []struct{ url, provider string }{
+		{"/v8/management/oauth/auth-url?provider=codex", "codex"},
+		{"/v8/management/oauth/auth-url?provider=%20CLAUDE%20", "anthropic"},
+		{"/v0/management/codex-auth-url", "codex"},
+		{"/v0/management/anthropic-auth-url", "anthropic"},
+	} {
+		body := request(http.MethodGet, tc.url, "", http.StatusOK)
+		var login struct{ URL, State string }
+		if errDecode := json.Unmarshal([]byte(body), &login); errDecode != nil {
+			t.Fatal(errDecode)
+		}
+		t.Cleanup(func() { management.CancelOAuthSession(login.State) })
+		if login.URL == "" || !management.IsOAuthSessionPending(login.State, tc.provider) {
+			t.Fatalf("%s: invalid login response %s", tc.url, body)
+		}
+		if got := request(http.MethodGet, "/v8/management/oauth/status?state="+login.State, "", http.StatusOK); got != `{"status":"wait"}` {
+			t.Fatalf("pending login status=%s", got)
+		}
+		request(http.MethodDelete, "/v8/management/oauth/session?state="+login.State, "", http.StatusOK)
+		if management.IsOAuthSessionPending(login.State, tc.provider) {
+			t.Fatal("login session was not cancelled")
+		}
 	}
 	if got := request(http.MethodGet, "/v8/management/config/routing/retry/request-retry", "", http.StatusOK); got != "3" {
 		t.Fatalf("nested value = %s, want 3", got)
