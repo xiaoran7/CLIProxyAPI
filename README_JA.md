@@ -103,6 +103,10 @@ PackyCodeは当ソフトウェアのユーザーに特別割引を提供して�
 <td width="180"><a href="https://agentmarket.fluxapay.xyz/marketplace/tokenplans"><img src="./assets/fluxa-baidu-ai-cloud.png" alt="FluxA &amp; Baidu AI Cloud" width="150"></a></td>
 <td>FluxA &amp; Baidu AI Cloud による本プロジェクトへのご支援に感謝します！FluxA と百度智能雲が共同で提供する AgenticPlan は、AI Agent がモデル、API、ツールを自律的に購入・管理・利用できるようにします。百度千帆 TokenPlan が含まれ、通常価格の60%という低価格から DeepSeek V4、GLM 5.2、Kimi などのフラッグシップモデルを利用できます。さらに FluxA AgentMarket API の呼び出しクレジットが付与され、検索、データスクレイピング、ソーシャルメディア、金融、暗号資産、画像生成、動画など、1,000以上の有料 API を利用できます。<br><br>ユーザーの承認のもと、AI Agent は公式 Visa カード決済を利用してリソースを自律的に調達し、API Key の管理、使用量の監視、更新計画の策定も行えます。これにより Agent は「自律的にタスクを完了する」段階から、真に「予算を自律的に計画し、タスクを完了する」段階へ進化できます。<a href="https://agentmarket.fluxapay.xyz/marketplace/tokenplans">AgenticPlan の詳細を見る</a>。</td>
 </tr>
+<tr>
+<td width="180"><a href="https://www.openlux.ai/register?channel=c_jozrxg9f"><img src="./assets/openlux.png" alt="OpenLux" width="150"></a></td>
+<td>OpenLux による本プロジェクトへのご支援に感謝します！OpenLux は企業と個人開発者向けのエンタープライズ級 AI リレープラットフォームです。国内外の主要な大規模言語モデル、マルチモーダル生成、AI 画像生成、動画生成など幅広い機能に対応し、複数のプラットフォームを個別に連携する手間を省きます。40万を超える企業・開発者に安定したサービスを提供し、24時間365日の技術サポートを備えています。最寄りの拠点へのインテリジェントな振り分けにより、国内外で低遅延かつ安定したアクセスを実現します。サイバーセキュリティ等級保護の認証を取得し、エンドツーエンドの暗号化、リクエスト内容の非保存、アクセス制御と監査に対応しています。本プロジェクトの<a href="https://www.openlux.ai/register?channel=c_jozrxg9f">登録リンク</a>からお試しいただけます。チャージ額に応じた段階的な割引もあり、最大7.5%オフ（通常価格の92.5%）で利用できます。</td>
+</tr>
 </tbody>
 </table>
 
