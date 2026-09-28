@@ -126,11 +126,11 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
 	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
 	requestPath := helps.PayloadRequestPath(opts)
 	translated = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", translated, originalTranslated, requestedModel, requestPath, opts.Headers)
-	if helps.ShouldNormalizeOpenAIToolResultsForModel(e.resolveCompatConfig(auth), baseModel, requestedModel) {
+	if helps.ShouldNormalizeOpenAIToolResultsForModel(e.resolveCompatConfig(auth, req), baseModel, requestedModel) {
 		translated = helps.NormalizeOpenAIToolResultsTextOnly(translated)
 	}
 	if opts.Alt != "responses/compact" {
-		useMCT := helps.ShouldUseMaxCompletionTokensForModel(e.resolveCompatConfig(auth), baseModel, requestedModel)
+		useMCT := helps.ShouldUseMaxCompletionTokensForModel(e.resolveCompatConfig(auth, req), baseModel, requestedModel)
 		translated = helps.NormalizeOpenAIMaxTokens(translated, useMCT)
 		translated, err = e.applyPromptCacheKey(ctx, auth, from, baseModel, req, opts, translated)
 		if err != nil {
@@ -344,11 +344,11 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
 	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
 	requestPath := helps.PayloadRequestPath(opts)
 	translated = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", translated, originalTranslated, requestedModel, requestPath, opts.Headers)
-	if helps.ShouldNormalizeOpenAIToolResultsForModel(e.resolveCompatConfig(auth), baseModel, requestedModel) {
+	if helps.ShouldNormalizeOpenAIToolResultsForModel(e.resolveCompatConfig(auth, req), baseModel, requestedModel) {
 		translated = helps.NormalizeOpenAIToolResultsTextOnly(translated)
 	}
 	if opts.Alt != "responses/compact" {
-		useMCT := helps.ShouldUseMaxCompletionTokensForModel(e.resolveCompatConfig(auth), baseModel, requestedModel)
+		useMCT := helps.ShouldUseMaxCompletionTokensForModel(e.resolveCompatConfig(auth, req), baseModel, requestedModel)
 		translated = helps.NormalizeOpenAIMaxTokens(translated, useMCT)
 		translated, err = e.applyPromptCacheKey(ctx, auth, from, baseModel, req, opts, translated)
 		if err != nil {
@@ -881,7 +881,7 @@ func rewriteOpenAICompatImagesMultipartPayload(payload []byte, model string, bou
 }
 
 func (e *OpenAICompatExecutor) applyPromptCacheKey(ctx context.Context, auth *cliproxyauth.Auth, from sdktranslator.Format, baseModel string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, translated []byte) ([]byte, error) {
-	compat := e.resolveCompatConfig(auth)
+	compat := e.resolveCompatConfig(auth, req)
 	if compat == nil || !compat.SupportPromptCacheKey {
 		return translated, nil
 	}
@@ -936,7 +936,7 @@ func (e *OpenAICompatExecutor) resolveCredentials(auth *cliproxyauth.Auth) (base
 	return
 }
 
-func (e *OpenAICompatExecutor) resolveCompatConfig(auth *cliproxyauth.Auth) *config.OpenAICompatibility {
+func (e *OpenAICompatExecutor) resolveCompatConfig(auth *cliproxyauth.Auth, req cliproxyexecutor.Request) *config.OpenAICompatibility {
 	if auth == nil || e.cfg == nil {
 		return nil
 	}
@@ -958,6 +958,10 @@ func (e *OpenAICompatExecutor) resolveCompatConfig(auth *cliproxyauth.Auth) *con
 				options.SupportPromptCacheKey = value
 				present = true
 			}
+		}
+		if model, ok := cliproxyauth.ResolvedHomeModelOptions(req); ok {
+			options.Models = []config.OpenAICompatibilityModel{model}
+			present = true
 		}
 		if present {
 			return &config.OpenAICompatibility{

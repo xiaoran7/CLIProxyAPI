@@ -2,14 +2,20 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	cpaauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executionregistry"
 	cpaexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	"github.com/tidwall/gjson"
 )
@@ -104,5 +110,103 @@ func TestHomeV8PromptCacheOverrideAndFallback(t *testing.T) {
 				t.Fatalf("cache key present=%v, want=%v", got, tc.want)
 			}
 		})
+	}
+}
+
+type compatOptionsHomeDispatcher []byte
+
+func (compatOptionsHomeDispatcher) HeartbeatOK() bool       { return true }
+func (compatOptionsHomeDispatcher) AbortAmbiguousDispatch() {}
+func (d compatOptionsHomeDispatcher) RPopAuth(context.Context, string, string, http.Header, int) ([]byte, error) {
+	return d, nil
+}
+
+type compatOptionsModelRouter string
+
+func (compatOptionsModelRouter) HasModelRouters() bool { return true }
+func (r compatOptionsModelRouter) RouteModel(context.Context, pluginapi.ModelRouteRequest) (pluginapi.ModelRouteResponse, bool) {
+	return pluginapi.ModelRouteResponse{Handled: true, TargetKind: pluginapi.ModelRouteTargetProvider, Target: "home-compat", TargetModel: string(r)}, true
+}
+
+func TestHomeCompatOptionsUseSelectedRoute(t *testing.T) {
+	for _, tc := range []struct {
+		name, client, route, upstream string
+		withoutModelInfo              bool
+	}{
+		{name: "alias", client: "alias-b", route: "alias-b", upstream: "upstream"},
+		{name: "plugin reroute", client: "alias-a", route: "alias-b", upstream: "upstream"},
+		{name: "prefix and suffix", client: "alias-a", route: "tenant/alias-b(high)", upstream: "upstream(high)"},
+		{name: "without model info", client: "alias-a", route: "alias-b", upstream: "upstream", withoutModelInfo: true},
+	} {
+		for _, enabled := range []bool{true, false} {
+			for _, stream := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/enabled=%v/stream=%v", tc.name, enabled, stream), func(t *testing.T) {
+					bodies := make(chan []byte, 1)
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						body, errRead := io.ReadAll(r.Body)
+						if errRead != nil {
+							t.Error(errRead)
+						}
+						bodies <- body
+						if stream {
+							w.Header().Set("Content-Type", "text/event-stream")
+							_, _ = io.WriteString(w, "data: {\"id\":\"fixture\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n")
+							return
+						}
+						_, _ = io.WriteString(w, `{"id":"fixture","choices":[{"message":{"role":"assistant","content":"ok"}}]}`)
+					}))
+					defer server.Close()
+					modalities, otherModalities := []string{"text"}, []string{"text", "image"}
+					if !enabled {
+						modalities, otherModalities = otherModalities, modalities
+					}
+					auth := &cpaauth.Auth{ID: "fixture", Provider: "home-compat", Prefix: "tenant", Attributes: map[string]string{
+						"compat_name": "home-compat", "provider_key": "home-compat", "api_key": "fixture", "base_url": server.URL + "/v1", "auth_kind": "apikey",
+					}, Metadata: map[string]any{"credential_options": map[string]any{"models": []config.OpenAICompatibilityModel{
+						{Name: "upstream", Alias: "alias-a", UseMaxCompletionTokens: !enabled, InputModalities: otherModalities},
+						{Name: "upstream", Alias: "alias-b", UseMaxCompletionTokens: enabled, InputModalities: modalities},
+					}}}}
+					dispatch := map[string]any{"model": tc.upstream, "auth": auth}
+					if !tc.withoutModelInfo {
+						dispatch["model_info"] = map[string]any{"id": "upstream", "user_defined": true, "thinking": map[string]any{"levels": []string{"high"}}}
+					}
+					wire, errMarshal := json.Marshal(dispatch)
+					if errMarshal != nil {
+						t.Fatal(errMarshal)
+					}
+					cfg := &config.Config{Home: config.HomeConfig{Enabled: true}}
+					manager := cpaauth.NewManager(nil, nil, nil)
+					manager.SetConfig(cfg)
+					manager.PublishHomeDispatch(compatOptionsHomeDispatcher(wire), executionregistry.New(), 1)
+					manager.RegisterExecutor(NewOpenAICompatExecutor("openai-compatibility", cfg))
+					handler := handlers.NewBaseAPIHandlers(&cfg.SDKConfig, manager)
+					handler.SetModelRouterHost(compatOptionsModelRouter(tc.route))
+					payload := []byte(fmt.Sprintf(`{"model":%q,"max_tokens":64,"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"call","name":"read","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call","content":[{"type":"text","text":"result"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}]}]}`, tc.client))
+					if stream {
+						chunks, _, errs := handler.ExecuteStreamWithAuthManager(t.Context(), "claude", tc.client, payload, "")
+						for range chunks {
+						}
+						for errStream := range errs {
+							if errStream != nil {
+								t.Fatal(errStream)
+							}
+						}
+					} else if _, _, errExecute := handler.ExecuteWithAuthManager(t.Context(), "claude", tc.client, payload, ""); errExecute != nil {
+						t.Fatal(errExecute)
+					}
+					body := <-bodies
+					field, otherField := "max_tokens", "max_completion_tokens"
+					if enabled {
+						field, otherField = otherField, field
+					}
+					if gjson.GetBytes(body, field).Int() != 64 || gjson.GetBytes(body, otherField).Exists() {
+						t.Errorf("expected only %s=64 in %s", field, body)
+					}
+					if hasImage := strings.Contains(string(body), "image_url"); hasImage == enabled {
+						t.Errorf("image present=%v, want %v in %s", hasImage, !enabled, body)
+					}
+				})
+			}
+		}
 	}
 }
