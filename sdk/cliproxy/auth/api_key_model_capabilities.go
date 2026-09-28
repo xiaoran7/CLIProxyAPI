@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encoding/json"
 	"maps"
 	"strings"
 
@@ -81,6 +82,11 @@ func CodexAPIKeyModelIsCompat(cfg *internalconfig.Config, auth *Auth, model stri
 		return false
 	}
 	entry := resolveCodexAPIKeyConfig(cfg, auth)
+	if cfg.Home.Enabled {
+		if compat, configured := homeAPIKeyModelIsCompat(auth, model, model); configured {
+			return compat
+		}
+	}
 	if entry == nil || len(entry.Models) == 0 {
 		return false
 	}
@@ -110,6 +116,70 @@ func CodexAPIKeyModelIsCompat(cfg *internalconfig.Config, auth *Auth, model stri
 		}
 	}
 	return false
+}
+
+// homeAPIKeyModelIsCompat reads the selected credential's model configuration.
+// A present models list is authoritative, including empty lists and false defaults.
+func homeAPIKeyModelIsCompat(auth *Auth, model, routeModel string) (bool, bool) {
+	if auth == nil {
+		return false, false
+	}
+	raw, exists := auth.Metadata["credential_options"]
+	if !exists {
+		return false, false
+	}
+	data, errMarshal := json.Marshal(raw)
+	if errMarshal != nil {
+		return false, false
+	}
+	var options struct {
+		Models json.RawMessage `json:"models"`
+	}
+	if errDecode := json.Unmarshal(data, &options); errDecode != nil || len(options.Models) == 0 {
+		return false, false
+	}
+	var models []internalconfig.CodexModel
+	if errDecode := json.Unmarshal(options.Models, &models); errDecode != nil {
+		return false, false
+	}
+	requested := strings.TrimSpace(model)
+	if requested == "" {
+		return false, true
+	}
+	baseModel := strings.TrimSpace(thinking.ParseSuffix(requested).ModelName)
+	_, routeCandidates := modelAliasLookupCandidates(rewriteModelForAuth(strings.TrimSpace(routeModel), auth))
+	for _, route := range routeCandidates {
+		for _, candidate := range []string{requested, baseModel} {
+			for _, configured := range models {
+				name := strings.TrimSpace(configured.Name)
+				alias := strings.TrimSpace(configured.Alias)
+				if name == "" {
+					name = alias
+				}
+				if strings.EqualFold(name, candidate) && (strings.EqualFold(alias, route) || strings.EqualFold(name, route)) {
+					return configured.IsCompat, true
+				}
+			}
+		}
+	}
+	// Prefer upstream names over aliases and exact suffixes over base fallbacks.
+	for _, useAlias := range []bool{false, true} {
+		for _, candidate := range []string{requested, baseModel} {
+			if candidate == "" {
+				continue
+			}
+			for _, configured := range models {
+				name := strings.TrimSpace(configured.Name)
+				if useAlias || name == "" {
+					name = strings.TrimSpace(configured.Alias)
+				}
+				if strings.EqualFold(name, candidate) {
+					return configured.IsCompat, true
+				}
+			}
+		}
+	}
+	return false, true
 }
 
 func (m *Manager) attachResolvedAPIKeyModelInfo(req cliproxyexecutor.Request, auth *Auth, routeModel, upstreamModel string) cliproxyexecutor.Request {
@@ -205,23 +275,32 @@ func lookupCodexOAuthModelCapability(auth *Auth, upstreamModel string) (*registr
 	return nil, false
 }
 
-func attachResolvedHomeModelInfo(req cliproxyexecutor.Request, modelInfo *registry.ModelInfo, support ...*bool) cliproxyexecutor.Request {
+func attachResolvedHomeModelInfo(req cliproxyexecutor.Request, auth *Auth, routeModel string, modelInfo *registry.ModelInfo, support *bool) cliproxyexecutor.Request {
 	if modelInfo == nil {
 		return req
 	}
 	selected := *modelInfo
-	if len(support) > 0 && support[0] != nil {
-		selected.SupportConfigurationUpdate = *support[0]
+
+	local, ok := ResolvedAPIKeyModelInfo(req)
+	if !ok {
+		local, ok = req.Metadata[resolvedCodexOAuthModelInfoMetadataKey].(*registry.ModelInfo)
+	}
+	sameModel := ok && local != nil && strings.EqualFold(strings.TrimSpace(thinking.ParseSuffix(local.ID).ModelName), strings.TrimSpace(thinking.ParseSuffix(selected.ID).ModelName))
+	if support != nil {
+		selected.SupportConfigurationUpdate = *support
 	} else {
-		selected.SupportConfigurationUpdate = false
-		local, ok := ResolvedAPIKeyModelInfo(req)
-		if !ok {
-			local, ok = req.Metadata[resolvedCodexOAuthModelInfoMetadataKey].(*registry.ModelInfo)
-		}
-		if ok && local != nil && strings.EqualFold(strings.TrimSpace(thinking.ParseSuffix(local.ID).ModelName), strings.TrimSpace(thinking.ParseSuffix(selected.ID).ModelName)) {
-			selected.SupportConfigurationUpdate = local.SupportConfigurationUpdate
+		selected.SupportConfigurationUpdate = sameModel && local.SupportConfigurationUpdate
+	}
+	upstreamModel := selected.ID
+	if auth != nil {
+		if dispatched := strings.TrimSpace(auth.Attributes[homeUpstreamModelAttributeKey]); dispatched != "" {
+			upstreamModel = dispatched
 		}
 	}
+	if compat, configured := homeAPIKeyModelIsCompat(auth, upstreamModel, routeModel); configured {
+		selected.IsCompat = compat
+	}
+
 	metadata := make(map[string]any, len(req.Metadata)+1)
 	maps.Copy(metadata, req.Metadata)
 	metadata[resolvedHomeModelInfoMetadataKey] = &selected
