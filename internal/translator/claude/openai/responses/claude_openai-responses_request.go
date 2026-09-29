@@ -204,8 +204,11 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 
 		parts := pendingParts
 		if pendingRole == "assistant" && len(pendingToolUseParts) > 0 {
-			combined := make([][]byte, 0, len(pendingParts)+len(pendingToolUseParts))
+			combined := make([][]byte, 0, len(pendingParts)+len(pendingToolUseParts)+1)
 			combined = append(combined, pendingParts...)
+			if separator := claudeThinkingSeparatorForToolUse(pendingParts); separator != nil {
+				combined = append(combined, separator)
+			}
 			combined = append(combined, pendingToolUseParts...)
 			parts = combined
 		}
@@ -819,6 +822,27 @@ func responsesReasoningPartsText(parts gjson.Result) string {
 		return true
 	})
 	return builder.String()
+}
+
+// claudeThinkingSeparatorForToolUse returns the most recent thinking block when
+// the buffered assistant content ends with a server tool result, so the
+// tool-use run that follows keeps a thinking block of its own. Upstreams that
+// enforce Anthropic's thinking replay rules reject a tool_use glued directly
+// onto a web_search_tool_result, while native Claude output always carries a
+// fresh thinking block before the continued segment.
+func claudeThinkingSeparatorForToolUse(parts [][]byte) []byte {
+	if len(parts) == 0 {
+		return nil
+	}
+	if gjson.GetBytes(parts[len(parts)-1], "type").String() != "web_search_tool_result" {
+		return nil
+	}
+	for index := len(parts) - 1; index >= 0; index-- {
+		if gjson.GetBytes(parts[index], "type").String() == "thinking" {
+			return parts[index]
+		}
+	}
+	return nil
 }
 
 func applyResponsesToolResultContent(toolResult []byte, output gjson.Result) []byte {
