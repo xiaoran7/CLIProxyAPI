@@ -104,8 +104,8 @@ PackyCode 为本软件用户提供了特别优惠：使用<a href="https://www.p
 <td>感谢 FluxA &amp; Baidu AI Cloud 对本项目的支持！ FluxA 与百度智能云联合推出 AgenticPlan，为 AI Agent 提供自主购买/管理/使用模型、API、工具的能力。内含百度千帆 TokenPlan，低至6折，可使用 DeepSeek V4、GLM 5.2、Kimi 等旗舰模型，并获赠 FluxA AgentMarket API的调用额度，解锁搜索、数据抓取、社交媒体、金融、加密、生图、视频等 1000+ 付费 API。<br><br>在用户授权下，AI Agent 还可借助官方的Visa卡支付自主采购资源、管理 API Key、监控用量并规划续费，帮助 Agent 从「自主完成任务」升级为真正能够「自主规划预算，完成任务」。<a href="https://agentmarket.fluxapay.xyz/marketplace/tokenplans">进一步了解 AgenticPlan</a>。</td>
 </tr>
 <tr>
-<td width="180"><a href="https://www.openlux.ai/register?channel=c_jozrxg9f"><img src="./assets/openlux.png" alt="OpenLux" width="150"></a></td>
-<td>感谢 OpenLux 对本项目的赞助！Openlux是一个面向企业的一站式 AI 聚合平台，汇集全球各大厂商主流大模型，平台提供高效、稳定的服务与及时的技术支持。Claude、OpenAI、Gemini 系列模型基准折扣分别低至官方的 0.882 折、0.4 折和 0.8 折。<br><br>CLI Proxy API 用户还可享受专属福利：通过专属链接注册，充值最高可享 7.5% 优惠！<br><br>立即体验：<a href="https://www.openlux.ai/register?channel=c_jozrxg9f">https://www.openlux.ai/register?channel=c_jozrxg9f</a></td>
+<td width="180"><a href="https://www.openlux.ai/register?channel=c_6axb1q5n"><img src="./assets/openlux.png" alt="OpenLux" width="150"></a></td>
+<td>感谢 OpenLux 对本项目的赞助！Openlux是一个面向企业的一站式 AI 聚合平台，汇集全球各大厂商主流大模型，平台提供高效、稳定的服务与及时的技术支持。Claude、OpenAI、Gemini 系列模型基准折扣分别低至官方的 0.882 折、0.4 折和 0.8 折。<br><br>CLI Proxy API 用户还可享受专属福利：通过专属链接注册，充值最高可享 7.5% 优惠！<br><br>立即体验：<a href="https://www.openlux.ai/register?channel=c_6axb1q5n">https://www.openlux.ai/register?channel=c_6axb1q5n</a></td>
 </tr>
 </tbody>
 </table>
