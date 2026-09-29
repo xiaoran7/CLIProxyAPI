@@ -105,7 +105,7 @@ PackyCode 为本软件用户提供了特别优惠：使用<a href="https://www.p
 </tr>
 <tr>
 <td width="180"><a href="https://www.openlux.ai/register?channel=c_jozrxg9f"><img src="./assets/openlux.png" alt="OpenLux" width="150"></a></td>
-<td>感谢 OpenLux 对本项目的赞助！OpenLux 是面向企业与个人开发者的企业级 AI 中继平台，支持海内外主流大语言模型、多模态生成，以及 AI 绘画、视频等全品类能力，免去多平台对接的成本。平台提供长期稳定服务：已服务超 40 万企业及开发者，提供 7×24 小时技术支持；通过智能就近调度实现全球低延迟接入，海内外调用更稳定；具备等保资质，全链路加密、请求内容不留存，支持访问管控与审计。通过本项目<a href="https://www.openlux.ai/register?channel=c_jozrxg9f">注册链接</a>即可体验，更可享有不同阶梯的充值折扣，最高可享 9.25 折。</td>
+<td>感谢 OpenLux 对本项目的赞助！Openlux是一个面向企业的一站式 AI 聚合平台，汇集全球各大厂商主流大模型，平台提供高效、稳定的服务与及时的技术支持。Claude、OpenAI、Gemini 系列模型基准折扣分别低至官方的 0.882 折、0.4 折和 0.8 折。<br><br>CLI Proxy API 用户还可享受专属福利：通过专属链接注册，充值最高可享 7.5% 优惠！<br><br>立即体验：<a href="https://www.openlux.ai/register?channel=c_jozrxg9f">https://www.openlux.ai/register?channel=c_jozrxg9f</a></td>
 </tr>
 </tbody>
 </table>

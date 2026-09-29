@@ -105,7 +105,7 @@ PackyCodeは当ソフトウェアのユーザーに特別割引を提供して�
 </tr>
 <tr>
 <td width="180"><a href="https://www.openlux.ai/register?channel=c_jozrxg9f"><img src="./assets/openlux.png" alt="OpenLux" width="150"></a></td>
-<td>OpenLux による本プロジェクトへのご支援に感謝します！OpenLux は企業と個人開発者向けのエンタープライズ級 AI リレープラットフォームです。国内外の主要な大規模言語モデル、マルチモーダル生成、AI 画像生成、動画生成など幅広い機能に対応し、複数のプラットフォームを個別に連携する手間を省きます。40万を超える企業・開発者に安定したサービスを提供し、24時間365日の技術サポートを備えています。最寄りの拠点へのインテリジェントな振り分けにより、国内外で低遅延かつ安定したアクセスを実現します。サイバーセキュリティ等級保護の認証を取得し、エンドツーエンドの暗号化、リクエスト内容の非保存、アクセス制御と監査に対応しています。本プロジェクトの<a href="https://www.openlux.ai/register?channel=c_jozrxg9f">登録リンク</a>からお試しいただけます。チャージ額に応じた段階的な割引もあり、最大7.5%オフ（通常価格の92.5%）で利用できます。</td>
+<td>OpenLux による本プロジェクトへのご支援に感謝します！<br><br>OpenLux は、世界の主要プロバイダーが提供する主流の大規模 AI モデルを集約した、企業向けのワンストップ AI プラットフォームです。迅速で安定したサービスと適時の技術サポートを提供しています。Claude、OpenAI、Gemini シリーズのモデルの基本料金は、それぞれ公式料金の8.82%、4%、8%からご利用いただけます。<br><br>CLI Proxy API ユーザー限定特典：専用リンクから登録すると、チャージ時に最大7.5%の割引を受けられます！<br><br>今すぐ OpenLux を試す → <a href="https://www.openlux.ai/register?channel=c_jozrxg9f">https://www.openlux.ai/register?channel=c_jozrxg9f</a></td>
 </tr>
 </tbody>
 </table>
