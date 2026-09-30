@@ -39,6 +39,9 @@ func RewriteCodexOrphanDelegationInput(ctx context.Context, headers http.Header,
 // TranslateRequestWithCodexMultiAgentV2 normalizes official Codex multi-agent
 // input before translating it to a non-Codex target protocol.
 func TranslateRequestWithCodexMultiAgentV2(ctx context.Context, headers http.Header, cfg *config.Config, from, to sdktranslator.Format, model string, payload []byte, stream bool) []byte {
+	if IsCodexUserAgent(headers) {
+		payload = NormalizeCodexToolIntegerTypes(payload, headers)
+	}
 	return multiagentv2.TranslateRequestWithCodexMultiAgentV2(ctx, headers, cfg, from, to, model, payload, stream)
 }
 
@@ -120,6 +123,9 @@ func TranslateRequestWithAPIKeyModelCompatibilityAndUpdateIntent(ctx context.Con
 // TranslateRequestWithAPIKeyModelCompatibility applies compatibility-aware
 // request translators when a configured API-key model enables compatibility mode.
 func TranslateRequestWithAPIKeyModelCompatibility(ctx context.Context, headers http.Header, cfg *config.Config, from, to sdktranslator.Format, model string, payload []byte, stream, isCompat bool) []byte {
+	if IsCodexUserAgent(headers) {
+		payload = NormalizeCodexToolIntegerTypes(payload, headers)
+	}
 	if !isCompat {
 		return TranslateRequestWithCodexMultiAgentV2(ctx, headers, cfg, from, to, model, payload, stream)
 	}

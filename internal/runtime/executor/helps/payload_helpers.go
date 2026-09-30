@@ -36,7 +36,13 @@ func ApplyPayloadConfigWithRequest(cfg *config.Config, model, protocol, fromProt
 // tracked paths (or their descendants) were targeted by an applied rule.
 func ApplyPayloadConfigWithTrackedPaths(cfg *config.Config, model, protocol, fromProtocol, root string, payload, original []byte, requestedModel string, requestPath string, headers http.Header, trackedPaths ...string) ([]byte, map[string]bool) {
 	touched := make(map[string]bool)
-	if cfg == nil || len(payload) == 0 {
+	if len(payload) == 0 {
+		return payload, touched
+	}
+	if IsCodexUserAgent(headers) {
+		payload = NormalizeCodexToolIntegerTypes(payload, headers)
+	}
+	if cfg == nil {
 		return payload, touched
 	}
 	out := payload

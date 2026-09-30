@@ -297,3 +297,66 @@ func TestTranslateRequestWithAPIKeyModelCompatibility_InvokesPluginNormalizers(t
 		t.Fatalf("stream compat plugin_call = %d, want 1; output was %s", got, outStream)
 	}
 }
+
+func TestTranslateRequestWithCodexMultiAgentV2_NormalizesCodexToolTypes(t *testing.T) {
+	payload := []byte(`{
+		"model": "gpt-5.5",
+		"input": [{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}],
+		"tools": [
+			{
+				"type": "function",
+				"name": "exec_command",
+				"parameters": {
+					"type": "object",
+					"properties": {
+						"yield_time_ms": {"type": "number"},
+						"timeout_ms": {"type": "number"}
+					}
+				}
+			}
+		]
+	}`)
+
+	headers := http.Header{"User-Agent": []string{"codex-tui/0.154.0"}}
+	out := TranslateRequestWithCodexMultiAgentV2(
+		context.Background(),
+		headers,
+		&config.Config{},
+		sdktranslator.FormatOpenAIResponse,
+		sdktranslator.FormatClaude,
+		"claude-opus-5-5",
+		payload,
+		false,
+	)
+
+	// In Claude format, tool is under tools[0].input_schema.properties
+	if got := gjson.GetBytes(out, "tools.0.input_schema.properties.yield_time_ms.type").String(); got != "integer" {
+		t.Errorf("translated Claude tool yield_time_ms type = %q, want integer; out=%s", got, out)
+	}
+	if got := gjson.GetBytes(out, "tools.0.input_schema.properties.timeout_ms.type").String(); got != "integer" {
+		t.Errorf("translated Claude tool timeout_ms type = %q, want integer; out=%s", got, out)
+	}
+
+	outGemini := TranslateRequestWithCodexMultiAgentV2(
+		context.Background(),
+		headers,
+		&config.Config{},
+		sdktranslator.FormatOpenAIResponse,
+		sdktranslator.FormatGemini,
+		"gemini-2.5-flash",
+		payload,
+		false,
+	)
+
+	// In Gemini format, tool is under functionDeclarations with parameters or parametersJsonSchema
+	geminiParam := gjson.GetBytes(outGemini, "tools.0.functionDeclarations.0.parametersJsonSchema.properties")
+	if !geminiParam.Exists() {
+		geminiParam = gjson.GetBytes(outGemini, "tools.0.function_declarations.0.parameters.properties")
+	}
+	if got := geminiParam.Get("yield_time_ms.type").String(); got != "integer" {
+		t.Errorf("translated Gemini tool yield_time_ms type = %q, want integer; out=%s", got, outGemini)
+	}
+	if got := geminiParam.Get("timeout_ms.type").String(); got != "integer" {
+		t.Errorf("translated Gemini tool timeout_ms type = %q, want integer; out=%s", got, outGemini)
+	}
+}

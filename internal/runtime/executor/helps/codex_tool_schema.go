@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"io"
 	"math/big"
+	"net/http"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
+	toolschema "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/tool-schema"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 )
 
@@ -20,13 +22,30 @@ const (
 	codexComplexUnionBranchThreshold = 8
 )
 
+// IsCodexUserAgent reports whether headers contain a User-Agent indicating a Codex client.
+func IsCodexUserAgent(headers http.Header) bool {
+	return toolschema.IsCodexUserAgent(headers)
+}
+
+// NormalizeCodexToolIntegerTypes normalizes specified tool parameter declarations
+// from number to integer for Codex clients across supported tool formats.
+func NormalizeCodexToolIntegerTypes(body []byte, headers http.Header) []byte {
+	return toolschema.NormalizeCodexToolIntegerTypes(body, headers)
+}
+
 // NormalizeCodexToolSchemas inspects function tools in a Codex request payload
 // and simplifies pure constant union combinations (e.g. large oneOf branch sets
 // representing enums with descriptions, as emitted by MCP servers) into semantically
-// equivalent enum lists.
-// Only unions mathematically proven to be semantically equivalent to enum definitions
-// are modified; all other structures, property names, types, and constraints remain untouched.
-func NormalizeCodexToolSchemas(body []byte) []byte {
+// equivalent enum lists. When headers are provided and represent a Codex client,
+// it also normalizes parameter types from number to integer for tools where the client
+// deserializer strictly expects integers.
+func NormalizeCodexToolSchemas(body []byte, headers ...http.Header) []byte {
+	if len(body) == 0 {
+		return body
+	}
+	if len(headers) > 0 && headers[0] != nil && IsCodexUserAgent(headers[0]) {
+		body = NormalizeCodexToolIntegerTypes(body, headers[0])
+	}
 	updatedTools, changed := normalizeCodexToolList(gjson.GetBytes(body, "tools"))
 	if !changed {
 		return body
