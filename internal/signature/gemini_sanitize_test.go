@@ -188,10 +188,11 @@ func TestSanitizeGeminiRequestThoughtSignaturesLogsBypassReplacement(t *testing.
 		t.Fatalf("sanitizer log must not rely on structured fields: %v", entry.Data)
 	}
 	for _, field := range []string{
-		"target_provider=" + string(SignatureProviderGemini),
-		"action=replace_with_gemini_bypass",
-		"block_kind=" + string(SignatureBlockKindGeminiFunctionCall),
-		"total_count=1",
+		"sanitized 1 thoughtSignature",
+		"action=replace_bypass",
+		"part=function_call",
+		"sig_type=unknown",
+		`reason="missing or incompatible signature"`,
 	} {
 		if !strings.Contains(entry.Message, field) {
 			t.Fatalf("console message omits %q: %q", field, entry.Message)
@@ -225,7 +226,7 @@ func TestSanitizeGeminiRequestThoughtSignaturesAggregatesRepeatedLogs(t *testing
 	if entry.Level != log.DebugLevel || len(entry.Data) != 0 {
 		t.Fatalf("expected plain-text debug aggregate: level=%v fields=%v", entry.Level, entry.Data)
 	}
-	for _, field := range []string{"action=drop_signature", `reason="non-function model parts do not synthesize Gemini bypass signatures"`, "total_count=3"} {
+	for _, field := range []string{"sanitized 3 thoughtSignatures", "action=drop", "part=model_part", "sig_type=unknown", `reason="text parts cannot carry signatures"`} {
 		if !strings.Contains(entry.Message, field) {
 			t.Fatalf("console message omits %q: %q", field, entry.Message)
 		}
@@ -268,7 +269,7 @@ func TestSanitizeGeminiRequestThoughtSignaturesDistinguishesDetectedProviders(t 
 		if entry.Level != log.DebugLevel || len(entry.Data) != 0 {
 			t.Fatalf("expected plain-text provider aggregate: level=%v fields=%v", entry.Level, entry.Data)
 		}
-		for _, field := range []string{"detected_provider=" + string(provider), "contents_path=contents", "total_count=2"} {
+		for _, field := range []string{"sanitized 2 thoughtSignatures", "sig_type=" + string(provider), "path=contents"} {
 			if !strings.Contains(entry.Message, field) {
 				t.Fatalf("console message omits %q: %q", field, entry.Message)
 			}
@@ -276,9 +277,8 @@ func TestSanitizeGeminiRequestThoughtSignaturesDistinguishesDetectedProviders(t 
 	}
 }
 
-func TestSanitizeGeminiRequestThoughtSignaturesSiblingBypassDoesNotLog(t *testing.T) {
+func TestSanitizeGeminiRequestThoughtSignaturesSiblingBypassLogsSingleAggregate(t *testing.T) {
 	hook := newSignatureDebugHook(t)
-	log.SetLevel(log.TraceLevel)
 	for _, prefix := range []string{"", "gemini#", "google#"} {
 		t.Run(prefix, func(t *testing.T) {
 			hook.Reset()
@@ -293,8 +293,20 @@ func TestSanitizeGeminiRequestThoughtSignaturesSiblingBypassDoesNotLog(t *testin
 				t.Fatalf("sibling bypass was not removed: %s", out)
 			}
 			entries := hook.AllEntries()
-			if len(entries) != 0 {
-				t.Fatalf("routine sibling bypass cleanup must not log even at trace level, got %v", entries)
+			if len(entries) != 1 || entries[0].Level != log.DebugLevel {
+				t.Fatalf("expected one debug log entry, got %v", entries)
+			}
+			entry := entries[0]
+			for _, field := range []string{
+				"sanitized 2 thoughtSignatures",
+				"action=drop",
+				"part=function_call",
+				"sig_type=bypass",
+				`reason="sibling calls must be unsigned"`,
+			} {
+				if !strings.Contains(entry.Message, field) {
+					t.Fatalf("console message omits %q: %q", field, entry.Message)
+				}
 			}
 		})
 	}
@@ -315,11 +327,27 @@ func TestSanitizeGeminiRequestThoughtSignaturesInvalidSiblingStillLogsAtDebug(t 
 			t.Fatalf("invalid sibling signature was not removed: %s", out)
 		}
 		entries := hook.AllEntries()
-		if len(entries) != 1 || entries[0].Level != log.DebugLevel || !strings.Contains(entries[0].Message, "total_count=1") {
-			t.Fatalf("expected invalid signature to remain visible at debug, got %v", entries)
+		if len(entries) != 2 {
+			t.Fatalf("expected 2 distinct provider groups at debug, got %v", entries)
 		}
-		if !strings.Contains(entries[0].Message, "contents_path=request.contents") {
-			t.Fatalf("console message omits contents path: %q", entries[0].Message)
+		foundInvalid := false
+		foundBypass := false
+		for _, entry := range entries {
+			if entry.Level != log.DebugLevel {
+				t.Fatalf("unexpected entry level: %v", entry.Level)
+			}
+			if strings.Contains(entry.Message, "sig_type=unknown") && strings.Contains(entry.Message, "sanitized 1 thoughtSignature") {
+				foundInvalid = true
+			}
+			if strings.Contains(entry.Message, "sig_type=bypass") && strings.Contains(entry.Message, "sanitized 1 thoughtSignature") {
+				foundBypass = true
+			}
+			if !strings.Contains(entry.Message, "path=request.contents") {
+				t.Fatalf("console message omits path: %q", entry.Message)
+			}
+		}
+		if !foundInvalid || !foundBypass {
+			t.Fatalf("missing expected provider logs: invalid=%t bypass=%t in %v", foundInvalid, foundBypass, entries)
 		}
 		assertSignatureDebugDoesNotLeak(t, hook, "invalid_sibling_signature")
 	}
@@ -343,8 +371,12 @@ func TestSanitizeGeminiRequestThoughtSignaturesForeignPrefixedBypassLogsAtDebug(
 				}
 			}
 			entries := hook.AllEntries()
+			expectedCountWord := fmt.Sprintf("sanitized %d thoughtSignature", len(siblings))
+			if len(siblings) > 1 {
+				expectedCountWord = fmt.Sprintf("sanitized %d thoughtSignatures", len(siblings))
+			}
 			if len(entries) != 1 || entries[0].Level != log.DebugLevel ||
-				!strings.Contains(entries[0].Message, fmt.Sprintf("total_count=%d", len(siblings))) {
+				!strings.Contains(entries[0].Message, expectedCountWord) {
 				t.Fatalf("foreign prefix %q must stay visible at debug, got %v", prefix, entries)
 			}
 			assertSignatureDebugDoesNotLeak(t, hook, foreign)
@@ -364,8 +396,8 @@ func TestSanitizeGeminiRequestThoughtSignaturesReasonGroupsRemainDistinct(t *tes
 		t.Fatalf("different reason groups must have distinct console messages, got %v", entries)
 	}
 	for i, reason := range []string{
-		"functionResponse parts cannot replay thought signatures",
-		"non-function model parts do not synthesize Gemini bypass signatures",
+		"tool responses cannot carry signatures",
+		"text parts cannot carry signatures",
 	} {
 		if !strings.Contains(entries[i].Message, fmt.Sprintf("reason=%q", reason)) {
 			t.Fatalf("console message omits reason: %q", entries[i].Message)

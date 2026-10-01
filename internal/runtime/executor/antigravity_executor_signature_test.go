@@ -191,9 +191,8 @@ func TestSanitizeAntigravityGeminiRequestSignaturesFinalizesParallelCalls(t *tes
 	}
 }
 
-func TestAntigravityGeminiSignatureNormalizationDoesNotLog(t *testing.T) {
+func TestAntigravityGeminiSignatureNormalizationDoesNotRepeatLogs(t *testing.T) {
 	hook := newSignatureDebugHook(t)
-	log.SetLevel(log.TraceLevel)
 	payload := []byte(`{"contents":[{"role":"model","parts":[` +
 		`{"functionCall":{"name":"first","args":{}},"thoughtSignature":"` + issue4959GeminiThoughtSignature() + `"},` +
 		`{"functionCall":{"name":"second","args":{}},"thoughtSignature":"skip_thought_signature_validator"},` +
@@ -213,10 +212,17 @@ func TestAntigravityGeminiSignatureNormalizationDoesNotLog(t *testing.T) {
 			}
 		}
 	}
+	sanitizeLogs := 0
 	for _, entry := range hook.AllEntries() {
-		if strings.HasPrefix(entry.Message, "gemini request: sanitized thoughtSignature before upstream") {
-			t.Fatalf("routine multi-stage normalization emitted log: %q", entry.Message)
+		if strings.HasPrefix(entry.Message, "gemini request: suppressed repeated thoughtSignature sanitizations") {
+			t.Fatalf("suppressed repeated log should no longer be emitted: %q", entry.Message)
 		}
+		if strings.HasPrefix(entry.Message, "gemini request: sanitized ") {
+			sanitizeLogs++
+		}
+	}
+	if sanitizeLogs != 1 {
+		t.Fatalf("expected exactly 1 aggregate log entry, got %d", sanitizeLogs)
 	}
 }
 
