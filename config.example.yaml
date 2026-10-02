@@ -275,8 +275,8 @@ requests:
 # Client-facing compatibility settings apply to both OAuth and API-key routes.
 client:
   codex:
-    # Default false clears apply_patch_tool_type in /v1/models?client_version= catalogs.
-    # When true, only models supported by every routing executor advertise "freeform".
+    # When false (default), only models that natively declare freeform apply_patch advertise it.
+    # When true, non-template and bridged models supported by every routing executor also advertise "freeform".
     enable-apply-patch: false
     # When true, optimize Codex Desktop, codex-tui, and codex_cli_rs requests for multi-agent v2.
     # This refreshes Codex spawn_agent model details, removes message parameter encryption,
