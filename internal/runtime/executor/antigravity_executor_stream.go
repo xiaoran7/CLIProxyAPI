@@ -269,6 +269,9 @@ func (e *AntigravityExecutor) ExecuteStream(ctx context.Context, auth *cliproxya
 			if replayAccumulator != nil {
 				replayAccumulator.Commit(ctx)
 			}
+			// The reporter keeps only the first outcome. Publish the buffered
+			// usage before EnsurePublished, which otherwise records an empty detail.
+			streamUsage.Publish(ctx, reporter)
 			reporter.EnsurePublished(ctx)
 		}
 	}(httpResp)
