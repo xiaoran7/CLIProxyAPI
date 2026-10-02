@@ -85,6 +85,7 @@ retain the corresponding business operation's fields.
 
 | Path | Methods | Description |
 | --- | --- | --- |
+| `/config/upstream/<provider>` | GET, PUT, PATCH, DELETE | Manage shared provider settings. |
 | `/server/latest-version` | GET | Get latest release information. |
 | `/requests/api-call` | POST | Make an authenticated upstream call. |
 | `/routing/cooldown/reset` | POST | Clear credential cooldown. |
