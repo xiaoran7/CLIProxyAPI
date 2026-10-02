@@ -91,6 +91,13 @@ func TestConfigV8MigrationAndLegacyAPI(t *testing.T) {
 	if err != nil || loaded.RequestRetry != 5 {
 		t.Fatalf("v0 update to v8 config failed: %v", err)
 	}
+	saved, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = config.ValidateV8Config(saved); err != nil || !strings.Contains(string(saved), "config-version: 8") {
+		t.Fatalf("v0 did not preserve the existing v8 layout: %v", err)
+	}
 	request(http.MethodPut, "/v8/management/config/requests/proxy-url", `"direct"`, 200)
 	loaded, err = config.LoadConfig(path)
 	if err != nil || loaded.ProxyURL != "direct" {

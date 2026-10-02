@@ -59,7 +59,7 @@ func TestConfigV8SharedUpstreamRoundTrip(t *testing.T) {
 	if errRead != nil {
 		t.Fatal(errRead)
 	}
-	request(http.MethodPut, "oauth/providers/codex/stream-bootstrap-buffering", "true", http.StatusBadRequest)
+	request(http.MethodPut, "oauth/providers/codex/stream-bootstrap-buffering", `"invalid"`, http.StatusUnprocessableEntity)
 	if after, errRead := os.ReadFile(file); errRead != nil || string(after) != string(before) {
 		t.Fatal("rejected historical-path write changed the document")
 	}
