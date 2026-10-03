@@ -387,6 +387,7 @@ func (s *Service) prepareCoreAuthForModelRegistration(ctx context.Context, auth 
 		}
 		auth = current
 	}
+	s.cancelStaleAntigravityProbes(auth.ID)
 	return auth
 }
 
@@ -506,7 +507,7 @@ func (s *Service) completeModelRegistrationForAuthWithCache(ctx context.Context,
 	if ctx != nil && ctx.Err() != nil {
 		return
 	}
-	s.coreManager.ReconcileRegistryModelStates(ctx, auth.ID)
+	s.reconcileRegisteredModelStates(ctx, auth)
 
 	// Refresh the scheduler entry so that the auth's supportedModelSet is rebuilt
 	// from the now-populated global model registry. Without this, newly added auths
@@ -529,6 +530,7 @@ func (s *Service) applyCoreAuthRemoval(ctx context.Context, id string) {
 	}
 	GlobalModelRegistry().UnregisterClient(id)
 	s.coreManager.Remove(ctx, id)
+	s.cancelStaleAntigravityProbes(id)
 	if strings.EqualFold(provider, "codex") {
 		executor.CloseCodexWebsocketSessionsForAuthID(id, "auth_removed")
 	}
