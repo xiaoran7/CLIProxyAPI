@@ -440,6 +440,7 @@ func (e *GeminiExecutor) executeInteractions(ctx context.Context, auth *cliproxy
 	requestPath := helps.PayloadRequestPath(opts)
 	fromProtocol := opts.SourceFormat.String()
 	body = sanitizeGeminiInteractionsUnsupportedInputIDs(body)
+	continuation, body := helps.PrepareAntigravityInteractions(auth, req, opts, targetName, body)
 
 	baseURL := resolveGeminiBaseURL(auth)
 	url := fmt.Sprintf("%s/%s/interactions", baseURL, glAPIVersion)
@@ -492,6 +493,7 @@ func (e *GeminiExecutor) executeInteractions(ctx context.Context, auth *cliproxy
 		err = statusErr{code: httpResp.StatusCode, msg: string(data)}
 		return resp, err
 	}
+	continuation.Observe(data)
 	reporter.ObserveResponseModel(data)
 	targetFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
 	var param any
@@ -525,6 +527,7 @@ func (e *GeminiExecutor) executeInteractionsStream(ctx context.Context, auth *cl
 	requestPath := helps.PayloadRequestPath(opts)
 	fromProtocol := opts.SourceFormat.String()
 	body = sanitizeGeminiInteractionsUnsupportedInputIDs(body)
+	continuation, body := helps.PrepareAntigravityInteractions(auth, req, opts, targetName, body)
 	body = helps.SetBoolIfDifferent(body, "stream", true)
 	baseURL := resolveGeminiBaseURL(auth)
 	url := fmt.Sprintf("%s/%s/interactions", baseURL, glAPIVersion)
@@ -607,6 +610,7 @@ func (e *GeminiExecutor) executeInteractionsStream(ctx context.Context, auth *cl
 				payload = trimmed
 			}
 			if len(payload) > 0 {
+				continuation.Observe(payload)
 				reporter.ObserveResponseModel(payload)
 				if detail, ok := helps.ParseInteractionsStreamUsage(payload); ok {
 					streamUsage.Observe(detail, true)
