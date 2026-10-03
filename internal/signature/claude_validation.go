@@ -647,6 +647,12 @@ func InspectClaudeCAISSignature(rawSignature string) (*ClaudeCAISSignatureInfo, 
 	if err != nil {
 		return nil, fmt.Errorf("invalid Claude CAIS signature: base64 decode failed: %w", err)
 	}
+	return inspectClaudeCAISPayload(decoded, false)
+}
+
+// inspectClaudeCAISPayload shares native envelope parsing with the Q replay gate.
+// Only Q rejects duplicate submessages; native CAIS/CAQS behavior is unchanged.
+func inspectClaudeCAISPayload(decoded []byte, rejectDuplicateMessages bool) (*ClaudeCAISSignatureInfo, error) {
 	if len(decoded) == 0 {
 		return nil, fmt.Errorf("invalid Claude CAIS signature: empty after decode")
 	}
@@ -658,7 +664,8 @@ func InspectClaudeCAISSignature(rawSignature string) (*ClaudeCAISSignatureInfo, 
 
 	var container []byte
 	var containerSignatureBytes []byte
-	err = walkClaudeProtobufFields(decoded, func(num protowire.Number, typ protowire.Type, raw []byte) error {
+	var haveContainer bool
+	err := walkClaudeProtobufFields(decoded, func(num protowire.Number, typ protowire.Type, raw []byte) error {
 		switch num {
 		case 1:
 			value, errField := decodeClaudeCAISVarint(raw, typ, "CAIS top-level field 1 envelope version")
@@ -667,6 +674,10 @@ func InspectClaudeCAISSignature(rawSignature string) (*ClaudeCAISSignatureInfo, 
 			}
 			info.EnvelopeVersion = value
 		case 2:
+			if rejectDuplicateMessages && haveContainer {
+				return fmt.Errorf("invalid Antigravity CAQS signature: duplicate container")
+			}
+			haveContainer = true
 			value, errField := decodeClaudeCAISBytes(raw, typ, "CAIS top-level field 2 container")
 			if errField != nil {
 				return errField
@@ -687,9 +698,14 @@ func InspectClaudeCAISSignature(rawSignature string) (*ClaudeCAISSignatureInfo, 
 	}
 
 	var channelBlock []byte
+	var haveChannelBlock bool
 	err = walkClaudeProtobufFields(container, func(num protowire.Number, typ protowire.Type, raw []byte) error {
 		switch num {
 		case 1:
+			if rejectDuplicateMessages && haveChannelBlock {
+				return fmt.Errorf("invalid Antigravity CAQS signature: duplicate channel block")
+			}
+			haveChannelBlock = true
 			value, errField := decodeClaudeCAISBytes(raw, typ, "CAIS container field 1 channel block")
 			if errField != nil {
 				return errField

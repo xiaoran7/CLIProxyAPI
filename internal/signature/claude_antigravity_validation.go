@@ -26,10 +26,11 @@ func InspectAntigravityClaudeCAQSSignature(rawSignature string) (*ClaudeCAISSign
 	if len(innerText) == 0 || innerText[0] != 'C' || strings.ContainsAny(innerText, " \t\r\n#") {
 		return nil, fmt.Errorf("invalid Antigravity CAQS inner encoding")
 	}
-	if _, errInner := base64.StdEncoding.Strict().DecodeString(innerText); errInner != nil {
+	decoded, errInner := base64.StdEncoding.Strict().DecodeString(innerText)
+	if errInner != nil {
 		return nil, fmt.Errorf("invalid Antigravity CAQS inner encoding: %w", errInner)
 	}
-	info, errInspect := InspectClaudeCAISSignature(innerText)
+	info, errInspect := inspectClaudeCAISPayload(decoded, true)
 	if errInspect != nil {
 		return nil, fmt.Errorf("invalid Antigravity CAQS payload: %w", errInspect)
 	}

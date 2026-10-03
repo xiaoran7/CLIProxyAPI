@@ -164,6 +164,11 @@ func DetectSignatureProviderForBlock(rawSignature string, blockKind SignatureBlo
 	}
 
 	if prefixedProvider, unprefixed, ok := SplitSignatureProviderPrefix(sig); ok {
+		// Validators may strip cache prefixes themselves; never let a second
+		// prefix make detection disagree with the payload used for replay.
+		if strings.Contains(unprefixed, "#") {
+			return SignatureProviderUnknown
+		}
 		switch prefixedProvider {
 		case SignatureProviderGemini:
 			if IsGeminiThoughtSignatureBypass(unprefixed) {
@@ -280,11 +285,15 @@ func DecideSignatureCompatibilityForModel(targetProvider SignatureProvider, targ
 	}
 
 	if signatureProviderMatchesTarget(targetProvider, detected) {
-		decision.Compatible = true
-		decision.Action = SignatureActionPreserve
-		decision.NormalizedSignature = normalizeCompatibleSignatureForProvider(targetProvider, rawSignature, blockKind)
-		decision.Reason = claudeCompatibleSignatureReason(targetProvider, rawSignature, targetModel)
-		return decision
+		// A matching family is not sufficient: replay also requires successful
+		// normalization. Otherwise sanitizers could preserve the original input.
+		if normalized := normalizeCompatibleSignatureForProvider(targetProvider, rawSignature, blockKind); normalized != "" {
+			decision.Compatible = true
+			decision.Action = SignatureActionPreserve
+			decision.NormalizedSignature = normalized
+			decision.Reason = claudeCompatibleSignatureReason(targetProvider, rawSignature, targetModel)
+			return decision
+		}
 	}
 
 	decision.Compatible = false
