@@ -14,6 +14,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
@@ -192,8 +193,8 @@ func (e *AntigravityExecutor) ExecuteStream(ctx context.Context, auth *cliproxya
 	}
 	replayAccumulator := newAntigravityReasoningReplayAccumulator(replayScope, requestPayload)
 	out := make(chan cliproxyexecutor.StreamChunk)
+	stopDeliverySupport := usage.SupportStreamDelivery(ctx)
 	go func(resp *http.Response) {
-		defer close(out)
 		defer func() {
 			if errClose := resp.Body.Close(); errClose != nil {
 				log.Errorf("antigravity executor: close response line error: %v", errClose)
@@ -203,8 +204,42 @@ func (e *AntigravityExecutor) ExecuteStream(ctx context.Context, auth *cliproxya
 		scanner.Buffer(nil, streamScannerBuffer)
 		claudeInputTokens := helps.NewClaudeInputTokenState(from, to, responseFormat, originalPayload)
 		var streamUsage helps.StreamUsageBuffer
-		defer streamUsage.Publish(ctx, reporter)
+		var streamErr error
+		var replayCommitted bool
 		var param any
+		commitReplay := func() {
+			if !replayCommitted && replayAccumulator != nil && replayAccumulator.terminal && helps.ApplyPatchTranslationError(param) == nil {
+				replayAccumulator.Commit(ctx)
+				replayCommitted = true
+			}
+		}
+		defer func() {
+			defer stopDeliverySupport()
+			if helps.ApplyPatchTranslationError(param) != nil {
+				streamErr = statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage}
+				stopDeliverySupport()
+			}
+			// Replay is settled before forwarding completion; accounting still waits
+			// for the HTTP consumer, which may need EOF to acknowledge delivery.
+			close(out)
+			if streamErr == nil {
+				streamErr = ctx.Err()
+			}
+			if deliveryErr, tracked := usage.WaitStreamDelivery(ctx); tracked {
+				if streamErr == nil || errors.Is(streamErr, context.Canceled) {
+					streamErr = deliveryErr
+				}
+			}
+			if streamErr != nil {
+				if !streamUsage.PublishFailure(ctx, reporter, streamErr) {
+					reporter.PublishFailure(ctx, streamErr)
+				}
+				return
+			}
+
+			streamUsage.Publish(ctx, reporter)
+			reporter.EnsurePublished(ctx)
+		}()
 		helps.InitializeApplyPatchStream(ctx, to, responseFormat, req.Model, helps.ApplyPatchOriginalRequest(req, opts), translated, &param)
 		for scanner.Scan() {
 			line := scanner.Bytes()
@@ -212,6 +247,9 @@ func (e *AntigravityExecutor) ExecuteStream(ctx context.Context, auth *cliproxya
 			if replayAccumulator != nil {
 				replayAccumulator.ObserveSSELine(line)
 			}
+
+			// Capture accounting before the client-facing filter renames usage.
+			streamUsage.Observe(helps.ParseAntigravityStreamUsage(line))
 
 			// Filter usage metadata for all models
 			// Only retain usage statistics in the terminal chunk
@@ -223,13 +261,20 @@ func (e *AntigravityExecutor) ExecuteStream(ctx context.Context, auth *cliproxya
 			}
 			reporter.ObserveResponseModel(payload)
 
-			if detail, ok := helps.ParseAntigravityStreamUsage(payload); ok {
-				streamUsage.Observe(detail, true)
-			}
-
 			payload = e.resolveWebSearchGroundingURLs(ctx, auth, from, originalPayload, translated, payload)
 			chunks := helps.TranslateStreamWithClaudeInputTokens(ctx, to, responseFormat, req.Model, helps.ApplyPatchOriginalRequest(req, opts), translated, bytes.Clone(payload), &param, claudeInputTokens)
 			helps.RecordApplyPatchStreamFailure(ctx, param, reporter, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage})
+			if replayAccumulator != nil && replayAccumulator.terminal && !replayCommitted && responseFormat == sdktranslator.FormatOpenAIResponse {
+				// Wait for the translated completion, not the first finishReason:
+				// split usage/signature frames may still extend the replay ledger.
+				for _, chunk := range chunks {
+					for _, line := range bytes.Split(chunk, []byte("\n")) {
+						if gjson.GetBytes(helps.JSONPayload(line), "type").String() == "response.completed" {
+							commitReplay()
+						}
+					}
+				}
+			}
 			for i := range chunks {
 				select {
 				case out <- cliproxyexecutor.StreamChunk{Payload: chunks[i]}:
@@ -245,8 +290,14 @@ func (e *AntigravityExecutor) ExecuteStream(ctx context.Context, auth *cliproxya
 			return
 		}
 		if errScan := scanner.Err(); errScan != nil {
+			streamErr = errScan
+			if errors.Is(errScan, context.Canceled) && ctx.Err() != nil {
+				if deliveryErr, tracked := usage.WaitStreamDelivery(ctx); tracked && deliveryErr == nil {
+					return
+				}
+			}
+			stopDeliverySupport()
 			helps.RecordAPIResponseError(ctx, e.cfg, errScan)
-			reporter.PublishFailure(ctx, errScan)
 			select {
 			case out <- cliproxyexecutor.StreamChunk{Err: errScan}:
 			case <-ctx.Done():
@@ -257,6 +308,9 @@ func (e *AntigravityExecutor) ExecuteStream(ctx context.Context, auth *cliproxya
 			// stream as a successful completion.
 			tail := helps.TranslateStreamWithClaudeInputTokens(ctx, to, responseFormat, req.Model, helps.ApplyPatchOriginalRequest(req, opts), translated, []byte("[DONE]"), &param, claudeInputTokens)
 			helps.RecordApplyPatchStreamFailure(ctx, param, reporter, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage})
+			// Commit upstream output before EOF-generated completion reaches interceptors.
+			// Commit itself rejects partial streams without an upstream terminal.
+			commitReplay()
 			for i := range tail {
 				select {
 				case out <- cliproxyexecutor.StreamChunk{Payload: tail[i]}:
@@ -264,13 +318,6 @@ func (e *AntigravityExecutor) ExecuteStream(ctx context.Context, auth *cliproxya
 					return
 				}
 			}
-			if replayAccumulator != nil {
-				replayAccumulator.Commit(ctx)
-			}
-			// The reporter keeps only the first outcome. Publish the buffered
-			// usage before EnsurePublished, which otherwise records an empty detail.
-			streamUsage.Publish(ctx, reporter)
-			reporter.EnsurePublished(ctx)
 		}
 	}(httpResp)
 	return &cliproxyexecutor.StreamResult{Headers: httpResp.Header.Clone(), Chunks: out}, nil
