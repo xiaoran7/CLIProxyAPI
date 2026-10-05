@@ -291,6 +291,10 @@ Claude Code のステータスライン。現在の CPA インスタンスに対
 
 CLIProxyAPI 向けのクロスプラットフォームな Electron トレイダッシュボード。ChatGPT/Codex、Claude、Gemini/Antigravity、Grok、Kimi、Cursor の各アカウントにおける実際の OAuth クォータウィンドウを表示し、利用キューコストを試算し、OpenAI/Claude のサービスステータスを追跡します。ダークなターミナル風 UI。Windows および Linux で動作します。
 
+### [panel4cliproxyapi](https://github.com/yaanlaan/panel4cliproxyapi)
+
+React と Tailwind CSS で構築された、CLIProxyAPI 向けのモダンでレスポンシブな Web ダッシュボードおよび管理コンソール。LAN リダイレクト支援付きの複数プロバイダー対応 OAuth ログイン、YAML 不要の直感的なビジュアル設定、リアルタイムのトラフィック分析チャート、クライアント API キー管理、コアのバージョン確認とホットリロード、およびライブ SSE ストリーミングのプレイグラウンドを備えています。
+
 > [!NOTE]
 > CLIProxyAPIをベースにプロジェクトを開発した場合は、PRを送ってこのリストに追加してください。
 
