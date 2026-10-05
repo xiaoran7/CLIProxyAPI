@@ -107,7 +107,6 @@ func (e *CodexExecutor) executeOpenAIImage(ctx context.Context, auth *cliproxyau
 	if errBuild != nil {
 		return resp, errBuild
 	}
-	reporter.SetTranslatedReasoningEffort(body, "codex")
 
 	url := strings.TrimSuffix(baseURL, "/") + "/responses"
 	payloadOpts := opts
@@ -117,6 +116,7 @@ func (e *CodexExecutor) executeOpenAIImage(ctx context.Context, auth *cliproxyau
 	if errCache != nil {
 		return resp, errCache
 	}
+	reporter.SetTranslatedReasoningEffort(body, "codex")
 	applyCodexHeaders(httpReq, auth, apiKey, true, e.cfg, opts.Headers)
 	applyModelHeaderOverrides(httpReq.Header, mainModel)
 	recordCodexOpenAIImageRequest(ctx, e.cfg, e.Identifier(), auth, url, httpReq.Header.Clone(), body)
@@ -205,7 +205,6 @@ func (e *CodexExecutor) executeOpenAIImageStream(ctx context.Context, auth *clip
 	if errBuild != nil {
 		return nil, errBuild
 	}
-	reporter.SetTranslatedReasoningEffort(body, "codex")
 
 	url := strings.TrimSuffix(baseURL, "/") + "/responses"
 	payloadOpts := opts
@@ -215,6 +214,7 @@ func (e *CodexExecutor) executeOpenAIImageStream(ctx context.Context, auth *clip
 	if errCache != nil {
 		return nil, errCache
 	}
+	reporter.SetTranslatedReasoningEffort(body, "codex")
 	applyCodexHeaders(httpReq, auth, apiKey, true, e.cfg, opts.Headers)
 	applyModelHeaderOverrides(httpReq.Header, mainModel)
 	recordCodexOpenAIImageRequest(ctx, e.cfg, e.Identifier(), auth, url, httpReq.Header.Clone(), body)
