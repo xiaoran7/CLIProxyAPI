@@ -100,6 +100,9 @@ type Auth struct {
 	// Runtime carries non-serialisable data used during execution (in-memory only).
 	Runtime any `json:"-"`
 
+	// RejectedAccessToken tracks the access token rejected by upstream 401 until a refresh succeeds.
+	RejectedAccessToken string `json:"-"`
+
 	Success int64 `json:"-"`
 	Failed  int64 `json:"-"`
 
@@ -617,7 +620,11 @@ func (a *Auth) ExpirationTime() (time.Time, bool) {
 	if a == nil {
 		return time.Time{}, false
 	}
-	if tokenStr := authAccessToken(a); tokenStr != "" {
+	tokenStr := authAccessToken(a)
+	if tokenStr != "" && a.RejectedAccessToken != "" && a.RejectedAccessToken == tokenStr {
+		return time.Unix(0, 0), true
+	}
+	if tokenStr != "" {
 		if jwtExp, ok := parseJWTExp(tokenStr); ok {
 			return jwtExp, true
 		}
@@ -637,6 +644,9 @@ func (a *Auth) AccessTokenExpirationTime() (time.Time, bool) {
 	tokenStr := authAccessToken(a)
 	if tokenStr == "" {
 		return time.Time{}, false
+	}
+	if a.RejectedAccessToken != "" && a.RejectedAccessToken == tokenStr {
+		return time.Unix(0, 0), true
 	}
 	if jwtExp, ok := parseJWTExp(tokenStr); ok {
 		return jwtExp, true
