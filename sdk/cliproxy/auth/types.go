@@ -50,6 +50,8 @@ type Auth struct {
 	ID string `json:"id"`
 	// RegistrationEpoch tracks monotonic registration cycles across unregister/re-register.
 	RegistrationEpoch uint64 `json:"registration_epoch,omitempty"`
+	// CredentialVersion tracks monotonic credential replacements for secret material.
+	CredentialVersion uint64 `json:"credential_version,omitempty"`
 	// Generation tracks monotonic mutations to resolve scheduler/reconcile snapshot races.
 	Generation uint64 `json:"generation,omitempty"`
 	// Index is a stable runtime identifier derived from auth metadata (not persisted).
