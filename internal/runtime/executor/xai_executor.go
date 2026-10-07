@@ -85,8 +85,9 @@ func xaiClientVersion() string {
 }
 
 // StartXAIVersionUpdater starts the periodic Grok CLI version updater from npm.
-func StartXAIVersionUpdater(ctx context.Context) {
-	helps.StartXAIVersionUpdater(ctx)
+// proxyURL is the global outbound proxy; an empty value inherits the process environment.
+func StartXAIVersionUpdater(ctx context.Context, proxyURL string) {
+	helps.StartXAIVersionUpdater(ctx, proxyURL)
 }
 
 // Identifier returns the provider identifier.

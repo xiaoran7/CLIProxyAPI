@@ -77,7 +77,7 @@ func TestXAIChatProxyCustomHeadersOverridePinnedVersion(t *testing.T) {
 }
 
 func TestXAIChatProxyIdentityHeadersFollowDynamicVersion(t *testing.T) {
-	restore := helps.SetXAIClientVersionForTest(t, "1.2.34")
+	restore := helps.SetXAIClientVersionForTest("1.2.34")
 	defer restore()
 
 	auth := &cliproxyauth.Auth{

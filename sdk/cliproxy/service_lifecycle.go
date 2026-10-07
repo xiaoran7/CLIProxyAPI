@@ -395,8 +395,10 @@ func (s *Service) startModelCatalogUpdaters(ctx context.Context) {
 	s.cfgMu.RLock()
 	cfg := s.cfg
 	s.cfgMu.RUnlock()
+	proxyURL := ""
 	if cfg != nil {
 		registry.StartModelCatalogUpdaters(ctx, cfg.Models, cfg.Home.Enabled)
+		proxyURL = cfg.ProxyURL
 	}
-	executor.StartXAIVersionUpdater(ctx)
+	executor.StartXAIVersionUpdater(ctx, proxyURL)
 }
