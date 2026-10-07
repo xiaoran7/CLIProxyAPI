@@ -4379,6 +4379,24 @@ func TestCheckSystemInstructionsWithMode_SingleTerminalUserKeepsSystemTopLevel(t
 	}
 }
 
+func TestCheckSystemInstructionsWithMode_LeadingUserRunKeepsSystemTopLevelAfterAssistantTurn(t *testing.T) {
+	payload := []byte(`{"model":"claude-opus-5","system":[` +
+		`{"type":"text","text":"caller guidance"}],` +
+		`"messages":[{"role":"user","content":"prompt"},{"role":"user","content":"context"},` +
+		`{"role":"assistant","content":"answer"},{"role":"user","content":"follow-up"}]}`)
+
+	out := checkSystemInstructionsWithMode(payload, false)
+	if got := gjson.GetBytes(out, "system.#").Int(); got != 3 {
+		t.Fatalf("top-level system block count = %d, want 3 (2 identity + caller block): %s", got, out)
+	}
+	if got := gjson.GetBytes(out, "system.2.text").String(); got != "caller guidance" {
+		t.Fatalf("system.2.text = %q, want caller guidance", got)
+	}
+	if got := gjson.GetBytes(out, "messages.#").Int(); got != 4 {
+		t.Fatalf("message count = %d, want unchanged conversation shape: %s", got, out)
+	}
+}
+
 func TestRelocateClaudeSystemPromptForCountTokens_TerminalUserRunKeepsSystemTopLevel(t *testing.T) {
 	payload := []byte(`{"model":"claude-opus-5","system":[` +
 		`{"type":"text","text":"first guidance"},` +
@@ -4416,6 +4434,24 @@ func TestRelocateClaudeSystemPromptForCountTokens_SingleTerminalUserKeepsSystemT
 	}
 	if got := gjson.GetBytes(out, "messages.#").Int(); got != 1 {
 		t.Fatalf("message count = %d, want 1 without trailing system turn: %s", got, out)
+	}
+}
+
+func TestRelocateClaudeSystemPromptForCountTokens_LeadingUserRunKeepsSystemTopLevelAfterAssistantTurn(t *testing.T) {
+	payload := []byte(`{"model":"claude-opus-5","system":[` +
+		`{"type":"text","text":"caller guidance"}],` +
+		`"messages":[{"role":"user","content":"prompt"},{"role":"user","content":"context"},` +
+		`{"role":"assistant","content":"answer"},{"role":"user","content":"follow-up"}]}`)
+
+	out := relocateClaudeSystemPromptForCountTokens(payload, false)
+	if got := gjson.GetBytes(out, "system.#").Int(); got != 1 {
+		t.Fatalf("top-level system block count = %d, want 1 caller block: %s", got, out)
+	}
+	if got := gjson.GetBytes(out, "system.0.text").String(); got != "caller guidance" {
+		t.Fatalf("system.0.text = %q, want caller guidance", got)
+	}
+	if got := gjson.GetBytes(out, "messages.#").Int(); got != 4 {
+		t.Fatalf("message count = %d, want unchanged conversation shape: %s", got, out)
 	}
 }
 
