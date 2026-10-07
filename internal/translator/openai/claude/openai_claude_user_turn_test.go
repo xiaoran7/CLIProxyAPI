@@ -41,7 +41,7 @@ func TestConvertClaudeRequestToOpenAI_RefusesAnyEmptiedUserTurn(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body, err := ConvertClaudeRequestToOpenAIWithCompatReturningError("m", []byte(tc.input), false)
+			body, err := ConvertClaudeRequestToOpenAIWithCompat("m", []byte(tc.input), false)
 			var unsupported *translatorcommon.UnsupportedPartError
 			if !errors.As(err, &unsupported) || unsupported.Type != tc.wantType || unsupported.StatusCode() != 400 {
 				t.Fatalf("err = %v, want unsupported content part: %s; body = %s", err, tc.wantType, body)
@@ -58,7 +58,7 @@ func TestConvertClaudeRequestToOpenAI_RefusesAnyEmptiedUserTurn(t *testing.T) {
 
 func TestConvertClaudeRequestToOpenAI_KeepsTurnWithTextBesideAttachment(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"},{"role":"user","content":[{"type":"text","text":"keep me"},` + userTurnUpload + `]}]}`)
-	body, err := ConvertClaudeRequestToOpenAIWithCompatReturningError("m", input, false)
+	body, err := ConvertClaudeRequestToOpenAIWithCompat("m", input, false)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -69,7 +69,7 @@ func TestConvertClaudeRequestToOpenAI_KeepsTurnWithTextBesideAttachment(t *testi
 
 func TestConvertClaudeRequestToOpenAI_Base64DocumentAfterHistoryStaysAFilePart(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"},{"role":"user","content":[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"JVBERi0xLjQK"}}]}]}`)
-	body, err := ConvertClaudeRequestToOpenAIWithCompatReturningError("m", input, false)
+	body, err := ConvertClaudeRequestToOpenAIWithCompat("m", input, false)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -81,7 +81,7 @@ func TestConvertClaudeRequestToOpenAI_Base64DocumentAfterHistoryStaysAFilePart(t
 
 func TestConvertClaudeRequestToOpenAI_ToolResultKeepsTurnBesideUnsendableFile(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":"run"},{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"t","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"done"},` + userTurnUpload + `]}]}`)
-	body, err := ConvertClaudeRequestToOpenAIWithCompatReturningError("m", input, false)
+	body, err := ConvertClaudeRequestToOpenAIWithCompat("m", input, false)
 	if err != nil {
 		t.Fatalf("a tool result is a sendable part, err = %v; body = %s", err, body)
 	}

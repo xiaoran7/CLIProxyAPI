@@ -123,7 +123,7 @@ func TestGeminiToClaudeModelAudioKeepsItsPlaceholder(t *testing.T) {
 
 func TestGeminiToClaudeExportedWrapperKeepsAJSONBody(t *testing.T) {
 	input := []byte(`{"contents":[{"role":"user","parts":[` + geminiAudioPart + `]}]}`)
-	if body := ConvertGeminiRequestToClaude("claude-sonnet-4", input, false); !gjson.ValidBytes(body) {
+	if body, _ := ConvertGeminiRequestToClaude("claude-sonnet-4", input, false); !gjson.ValidBytes(body) {
 		t.Fatalf("body is not JSON: %q", body)
 	}
 }

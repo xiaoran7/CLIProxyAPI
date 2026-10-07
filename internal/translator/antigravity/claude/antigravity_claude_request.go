@@ -305,9 +305,9 @@ func logDroppedAntigravityToolUseSignature(modelName string, messageIndex, conte
 //
 // Returns:
 //   - []byte: The transformed request data in Antigravity API format
-func ConvertClaudeRequestToAntigravity(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertClaudeRequestToAntigravity(modelName, inputRawJSON, stream)
-	return body
+func ConvertClaudeRequestToAntigravity(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertClaudeRequestToAntigravity(modelName, inputRawJSON, stream)
+
 }
 
 // convertClaudeRequestToAntigravity also reports an attachment Antigravity

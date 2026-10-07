@@ -30,20 +30,14 @@ const geminiClaudeThoughtSignature = "skip_thought_signature_validator"
 //
 // Returns:
 //   - []byte: The transformed request in Gemini format.
-func ConvertClaudeRequestToGemini(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertClaudeRequestToGemini(modelName, inputRawJSON, stream, false)
-	return body
+func ConvertClaudeRequestToGemini(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertClaudeRequestToGemini(modelName, inputRawJSON, stream, false)
+
 }
 
 // ConvertClaudeRequestToGeminiWithCompat preserves assistant thinking blocks
 // with empty signatures for configured compatibility endpoints.
-func ConvertClaudeRequestToGeminiWithCompat(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertClaudeRequestToGemini(modelName, inputRawJSON, stream, true)
-	return body
-}
-
-// ConvertClaudeRequestToGeminiWithCompatReturningError reports a file part the target cannot represent.
-func ConvertClaudeRequestToGeminiWithCompatReturningError(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+func ConvertClaudeRequestToGeminiWithCompat(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	return convertClaudeRequestToGemini(modelName, inputRawJSON, stream, true)
 }
 

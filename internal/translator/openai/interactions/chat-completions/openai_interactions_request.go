@@ -8,9 +8,9 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-func ConvertOpenAIRequestToInteractions(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertOpenAIRequestToInteractions(modelName, inputRawJSON, stream)
-	return body
+func ConvertOpenAIRequestToInteractions(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertOpenAIRequestToInteractions(modelName, inputRawJSON, stream)
+
 }
 
 // convertOpenAIRequestToInteractions also reports a file or audio part that

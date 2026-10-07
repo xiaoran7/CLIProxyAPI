@@ -41,20 +41,14 @@ import (
 //
 // Returns:
 //   - []byte: The transformed request data in internal client format
-func ConvertClaudeRequestToCodex(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertClaudeRequestToCodex(modelName, inputRawJSON, stream, false)
-	return body
+func ConvertClaudeRequestToCodex(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertClaudeRequestToCodex(modelName, inputRawJSON, stream, false)
+
 }
 
 // ConvertClaudeRequestToCodexWithCompat preserves assistant thinking blocks with
 // empty or unknown-format signatures for configured compatibility endpoints.
-func ConvertClaudeRequestToCodexWithCompat(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertClaudeRequestToCodex(modelName, inputRawJSON, stream, true)
-	return body
-}
-
-// ConvertClaudeRequestToCodexWithCompatReturningError reports a file part the target cannot represent.
-func ConvertClaudeRequestToCodexWithCompatReturningError(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+func ConvertClaudeRequestToCodexWithCompat(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	return convertClaudeRequestToCodex(modelName, inputRawJSON, stream, true)
 }
 

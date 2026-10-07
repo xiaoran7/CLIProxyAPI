@@ -33,21 +33,14 @@ const (
 //   - top-level tools and input[].additional_tools -> Claude tools[].input_schema
 //   - max_output_tokens -> max_tokens
 //   - stream passthrough via parameter
-func ConvertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertOpenAIResponsesRequestToClaude(modelName, inputRawJSON, stream, false)
-	return body
+func ConvertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertOpenAIResponsesRequestToClaude(modelName, inputRawJSON, stream, false)
+
 }
 
 // ConvertOpenAIResponsesRequestToClaudeWithCompat preserves reasoning items
 // whose encrypted content is empty for configured compatibility endpoints.
-func ConvertOpenAIResponsesRequestToClaudeWithCompat(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertOpenAIResponsesRequestToClaude(modelName, inputRawJSON, stream, true)
-	return body
-}
-
-// ConvertOpenAIResponsesRequestToClaudeWithCompatReturningError also reports a
-// file or audio part Claude cannot receive when it leaves a user turn empty.
-func ConvertOpenAIResponsesRequestToClaudeWithCompatReturningError(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+func ConvertOpenAIResponsesRequestToClaudeWithCompat(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	return convertOpenAIResponsesRequestToClaude(modelName, inputRawJSON, stream, true)
 }
 

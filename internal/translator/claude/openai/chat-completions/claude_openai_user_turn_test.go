@@ -43,7 +43,7 @@ func TestConvertOpenAIRequestToClaude_RefusesAnyEmptiedUserTurn(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body, err := ConvertOpenAIRequestToClaudeWithCompatReturningError("m", []byte(tc.input), false)
+			body, err := ConvertOpenAIRequestToClaudeWithCompat("m", []byte(tc.input), false)
 			var unsupported *translatorcommon.UnsupportedPartError
 			if !errors.As(err, &unsupported) || unsupported.Type != tc.wantType || unsupported.StatusCode() != 400 {
 				t.Fatalf("err = %v, want unsupported content part: %s; body = %s", err, tc.wantType, body)
@@ -60,7 +60,7 @@ func TestConvertOpenAIRequestToClaude_RefusesAnyEmptiedUserTurn(t *testing.T) {
 
 func TestConvertOpenAIRequestToClaude_KeepsTurnWithTextBesideAttachment(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"},{"role":"user","content":[` + userTurnText + `,` + userTurnFileID + `]}]}`)
-	body, err := ConvertOpenAIRequestToClaudeWithCompatReturningError("m", input, false)
+	body, err := ConvertOpenAIRequestToClaudeWithCompat("m", input, false)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -71,7 +71,7 @@ func TestConvertOpenAIRequestToClaude_KeepsTurnWithTextBesideAttachment(t *testi
 
 func TestConvertOpenAIRequestToClaude_InlineFileAfterHistoryStaysADocument(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"},{"role":"user","content":[` + userTurnInline + `]}]}`)
-	body, err := ConvertOpenAIRequestToClaudeWithCompatReturningError("m", input, false)
+	body, err := ConvertOpenAIRequestToClaudeWithCompat("m", input, false)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}

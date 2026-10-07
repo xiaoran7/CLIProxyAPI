@@ -35,9 +35,9 @@ import (
 //
 // Returns:
 //   - []byte: The transformed request data in Claude Code API format
-func ConvertGeminiRequestToClaude(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertGeminiRequestToClaude(modelName, inputRawJSON, stream)
-	return body
+func ConvertGeminiRequestToClaude(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertGeminiRequestToClaude(modelName, inputRawJSON, stream)
+
 }
 
 // convertGeminiRequestToClaude also reports a user turn that was left empty

@@ -28,9 +28,9 @@ import (
 //
 // Returns:
 //   - []byte: The transformed request data in OpenAI Responses API format
-func ConvertOpenAIRequestToCodex(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertOpenAIRequestToCodex(modelName, inputRawJSON, stream)
-	return body
+func ConvertOpenAIRequestToCodex(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertOpenAIRequestToCodex(modelName, inputRawJSON, stream)
+
 }
 
 // convertOpenAIRequestToCodex also reports a file or audio part Responses cannot

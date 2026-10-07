@@ -41,7 +41,7 @@ func TestConvertClaudeRequestToInteractions_RefusesAnyEmptiedUserTurn(t *testing
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body, err := ConvertClaudeRequestToInteractionsWithCompatReturningError("m", []byte(tc.input), false)
+			body, err := ConvertClaudeRequestToInteractionsWithCompat("m", []byte(tc.input), false)
 			var unsupported *translatorcommon.UnsupportedPartError
 			if !errors.As(err, &unsupported) || unsupported.Type != tc.wantType || unsupported.StatusCode() != 400 {
 				t.Fatalf("err = %v, want unsupported content part: %s; body = %s", err, tc.wantType, body)
@@ -58,7 +58,7 @@ func TestConvertClaudeRequestToInteractions_RefusesAnyEmptiedUserTurn(t *testing
 
 func TestConvertClaudeRequestToInteractions_KeepsTurnWithTextBesideAttachment(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"},{"role":"user","content":[{"type":"text","text":"keep me"},` + userTurnUpload + `]}]}`)
-	body, err := ConvertClaudeRequestToInteractionsWithCompatReturningError("m", input, false)
+	body, err := ConvertClaudeRequestToInteractionsWithCompat("m", input, false)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -69,7 +69,7 @@ func TestConvertClaudeRequestToInteractions_KeepsTurnWithTextBesideAttachment(t 
 
 func TestConvertClaudeRequestToInteractions_Base64DocumentAfterHistoryStaysMedia(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"},{"role":"user","content":[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"JVBERi0xLjQK"}}]}]}`)
-	body, err := ConvertClaudeRequestToInteractionsWithCompatReturningError("m", input, false)
+	body, err := ConvertClaudeRequestToInteractionsWithCompat("m", input, false)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -92,7 +92,7 @@ func TestConvertClaudeRequestToInteractions_WhitespaceTextDoesNotHideAnUnreprese
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			input := []byte(`{"model":"m","messages":[{"role":"user","content":[` + tc.parts + `]}]}`)
-			body, err := ConvertClaudeRequestToInteractionsWithCompatReturningError("m", input, false)
+			body, err := ConvertClaudeRequestToInteractionsWithCompat("m", input, false)
 			var unsupported *translatorcommon.UnsupportedPartError
 			if !errors.As(err, &unsupported) || unsupported.Type != "image" || unsupported.StatusCode() != 400 {
 				t.Fatalf("err = %v, want unsupported content part: image; body = %s", err, body)
@@ -103,7 +103,7 @@ func TestConvertClaudeRequestToInteractions_WhitespaceTextDoesNotHideAnUnreprese
 
 func TestConvertClaudeRequestToInteractions_RealTextBesideWhitespaceAndAnImageStillSucceeds(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":[{"type":"text","text":"  "},{"type":"text","text":"keep me"},{"type":"image","source":{"type":"file","file_id":"f1"}}]}]}`)
-	body, err := ConvertClaudeRequestToInteractionsWithCompatReturningError("m", input, false)
+	body, err := ConvertClaudeRequestToInteractionsWithCompat("m", input, false)
 	if err != nil {
 		t.Fatalf("err = %v, body = %s", err, body)
 	}

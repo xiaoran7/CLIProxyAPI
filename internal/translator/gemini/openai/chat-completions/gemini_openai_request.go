@@ -26,9 +26,9 @@ const geminiFunctionThoughtSignature = "skip_thought_signature_validator"
 //
 // Returns:
 //   - []byte: The transformed request data in Gemini API format
-func ConvertOpenAIRequestToGemini(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertOpenAIRequestToGemini(modelName, inputRawJSON, stream)
-	return body
+func ConvertOpenAIRequestToGemini(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertOpenAIRequestToGemini(modelName, inputRawJSON, stream)
+
 }
 
 // convertOpenAIRequestToGemini also reports a file part Gemini cannot receive

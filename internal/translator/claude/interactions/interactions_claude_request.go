@@ -11,9 +11,9 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-func ConvertInteractionsRequestToClaude(modelName string, inputRawJSON []byte, stream bool) []byte {
-	out, _ := convertInteractionsRequestToClaude(modelName, inputRawJSON, stream)
-	return out
+func ConvertInteractionsRequestToClaude(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertInteractionsRequestToClaude(modelName, inputRawJSON, stream)
+
 }
 
 // convertInteractionsRequestToClaude also reports a user turn that was left empty

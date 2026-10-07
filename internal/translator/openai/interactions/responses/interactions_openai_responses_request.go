@@ -10,9 +10,9 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-func ConvertOpenAIResponsesRequestToInteractions(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertOpenAIResponsesRequestToInteractions(modelName, inputRawJSON, stream)
-	return body
+func ConvertOpenAIResponsesRequestToInteractions(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertOpenAIResponsesRequestToInteractions(modelName, inputRawJSON, stream)
+
 }
 
 // convertOpenAIResponsesRequestToInteractions also reports a file, audio or video
@@ -115,7 +115,7 @@ func convertOpenAIResponsesRequestToInteractions(modelName string, inputRawJSON 
 	return out, drops.Err()
 }
 
-func ConvertInteractionsRequestToOpenAIResponses(modelName string, inputRawJSON []byte, stream bool) []byte {
+func ConvertInteractionsRequestToOpenAIResponses(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	root := gjson.ParseBytes(inputRawJSON)
 	out := []byte(`{"model":"","input":[]}`)
 	model := requestModel(modelName, root)
@@ -160,7 +160,7 @@ func ConvertInteractionsRequestToOpenAIResponses(modelName string, inputRawJSON 
 	if format := root.Get("response_format"); format.Exists() {
 		out, _ = sjson.SetRawBytes(out, "text.format", []byte(format.Raw))
 	}
-	return out
+	return out, nil
 }
 
 func requestModel(modelName string, root gjson.Result) string {

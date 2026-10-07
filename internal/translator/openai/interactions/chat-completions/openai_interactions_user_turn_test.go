@@ -127,7 +127,7 @@ func TestConvertOpenAIRequestToInteractions_FileURLStaysAFile(t *testing.T) {
 
 func TestConvertOpenAIRequestToInteractions_ExportedWrapperKeepsAJSONBody(t *testing.T) {
 	input := []byte(`{"model":"gemini-3.5-flash","messages":[{"role":"user","content":[` + userTurnFileID + `]}]}`)
-	if body := ConvertOpenAIRequestToInteractions("gemini-3.5-flash", input, false); !gjson.ValidBytes(body) {
+	if body, _ := ConvertOpenAIRequestToInteractions("gemini-3.5-flash", input, false); !gjson.ValidBytes(body) {
 		t.Fatalf("body is not JSON: %q", body)
 	}
 }

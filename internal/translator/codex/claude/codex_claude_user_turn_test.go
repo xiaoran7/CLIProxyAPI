@@ -41,7 +41,7 @@ func TestConvertClaudeRequestToCodex_RefusesAnyEmptiedUserTurn(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body, err := ConvertClaudeRequestToCodexWithCompatReturningError("m", []byte(tc.input), false)
+			body, err := ConvertClaudeRequestToCodexWithCompat("m", []byte(tc.input), false)
 			var unsupported *translatorcommon.UnsupportedPartError
 			if !errors.As(err, &unsupported) || unsupported.Type != tc.wantType || unsupported.StatusCode() != 400 {
 				t.Fatalf("err = %v, want unsupported content part: %s; body = %s", err, tc.wantType, body)
@@ -58,7 +58,7 @@ func TestConvertClaudeRequestToCodex_RefusesAnyEmptiedUserTurn(t *testing.T) {
 
 func TestConvertClaudeRequestToCodex_KeepsTurnWithTextBesideAttachment(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"},{"role":"user","content":[{"type":"text","text":"keep me"},` + userTurnUpload + `]}]}`)
-	body, err := ConvertClaudeRequestToCodexWithCompatReturningError("m", input, false)
+	body, err := ConvertClaudeRequestToCodexWithCompat("m", input, false)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -69,7 +69,7 @@ func TestConvertClaudeRequestToCodex_KeepsTurnWithTextBesideAttachment(t *testin
 
 func TestConvertClaudeRequestToCodex_Base64DocumentAfterHistoryStaysAFile(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"},{"role":"user","content":[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"JVBERi0xLjQK"}}]}]}`)
-	body, err := ConvertClaudeRequestToCodexWithCompatReturningError("m", input, false)
+	body, err := ConvertClaudeRequestToCodexWithCompat("m", input, false)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -86,7 +86,7 @@ func TestConvertClaudeRequestToCodex_EmptyTextDoesNotHideAnEmptiedUserTurn(t *te
 	}
 	for name, input := range cases {
 		t.Run(name, func(t *testing.T) {
-			body, err := ConvertClaudeRequestToCodexWithCompatReturningError("m", []byte(input), false)
+			body, err := ConvertClaudeRequestToCodexWithCompat("m", []byte(input), false)
 			var unsupported *translatorcommon.UnsupportedPartError
 			if !errors.As(err, &unsupported) || unsupported.Type != "container_upload" || unsupported.StatusCode() != 400 {
 				t.Fatalf("err = %v, want unsupported content part: container_upload; body = %s", err, body)
@@ -100,7 +100,7 @@ func TestConvertClaudeRequestToCodex_EmptyTextDoesNotHideAnEmptiedUserTurn(t *te
 
 func TestConvertClaudeRequestToCodex_NonEmptyTextBesideAttachmentStillSucceeds(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":[{"type":"text","text":""},{"type":"text","text":"keep me"},` + userTurnUpload + `]}]}`)
-	body, err := ConvertClaudeRequestToCodexWithCompatReturningError("m", input, false)
+	body, err := ConvertClaudeRequestToCodexWithCompat("m", input, false)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}

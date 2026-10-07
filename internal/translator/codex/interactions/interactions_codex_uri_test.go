@@ -196,7 +196,7 @@ func TestInteractionsToCodexAssistantMediaIsNotAUserTurn(t *testing.T) {
 
 func TestInteractionsToCodexExportedWrapperKeepsAJSONBody(t *testing.T) {
 	input := []byte(`{"model":"m","input":[` + interactionsCodexHistory + `,{"type":"user_input","content":[{"type":"audio","mime_type":"audio/wav"}]}]}`)
-	if body := ConvertInteractionsRequestToCodex("m", input, false); !gjson.ValidBytes(body) {
+	if body, _ := ConvertInteractionsRequestToCodex("m", input, false); !gjson.ValidBytes(body) {
 		t.Fatalf("body is not JSON: %q", body)
 	}
 }

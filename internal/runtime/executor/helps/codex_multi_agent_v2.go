@@ -192,17 +192,17 @@ func translateRequestWithAPIKeyModelCompatibilityForExecutor(ctx context.Context
 	var convertErr error
 	switch {
 	case from == sdktranslator.FormatClaude && to == sdktranslator.FormatCodex:
-		translated, convertErr = codexclaude.ConvertClaudeRequestToCodexWithCompatReturningError(model, payload, stream)
+		translated, convertErr = codexclaude.ConvertClaudeRequestToCodexWithCompat(model, payload, stream)
 	case from == sdktranslator.FormatClaude && to == sdktranslator.FormatGemini:
-		translated, convertErr = geminiclaude.ConvertClaudeRequestToGeminiWithCompatReturningError(model, payload, stream)
+		translated, convertErr = geminiclaude.ConvertClaudeRequestToGeminiWithCompat(model, payload, stream)
 	case from == sdktranslator.FormatClaude && to == sdktranslator.FormatInteractions:
-		translated, convertErr = interactionsclaude.ConvertClaudeRequestToInteractionsWithCompatReturningError(model, payload, stream)
+		translated, convertErr = interactionsclaude.ConvertClaudeRequestToInteractionsWithCompat(model, payload, stream)
 	case from == sdktranslator.FormatClaude && to == sdktranslator.FormatOpenAI:
-		translated, convertErr = openaiclaude.ConvertClaudeRequestToOpenAIWithCompatReturningError(model, payload, stream)
+		translated, convertErr = openaiclaude.ConvertClaudeRequestToOpenAIWithCompat(model, payload, stream)
 	case from == sdktranslator.FormatOpenAI && to == sdktranslator.FormatClaude:
-		translated, convertErr = openaichatclaude.ConvertOpenAIRequestToClaudeWithCompatReturningError(model, payload, stream)
+		translated, convertErr = openaichatclaude.ConvertOpenAIRequestToClaudeWithCompat(model, payload, stream)
 	case from == sdktranslator.FormatOpenAIResponse && to == sdktranslator.FormatClaude:
-		translated, convertErr = responsesclaude.ConvertOpenAIResponsesRequestToClaudeWithCompatReturningError(model, payload, stream)
+		translated, convertErr = responsesclaude.ConvertOpenAIResponsesRequestToClaudeWithCompat(model, payload, stream)
 	default:
 		return translateRequestWithCodexMultiAgentV2Checked(ctx, headers, cfg, from, to, model, payload, stream)
 	}

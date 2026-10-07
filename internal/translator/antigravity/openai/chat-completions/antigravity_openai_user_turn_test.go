@@ -92,7 +92,7 @@ func TestOpenAIToAntigravityRegistryCarriesTheRefusal(t *testing.T) {
 
 func TestConvertOpenAIRequestToAntigravity_ExportedWrapperKeepsAJSONBody(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":[` + userTurnFileID + `]}]}`)
-	if body := ConvertOpenAIRequestToAntigravity("m", input, false); !gjson.ValidBytes(body) {
+	if body, _ := ConvertOpenAIRequestToAntigravity("m", input, false); !gjson.ValidBytes(body) {
 		t.Fatalf("body is not JSON: %q", body)
 	}
 }

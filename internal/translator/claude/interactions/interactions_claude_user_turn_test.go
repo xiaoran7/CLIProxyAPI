@@ -178,7 +178,7 @@ func TestInteractionsToClaudeAssistantStepEndsTheUserTurn(t *testing.T) {
 
 func TestInteractionsToClaudeExportedWrapperKeepsAJSONBody(t *testing.T) {
 	input := []byte(`{"model":"m","input":[{"type":"user_input","content":[` + videoByURI + `]}]}`)
-	if body := ConvertInteractionsRequestToClaude("m", input, false); !gjson.ValidBytes(body) {
+	if body, _ := ConvertInteractionsRequestToClaude("m", input, false); !gjson.ValidBytes(body) {
 		t.Fatalf("body is not JSON: %q", body)
 	}
 }

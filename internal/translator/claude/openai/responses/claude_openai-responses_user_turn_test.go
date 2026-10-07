@@ -81,7 +81,7 @@ func TestConvertOpenAIResponsesRequestToClaude_RefusesAnyEmptiedUserTurn(t *test
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body, err := ConvertOpenAIResponsesRequestToClaudeWithCompatReturningError("claude-sonnet-4", tc.input, false)
+			body, err := ConvertOpenAIResponsesRequestToClaudeWithCompat("claude-sonnet-4", tc.input, false)
 			var unsupported *translatorcommon.UnsupportedPartError
 			if !errors.As(err, &unsupported) || unsupported.Type != tc.wantType || unsupported.StatusCode() != 400 {
 				t.Fatalf("err = %v, want unsupported content part: %s; body = %s", err, tc.wantType, body)
@@ -106,7 +106,7 @@ func TestConvertOpenAIResponsesRequestToClaude_KeepsTurnWithTextBesideAttachment
 	for name, attachment := range map[string]string{"file id": responsesFileIDPart, "audio": responsesAudioPart} {
 		t.Run(name, func(t *testing.T) {
 			input := responsesPayload("", responsesUserHello, responsesAssistantHi, responsesUserTurn(responsesTextPart, attachment))
-			body, err := ConvertOpenAIResponsesRequestToClaudeWithCompatReturningError("claude-sonnet-4", input, false)
+			body, err := ConvertOpenAIResponsesRequestToClaudeWithCompat("claude-sonnet-4", input, false)
 			if err != nil {
 				t.Fatalf("err = %v", err)
 			}
@@ -119,7 +119,7 @@ func TestConvertOpenAIResponsesRequestToClaude_KeepsTurnWithTextBesideAttachment
 
 func TestConvertOpenAIResponsesRequestToClaude_InlineFileStaysADocument(t *testing.T) {
 	input := responsesPayload("", responsesUserHello, responsesAssistantHi, responsesUserTurn(responsesInlineFile))
-	body, err := ConvertOpenAIResponsesRequestToClaudeWithCompatReturningError("claude-sonnet-4", input, false)
+	body, err := ConvertOpenAIResponsesRequestToClaudeWithCompat("claude-sonnet-4", input, false)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -131,12 +131,14 @@ func TestConvertOpenAIResponsesRequestToClaude_InlineFileStaysADocument(t *testi
 
 func TestConvertOpenAIResponsesRequestToClaude_ExportedWrappersKeepAJSONBody(t *testing.T) {
 	input := responsesPayload("", responsesUserTurn(responsesFileIDPart))
-	for name, body := range map[string][]byte{
-		"plain":  ConvertOpenAIResponsesRequestToClaude("claude-sonnet-4", input, false),
-		"compat": ConvertOpenAIResponsesRequestToClaudeWithCompat("claude-sonnet-4", input, false),
-	} {
+	plain, errPlain := ConvertOpenAIResponsesRequestToClaude("claude-sonnet-4", input, false)
+	compat, errCompat := ConvertOpenAIResponsesRequestToClaudeWithCompat("claude-sonnet-4", input, false)
+	for name, body := range map[string][]byte{"plain": plain, "compat": compat} {
 		if !gjson.ValidBytes(body) {
 			t.Fatalf("%s: body is not JSON: %q", name, body)
 		}
+	}
+	if errPlain == nil || errCompat == nil {
+		t.Fatalf("plain err = %v, compat err = %v", errPlain, errCompat)
 	}
 }

@@ -41,7 +41,7 @@ func TestConvertClaudeRequestToGemini_RefusesAnyEmptiedUserTurn(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body, err := ConvertClaudeRequestToGeminiWithCompatReturningError("m", []byte(tc.input), false)
+			body, err := ConvertClaudeRequestToGeminiWithCompat("m", []byte(tc.input), false)
 			var unsupported *translatorcommon.UnsupportedPartError
 			if !errors.As(err, &unsupported) || unsupported.Type != tc.wantType || unsupported.StatusCode() != 400 {
 				t.Fatalf("err = %v, want unsupported content part: %s; body = %s", err, tc.wantType, body)
@@ -58,7 +58,7 @@ func TestConvertClaudeRequestToGemini_RefusesAnyEmptiedUserTurn(t *testing.T) {
 
 func TestConvertClaudeRequestToGemini_KeepsTurnWithTextBesideAttachment(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"},{"role":"user","content":[{"type":"text","text":"keep me"},` + userTurnUpload + `]}]}`)
-	body, err := ConvertClaudeRequestToGeminiWithCompatReturningError("m", input, false)
+	body, err := ConvertClaudeRequestToGeminiWithCompat("m", input, false)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -69,7 +69,7 @@ func TestConvertClaudeRequestToGemini_KeepsTurnWithTextBesideAttachment(t *testi
 
 func TestConvertClaudeRequestToGemini_Base64DocumentAfterHistoryStaysInlineData(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"},{"role":"user","content":[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"JVBERi0xLjQK"}}]}]}`)
-	body, err := ConvertClaudeRequestToGeminiWithCompatReturningError("m", input, false)
+	body, err := ConvertClaudeRequestToGeminiWithCompat("m", input, false)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}

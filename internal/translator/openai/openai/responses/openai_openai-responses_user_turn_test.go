@@ -156,7 +156,7 @@ func TestConvertOpenAIResponsesRequestToOpenAIChatCompletions_MappedAttachmentBe
 
 func TestConvertOpenAIResponsesRequestToOpenAIChatCompletions_ExportedWrapperKeepsAJSONBody(t *testing.T) {
 	input := chatPayload("", chatUserTurn(chatTurnFileURL))
-	if body := ConvertOpenAIResponsesRequestToOpenAIChatCompletions("gpt-5", input, false); !gjson.ValidBytes(body) {
+	if body, _ := ConvertOpenAIResponsesRequestToOpenAIChatCompletions("gpt-5", input, false); !gjson.ValidBytes(body) {
 		t.Fatalf("body is not JSON: %q", body)
 	}
 }

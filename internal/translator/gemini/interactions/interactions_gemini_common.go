@@ -26,9 +26,9 @@ type StreamState struct {
 	StepIndex       int
 }
 
-func ConvertInteractionsRequestToGemini(modelName string, inputRawJSON []byte, stream bool) []byte {
-	out, _ := convertInteractionsRequestToGemini(modelName, inputRawJSON, stream)
-	return out
+func ConvertInteractionsRequestToGemini(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertInteractionsRequestToGemini(modelName, inputRawJSON, stream)
+
 }
 
 // convertInteractionsRequestToGemini also reports a user turn that was left empty
@@ -51,9 +51,9 @@ func convertInteractionsRequestToGemini(modelName string, inputRawJSON []byte, s
 	return out, errInput
 }
 
-func ConvertGeminiRequestToInteractions(modelName string, inputRawJSON []byte, stream bool) []byte {
-	out, _ := convertGeminiRequestToInteractions(modelName, inputRawJSON, stream)
-	return out
+func ConvertGeminiRequestToInteractions(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertGeminiRequestToInteractions(modelName, inputRawJSON, stream)
+
 }
 
 // convertGeminiRequestToInteractions also reports a user turn that was left empty

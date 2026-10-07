@@ -33,21 +33,14 @@ import (
 //
 // Returns:
 //   - []byte: The transformed request data in Claude Code API format
-func ConvertOpenAIRequestToClaude(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertOpenAIRequestToClaude(modelName, inputRawJSON, stream, false)
-	return body
+func ConvertOpenAIRequestToClaude(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertOpenAIRequestToClaude(modelName, inputRawJSON, stream, false)
+
 }
 
 // ConvertOpenAIRequestToClaudeWithCompat preserves assistant reasoning content
 // as an unsigned thinking block for configured compatibility endpoints.
-func ConvertOpenAIRequestToClaudeWithCompat(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertOpenAIRequestToClaude(modelName, inputRawJSON, stream, true)
-	return body
-}
-
-// ConvertOpenAIRequestToClaudeWithCompatReturningError also reports a file part
-// Claude cannot receive when nothing else was left to send.
-func ConvertOpenAIRequestToClaudeWithCompatReturningError(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+func ConvertOpenAIRequestToClaudeWithCompat(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	return convertOpenAIRequestToClaude(modelName, inputRawJSON, stream, true)
 }
 

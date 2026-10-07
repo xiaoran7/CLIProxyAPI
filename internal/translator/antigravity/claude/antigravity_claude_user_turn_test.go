@@ -81,7 +81,7 @@ func TestConvertClaudeRequestToAntigravity_Base64DocumentBecomesInlineData(t *te
 
 func TestConvertClaudeRequestToAntigravity_ExportedWrapperKeepsAJSONBody(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":[` + userTurnUpload + `]}]}`)
-	if body := ConvertClaudeRequestToAntigravity("m", input, false); !gjson.ValidBytes(body) {
+	if body, _ := ConvertClaudeRequestToAntigravity("m", input, false); !gjson.ValidBytes(body) {
 		t.Fatalf("body is not JSON: %q", body)
 	}
 }

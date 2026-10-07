@@ -18,15 +18,7 @@ import (
 
 const geminiResponsesThoughtSignature = "skip_thought_signature_validator"
 
-func ConvertOpenAIResponsesRequestToGemini(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertOpenAIResponsesRequestToGemini(modelName, inputRawJSON, stream)
-	return body
-}
-
-// ConvertOpenAIResponsesRequestToGeminiReturningError also reports an attachment
-// Gemini cannot receive, such as a bare file id, when it leaves a user turn with
-// nothing to send.
-func ConvertOpenAIResponsesRequestToGeminiReturningError(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+func ConvertOpenAIResponsesRequestToGemini(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	return convertOpenAIResponsesRequestToGemini(modelName, inputRawJSON, stream)
 }
 

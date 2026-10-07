@@ -145,7 +145,7 @@ func TestInteractionsToAntigravityNeighbouringStepKeepsTheTurnAlive(t *testing.T
 
 func TestInteractionsToAntigravityExportedWrapperKeepsAJSONBody(t *testing.T) {
 	input := []byte(`{"model":"m","input":[` + interactionsAntigravityHistory + `,{"type":"user_input","content":[{"type":"audio","mime_type":"audio/wav"}]}]}`)
-	if body := ConvertInteractionsRequestToAntigravity("m", input, false); !gjson.ValidBytes(body) {
+	if body, _ := ConvertInteractionsRequestToAntigravity("m", input, false); !gjson.ValidBytes(body) {
 		t.Fatalf("body is not JSON: %q", body)
 	}
 }

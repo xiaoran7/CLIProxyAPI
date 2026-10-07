@@ -178,7 +178,7 @@ func TestConvertOpenAIResponsesRequestToInteractions_DeveloperAttachmentIsNotAUs
 
 func TestConvertOpenAIResponsesRequestToInteractions_ExportedWrapperKeepsAJSONBody(t *testing.T) {
 	input := interactionsTurnPayload("", interactionsUserTurn("user", interactionsTurnFileID))
-	if body := ConvertOpenAIResponsesRequestToInteractions("gemini-3.5-flash", input, false); !gjson.ValidBytes(body) {
+	if body, _ := ConvertOpenAIResponsesRequestToInteractions("gemini-3.5-flash", input, false); !gjson.ValidBytes(body) {
 		t.Fatalf("body is not JSON: %q", body)
 	}
 }

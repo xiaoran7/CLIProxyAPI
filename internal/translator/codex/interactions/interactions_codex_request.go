@@ -11,9 +11,9 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-func ConvertInteractionsRequestToCodex(modelName string, inputRawJSON []byte, stream bool) []byte {
-	out, _ := convertInteractionsRequestToCodex(modelName, inputRawJSON, stream)
-	return out
+func ConvertInteractionsRequestToCodex(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertInteractionsRequestToCodex(modelName, inputRawJSON, stream)
+
 }
 
 // convertInteractionsRequestToCodex also reports a user turn that was left empty

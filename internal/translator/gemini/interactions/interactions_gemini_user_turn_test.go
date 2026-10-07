@@ -162,7 +162,7 @@ func TestGeminiToInteractionsModelFileDataWithoutURIIsNotARefusal(t *testing.T) 
 
 func TestGeminiToInteractionsExportedWrapperKeepsAJSONBody(t *testing.T) {
 	input := []byte(`{"model":"m","contents":[{"role":"user","parts":[{"fileData":{"mimeType":"application/pdf"}}]}]}`)
-	if body := ConvertGeminiRequestToInteractions("m", input, false); !gjson.ValidBytes(body) {
+	if body, _ := ConvertGeminiRequestToInteractions("m", input, false); !gjson.ValidBytes(body) {
 		t.Fatalf("body is not JSON: %q", body)
 	}
 }

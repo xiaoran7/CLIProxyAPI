@@ -104,7 +104,7 @@ func TestOpenAIResponsesToAntigravityInlineFileStaysInlineData(t *testing.T) {
 
 func TestConvertOpenAIResponsesRequestToAntigravity_ExportedWrapperKeepsAJSONBody(t *testing.T) {
 	input := antigravityTurnPayload("", antigravityUserTurn(antigravityTurnFileID))
-	if body := ConvertOpenAIResponsesRequestToAntigravity("gemini-3-flash", input, false); !gjson.ValidBytes(body) {
+	if body, _ := ConvertOpenAIResponsesRequestToAntigravity("gemini-3-flash", input, false); !gjson.ValidBytes(body) {
 		t.Fatalf("body is not JSON: %q", body)
 	}
 }

@@ -80,7 +80,7 @@ func TestTranslateGeminiInteractionsRequestPairTranslatesSameSliceOnce(t *testin
 	const model = "gemini-interactions-count"
 	var calls int
 	var wantStream bool
-	sdktranslator.Register(from, to, func(gotModel string, rawJSON []byte, stream bool) []byte {
+	sdktranslator.Register(from, to, func(gotModel string, rawJSON []byte, stream bool) ([]byte, error) {
 		if gotModel != model {
 			t.Errorf("model = %q, want %q", gotModel, model)
 		}
@@ -88,7 +88,7 @@ func TestTranslateGeminiInteractionsRequestPairTranslatesSameSliceOnce(t *testin
 			t.Errorf("stream = %v, want %v", stream, wantStream)
 		}
 		calls++
-		return append([]byte(nil), rawJSON...)
+		return append([]byte(nil), rawJSON...), nil
 	}, sdktranslator.ResponseTransform{})
 	t.Cleanup(func() { sdktranslator.Unregister(from, to) })
 

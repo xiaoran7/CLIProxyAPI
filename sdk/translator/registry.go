@@ -36,7 +36,7 @@ func (r *Registry) Register(from, to Format, request RequestTransform, response 
 	}
 	if request != nil {
 		r.requests[from][to] = func(_ context.Context, req RequestEnvelope) RequestEnvelope {
-			req.Body = request(req.Model, req.Body, req.Stream)
+			req.Body, req.Err = request(req.Model, req.Body, req.Stream)
 			return req
 		}
 	}
@@ -58,15 +58,6 @@ func (r *Registry) RegisterRequestEnvelope(from, to Format, request RequestEnvel
 	if request != nil {
 		r.requests[from][to] = request
 	}
-}
-
-// RegisterCheckedRequest stores a request translator that may refuse a request,
-// carrying the refusal on the envelope next to the legacy-shaped body.
-func (r *Registry) RegisterCheckedRequest(from, to Format, request func(model string, body []byte, stream bool) ([]byte, error)) {
-	r.RegisterRequestEnvelope(from, to, func(_ context.Context, req RequestEnvelope) RequestEnvelope {
-		req.Body, req.Err = request(req.Model, req.Body, req.Stream)
-		return req
-	})
 }
 
 // Unregister removes the request and response transforms for one format pair.

@@ -11,9 +11,9 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-func ConvertInteractionsRequestToAntigravity(modelName string, inputRawJSON []byte, stream bool) []byte {
-	out, _ := convertInteractionsRequestToAntigravity(modelName, inputRawJSON, stream)
-	return out
+func ConvertInteractionsRequestToAntigravity(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertInteractionsRequestToAntigravity(modelName, inputRawJSON, stream)
+
 }
 
 // convertInteractionsRequestToAntigravity also reports a user turn that was left

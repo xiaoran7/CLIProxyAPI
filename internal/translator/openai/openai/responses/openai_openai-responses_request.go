@@ -27,9 +27,9 @@ import (
 //
 // Returns:
 //   - []byte: The transformed request data in OpenAI chat completions format
-func ConvertOpenAIResponsesRequestToOpenAIChatCompletions(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertOpenAIResponsesRequestToOpenAIChatCompletions(modelName, inputRawJSON, stream)
-	return body
+func ConvertOpenAIResponsesRequestToOpenAIChatCompletions(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertOpenAIResponsesRequestToOpenAIChatCompletions(modelName, inputRawJSON, stream)
+
 }
 
 // convertOpenAIResponsesRequestToOpenAIChatCompletions also reports a file or

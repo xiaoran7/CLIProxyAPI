@@ -130,7 +130,7 @@ func TestConvertOpenAIRequestToCodex_AudioAfterHistoryStaysAudio(t *testing.T) {
 
 func TestConvertOpenAIRequestToCodex_ExportedWrapperKeepsAJSONBody(t *testing.T) {
 	input := []byte(`{"model":"m","messages":[{"role":"user","content":[` + userTurnEmptyFile + `]}]}`)
-	if body := ConvertOpenAIRequestToCodex("m", input, false); !gjson.ValidBytes(body) {
+	if body, _ := ConvertOpenAIRequestToCodex("m", input, false); !gjson.ValidBytes(body) {
 		t.Fatalf("body is not JSON: %q", body)
 	}
 }

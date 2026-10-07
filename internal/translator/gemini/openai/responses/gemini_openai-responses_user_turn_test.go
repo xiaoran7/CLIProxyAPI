@@ -63,7 +63,7 @@ func TestConvertOpenAIResponsesRequestToGemini_RefusesAnyEmptiedUserTurn(t *test
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body, err := ConvertOpenAIResponsesRequestToGeminiReturningError("gemini-3-pro", tc.input, false)
+			body, err := ConvertOpenAIResponsesRequestToGemini("gemini-3-pro", tc.input, false)
 			var unsupported *translatorcommon.UnsupportedPartError
 			if !errors.As(err, &unsupported) || unsupported.Type != "input_file" || unsupported.StatusCode() != 400 {
 				t.Fatalf("err = %v, want unsupported content part: input_file; body = %s", err, body)
@@ -86,7 +86,7 @@ func TestConvertOpenAIResponsesRequestToGemini_RefusesAnyEmptiedUserTurn(t *test
 
 func TestConvertOpenAIResponsesRequestToGemini_KeepsTurnWithTextBesideFileID(t *testing.T) {
 	input := geminiTurnPayload("", geminiTurnHello, geminiTurnAssistant, geminiUserTurn(geminiTurnText, geminiTurnFileID))
-	body, err := ConvertOpenAIResponsesRequestToGeminiReturningError("gemini-3-pro", input, false)
+	body, err := ConvertOpenAIResponsesRequestToGemini("gemini-3-pro", input, false)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -107,7 +107,7 @@ func TestConvertOpenAIResponsesRequestToGemini_InlineAndRemoteFilesStayParts(t *
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			input := geminiTurnPayload("", geminiTurnHello, geminiTurnAssistant, geminiUserTurn(tc.part))
-			body, err := ConvertOpenAIResponsesRequestToGeminiReturningError("gemini-3-pro", input, false)
+			body, err := ConvertOpenAIResponsesRequestToGemini("gemini-3-pro", input, false)
 			if err != nil {
 				t.Fatalf("err = %v", err)
 			}
@@ -120,7 +120,7 @@ func TestConvertOpenAIResponsesRequestToGemini_InlineAndRemoteFilesStayParts(t *
 
 func TestConvertOpenAIResponsesRequestToGemini_ExportedWrapperKeepsAJSONBody(t *testing.T) {
 	input := geminiTurnPayload("", geminiUserTurn(geminiTurnFileID))
-	if body := ConvertOpenAIResponsesRequestToGemini("gemini-3-pro", input, false); !gjson.ValidBytes(body) {
+	if body, _ := ConvertOpenAIResponsesRequestToGemini("gemini-3-pro", input, false); !gjson.ValidBytes(body) {
 		t.Fatalf("body is not JSON: %q", body)
 	}
 }

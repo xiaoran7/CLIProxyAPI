@@ -8,20 +8,14 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-func ConvertClaudeRequestToInteractions(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertClaudeRequestToInteractions(modelName, inputRawJSON, stream, false)
-	return body
+func ConvertClaudeRequestToInteractions(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertClaudeRequestToInteractions(modelName, inputRawJSON, stream, false)
+
 }
 
 // ConvertClaudeRequestToInteractionsWithCompat preserves empty assistant
 // thinking blocks for configured compatibility endpoints.
-func ConvertClaudeRequestToInteractionsWithCompat(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertClaudeRequestToInteractions(modelName, inputRawJSON, stream, true)
-	return body
-}
-
-// ConvertClaudeRequestToInteractionsWithCompatReturningError reports a file part the target cannot represent.
-func ConvertClaudeRequestToInteractionsWithCompatReturningError(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+func ConvertClaudeRequestToInteractionsWithCompat(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	return convertClaudeRequestToInteractions(modelName, inputRawJSON, stream, true)
 }
 

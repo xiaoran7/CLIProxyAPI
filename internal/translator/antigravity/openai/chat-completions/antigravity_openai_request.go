@@ -28,9 +28,9 @@ const antigravityFunctionThoughtSignature = "skip_thought_signature_validator"
 //
 // Returns:
 //   - []byte: The transformed request data in Antigravity API format
-func ConvertOpenAIRequestToAntigravity(modelName string, inputRawJSON []byte, stream bool) []byte {
-	body, _ := convertOpenAIRequestToAntigravity(modelName, inputRawJSON, stream)
-	return body
+func ConvertOpenAIRequestToAntigravity(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertOpenAIRequestToAntigravity(modelName, inputRawJSON, stream)
+
 }
 
 // convertOpenAIRequestToAntigravity also reports a file part Antigravity cannot
