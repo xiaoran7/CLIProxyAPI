@@ -39,7 +39,7 @@ func ConvertClaudeRequestToOpenAIWithCompatReturningError(modelName string, inpu
 
 func convertClaudeRequestToOpenAI(modelName string, inputRawJSON []byte, stream bool, preserveThinkingBlocks bool) ([]byte, error) {
 	rawJSON := inputRawJSON
-	var droppedAttachment string
+	var drops translatorcommon.UserTurnDrops
 	// Base OpenAI Chat Completions API template
 	out := []byte(`{"model":"","messages":[]}`)
 
@@ -219,8 +219,8 @@ func convertClaudeRequestToOpenAI(modelName string, inputRawJSON []byte, stream 
 					case "text", "image", "document", "container_upload":
 						if contentItem, ok := convertClaudeContentPart(part); ok {
 							contentItems = append(contentItems, []byte(contentItem))
-						} else if partType := part.Get("type").String(); partType == "document" || partType == "container_upload" {
-							droppedAttachment = partType
+						} else if role == "user" && partType != "text" {
+							drops.Drop(partType)
 						}
 
 					case "tool_use":
@@ -274,6 +274,9 @@ func convertClaudeRequestToOpenAI(modelName string, inputRawJSON []byte, stream 
 				hasReasoning := reasoningContent != ""
 				hasToolCalls := len(toolCalls) > 0
 				hasToolResults := len(toolResults) > 0
+				if role == "user" {
+					drops.EndTurn(len(contentItems) + len(toolResults))
+				}
 
 				// Flush pending system reminders before new content if no tool_results responded to preceding calls
 				if precedingToolCallsPending && !hasToolResults && len(pendingSystemReminders) > 0 {
@@ -433,7 +436,7 @@ func convertClaudeRequestToOpenAI(modelName string, inputRawJSON []byte, stream 
 		out, _ = sjson.SetBytes(out, "user", user.String())
 	}
 
-	return out, translatorcommon.ErrIfNothingLeft(droppedAttachment, int(gjson.GetBytes(out, "messages.#").Int()))
+	return out, drops.Err()
 }
 
 func normalizeObjectSchemaProperties(schema any) any {

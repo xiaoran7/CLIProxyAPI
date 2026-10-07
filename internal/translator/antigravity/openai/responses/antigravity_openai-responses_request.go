@@ -51,15 +51,15 @@ func shouldBuildAntigravityResponsesWebSearchRequest(model string, payload []byt
 		AllowsResponsesWebSearchToolChoice(root)
 }
 
-func buildAntigravityResponsesWebSearchRequest(model string, payload []byte, stream bool) []byte {
+func buildAntigravityResponsesWebSearchRequest(model string, payload []byte, stream bool) ([]byte, error) {
 	includedDomains := ExtractResponsesWebSearchAllowedDomains(gjson.ParseBytes(payload))
-	rawJSON := ConvertOpenAIResponsesRequestToGemini(model, payload, stream)
+	rawJSON, errConvert := ConvertOpenAIResponsesRequestToGeminiReturningError(model, payload, stream)
 	rawJSON = rewriteOpenAIResponsesReasoningForAntigravityClaude(model, payload, rawJSON)
 	out := ConvertGeminiRequestToAntigravity(model, rawJSON, stream)
 	out, _ = sjson.SetBytes(out, "requestType", "web_search")
 	out = ensureAntigravityResponsesWebSearchTool(out, includedDomains)
 	out = ensureAntigravityResponsesWebSearchSystemInstruction(out)
-	return enableAntigravityResponsesThinkingSummary(payload, out)
+	return enableAntigravityResponsesThinkingSummary(payload, out), errConvert
 }
 
 func ensureAntigravityResponsesWebSearchTool(payload []byte, includedDomains []string) []byte {
@@ -139,11 +139,11 @@ func ConvertOpenAIResponsesRequestToAntigravity(modelName string, inputRawJSON [
 // request and consumes request-scoped model capabilities from the envelope.
 func ConvertOpenAIResponsesRequestEnvelopeToAntigravity(_ context.Context, req sdktranslator.RequestEnvelope) sdktranslator.RequestEnvelope {
 	if shouldBuildAntigravityResponsesWebSearchRequest(req.Model, req.Body, req.ModelInfo) {
-		req.Body = buildAntigravityResponsesWebSearchRequest(req.Model, req.Body, req.Stream)
+		req.Body, req.Err = buildAntigravityResponsesWebSearchRequest(req.Model, req.Body, req.Stream)
 		return req
 	}
 	inputRawJSON := req.Body
-	req.Body = ConvertOpenAIResponsesRequestToGemini(req.Model, req.Body, req.Stream)
+	req.Body, req.Err = ConvertOpenAIResponsesRequestToGeminiReturningError(req.Model, req.Body, req.Stream)
 	req.Body = stripAntigravityResponsesGoogleSearch(req.Body)
 	req.Body = rewriteOpenAIResponsesReasoningForAntigravityClaude(req.Model, inputRawJSON, req.Body)
 	req.Body = ConvertGeminiRequestToAntigravity(req.Model, req.Body, req.Stream)

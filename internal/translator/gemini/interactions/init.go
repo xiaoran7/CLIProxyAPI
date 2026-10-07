@@ -4,6 +4,7 @@ import (
 	. "github.com/router-for-me/CLIProxyAPI/v8/internal/constant"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/translator/translator"
+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
 
 func init() {
@@ -19,7 +20,7 @@ func init() {
 	translator.Register(
 		Interactions,
 		Gemini,
-		ConvertInteractionsRequestToGemini,
+		nil,
 		interfaces.TranslateResponse{
 			Stream:    ConvertGeminiResponseToInteractions,
 			NonStream: ConvertGeminiResponseToInteractionsNonStream,
@@ -28,10 +29,12 @@ func init() {
 	translator.Register(
 		Gemini,
 		Interactions,
-		ConvertGeminiRequestToInteractions,
+		nil,
 		interfaces.TranslateResponse{
 			Stream:    ConvertInteractionsResponseToGemini,
 			NonStream: ConvertInteractionsResponseToGeminiNonStream,
 		},
 	)
+	sdktranslator.Default().RegisterCheckedRequest(sdktranslator.FormatInteractions, sdktranslator.FormatGemini, convertInteractionsRequestToGemini)
+	sdktranslator.Default().RegisterCheckedRequest(sdktranslator.FormatGemini, sdktranslator.FormatInteractions, convertGeminiRequestToInteractions)
 }

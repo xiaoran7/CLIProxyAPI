@@ -34,17 +34,26 @@ const (
 //   - max_output_tokens -> max_tokens
 //   - stream passthrough via parameter
 func ConvertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte, stream bool) []byte {
-	return convertOpenAIResponsesRequestToClaude(modelName, inputRawJSON, stream, false)
+	body, _ := convertOpenAIResponsesRequestToClaude(modelName, inputRawJSON, stream, false)
+	return body
 }
 
 // ConvertOpenAIResponsesRequestToClaudeWithCompat preserves reasoning items
 // whose encrypted content is empty for configured compatibility endpoints.
 func ConvertOpenAIResponsesRequestToClaudeWithCompat(modelName string, inputRawJSON []byte, stream bool) []byte {
+	body, _ := convertOpenAIResponsesRequestToClaude(modelName, inputRawJSON, stream, true)
+	return body
+}
+
+// ConvertOpenAIResponsesRequestToClaudeWithCompatReturningError also reports a
+// file or audio part Claude cannot receive when it leaves a user turn empty.
+func ConvertOpenAIResponsesRequestToClaudeWithCompatReturningError(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	return convertOpenAIResponsesRequestToClaude(modelName, inputRawJSON, stream, true)
 }
 
-func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte, stream, preserveEmptyThinkingBlocks bool) []byte {
+func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte, stream, preserveEmptyThinkingBlocks bool) ([]byte, error) {
 	rawJSON := normalizeCodexAgentMessages(inputRawJSON)
+	var drops common.UserTurnDrops
 
 	userID := common.DeriveClaudeUserID(rawJSON)
 
@@ -321,6 +330,7 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 			// Determine role and construct Claude-compatible content parts.
 			var role string
 			var partsJSON [][]byte
+			var droppedPartType string
 			if parts := item.Get("content"); parts.Exists() && parts.IsArray() {
 				parts.ForEach(func(_, part gjson.Result) bool {
 					ptype := part.Get("type").String()
@@ -406,6 +416,13 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 							if role == "" {
 								role = "user"
 							}
+						} else if droppedPartType == "" {
+							droppedPartType = ptype
+						}
+					case "input_audio":
+						// Claude has no audio block, so the part cannot be sent.
+						if droppedPartType == "" {
+							droppedPartType = ptype
 						}
 					}
 					return true
@@ -425,6 +442,13 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 				default:
 					role = "user"
 				}
+			}
+
+			if role == "user" {
+				if droppedPartType != "" {
+					drops.Drop(droppedPartType)
+				}
+				drops.EndTurn(len(partsJSON))
 			}
 
 			if len(partsJSON) > 0 {
@@ -631,7 +655,7 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 		}
 	}
 
-	return thinking.ApplyTranslatedSummaryToClaude(out, rawJSON, "openai-response", modelName)
+	return thinking.ApplyTranslatedSummaryToClaude(out, rawJSON, "openai-response", modelName), drops.Err()
 }
 
 func defaultClaudeResponsesMaxTokensForModel(modelName string) int {

@@ -215,7 +215,10 @@ func TestTranslateRequestEnvelopePairWithCodexMultiAgentV2UsesModelInfo(t *testi
 		NativeCapabilities: &registry.NativeCapabilities{WebSearch: &trueVal},
 	}
 	envelope := sdktranslator.RequestEnvelope{Format: sdktranslator.FormatOpenAIResponse, Model: model, ModelInfo: enabled}
-	base, work := TranslateRequestEnvelopePairWithCodexMultiAgentV2(context.Background(), http.Header{}, &config.Config{}, sdktranslator.FormatOpenAIResponse, sdktranslator.FormatAntigravity, envelope, input, input)
+	base, work, errPair := TranslateRequestEnvelopePairWithCodexMultiAgentV2(context.Background(), http.Header{}, &config.Config{}, sdktranslator.FormatOpenAIResponse, sdktranslator.FormatAntigravity, envelope, input, input)
+	if errPair != nil {
+		t.Fatalf("translate request pair: %v", errPair)
+	}
 	if gjson.GetBytes(base, "requestType").String() != "web_search" {
 		t.Fatalf("expected baseline requestType web_search, got: %s", base)
 	}
@@ -228,7 +231,10 @@ func TestTranslateRequestEnvelopePairWithCodexMultiAgentV2UsesModelInfo(t *testi
 		NativeCapabilities: &registry.NativeCapabilities{WebSearch: &falseVal},
 	}
 	envelope.ModelInfo = disabled
-	_, workDisabled := TranslateRequestEnvelopePairWithCodexMultiAgentV2(context.Background(), http.Header{}, &config.Config{}, sdktranslator.FormatOpenAIResponse, sdktranslator.FormatAntigravity, envelope, input, input)
+	_, workDisabled, errPair := TranslateRequestEnvelopePairWithCodexMultiAgentV2(context.Background(), http.Header{}, &config.Config{}, sdktranslator.FormatOpenAIResponse, sdktranslator.FormatAntigravity, envelope, input, input)
+	if errPair != nil {
+		t.Fatalf("translate request pair: %v", errPair)
+	}
 	if gjson.GetBytes(workDisabled, "requestType").String() == "web_search" {
 		t.Fatalf("expected non-web_search when capability disabled, got: %s", workDisabled)
 	}

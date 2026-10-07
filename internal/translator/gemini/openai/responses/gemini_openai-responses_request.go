@@ -19,7 +19,20 @@ import (
 const geminiResponsesThoughtSignature = "skip_thought_signature_validator"
 
 func ConvertOpenAIResponsesRequestToGemini(modelName string, inputRawJSON []byte, stream bool) []byte {
+	body, _ := convertOpenAIResponsesRequestToGemini(modelName, inputRawJSON, stream)
+	return body
+}
+
+// ConvertOpenAIResponsesRequestToGeminiReturningError also reports an attachment
+// Gemini cannot receive, such as a bare file id, when it leaves a user turn with
+// nothing to send.
+func ConvertOpenAIResponsesRequestToGeminiReturningError(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
+	return convertOpenAIResponsesRequestToGemini(modelName, inputRawJSON, stream)
+}
+
+func convertOpenAIResponsesRequestToGemini(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	rawJSON := inputRawJSON
+	var drops translatorcommon.UserTurnDrops
 
 	// Note: stream parameter is part of the fixed method signature
 	useGeminiNativeReasoningLayout := sigcompat.SignatureProviderFromModelName(modelName) == sigcompat.SignatureProviderGemini
@@ -230,6 +243,8 @@ func ConvertOpenAIResponsesRequestToGemini(modelName string, inputRawJSON []byte
 				if len(partsToProcess) > 0 {
 					currentRole := ""
 					currentParts := make([][]byte, 0)
+					// Counts the user parts this item really sends; an empty text part does not.
+					userSendable := 0
 
 					flush := func() {
 						if currentRole == "" || len(currentParts) == 0 {
@@ -271,24 +286,35 @@ func ConvertOpenAIResponsesRequestToGemini(modelName string, inputRawJSON []byte
 						}
 
 						var partJSON []byte
+						sendsContent := false
 						switch contentType {
 						case "input_text", "output_text", "text":
 							if text := contentItem.Get("text"); text.Exists() {
 								partJSON = []byte(`{"text":""}`)
 								partJSON, _ = sjson.SetBytes(partJSON, "text", text.String())
+								sendsContent = text.String() != ""
 							}
 						default:
 							if part, ok := openAIResponsesPartFromBlock(contentItem); ok {
 								partJSON = part
+								sendsContent = true
+							} else if effRole == "user" && isResponsesAttachmentPartType(contentType) {
+								// Gemini has no field for a bare file id and no way to fetch
+								// the bytes, so the attachment cannot be sent.
+								drops.Drop(contentType)
 							}
 						}
 
 						if len(partJSON) > 0 {
 							currentParts = append(currentParts, partJSON)
 						}
+						if sendsContent && effRole == "user" {
+							userSendable++
+						}
 					}
 
 					flush()
+					drops.EndTurn(userSendable)
 				} else if contentArray.Type == gjson.String {
 					effRole := "user"
 					if itemRole != "" {
@@ -504,7 +530,7 @@ func ConvertOpenAIResponsesRequestToGemini(modelName string, inputRawJSON []byte
 	if useGeminiNativeReasoningLayout {
 		result = sigcompat.SanitizeGeminiRequestThoughtSignatures(result, "contents")
 	}
-	return stripTrailingOpenAIResponsesModelPrefill(result)
+	return stripTrailingOpenAIResponsesModelPrefill(result), drops.Err()
 }
 
 func geminiContent(role string, parts [][]byte) []byte {
@@ -950,6 +976,20 @@ func isResponsesContentPartType(itemType string) bool {
 	switch strings.ToLower(strings.TrimSpace(itemType)) {
 	case "input_text", "output_text", "text",
 		"input_image", "image_url", "image",
+		"input_audio", "audio",
+		"input_video", "video_url", "video",
+		"input_file", "file":
+		return true
+	default:
+		return false
+	}
+}
+
+// isResponsesAttachmentPartType reports the content part types that carry a
+// file, image, audio or video rather than text.
+func isResponsesAttachmentPartType(itemType string) bool {
+	switch strings.ToLower(strings.TrimSpace(itemType)) {
+	case "input_image", "image_url", "image",
 		"input_audio", "audio",
 		"input_video", "video_url", "video",
 		"input_file", "file":

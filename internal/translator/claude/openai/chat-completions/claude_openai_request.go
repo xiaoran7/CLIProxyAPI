@@ -53,7 +53,7 @@ func ConvertOpenAIRequestToClaudeWithCompatReturningError(modelName string, inpu
 
 func convertOpenAIRequestToClaude(modelName string, inputRawJSON []byte, stream, preserveEmptyThinkingBlocks bool) ([]byte, error) {
 	rawJSON := inputRawJSON
-	var droppedAttachment string
+	var drops common.UserTurnDrops
 
 	userID := common.DeriveClaudeUserID(rawJSON)
 
@@ -219,11 +219,15 @@ func convertOpenAIRequestToClaude(modelName string, inputRawJSON []byte, stream,
 					contentResult.ForEach(func(_, part gjson.Result) bool {
 						if claudePart := convertOpenAIContentPartToClaudePart(part); claudePart != "" {
 							contentBlocks = append(contentBlocks, []byte(claudePart))
-						} else if partType := part.Get("type").String(); partType == "file" || partType == "input_audio" {
-							droppedAttachment = partType
+						} else if partType := part.Get("type").String(); role == "user" && (partType == "file" || partType == "input_audio") {
+							drops.Drop(partType)
 						}
 						return true
 					})
+				}
+
+				if role == "user" {
+					drops.EndTurn(len(contentBlocks))
 				}
 
 				// Handle tool calls (for assistant messages)
@@ -315,8 +319,8 @@ func convertOpenAIRequestToClaude(modelName string, inputRawJSON []byte, stream,
 		systemBlocks = append(systemBlocks, systemBlock)
 	}
 
-	// Decided before the blank turn below is added, or a system prompt would hide an empty request.
-	nothingLeftErr := common.ErrIfNothingLeft(droppedAttachment, len(messageBlocks))
+	// Decided per user turn, so neither a system prompt nor the blank turn added below hides an emptied turn.
+	nothingLeftErr := drops.Err()
 
 	// Preserve a minimal conversational turn for system-only inputs.
 	// Claude payloads with top-level system instructions but no messages are risky for downstream validation.

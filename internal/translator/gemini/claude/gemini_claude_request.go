@@ -49,7 +49,7 @@ func ConvertClaudeRequestToGeminiWithCompatReturningError(modelName string, inpu
 
 func convertClaudeRequestToGemini(modelName string, inputRawJSON []byte, _ bool, preserveEmptyThinkingBlocks bool) ([]byte, error) {
 	rawJSON := inputRawJSON
-	var droppedAttachment string
+	var drops translatorcommon.UserTurnDrops
 	// Build output Gemini request JSON
 	out := []byte(`{"contents":[]}`)
 	out, _ = sjson.SetBytes(out, "model", modelName)
@@ -199,8 +199,9 @@ func convertClaudeRequestToGemini(modelName string, inputRawJSON []byte, _ bool,
 					case "image", "document", "container_upload":
 						if part := claudeBase64InlineData(contentResult.Get("source")); part != nil {
 							partItems = append(partItems, part)
-						} else if partType := contentResult.Get("type").String(); partType != "image" {
-							droppedAttachment = partType
+						} else if originalRole == "user" {
+							// A part that cannot be inlined (url or file source) is dropped; the turn is refused only if nothing else is left.
+							drops.Drop(contentResult.Get("type").String())
 						}
 					default:
 						return true
@@ -209,6 +210,10 @@ func convertClaudeRequestToGemini(modelName string, inputRawJSON []byte, _ bool,
 				})
 				if role == "user" {
 					partItems = translatorcommon.ReorderGeminiUserParts(partItems)
+				}
+				if originalRole == "user" {
+					// Whitespace-only text is forwarded but never keeps an emptied turn alive.
+					drops.EndTurn(translatorcommon.CountSendableGeminiParts(partItems))
 				}
 				if len(partItems) > 0 {
 					contentItems = append(contentItems, geminiContentWithParts(role, partItems))
@@ -366,7 +371,7 @@ func convertClaudeRequestToGemini(modelName string, inputRawJSON []byte, _ bool,
 	result := out
 	result = common.AttachDefaultSafetySettings(result, "safetySettings")
 
-	return result, translatorcommon.ErrIfNothingLeft(droppedAttachment, int(gjson.GetBytes(result, "contents.#").Int()))
+	return result, drops.Err()
 }
 
 func claudeBase64InlineData(source gjson.Result) []byte {

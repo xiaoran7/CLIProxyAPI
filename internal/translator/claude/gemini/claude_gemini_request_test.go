@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/tidwall/gjson"
@@ -194,17 +195,18 @@ func TestConvertGeminiRequestToClaude_AcceptsCamelInlineData(t *testing.T) {
 func TestConvertGeminiRequestToClaude_SplitsNonImageInlineDataByMIME(t *testing.T) {
 	out := ConvertGeminiRequestToClaude("claude-sonnet-4", []byte(`{"contents":[{"role":"user","parts":[{"inlineData":{"mimeType":"audio/wav","data":"UklGRg=="}},{"inlineData":{"mimeType":"video/mp4","data":"AAAAIGZ0eXA="}},{"inlineData":{"mimeType":"application/pdf","data":"JVBERi0="}}]}]}`), false)
 
-	if got := gjson.GetBytes(out, "messages.0.content.0.type").String(); got != "text" {
-		t.Fatalf("audio fallback type = %q, want text. Output: %s", got, string(out))
+	// A user attachment Claude cannot read is dropped rather than replaced by placeholder text.
+	if got := gjson.GetBytes(out, "messages.0.content.#").Int(); got != 1 {
+		t.Fatalf("user content has %d blocks, want only the document. Output: %s", got, string(out))
 	}
-	if got := gjson.GetBytes(out, "messages.0.content.1.type").String(); got != "text" {
-		t.Fatalf("video fallback type = %q, want text. Output: %s", got, string(out))
-	}
-	if got := gjson.GetBytes(out, "messages.0.content.2.type").String(); got != "document" {
+	if got := gjson.GetBytes(out, "messages.0.content.0.type").String(); got != "document" {
 		t.Fatalf("document content type = %q, want document. Output: %s", got, string(out))
 	}
 	if gjson.GetBytes(out, "messages.0.content.#(type==\"image\")").Exists() {
 		t.Fatalf("non-image inlineData must not be converted to image. Output: %s", string(out))
+	}
+	if strings.Contains(string(out), "Media content") {
+		t.Fatalf("user attachment was replaced by placeholder text. Output: %s", string(out))
 	}
 }
 

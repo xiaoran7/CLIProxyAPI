@@ -65,22 +65,28 @@ func TranslateRequestEnvelopeWithCodexMultiAgentV2(ctx context.Context, headers 
 // extra pass over payloads that can reach tens of megabytes.
 func TranslateRequestPairWithCodexMultiAgentV2(ctx context.Context, headers http.Header, cfg *config.Config, from, to sdktranslator.Format, model string, originalPayload, requestPayload []byte, stream bool) (original, working []byte) {
 	req := sdktranslator.RequestEnvelope{Format: from, Model: model, Stream: stream}
-	return TranslateRequestEnvelopePairWithCodexMultiAgentV2(ctx, headers, cfg, from, to, req, originalPayload, requestPayload)
+	original, working, _ = TranslateRequestEnvelopePairWithCodexMultiAgentV2(ctx, headers, cfg, from, to, req, originalPayload, requestPayload)
+	return original, working
 }
 
 // TranslateRequestEnvelopePairWithCodexMultiAgentV2 translates the baseline and
-// working payload while preserving request-scoped metadata in req.
-func TranslateRequestEnvelopePairWithCodexMultiAgentV2(ctx context.Context, headers http.Header, cfg *config.Config, from, to sdktranslator.Format, req sdktranslator.RequestEnvelope, originalPayload, requestPayload []byte) (original, working []byte) {
+// working payload while preserving request-scoped metadata in req. The returned
+// error is the one for the working payload, which is the payload sent upstream;
+// a failure of the baseline alone never rejects a working payload that translated.
+func TranslateRequestEnvelopePairWithCodexMultiAgentV2(ctx context.Context, headers http.Header, cfg *config.Config, from, to sdktranslator.Format, req sdktranslator.RequestEnvelope, originalPayload, requestPayload []byte) (original, working []byte, err error) {
 	originalReq := req
 	originalReq.Body = originalPayload
-	original = TranslateRequestEnvelopeWithCodexMultiAgentV2(ctx, headers, cfg, from, to, originalReq).Body
+	originalTranslated := TranslateRequestEnvelopeWithCodexMultiAgentV2(ctx, headers, cfg, from, to, originalReq)
+	original = originalTranslated.Body
 	if sameByteSlice(originalPayload, requestPayload) {
 		// The caller mutates the working copy, so it must not share the baseline array.
-		return original, append([]byte(nil), original...)
+		// A single translation serves both payloads, so its error is the working error.
+		return original, append([]byte(nil), original...), originalTranslated.Err
 	}
 	workingReq := req
 	workingReq.Body = requestPayload
-	return original, TranslateRequestEnvelopeWithCodexMultiAgentV2(ctx, headers, cfg, from, to, workingReq).Body
+	workingTranslated := TranslateRequestEnvelopeWithCodexMultiAgentV2(ctx, headers, cfg, from, to, workingReq)
+	return original, workingTranslated.Body, workingTranslated.Err
 }
 
 // sameByteSlice reports whether both slices describe the same bytes of the same
@@ -115,16 +121,16 @@ func translateRequestPairWithAPIKeyModelCompatibility(ctx context.Context, heade
 
 // TranslateRequestPairWithAPIKeyModelCompatibilityAndUpdateIntent returns the
 // normalizer decision for the working payload, not for the baseline payload,
-// and the error for a content part the target cannot represent.
+// and the working payload's error for a content part the target cannot
+// represent. A baseline failure alone is ignored.
 func TranslateRequestPairWithAPIKeyModelCompatibilityAndUpdateIntent(ctx context.Context, headers http.Header, cfg *config.Config, from, to sdktranslator.Format, model string, originalPayload, requestPayload []byte, stream, isCompat bool) (original, working []byte, updatesChanged bool, err error) {
 	original, updatesChanged, err = TranslateRequestWithAPIKeyModelCompatibilityAndUpdateIntent(ctx, headers, cfg, from, to, model, originalPayload, stream, isCompat)
 	if sameByteSlice(originalPayload, requestPayload) {
+		// A single translation serves both payloads, so its error is the working error.
 		return original, append([]byte(nil), original...), updatesChanged, err
 	}
-	working, updatesChanged, errWorking := TranslateRequestWithAPIKeyModelCompatibilityAndUpdateIntent(ctx, headers, cfg, from, to, model, requestPayload, stream, isCompat)
-	if err == nil {
-		err = errWorking
-	}
+	// Only the working payload is sent upstream, so only its error counts.
+	working, updatesChanged, err = TranslateRequestWithAPIKeyModelCompatibilityAndUpdateIntent(ctx, headers, cfg, from, to, model, requestPayload, stream, isCompat)
 	return original, working, updatesChanged, err
 }
 
@@ -196,7 +202,7 @@ func translateRequestWithAPIKeyModelCompatibilityForExecutor(ctx context.Context
 	case from == sdktranslator.FormatOpenAI && to == sdktranslator.FormatClaude:
 		translated, convertErr = openaichatclaude.ConvertOpenAIRequestToClaudeWithCompatReturningError(model, payload, stream)
 	case from == sdktranslator.FormatOpenAIResponse && to == sdktranslator.FormatClaude:
-		translated = responsesclaude.ConvertOpenAIResponsesRequestToClaudeWithCompat(model, payload, stream)
+		translated, convertErr = responsesclaude.ConvertOpenAIResponsesRequestToClaudeWithCompatReturningError(model, payload, stream)
 	default:
 		return translateRequestWithCodexMultiAgentV2Checked(ctx, headers, cfg, from, to, model, payload, stream)
 	}
