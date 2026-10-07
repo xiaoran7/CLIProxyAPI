@@ -60,6 +60,15 @@ func (r *Registry) RegisterRequestEnvelope(from, to Format, request RequestEnvel
 	}
 }
 
+// RegisterCheckedRequest stores a request translator that may refuse a request,
+// carrying the refusal on the envelope next to the legacy-shaped body.
+func (r *Registry) RegisterCheckedRequest(from, to Format, request func(model string, body []byte, stream bool) ([]byte, error)) {
+	r.RegisterRequestEnvelope(from, to, func(_ context.Context, req RequestEnvelope) RequestEnvelope {
+		req.Body, req.Err = request(req.Model, req.Body, req.Stream)
+		return req
+	})
+}
+
 // Unregister removes the request and response transforms for one format pair.
 // Empty parent maps are dropped so a temporary registration can be restored.
 func (r *Registry) Unregister(from, to Format) {

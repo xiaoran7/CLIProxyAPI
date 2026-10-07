@@ -42,17 +42,25 @@ import (
 // Returns:
 //   - []byte: The transformed request data in internal client format
 func ConvertClaudeRequestToCodex(modelName string, inputRawJSON []byte, stream bool) []byte {
-	return convertClaudeRequestToCodex(modelName, inputRawJSON, stream, false)
+	body, _ := convertClaudeRequestToCodex(modelName, inputRawJSON, stream, false)
+	return body
 }
 
 // ConvertClaudeRequestToCodexWithCompat preserves assistant thinking blocks with
 // empty or unknown-format signatures for configured compatibility endpoints.
 func ConvertClaudeRequestToCodexWithCompat(modelName string, inputRawJSON []byte, stream bool) []byte {
+	body, _ := convertClaudeRequestToCodex(modelName, inputRawJSON, stream, true)
+	return body
+}
+
+// ConvertClaudeRequestToCodexWithCompatReturningError reports a file part the target cannot represent.
+func ConvertClaudeRequestToCodexWithCompatReturningError(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	return convertClaudeRequestToCodex(modelName, inputRawJSON, stream, true)
 }
 
-func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool, preserveEmptyThinkingBlocks bool) []byte {
+func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool, preserveEmptyThinkingBlocks bool) ([]byte, error) {
 	rawJSON := inputRawJSON
+	var droppedAttachment string
 
 	template := []byte(`{"model":"","instructions":"","input":[]}`)
 
@@ -228,25 +236,15 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool, 
 								appendImageContent(dataURL)
 							}
 						}
-					case "document":
+					case "document", "container_upload":
 						if len(pendingSystemReminders) > 0 {
 							inputItems = append(inputItems, pendingSystemReminders...)
 							pendingSystemReminders = nil
 						}
-						sourceResult := messageContentResult.Get("source")
-						if sourceResult.Get("type").String() != "base64" {
-							continue
-						}
-						mediaType := strings.TrimSpace(sourceResult.Get("media_type").String())
-						if !strings.EqualFold(mediaType, "application/pdf") {
-							continue
-						}
-						data := sourceResult.Get("data").String()
-						if data == "" {
-							data = sourceResult.Get("base64").String()
-						}
-						if data != "" {
-							appendDocumentContent(fmt.Sprintf("data:%s;base64,%s", mediaType, data))
+						if dataURL, ok := claudeDocumentDataURL(messageContentResult); ok {
+							appendDocumentContent(dataURL)
+						} else {
+							droppedAttachment = messageContentResult.Get("type").String()
 						}
 					case "tool_use":
 						flushMessage()
@@ -469,7 +467,7 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool, 
 	}
 	template = translatorcommon.SetRawArrayItems(template, "input", inputItems)
 
-	return template
+	return template, translatorcommon.ErrIfNothingLeft(droppedAttachment, len(inputItems))
 }
 
 func codexClaudeTargetAcceptsGrokSignature(modelName string) bool {
@@ -844,4 +842,25 @@ func codexSchemaMissesRequired(schema gjson.Result) bool {
 		}
 	}
 	return false
+}
+
+// claudeDocumentDataURL turns an inline PDF into a Codex input_file URL. Anything
+// else, a file id included, is not representable and is reported by the caller.
+func claudeDocumentDataURL(part gjson.Result) (string, bool) {
+	source := part.Get("source")
+	if source.Get("type").String() == "base64" {
+		mediaType := strings.TrimSpace(source.Get("media_type").String())
+		if !strings.EqualFold(mediaType, "application/pdf") {
+			return "", false
+		}
+		data := source.Get("data").String()
+		if data == "" {
+			data = source.Get("base64").String()
+		}
+		if data == "" {
+			return "", false
+		}
+		return fmt.Sprintf("data:%s;base64,%s", mediaType, data), true
+	}
+	return "", false
 }

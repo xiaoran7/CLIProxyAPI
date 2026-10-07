@@ -1,7 +1,9 @@
 package claude
 
 import (
+	"errors"
 	"fmt"
+	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
 	"strings"
 	"testing"
 
@@ -824,5 +826,59 @@ func TestConvertClaudeRequestToGemini_Issue5960_DocumentPreservation(t *testing.
 	contents := gjson.GetBytes(unsupportedOut, "contents").Array()
 	if len(contents) != 0 {
 		t.Fatalf("expected 0 contents turns instead of empty parts turn, got: %s", string(unsupportedOut))
+	}
+}
+
+func TestConvertClaudeRequestToGemini_ContainerUploadKeepsOtherText(t *testing.T) {
+	inputJSON := []byte(`{
+		"model": "gemini-3-flash-preview",
+		"messages": [{"role": "user", "content": [
+			{"type": "text", "text": "keep me"},
+			{"type": "container_upload", "file_id": "file-example"}
+		]}]
+	}`)
+	output := ConvertClaudeRequestToGemini("gemini-3-flash-preview", inputJSON, false)
+	parts := gjson.GetBytes(output, "contents.0.parts").Array()
+	if len(parts) != 1 || parts[0].Get("text").String() != "keep me" {
+		t.Fatalf("text was dropped with the file: %s", output)
+	}
+}
+
+func TestConvertClaudeRequestToGemini_UnsendableFileNamesTheDroppedPart(t *testing.T) {
+	for partType, block := range map[string]string{
+		"container_upload": `{"type": "container_upload", "file_id": "file-example"}`,
+		"document":         `{"type": "document", "source": {"type": "file", "file_id": "file-example"}}`,
+	} {
+		inputJSON := []byte(`{
+			"model": "gemini-3-flash-preview",
+			"messages": [{"role": "user", "content": [` + block + `]}]
+		}`)
+		output, err := ConvertClaudeRequestToGeminiWithCompatReturningError("gemini-3-flash-preview", inputJSON, false)
+		if err == nil {
+			t.Fatalf("%s: expected unsupported part error, output=%s", partType, output)
+		}
+		if got, want := err.Error(), "unsupported content part: "+partType; got != want {
+			t.Fatalf("error = %q, want %q", got, want)
+		}
+		var unsupported *translatorcommon.UnsupportedPartError
+		if !errors.As(err, &unsupported) || unsupported.StatusCode() != 400 || !unsupported.IsRequestScoped() {
+			t.Fatalf("%s: error = %#v", partType, err)
+		}
+	}
+}
+
+func TestConvertClaudeRequestToGemini_ImageURLAndRedactedThinkingStaySkipped(t *testing.T) {
+	inputJSON := []byte(`{
+		"model": "gemini-3-flash-preview",
+		"messages": [{"role": "user", "content": [
+			{"type": "text", "text": "keep me"},
+			{"type": "image", "source": {"type": "url", "url": "https://example.test/a.png"}},
+			{"type": "redacted_thinking", "data": "abc"}
+		]}]
+	}`)
+	output := ConvertClaudeRequestToGemini("gemini-3-flash-preview", inputJSON, false)
+	parts := gjson.GetBytes(output, "contents.0.parts").Array()
+	if len(parts) != 1 || parts[0].Get("text").String() != "keep me" {
+		t.Fatalf("old skip paths changed the turn: %s", output)
 	}
 }

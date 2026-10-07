@@ -9,16 +9,23 @@ import (
 )
 
 func ConvertClaudeRequestToInteractions(modelName string, inputRawJSON []byte, stream bool) []byte {
-	return convertClaudeRequestToInteractions(modelName, inputRawJSON, stream, false)
+	body, _ := convertClaudeRequestToInteractions(modelName, inputRawJSON, stream, false)
+	return body
 }
 
 // ConvertClaudeRequestToInteractionsWithCompat preserves empty assistant
 // thinking blocks for configured compatibility endpoints.
 func ConvertClaudeRequestToInteractionsWithCompat(modelName string, inputRawJSON []byte, stream bool) []byte {
+	body, _ := convertClaudeRequestToInteractions(modelName, inputRawJSON, stream, true)
+	return body
+}
+
+// ConvertClaudeRequestToInteractionsWithCompatReturningError reports a file part the target cannot represent.
+func ConvertClaudeRequestToInteractionsWithCompatReturningError(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	return convertClaudeRequestToInteractions(modelName, inputRawJSON, stream, true)
 }
 
-func convertClaudeRequestToInteractions(modelName string, inputRawJSON []byte, stream, preserveEmptyThinkingBlocks bool) []byte {
+func convertClaudeRequestToInteractions(modelName string, inputRawJSON []byte, stream, preserveEmptyThinkingBlocks bool) ([]byte, error) {
 	root := gjson.ParseBytes(inputRawJSON)
 	out := []byte(`{"model":"","input":[]}`)
 	out, _ = sjson.SetBytes(out, "model", firstNonEmpty(modelName, root.Get("model").String()))
@@ -27,9 +34,9 @@ func convertClaudeRequestToInteractions(modelName string, inputRawJSON []byte, s
 	}
 	out = copyClaudeSystemToInteractions(out, root)
 	out = copyClaudeGenerationConfigToInteractions(out, root)
-	out = appendClaudeMessagesToInteractions(out, root.Get("messages"), preserveEmptyThinkingBlocks)
+	out, droppedAttachment := appendClaudeMessagesToInteractions(out, root.Get("messages"), preserveEmptyThinkingBlocks)
 	out = copyClaudeToolsToInteractions(out, root)
-	return out
+	return out, translatorcommon.ErrIfNothingLeft(droppedAttachment, int(gjson.GetBytes(out, "input.#").Int()))
 }
 
 func claudeRequestStreamValue(root gjson.Result, stream bool) (bool, bool) {
@@ -122,10 +129,11 @@ func copyClaudeToolChoiceToInteractions(out []byte, toolChoice gjson.Result) []b
 	return out
 }
 
-func appendClaudeMessagesToInteractions(out []byte, messages gjson.Result, preserveEmptyThinkingBlocks bool) []byte {
+func appendClaudeMessagesToInteractions(out []byte, messages gjson.Result, preserveEmptyThinkingBlocks bool) ([]byte, string) {
 	if !messages.Exists() || !messages.IsArray() {
-		return out
+		return out, ""
 	}
+	droppedAttachment := ""
 	inputItems := translatorcommon.NewRawArrayItems(messages.Get("#").Int())
 	var pendingToolUseIDs []string
 	var pendingSystemReminders [][]byte
@@ -152,7 +160,7 @@ func appendClaudeMessagesToInteractions(out []byte, messages gjson.Result, prese
 		}
 		pendingToolUseIDs = nil
 
-		appendClaudeMessageToInteractions(&inputItems, &pendingToolUseIDs, &pendingSystemReminders, toolNamesByID, role, content, preserveEmptyThinkingBlocks)
+		appendClaudeMessageToInteractions(&inputItems, &pendingToolUseIDs, &pendingSystemReminders, toolNamesByID, role, content, preserveEmptyThinkingBlocks, &droppedAttachment)
 		if len(pendingSystemReminders) > 0 {
 			inputItems = append(inputItems, pendingSystemReminders...)
 			pendingSystemReminders = nil
@@ -163,10 +171,10 @@ func appendClaudeMessagesToInteractions(out []byte, messages gjson.Result, prese
 		inputItems = append(inputItems, pendingSystemReminders...)
 	}
 	out = translatorcommon.SetRawArrayItems(out, "input", inputItems)
-	return out
+	return out, droppedAttachment
 }
 
-func appendClaudeMessageToInteractions(items *[][]byte, pendingToolUseIDs *[]string, pendingSystemReminders *[][]byte, toolNamesByID map[string]string, role string, content gjson.Result, preserveEmptyThinkingBlocks bool) {
+func appendClaudeMessageToInteractions(items *[][]byte, pendingToolUseIDs *[]string, pendingSystemReminders *[][]byte, toolNamesByID map[string]string, role string, content gjson.Result, preserveEmptyThinkingBlocks bool, droppedAttachment *string) {
 	defaultStepType := "user_input"
 	if role == "assistant" {
 		defaultStepType = "model_output"
@@ -218,7 +226,7 @@ func appendClaudeMessageToInteractions(items *[][]byte, pendingToolUseIDs *[]str
 				step, _ = sjson.SetBytes(step, "content.0.text", text)
 				*items = append(*items, step)
 			}
-		case "image", "document":
+		case "image", "document", "container_upload":
 			if mediaPart, ok := claudeMediaPartToInteractions(part, partType); ok {
 				if pendingSystemReminders != nil && len(*pendingSystemReminders) > 0 {
 					flushContent()
@@ -226,6 +234,8 @@ func appendClaudeMessageToInteractions(items *[][]byte, pendingToolUseIDs *[]str
 					*pendingSystemReminders = nil
 				}
 				stepContent = append(stepContent, mediaPart)
+			} else if droppedAttachment != nil {
+				*droppedAttachment = partType
 			}
 		case "tool_use":
 			flushContent()
@@ -327,7 +337,7 @@ func claudeToolResultToInteractions(part gjson.Result, toolNamesByID map[string]
 					} else if raw := strings.TrimSpace(item.Raw); raw != "" {
 						contentItems = append(contentItems, []byte(raw))
 					}
-				case "image", "document":
+				case "image", "document", "container_upload":
 					if mediaPart, ok := claudeMediaPartToInteractions(item, itemType); ok {
 						contentItems = append(contentItems, mediaPart)
 					} else if raw := strings.TrimSpace(item.Raw); raw != "" {
