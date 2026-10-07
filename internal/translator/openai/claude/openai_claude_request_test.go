@@ -1,10 +1,13 @@
 package claude
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"testing"
 
+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	"github.com/tidwall/gjson"
 )
 
@@ -1765,5 +1768,58 @@ func TestConvertClaudeRequestToOpenAI_NormalizesBooleanSubschemas(t *testing.T) 
 	}
 	if enum1 := params.Get("properties.enabled_flag.enum.1"); !enum1.Exists() || enum1.Type != gjson.False {
 		t.Fatalf("enabled_flag.enum.1 should remain boolean false, got: %s", enum1.Raw)
+	}
+}
+
+func TestConvertClaudeRequestToOpenAI_UncachedFileKeepsOldDrop(t *testing.T) {
+	input := []byte(`{"model":"gpt-5","messages":[{"role":"user","content":[{"type":"text","text":"read"},{"type":"container_upload","file_id":"file-absent"}]}]}`)
+	output := string(ConvertClaudeRequestToOpenAI("gpt-5", input, false))
+	if strings.Contains(output, "file_data") {
+		t.Fatalf("output = %s", output)
+	}
+	if !strings.Contains(output, `"text":"read"`) {
+		t.Fatalf("text was lost: %s", output)
+	}
+}
+
+func claudeToOpenAIEnvelope(model string, input []byte) sdktranslator.RequestEnvelope {
+	return sdktranslator.TranslateRequestEnvelope(context.Background(), sdktranslator.FormatClaude, sdktranslator.FormatOpenAI, sdktranslator.RequestEnvelope{
+		Format: sdktranslator.FormatClaude,
+		Model:  model,
+		Body:   input,
+	})
+}
+
+func TestClaudeFileOnlyRequestSurfacesUnsupportedPart(t *testing.T) {
+	input := []byte(`{"model":"gpt-5","messages":[{"role":"user","content":[{"type":"container_upload","file_id":"file-absent"}]}]}`)
+	envelope := claudeToOpenAIEnvelope("gpt-5", input)
+	if envelope.Err == nil {
+		t.Fatalf("expected an unsupported part error, body = %s", envelope.Body)
+	}
+	if !strings.Contains(envelope.Err.Error(), "container_upload") {
+		t.Fatalf("err = %v", envelope.Err)
+	}
+}
+
+func TestClaudeBase64DocumentBecomesFilePart(t *testing.T) {
+	input := []byte(`{"model":"gpt-5","messages":[{"role":"user","content":[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"JVBERi0xLjQK"}}]}]}`)
+	envelope := claudeToOpenAIEnvelope("gpt-5", input)
+	if envelope.Err != nil {
+		t.Fatalf("err = %v", envelope.Err)
+	}
+	part := gjson.GetBytes(envelope.Body, "messages.0.content.0")
+	if part.Get("type").String() != "file" || part.Get("file.file_data").String() != "data:application/pdf;base64,JVBERi0xLjQK" {
+		t.Fatalf("part = %s, body = %s", part.Raw, envelope.Body)
+	}
+}
+
+func TestClaudeTextWithUncachedFileKeepsText(t *testing.T) {
+	input := []byte(`{"model":"gpt-5","messages":[{"role":"user","content":[{"type":"text","text":"read"},{"type":"container_upload","file_id":"file-absent"}]}]}`)
+	envelope := claudeToOpenAIEnvelope("gpt-5", input)
+	if envelope.Err != nil {
+		t.Fatalf("err = %v", envelope.Err)
+	}
+	if !strings.Contains(string(envelope.Body), `"text":"read"`) {
+		t.Fatalf("body = %s", envelope.Body)
 	}
 }

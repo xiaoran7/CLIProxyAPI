@@ -31,17 +31,25 @@ const geminiClaudeThoughtSignature = "skip_thought_signature_validator"
 // Returns:
 //   - []byte: The transformed request in Gemini format.
 func ConvertClaudeRequestToGemini(modelName string, inputRawJSON []byte, stream bool) []byte {
-	return convertClaudeRequestToGemini(modelName, inputRawJSON, stream, false)
+	body, _ := convertClaudeRequestToGemini(modelName, inputRawJSON, stream, false)
+	return body
 }
 
 // ConvertClaudeRequestToGeminiWithCompat preserves assistant thinking blocks
 // with empty signatures for configured compatibility endpoints.
 func ConvertClaudeRequestToGeminiWithCompat(modelName string, inputRawJSON []byte, stream bool) []byte {
+	body, _ := convertClaudeRequestToGemini(modelName, inputRawJSON, stream, true)
+	return body
+}
+
+// ConvertClaudeRequestToGeminiWithCompatReturningError reports a file part the target cannot represent.
+func ConvertClaudeRequestToGeminiWithCompatReturningError(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	return convertClaudeRequestToGemini(modelName, inputRawJSON, stream, true)
 }
 
-func convertClaudeRequestToGemini(modelName string, inputRawJSON []byte, _ bool, preserveEmptyThinkingBlocks bool) []byte {
+func convertClaudeRequestToGemini(modelName string, inputRawJSON []byte, _ bool, preserveEmptyThinkingBlocks bool) ([]byte, error) {
 	rawJSON := inputRawJSON
+	var droppedAttachment string
 	// Build output Gemini request JSON
 	out := []byte(`{"contents":[]}`)
 	out, _ = sjson.SetBytes(out, "model", modelName)
@@ -188,20 +196,14 @@ func convertClaudeRequestToGemini(modelName string, inputRawJSON []byte, _ bool,
 							partItems = append(partItems, imagePart)
 						}
 
-					case "image", "document":
-						source := contentResult.Get("source")
-						if source.Get("type").String() != "base64" {
-							return true
+					case "image", "document", "container_upload":
+						if part := claudeBase64InlineData(contentResult.Get("source")); part != nil {
+							partItems = append(partItems, part)
+						} else if partType := contentResult.Get("type").String(); partType != "image" {
+							droppedAttachment = partType
 						}
-						mimeType := source.Get("media_type").String()
-						data := source.Get("data").String()
-						if mimeType == "" || data == "" {
-							return true
-						}
-						part := []byte(`{"inline_data":{"mime_type":"","data":""}}`)
-						part, _ = sjson.SetBytes(part, "inline_data.mime_type", mimeType)
-						part, _ = sjson.SetBytes(part, "inline_data.data", data)
-						partItems = append(partItems, part)
+					default:
+						return true
 					}
 					return true
 				})
@@ -364,7 +366,22 @@ func convertClaudeRequestToGemini(modelName string, inputRawJSON []byte, _ bool,
 	result := out
 	result = common.AttachDefaultSafetySettings(result, "safetySettings")
 
-	return result
+	return result, translatorcommon.ErrIfNothingLeft(droppedAttachment, int(gjson.GetBytes(result, "contents.#").Int()))
+}
+
+func claudeBase64InlineData(source gjson.Result) []byte {
+	if source.Get("type").String() != "base64" {
+		return nil
+	}
+	mimeType := source.Get("media_type").String()
+	data := source.Get("data").String()
+	if mimeType == "" || data == "" {
+		return nil
+	}
+	part := []byte(`{"inline_data":{"mime_type":"","data":""}}`)
+	part, _ = sjson.SetBytes(part, "inline_data.mime_type", mimeType)
+	part, _ = sjson.SetBytes(part, "inline_data.data", data)
+	return part
 }
 
 func geminiContentWithParts(role string, parts [][]byte) []byte {

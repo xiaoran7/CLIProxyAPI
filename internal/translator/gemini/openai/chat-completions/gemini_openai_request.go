@@ -26,8 +26,16 @@ const geminiFunctionThoughtSignature = "skip_thought_signature_validator"
 //
 // Returns:
 //   - []byte: The transformed request data in Gemini API format
-func ConvertOpenAIRequestToGemini(modelName string, inputRawJSON []byte, _ bool) []byte {
+func ConvertOpenAIRequestToGemini(modelName string, inputRawJSON []byte, stream bool) []byte {
+	body, _ := convertOpenAIRequestToGemini(modelName, inputRawJSON, stream)
+	return body
+}
+
+// convertOpenAIRequestToGemini also reports a file part Gemini cannot receive
+// when nothing else was left to send.
+func convertOpenAIRequestToGemini(modelName string, inputRawJSON []byte, _ bool) ([]byte, error) {
 	rawJSON := inputRawJSON
+	var droppedAttachment string
 	// Base envelope (no default thinkingConfig)
 	out := []byte(`{"contents":[]}`)
 
@@ -174,6 +182,7 @@ func ConvertOpenAIRequestToGemini(modelName string, inputRawJSON []byte, _ bool)
 								partItems = append(partItems, geminiInlineDataPart(mimeType, data, ""))
 							} else {
 								log.Warn("Invalid file data or unknown file name extension in user message, skip")
+								droppedAttachment = "file"
 							}
 						case "input_audio":
 							audioData := item.Get("input_audio.data").String()
@@ -537,7 +546,7 @@ func ConvertOpenAIRequestToGemini(modelName string, inputRawJSON []byte, _ bool)
 
 	out = common.AttachDefaultSafetySettings(out, "safetySettings")
 
-	return out
+	return out, translatorcommon.ErrIfNothingLeft(droppedAttachment, int(gjson.GetBytes(out, "contents.#").Int()))
 }
 
 func geminiTextPart(text string) []byte {
