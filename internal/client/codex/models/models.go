@@ -543,18 +543,12 @@ func applyCPAWebSearchCapability(entry map[string]any, id string, capabilityForM
 }
 
 func applyCodexClientProviderCapabilities(entry map[string]any, id string, isTemplate bool, providersForModel ProvidersForModelFunc) {
-	if !isTemplate {
-		applyCodexClientSearchToolSupport(entry, id, false, providersForModel)
-		return
-	}
-	if providersForModel != nil && !isPureCodexProvider(id, providersForModel) {
-		entry["supports_search_tool"] = false
+	applyCodexClientSearchToolSupport(entry, id, isTemplate, providersForModel)
+	if isTemplate && providersForModel != nil && !isPureCodexProvider(id, providersForModel) {
 		entry["prefer_websockets"] = false
 		entry["service_tiers"] = []any{}
 		nullCodexClientRequiredOptions(entry)
-		return
 	}
-	applyCodexClientSearchToolSupport(entry, id, isTemplate, providersForModel)
 }
 
 // nullCodexClientRequiredOptions clears capabilities that non-Codex models must not advertise.
@@ -586,53 +580,58 @@ func isPureCodexProvider(id string, providersForModel ProvidersForModelFunc) boo
 	if providersForModel == nil {
 		return true
 	}
+	return allCodexClientProvidersAre(codexClientModelProviders(id, providersForModel), "codex")
+}
+
+// codexClientModelProviders resolves the providers serving a model, falling
+// back to the base ID for prefixed aliases.
+func codexClientModelProviders(id string, providersForModel ProvidersForModelFunc) []string {
 	providers := providersForModel(id)
 	if len(providers) == 0 && strings.Contains(id, "/") {
 		idx := strings.Index(id, "/")
 		base := strings.TrimSpace(id[idx+1:])
 		providers = providersForModel(base)
 	}
+	return providers
+}
+
+// allCodexClientProvidersAre reports whether providers is non-empty and every
+// entry is the named provider.
+func allCodexClientProvidersAre(providers []string, name string) bool {
 	if len(providers) == 0 {
 		return false
 	}
 	for _, provider := range providers {
-		if !strings.EqualFold(strings.TrimSpace(provider), "codex") {
+		if !strings.EqualFold(strings.TrimSpace(provider), name) {
 			return false
 		}
 	}
 	return true
 }
 
+// applyCodexClientSearchToolSupport keeps supports_search_tool only when every
+// route serving the model can close Codex's client tool_search loop: pure Codex
+// template models, or pure Claude models whose Responses translator maps
+// tool_search to a Claude tool. Mixed and unknown routes fail closed.
 func applyCodexClientSearchToolSupport(entry map[string]any, id string, templateModel bool, providersForModel ProvidersForModelFunc) {
 	supportsSearch, _ := entry["supports_search_tool"].(bool)
 	if !supportsSearch {
 		return
 	}
 
-	if !templateModel {
-		entry["supports_search_tool"] = false
-		return
-	}
-
 	if providersForModel == nil {
+		if !templateModel {
+			entry["supports_search_tool"] = false
+		}
 		return
 	}
 
-	providers := providersForModel(id)
-	if len(providers) == 0 && strings.Contains(id, "/") {
-		idx := strings.Index(id, "/")
-		base := strings.TrimSpace(id[idx+1:])
-		providers = providersForModel(base)
-	}
-	if len(providers) == 0 {
-		entry["supports_search_tool"] = false
+	providers := codexClientModelProviders(id, providersForModel)
+	if allCodexClientProvidersAre(providers, "claude") {
 		return
 	}
-	for _, provider := range providers {
-		if !strings.EqualFold(strings.TrimSpace(provider), "codex") {
-			entry["supports_search_tool"] = false
-			return
-		}
+	if !templateModel || !allCodexClientProvidersAre(providers, "codex") {
+		entry["supports_search_tool"] = false
 	}
 }
 
