@@ -148,7 +148,7 @@ CLIProxyAPI 用户手册： [https://help.router-for.me/](https://help.router-fo
 
 ### [CPA-Manager-Plus](https://github.com/seakee/CPA-Manager-Plus)
 
-面向 CLIProxyAPI 的完整管理中心，提供请求级监控和费用预估。CPA-Manager 可按账号、模型、渠道、延迟、状态和 token 用量追踪采集到的请求；支持可编辑模型价格与一键同步 LiteLLM 价格来估算费用；用 SQLite 持久化事件；并提供面向 Codex 账号池的批量巡检、配额识别、异常账号定位、清理建议与一键执行能力，适合多账号池的日常运维管理。
+面向 CLIProxyAPI 的自托管管理面板与可观测性平台，既可作为无需额外服务的轻量管理界面运行，也可通过完整 Manager Server 获得持久化分析和运维能力。统一管理 OAuth 凭证、AI 提供商、客户端 API 密钥、模型别名、插件和 CPA 配置。基于 SQLite 的请求历史支持实时监控、失败诊断，以及按模型、提供商、账号、密钥和渠道统计 Token、延迟与预估成本。支持自定义模型价格与一键同步，并提供 Codex 与 xAI 配额检查、重置信息、账号健康巡检及受控恢复操作。支持 Docker 和跨平台原生部署，数据保存在本地。
 
 ### [Oh-My-CPA](https://github.com/WizisCool/oh-my-cpa)
 
