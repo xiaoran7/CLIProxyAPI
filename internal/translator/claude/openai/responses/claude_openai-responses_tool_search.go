@@ -82,7 +82,7 @@ func convertResponsesToolSearchCallToClaude(item gjson.Result, claudeName string
 // Their full definitions are declared in tools[], so names suffice here.
 func responsesToolSearchOutputText(item gjson.Result, names claudeToolNames) string {
 	var discovered []string
-	for _, descriptor := range appendResponsesToolDescriptors(nil, item.Get("tools"), responsesDiscoveredToolPriority, false) {
+	for _, descriptor := range appendResponsesToolDescriptors(nil, item.Get("tools"), responsesDiscoveredToolPriority) {
 		discovered = append(discovered, names.claudeName(descriptor.name))
 	}
 	if len(discovered) == 0 {

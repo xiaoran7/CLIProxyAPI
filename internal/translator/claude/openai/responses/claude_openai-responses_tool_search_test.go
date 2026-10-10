@@ -350,21 +350,24 @@ func TestConvertOpenAIResponsesRequestToClaude_ToolSearchNameCollisionRoutesCons
 	}, "\n")
 
 	// The first declaration wins, as for any duplicate tool name. Request and
-	// response agree on the winner, so a call is never misrouted.
+	// response agree on the winner, so a call is never misrouted. Deferred
+	// tools are hidden only when the client search tool wins; otherwise the
+	// model would have neither the deferred tools nor a way to find them.
 	for _, tc := range []struct {
-		name     string
-		tools    string
-		wantType string
-		wantProp string
+		name      string
+		tools     string
+		wantTools string
+		wantType  string
+		wantProp  string
 	}{
-		{"user function first", userFunction + "," + codexToolSearchDeclaration, "function_call", "x"},
-		{"client declaration first", codexToolSearchDeclaration + "," + userFunction, "tool_search_call", "query"},
+		{"user function first", userFunction + "," + codexToolSearchDeclaration, "tool_search,lookup_order", "function_call", "x"},
+		{"client declaration first", codexToolSearchDeclaration + "," + userFunction, "tool_search", "tool_search_call", "query"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			request := []byte(`{"model":"claude-sonnet-4-5","input":"hi","tools":[` + tc.tools + `]}`)
+			request := []byte(`{"model":"claude-sonnet-4-5","input":"hi","tools":[` + tc.tools + `,` + codexDeferredTool + `]}`)
 			req := convertToolSearchRequest(t, request)
-			if names := claudeToolNamesOf(req); len(names) != 1 || names[0] != responsesToolSearchType {
-				t.Fatalf("tools = %v, want one tool_search", names)
+			if got := strings.Join(claudeToolNamesOf(req), ","); got != tc.wantTools {
+				t.Fatalf("tools = %s, want %s", got, tc.wantTools)
 			}
 			if !req.Get("tools.0.input_schema.properties." + tc.wantProp).Exists() {
 				t.Fatalf("declared tool = %s, want %s winner", req.Get("tools.0").Raw, tc.wantProp)

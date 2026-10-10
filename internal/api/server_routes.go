@@ -704,7 +704,7 @@ func (s *Server) handleHomeCodexClientModels(c *gin.Context, clientVersion strin
 	if s.cfg.Client.Codex.EnableApplyPatch {
 		applyPatchCapabilityForModel = homeApplyPatchCapabilityForModel(entries, manager)
 	}
-	payload := codexmodels.BuildResponseForClientWithToolCapabilities(models, nil, webSearchCapabilityForModel, applyPatchCapabilityForModel, s.cfg.Client.Codex.OptimizeMultiAgentV2, clientVersion)
+	payload := codexmodels.BuildResponseForClientWithSearchToolRoutes(models, nil, homeProvidersForModel(entries), webSearchCapabilityForModel, applyPatchCapabilityForModel, s.cfg.Client.Codex.OptimizeMultiAgentV2, clientVersion)
 	body, errMarshal := codexmodels.MarshalCompact(payload)
 	if errMarshal != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errMarshal.Error()})
@@ -716,6 +716,15 @@ func (s *Server) handleHomeCodexClientModels(c *gin.Context, clientVersion strin
 // homeApplyPatchCapabilityForModel uses only Home's exact public routing evidence,
 // never the local model registry or the template's metadata model ID.
 func homeApplyPatchCapabilityForModel(entries []homeModelEntry, manager *auth.Manager) codexmodels.ApplyPatchCapabilityForModelFunc {
+	providersForModel := homeProvidersForModel(entries)
+	return func(id string) bool {
+		return manager.SupportsApplyPatchForProviders(providersForModel(id))
+	}
+}
+
+// homeProvidersForModel returns Home's routing providers for an exact public
+// model ID. An empty entry stands for an unknown route so it can veto support.
+func homeProvidersForModel(entries []homeModelEntry) codexmodels.ProvidersForModelFunc {
 	providersByID := make(map[string][]string, len(entries))
 	for _, entry := range entries {
 		id := strings.TrimSpace(entry.id)
@@ -731,8 +740,8 @@ func homeApplyPatchCapabilityForModel(entries []homeModelEntry, manager *auth.Ma
 			}
 		}
 	}
-	return func(id string) bool {
-		return manager.SupportsApplyPatchForProviders(providersByID[strings.TrimSpace(id)])
+	return func(id string) []string {
+		return providersByID[strings.TrimSpace(id)]
 	}
 }
 

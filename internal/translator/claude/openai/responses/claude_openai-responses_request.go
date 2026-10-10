@@ -1371,19 +1371,11 @@ type responsesToolSource struct {
 	priority int // Top-level tools use 0, additional_tools 1, tool_search_output results 2.
 }
 
-// responsesToolSources lists tool sources in priority order and reports
-// whether a declared source (not a search result) enables client tool search.
-func responsesToolSources(root gjson.Result) (sources []responsesToolSource, clientToolSearch bool) {
+func responsesToolSources(root gjson.Result) []responsesToolSource {
+	var sources []responsesToolSource
 	appendSource := func(tools gjson.Result, priority int) {
-		if !tools.Exists() || !tools.IsArray() {
-			return
-		}
-		sources = append(sources, responsesToolSource{tools: tools, priority: priority})
-		if priority != responsesDiscoveredToolPriority && !clientToolSearch {
-			tools.ForEach(func(_, tool gjson.Result) bool {
-				clientToolSearch = isResponsesClientToolSearch(tool)
-				return !clientToolSearch
-			})
+		if tools.Exists() && tools.IsArray() {
+			sources = append(sources, responsesToolSource{tools: tools, priority: priority})
 		}
 	}
 
@@ -1402,7 +1394,7 @@ func responsesToolSources(root gjson.Result) (sources []responsesToolSource, cli
 			return true
 		})
 	}
-	return sources, clientToolSearch
+	return sources
 }
 
 type responsesToolDescriptor struct {
@@ -1417,19 +1409,42 @@ type responsesToolDescriptor struct {
 }
 
 func responsesToolDescriptors(root gjson.Result) []responsesToolDescriptor {
-	// With client tool search, defer_loading tools stay hidden until a
-	// tool_search_output in history loads them.
-	sources, skipDeferred := responsesToolSources(root)
 	var descriptors []responsesToolDescriptor
-	for _, source := range sources {
-		descriptors = appendResponsesToolDescriptors(descriptors, source.tools, source.priority, skipDeferred && source.priority != responsesDiscoveredToolPriority)
+	for _, source := range responsesToolSources(root) {
+		descriptors = appendResponsesToolDescriptors(descriptors, source.tools, source.priority)
 	}
-	return descriptors
+	if !responsesClientToolSearchWins(descriptors) {
+		return descriptors
+	}
+	// With client tool search, declared defer_loading tools stay hidden until
+	// a tool_search_output in history loads them.
+	kept := descriptors[:0]
+	for _, descriptor := range descriptors {
+		if descriptor.sourcePriority != responsesDiscoveredToolPriority && descriptor.tool.Get("defer_loading").Bool() {
+			continue
+		}
+		descriptor.order = len(kept)
+		kept = append(kept, descriptor)
+	}
+	return kept
 }
 
-func appendResponsesToolDescriptors(descriptors []responsesToolDescriptor, tools gjson.Result, sourcePriority int, skipDeferred bool) []responsesToolDescriptor {
+// responsesClientToolSearchWins reports whether the client tool_search
+// declaration owns the tool_search name. A same-named function that wins
+// instead leaves no search tool, so deferred tools must stay declared.
+func responsesClientToolSearchWins(descriptors []responsesToolDescriptor) bool {
+	var winner *responsesToolDescriptor
+	for i := range descriptors {
+		if descriptors[i].name == responsesToolSearchType && (winner == nil || responsesToolDescriptorPrecedes(descriptors[i], *winner)) {
+			winner = &descriptors[i]
+		}
+	}
+	return winner != nil && winner.toolType == responsesToolSearchType
+}
+
+func appendResponsesToolDescriptors(descriptors []responsesToolDescriptor, tools gjson.Result, sourcePriority int) []responsesToolDescriptor {
 	appendDescriptor := func(tool gjson.Result, name, childName, namespaceName, toolType string, direct bool) {
-		if name == "" || (skipDeferred && tool.Get("defer_loading").Bool()) {
+		if name == "" {
 			return
 		}
 		descriptors = append(descriptors, responsesToolDescriptor{
