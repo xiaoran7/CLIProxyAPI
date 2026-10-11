@@ -140,6 +140,26 @@ func TestEnsureGeminiTrailingUserContent(t *testing.T) {
 			wantRoles: "model,model",
 		},
 		{
+			name:              "trailing model functionResponse with nested inlineData gets empty user",
+			inputJSON:         `{"contents":[{"role":"model","parts":[{"functionCall":{"name":"view_image"}}]},{"role":"model","parts":[{"functionResponse":{"name":"view_image","response":{"result":""},"parts":[{"inlineData":{"mimeType":"image/png","data":"AAAA"}}]}}]}]}`,
+			path:              "contents",
+			wantRoles:         "model,model,user",
+			wantTrailingEmpty: true,
+		},
+		{
+			name:              "trailing model functionResponse with nested fileData gets empty user",
+			inputJSON:         `{"contents":[{"role":"model","parts":[{"functionCall":{"name":"view_image"}}]},{"role":"model","parts":[{"functionResponse":{"name":"view_image","response":{"result":""},"parts":[{"fileData":{"mimeType":"image/png","fileUri":"gs://b/a.png"}}]}}]}]}`,
+			path:              "contents",
+			wantRoles:         "model,model,user",
+			wantTrailingEmpty: true,
+		},
+		{
+			name:      "trailing user functionResponse with nested inlineData is unchanged",
+			inputJSON: `{"contents":[{"role":"model","parts":[{"functionCall":{"name":"view_image"}}]},{"role":"user","parts":[{"functionResponse":{"name":"view_image","response":{"result":""},"parts":[{"inlineData":{"mimeType":"image/png","data":"AAAA"}}]}}]}]}`,
+			path:      "contents",
+			wantRoles: "model,user",
+		},
+		{
 			name:              "trailing model functionCall gets empty user",
 			inputJSON:         `{"contents":[{"role":"user","parts":[{"text":"hello"}]},{"role":"model","parts":[{"functionCall":{"name":"run"}}]}]}`,
 			path:              "contents",

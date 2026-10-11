@@ -51,10 +51,30 @@ func contentHasFunctionResponse(content gjson.Result) bool {
 	return false
 }
 
+// contentHasFunctionResponseMedia reports whether any functionResponse in the
+// content carries nested media parts (inlineData/fileData).
+func contentHasFunctionResponseMedia(content gjson.Result) bool {
+	parts := content.Get("parts")
+	if !parts.IsArray() {
+		return false
+	}
+	for _, part := range parts.Array() {
+		for _, nested := range part.Get("functionResponse.parts").Array() {
+			if nested.Get("inlineData").Exists() || nested.Get("inline_data").Exists() ||
+				nested.Get("fileData").Exists() || nested.Get("file_data").Exists() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // EnsureGeminiTrailingUserContent ensures that the contents array at the given path
 // ends with a user turn when sending to Gemini/Antigravity upstreams.
 // If the final turn contains a functionResponse, it is preserved without appending
 // an empty user turn because upstream expects the model to generate the response.
+// A model-role functionResponse turn carrying nested media is the exception:
+// Antigravity rejects it as the final turn with 400 INVALID_ARGUMENT (#6524).
 func EnsureGeminiTrailingUserContent(payload []byte, path string) []byte {
 	contents := util.GetGJSONBytesNoCopy(payload, path)
 	if !contents.IsArray() {
@@ -66,7 +86,10 @@ func EnsureGeminiTrailingUserContent(payload []byte, path string) []byte {
 	}
 	lastContent := contentArray[len(contentArray)-1]
 	lastRole := lastContent.Get("role").String()
-	if (lastRole != "model" && lastRole != "assistant") || contentHasFunctionResponse(lastContent) {
+	if lastRole != "model" && lastRole != "assistant" {
+		return payload
+	}
+	if contentHasFunctionResponse(lastContent) && !contentHasFunctionResponseMedia(lastContent) {
 		return payload
 	}
 
