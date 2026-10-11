@@ -2,6 +2,7 @@ package responses
 
 import (
 	"strings"
+	"sync/atomic"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
@@ -27,6 +28,22 @@ const (
 	// responsesToolSearchIDPrefix mirrors Codex's item id prefix for tool_search_call.
 	responsesToolSearchIDPrefix = "tsc_"
 )
+
+// clientToolSearchEnabled mirrors upstream.claude.tool-search. While it is off
+// the translator keeps the behavior that predates tool_search support:
+// tool_search declarations are generic tools and tool_search_call and
+// tool_search_output items are unmapped.
+var clientToolSearchEnabled atomic.Bool
+
+// SetClientToolSearchEnabled applies upstream.claude.tool-search.
+func SetClientToolSearchEnabled(enabled bool) {
+	clientToolSearchEnabled.Store(enabled)
+}
+
+// ClientToolSearchEnabled reports whether upstream.claude.tool-search is on.
+func ClientToolSearchEnabled() bool {
+	return clientToolSearchEnabled.Load()
+}
 
 const claudeToolSearchDefaultSchema = `{"type":"object","properties":{"query":{"type":"string","description":"Search query for deferred tools."},"limit":{"type":"number","description":"Maximum number of tools to return."}},"required":["query"],"additionalProperties":false}`
 

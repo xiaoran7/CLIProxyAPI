@@ -283,7 +283,7 @@ func (st *claudeToResponsesState) isApplyPatch(name string) bool {
 // isToolSearch reports whether a Claude tool name maps to the client
 // tool_search declaration.
 func (st *claudeToResponsesState) isToolSearch(name string) bool {
-	return st.ToolWinners[st.ToolNames.identity(name)].toolType == responsesToolSearchType
+	return st.ToolWinners[st.ToolNames.identity(name)].clientSearch
 }
 
 // validateApplyPatchSnapshots permits equivalent JSON spellings but never
@@ -1320,11 +1320,10 @@ func ConvertClaudeResponseToOpenAIResponsesNonStream(_ context.Context, _ string
 				activeMessageItem = item
 			case "tool_use":
 				itemType := "function_call"
-				switch st.ToolWinners[st.ToolNames.identity(cb.Get("name").String())].toolType {
-				case "custom":
-					itemType = "custom_tool_call"
-				case responsesToolSearchType:
+				if st.isToolSearch(cb.Get("name").String()) {
 					itemType = "tool_search_call"
+				} else if st.ToolWinners[st.ToolNames.identity(cb.Get("name").String())].toolType == "custom" {
+					itemType = "custom_tool_call"
 				}
 				item := blockToItem[idx]
 				if item == nil {

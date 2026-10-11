@@ -195,6 +195,7 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 
 	names := buildClaudeToolNames(root)
 	winners := responsesToolWinners(root)
+	toolSearchEnabled := ClientToolSearchEnabled()
 	// Native tool search declares discovered tools as deferred and replays
 	// search results as tool_reference blocks, which keeps the cached prefix.
 	nativeToolSearch := responsesClientToolSearchWins(responsesToolDescriptors(root))
@@ -535,6 +536,10 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 			appendParts("user", toolResult)
 
 		case "tool_search_call":
+			if !toolSearchEnabled {
+				unmappedItemTypes[typ]++
+				continue
+			}
 			toolUse, rawCallID := convertResponsesToolSearchCallToClaude(item, names.claudeName(responsesToolSearchType))
 			if toolUse == nil {
 				unmappedItemTypes[typ]++
@@ -544,6 +549,10 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 			appendToolUse(toolUse)
 
 		case "tool_search_output":
+			if !toolSearchEnabled {
+				unmappedItemTypes[typ]++
+				continue
+			}
 			rawID := strings.TrimSpace(item.Get("call_id").String())
 			if rawID != "" {
 				if _, exists := emittedToolResults[rawID]; exists {
@@ -1349,6 +1358,9 @@ func convertResponsesToolDescriptorToClaude(descriptor responsesToolDescriptor, 
 	if overrideName == "" && !descriptor.direct {
 		overrideName = descriptor.name
 	}
+	if descriptor.clientSearch {
+		return convertResponsesToolSearchToolToClaude(descriptor.tool, claudeName)
+	}
 	switch descriptor.toolType {
 	case "function":
 		return convertResponsesFunctionToolToClaude(descriptor.tool, overrideName)
@@ -1356,8 +1368,6 @@ func convertResponsesToolDescriptorToClaude(descriptor responsesToolDescriptor, 
 		return convertResponsesCustomToolToClaude(descriptor.tool, overrideName)
 	case "web_search":
 		return convertResponsesWebSearchToolToClaude(descriptor.tool)
-	case responsesToolSearchType:
-		return convertResponsesToolSearchToolToClaude(descriptor.tool, claudeName)
 	default:
 		if isUnsupportedOpenAIBuiltinToolType(descriptor.toolType) {
 			return nil, false
@@ -1394,12 +1404,14 @@ func responsesToolSources(root gjson.Result) []responsesToolSource {
 			}
 			return true
 		})
-		input.ForEach(func(_, item gjson.Result) bool {
-			if item.Get("type").String() == "tool_search_output" {
-				appendSource(item.Get("tools"), responsesDiscoveredToolPriority)
-			}
-			return true
-		})
+		if ClientToolSearchEnabled() {
+			input.ForEach(func(_, item gjson.Result) bool {
+				if item.Get("type").String() == "tool_search_output" {
+					appendSource(item.Get("tools"), responsesDiscoveredToolPriority)
+				}
+				return true
+			})
+		}
 	}
 	return sources
 }
@@ -1413,6 +1425,9 @@ type responsesToolDescriptor struct {
 	sourcePriority int
 	direct         bool
 	order          int
+	// clientSearch marks the Codex client tool_search declaration, which only
+	// exists while upstream.claude.tool-search is on.
+	clientSearch bool
 }
 
 func responsesToolDescriptors(root gjson.Result) []responsesToolDescriptor {
@@ -1446,7 +1461,7 @@ func responsesClientToolSearchWins(descriptors []responsesToolDescriptor) bool {
 			winner = &descriptors[i]
 		}
 	}
-	return winner != nil && winner.toolType == responsesToolSearchType
+	return winner != nil && winner.clientSearch
 }
 
 func appendResponsesToolDescriptors(descriptors []responsesToolDescriptor, tools gjson.Result, sourcePriority int) []responsesToolDescriptor {
@@ -1496,10 +1511,17 @@ func appendResponsesToolDescriptors(descriptors []responsesToolDescriptor, tools
 		case "namespace":
 			appendNamespaceChildren(tool)
 		case responsesToolSearchType:
+			if !ClientToolSearchEnabled() {
+				// Without tool search support a declaration is a generic tool,
+				// as it was before tool_search was translated.
+				appendDescriptor(tool, strings.TrimSpace(tool.Get("name").String()), "", "", toolType, true)
+				return true
+			}
 			// Hosted search cannot run on Claude, and the raw declaration must
 			// never reach Claude, so only client search is kept.
 			if isResponsesClientToolSearch(tool) {
 				appendDescriptor(tool, responsesToolSearchType, "", "", responsesToolSearchType, true)
+				descriptors[len(descriptors)-1].clientSearch = true
 			}
 		case "web_search":
 			if externalWebAccess := tool.Get("external_web_access"); externalWebAccess.Exists() && !externalWebAccess.Bool() {
