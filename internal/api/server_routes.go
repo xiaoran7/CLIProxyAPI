@@ -704,7 +704,7 @@ func (s *Server) handleHomeCodexClientModels(c *gin.Context, clientVersion strin
 	if s.cfg.Client.Codex.EnableApplyPatch {
 		applyPatchCapabilityForModel = homeApplyPatchCapabilityForModel(entries, manager)
 	}
-	payload := codexmodels.BuildResponseForClientWithSearchToolRoutes(models, nil, homeProvidersForModel(entries), webSearchCapabilityForModel, applyPatchCapabilityForModel, s.cfg.Client.Codex.OptimizeMultiAgentV2, clientVersion)
+	payload := codexmodels.BuildResponseForClientWithSearchToolRoutes(models, nil, homeProvidersForModel(entries), webSearchCapabilityForModel, applyPatchCapabilityForModel, homeToolSearchCapabilityForModel(entries), s.cfg.Client.Codex.OptimizeMultiAgentV2, clientVersion)
 	body, errMarshal := codexmodels.MarshalCompact(payload)
 	if errMarshal != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errMarshal.Error()})
@@ -742,6 +742,29 @@ func homeProvidersForModel(entries []homeModelEntry) codexmodels.ProvidersForMod
 	}
 	return func(id string) []string {
 		return providersByID[strings.TrimSpace(id)]
+	}
+}
+
+// homeToolSearchCapabilityForModel trusts Home's per-route tool_search flag and
+// requires it on every route of the model. A Home that predates the flag never
+// enables native tool search.
+func homeToolSearchCapabilityForModel(entries []homeModelEntry) codexmodels.ToolSearchCapabilityForModelFunc {
+	routesByID := make(map[string][]registry.NativeCapabilityRoute, len(entries))
+	for _, entry := range entries {
+		id := strings.TrimSpace(entry.id)
+		routesByID[id] = append(routesByID[id], entry.nativeCapabilityRoutes...)
+	}
+	return func(id string) bool {
+		routes := routesByID[strings.TrimSpace(id)]
+		if len(routes) == 0 {
+			return false
+		}
+		for _, route := range routes {
+			if route.NativeCapabilities == nil || route.NativeCapabilities.ToolSearch == nil || !*route.NativeCapabilities.ToolSearch {
+				return false
+			}
+		}
+		return true
 	}
 }
 
@@ -1183,11 +1206,14 @@ func homeModelNativeCapabilities(model map[string]any) *registry.NativeCapabilit
 	if !ok {
 		return nil
 	}
-	webSearch, ok := raw["web_search"].(bool)
-	if !ok {
-		return &registry.NativeCapabilities{}
+	capabilities := &registry.NativeCapabilities{}
+	if webSearch, okWebSearch := raw["web_search"].(bool); okWebSearch {
+		capabilities.WebSearch = &webSearch
 	}
-	return &registry.NativeCapabilities{WebSearch: &webSearch}
+	if toolSearch, okToolSearch := raw["tool_search"].(bool); okToolSearch {
+		capabilities.ToolSearch = &toolSearch
+	}
+	return capabilities
 }
 
 func appendUniqueHomeProvider(providers []string, provider string) []string {

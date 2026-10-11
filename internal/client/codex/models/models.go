@@ -23,6 +23,10 @@ type ProvidersForModelFunc func(string) []string
 // metadata for an exact public model ID. nil means unknown.
 type WebSearchCapabilityForModelFunc func(string) *bool
 
+// ToolSearchCapabilityForModelFunc reports whether every credential serving a
+// public model ID can receive Codex tool_search as Anthropic native tool search.
+type ToolSearchCapabilityForModelFunc func(id string) bool
+
 var (
 	codexClientModelTemplatesMu       sync.Mutex
 	codexClientModelTemplatesLoaded   bool
@@ -66,21 +70,22 @@ func BuildResponseForClient(availableModels []map[string]any, providersForModel 
 // BuildResponseForClientWithCPACapabilities builds a client response while
 // allowing Home to supply capability metadata independent of the local registry.
 func BuildResponseForClientWithCPACapabilities(availableModels []map[string]any, providersForModel ProvidersForModelFunc, webSearchCapabilityForModel WebSearchCapabilityForModelFunc, optimizeMultiAgentV2 bool, clientVersion string) map[string]any {
-	return BuildResponseForClientWithToolCapabilities(availableModels, providersForModel, webSearchCapabilityForModel, nil, optimizeMultiAgentV2, clientVersion)
+	return BuildResponseForClientWithToolCapabilities(availableModels, providersForModel, webSearchCapabilityForModel, nil, nil, optimizeMultiAgentV2, clientVersion)
 }
 
 // BuildResponseForClientWithToolCapabilities adds executor-backed tool support
 // independently of template metadata and legacy provider restrictions.
-func BuildResponseForClientWithToolCapabilities(availableModels []map[string]any, providersForModel ProvidersForModelFunc, webSearchCapabilityForModel WebSearchCapabilityForModelFunc, applyPatchCapabilityForModel ApplyPatchCapabilityForModelFunc, optimizeMultiAgentV2 bool, clientVersion string) map[string]any {
-	return BuildResponseForClientWithSearchToolRoutes(availableModels, providersForModel, nil, webSearchCapabilityForModel, applyPatchCapabilityForModel, optimizeMultiAgentV2, clientVersion)
+func BuildResponseForClientWithToolCapabilities(availableModels []map[string]any, providersForModel ProvidersForModelFunc, webSearchCapabilityForModel WebSearchCapabilityForModelFunc, applyPatchCapabilityForModel ApplyPatchCapabilityForModelFunc, toolSearchCapabilityForModel ToolSearchCapabilityForModelFunc, optimizeMultiAgentV2 bool, clientVersion string) map[string]any {
+	return BuildResponseForClientWithSearchToolRoutes(availableModels, providersForModel, nil, webSearchCapabilityForModel, applyPatchCapabilityForModel, toolSearchCapabilityForModel, optimizeMultiAgentV2, clientVersion)
 }
 
 // BuildResponseForClientWithSearchToolRoutes lets Home supply routing evidence
 // for supports_search_tool without the other provider-dependent metadata.
-// A nil searchToolProvidersForModel uses providersForModel.
-func BuildResponseForClientWithSearchToolRoutes(availableModels []map[string]any, providersForModel, searchToolProvidersForModel ProvidersForModelFunc, webSearchCapabilityForModel WebSearchCapabilityForModelFunc, applyPatchCapabilityForModel ApplyPatchCapabilityForModelFunc, optimizeMultiAgentV2 bool, clientVersion string) map[string]any {
+// A nil searchToolProvidersForModel uses providersForModel. A nil
+// toolSearchCapabilityForModel keeps Claude routes from advertising search.
+func BuildResponseForClientWithSearchToolRoutes(availableModels []map[string]any, providersForModel, searchToolProvidersForModel ProvidersForModelFunc, webSearchCapabilityForModel WebSearchCapabilityForModelFunc, applyPatchCapabilityForModel ApplyPatchCapabilityForModelFunc, toolSearchCapabilityForModel ToolSearchCapabilityForModelFunc, optimizeMultiAgentV2 bool, clientVersion string) map[string]any {
 	return map[string]any{
-		"models": buildCodexClientModelsWithToolCapabilities(availableModels, providersForModel, searchToolProvidersForModel, webSearchCapabilityForModel, applyPatchCapabilityForModel, optimizeMultiAgentV2, clientVersion),
+		"models": buildCodexClientModelsWithToolCapabilities(availableModels, providersForModel, searchToolProvidersForModel, webSearchCapabilityForModel, applyPatchCapabilityForModel, toolSearchCapabilityForModel, optimizeMultiAgentV2, clientVersion),
 	}
 }
 
@@ -97,10 +102,10 @@ func MarshalCompact(payload any) ([]byte, error) {
 }
 
 func buildCodexClientModels(models []map[string]any, providersForModel ProvidersForModelFunc, webSearchCapabilityForModel WebSearchCapabilityForModelFunc, optimizeMultiAgentV2 bool, clientVersion string) []map[string]any {
-	return buildCodexClientModelsWithToolCapabilities(models, providersForModel, nil, webSearchCapabilityForModel, nil, optimizeMultiAgentV2, clientVersion)
+	return buildCodexClientModelsWithToolCapabilities(models, providersForModel, nil, webSearchCapabilityForModel, nil, nil, optimizeMultiAgentV2, clientVersion)
 }
 
-func buildCodexClientModelsWithToolCapabilities(models []map[string]any, providersForModel, searchToolProvidersForModel ProvidersForModelFunc, webSearchCapabilityForModel WebSearchCapabilityForModelFunc, applyPatchCapabilityForModel ApplyPatchCapabilityForModelFunc, optimizeMultiAgentV2 bool, clientVersion string) []map[string]any {
+func buildCodexClientModelsWithToolCapabilities(models []map[string]any, providersForModel, searchToolProvidersForModel ProvidersForModelFunc, webSearchCapabilityForModel WebSearchCapabilityForModelFunc, applyPatchCapabilityForModel ApplyPatchCapabilityForModelFunc, toolSearchCapabilityForModel ToolSearchCapabilityForModelFunc, optimizeMultiAgentV2 bool, clientVersion string) []map[string]any {
 	templates, defaultTemplate, errLoadCodexClientModelTemplates := loadCodexClientModelTemplates()
 	if errLoadCodexClientModelTemplates != nil || defaultTemplate == nil {
 		return nil
@@ -132,7 +137,7 @@ func buildCodexClientModelsWithToolCapabilities(models []map[string]any, provide
 				applyCodexClientThinkingMetadata(entry, thinkingSupport, clientVersion)
 			}
 			applyCodexClientProviderCapabilities(entry, id, providersForModel)
-			applyCodexClientSearchToolSupport(entry, id, true, searchToolProvidersForModel)
+			applyCodexClientSearchToolSupport(entry, id, true, searchToolProvidersForModel, toolSearchCapabilityForModel)
 			applyCPAWebSearchCapability(entry, id, webSearchCapabilityForModel, clientVersion)
 			sanitizeCodexClientReasoningMetadata(entry, clientVersion)
 			applyCodexClientVisibilityOverride(entry, id)
@@ -148,7 +153,7 @@ func buildCodexClientModelsWithToolCapabilities(models []map[string]any, provide
 		entry := cloneCodexClientModelMap(defaultTemplate)
 		applyCodexClientModelMetadata(entry, id, model, optimizeMultiAgentV2, clientVersion)
 		applyCodexClientMaxTokens(entry, model)
-		applyCodexClientSearchToolSupport(entry, id, false, searchToolProvidersForModel)
+		applyCodexClientSearchToolSupport(entry, id, false, searchToolProvidersForModel, toolSearchCapabilityForModel)
 		applyCPAWebSearchCapability(entry, id, webSearchCapabilityForModel, clientVersion)
 		sanitizeCodexClientReasoningMetadata(entry, clientVersion)
 		applyCodexClientVisibilityOverride(entry, id)
@@ -621,9 +626,9 @@ func allCodexClientProvidersAre(providers []string, name string) bool {
 
 // applyCodexClientSearchToolSupport keeps supports_search_tool only when every
 // route serving the model can close Codex's client tool_search loop: pure Codex
-// template models, or pure Claude models whose Responses translator maps
-// tool_search to a Claude tool. Mixed and unknown routes fail closed.
-func applyCodexClientSearchToolSupport(entry map[string]any, id string, templateModel bool, providersForModel ProvidersForModelFunc) {
+// template models, or pure Claude models whose every credential supports
+// Anthropic native tool search. Mixed and unknown routes fail closed.
+func applyCodexClientSearchToolSupport(entry map[string]any, id string, templateModel bool, providersForModel ProvidersForModelFunc, toolSearchCapabilityForModel ToolSearchCapabilityForModelFunc) {
 	supportsSearch, _ := entry["supports_search_tool"].(bool)
 	if !supportsSearch {
 		return
@@ -637,7 +642,7 @@ func applyCodexClientSearchToolSupport(entry map[string]any, id string, template
 	}
 
 	providers := codexClientModelProviders(id, providersForModel)
-	if allCodexClientProvidersAre(providers, "claude") {
+	if allCodexClientProvidersAre(providers, "claude") && toolSearchCapabilityForModel != nil && toolSearchCapabilityForModel(id) {
 		return
 	}
 	if !templateModel || !allCodexClientProvidersAre(providers, "codex") {

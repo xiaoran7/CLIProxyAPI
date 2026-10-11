@@ -148,6 +148,8 @@ func NewClaudeExecutor(cfg *config.Config) *ClaudeExecutor {
 
 func (e *ClaudeExecutor) Identifier() string { return "claude" }
 
+var _ cliproxyauth.NativeToolSearchSupport = (*ClaudeExecutor)(nil)
+
 // SupportsNativeToolSearch reports whether a credential can receive Codex
 // tool_search as Anthropic native tool search (defer_loading tools and
 // tool_reference results) for the given upstream model. Anthropic's own origin

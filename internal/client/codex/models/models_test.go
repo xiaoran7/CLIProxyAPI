@@ -239,30 +239,19 @@ func TestCodexClientModelsResponse_RequiresTemplateAndCodexProvidersForSearchToo
 	}
 }
 
-func TestCodexClientModelsResponse_SearchToolRequiresRoutesThatCloseTheLoop(t *testing.T) {
-	providers := map[string][]string{
-		"claude-sonnet-4-5":     {"claude"},
-		"gpt-5.5":               {"claude"},
-		"gpt-5.6-sol":           {"codex"},
-		"claude-opus-mixed":     {"claude", "openai-compatibility"},
-		"claude-and-codex":      {"claude", "codex"},
-		"claude-unknown-route":  nil,
-		"claude-on-antigravity": {"antigravity"},
-	}
-	want := map[string]bool{
-		"claude-sonnet-4-5":     true,
-		"gpt-5.5":               true,
-		"gpt-5.6-sol":           true,
-		"claude-opus-mixed":     false,
-		"claude-and-codex":      false,
-		"claude-unknown-route":  false,
-		"claude-on-antigravity": false,
-	}
-	available := make([]map[string]any, 0, len(want))
-	for id := range want {
-		available = append(available, map[string]any{"id": id})
-	}
-	resp := BuildResponse(available, func(id string) []string { return providers[id] }, false)
+var searchToolRouteProviders = map[string][]string{
+	"claude-sonnet-4-5":     {"claude"},
+	"gpt-5.5":               {"claude"},
+	"claude-third-party":    {"claude"},
+	"gpt-5.6-sol":           {"codex"},
+	"claude-opus-mixed":     {"claude", "openai-compatibility"},
+	"claude-and-codex":      {"claude", "codex"},
+	"claude-unknown-route":  nil,
+	"claude-on-antigravity": {"antigravity"},
+}
+
+func assertSupportsSearchTool(t *testing.T, resp map[string]any, want map[string]bool) {
+	t.Helper()
 	models, ok := resp["models"].([]map[string]any)
 	if !ok || len(models) != len(want) {
 		t.Fatalf("models = %#v, want %d entries", resp["models"], len(want))
@@ -273,6 +262,45 @@ func TestCodexClientModelsResponse_SearchToolRequiresRoutesThatCloseTheLoop(t *t
 			t.Errorf("%s supports_search_tool = %#v, want %v", slug, model["supports_search_tool"], want[slug])
 		}
 	}
+}
+
+func searchToolAvailableModels() []map[string]any {
+	available := make([]map[string]any, 0, len(searchToolRouteProviders))
+	for id := range searchToolRouteProviders {
+		available = append(available, map[string]any{"id": id})
+	}
+	return available
+}
+
+func TestCodexClientModelsResponse_SearchToolRequiresRoutesThatCloseTheLoop(t *testing.T) {
+	capability := func(id string) bool { return id == "claude-sonnet-4-5" || id == "gpt-5.5" }
+	resp := BuildResponseForClientWithToolCapabilities(searchToolAvailableModels(), func(id string) []string { return searchToolRouteProviders[id] }, nil, nil, capability, false, "")
+	assertSupportsSearchTool(t, resp, map[string]bool{
+		"claude-sonnet-4-5":     true,
+		"gpt-5.5":               true,
+		"claude-third-party":    false,
+		"gpt-5.6-sol":           true,
+		"claude-opus-mixed":     false,
+		"claude-and-codex":      false,
+		"claude-unknown-route":  false,
+		"claude-on-antigravity": false,
+	})
+}
+
+// Without a native tool search capability, Claude routes keep the
+// pre-tool-search catalog: only pure Codex template routes advertise search.
+func TestCodexClientModelsResponse_ClaudeSearchToolNeedsCapability(t *testing.T) {
+	resp := BuildResponseForClientWithToolCapabilities(searchToolAvailableModels(), func(id string) []string { return searchToolRouteProviders[id] }, nil, nil, nil, false, "")
+	assertSupportsSearchTool(t, resp, map[string]bool{
+		"claude-sonnet-4-5":     false,
+		"gpt-5.5":               false,
+		"claude-third-party":    false,
+		"gpt-5.6-sol":           true,
+		"claude-opus-mixed":     false,
+		"claude-and-codex":      false,
+		"claude-unknown-route":  false,
+		"claude-on-antigravity": false,
+	})
 }
 
 func TestCodexClientModelsResponse_PreservesUltraReasoningEffort(t *testing.T) {
@@ -932,7 +960,7 @@ func TestCodexClientModelsResponse_UnrelatedProviderCannotWidenSearchTool(t *tes
 		},
 	}
 
-	resp := BuildResponseForClientWithToolCapabilities(availableModels, modelRegistry.GetModelProviders, nil, func(string) bool { return true }, false, "0.153.4")
+	resp := BuildResponseForClientWithToolCapabilities(availableModels, modelRegistry.GetModelProviders, nil, func(string) bool { return true }, nil, false, "0.153.4")
 	models, ok := resp["models"].([]map[string]any)
 	if !ok || len(models) != 1 {
 		t.Fatalf("models = %#v, want one model", resp["models"])
@@ -1031,7 +1059,7 @@ func TestCodexClientModelsResponse_MixedProvidersRestrictProtocolCapabilities(t 
 				{"id": aliasName},
 			}
 
-			resp := BuildResponseForClientWithToolCapabilities(availableModels, modelRegistry.GetModelProviders, nil, func(string) bool { return true }, false, "0.153.4")
+			resp := BuildResponseForClientWithToolCapabilities(availableModels, modelRegistry.GetModelProviders, nil, func(string) bool { return true }, nil, false, "0.153.4")
 			models, ok := resp["models"].([]map[string]any)
 			if !ok || len(models) != 1 {
 				t.Fatalf("models = %#v, want one model", resp["models"])

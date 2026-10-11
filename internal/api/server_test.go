@@ -3602,7 +3602,12 @@ func TestModelsWithClientVersionHomeSearchToolRouting(t *testing.T) {
 	engine := gin.New()
 	engine.GET("/v1/models", server.unifiedModelsHandler(nil, nil))
 	client := newHomeCatalogClient(t, `{
-		"claude":[{"id":"home-claude-only"},{"id":"home-claude-mixed"}],
+		"claude":[
+			{"id":"home-claude-only","native_capabilities":{"tool_search":true}},
+			{"id":"home-claude-mixed","native_capabilities":{"tool_search":true}},
+			{"id":"home-claude-third-party","native_capabilities":{"tool_search":false}},
+			{"id":"home-claude-old-home"}
+		],
 		"codex":[{"id":"gpt-5.5"}],
 		"home-custom":[{"id":"home-claude-mixed"},{"id":"team/gpt-5.5"}]
 	}`)
@@ -3624,8 +3629,16 @@ func TestModelsWithClientVersionHomeSearchToolRouting(t *testing.T) {
 		t.Fatalf("decode Home catalog: %v", errUnmarshal)
 	}
 	// Home routing evidence decides search support exactly as local routes do:
-	// pure Claude or pure Codex template routes close the tool_search loop.
-	want := map[string]bool{"home-claude-only": true, "gpt-5.5": true, "home-claude-mixed": false, "team/gpt-5.5": false}
+	// pure Codex template routes, or pure Claude routes whose every credential
+	// supports native tool search. A Home without tool_search fails closed.
+	want := map[string]bool{
+		"home-claude-only":        true,
+		"gpt-5.5":                 true,
+		"home-claude-mixed":       false,
+		"home-claude-third-party": false,
+		"home-claude-old-home":    false,
+		"team/gpt-5.5":            false,
+	}
 	for _, entry := range response.Models {
 		slug, _ := entry["slug"].(string)
 		wantSearch, ok := want[slug]
