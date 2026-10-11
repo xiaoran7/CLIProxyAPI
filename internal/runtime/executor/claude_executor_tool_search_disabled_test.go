@@ -1,16 +1,23 @@
 package executor
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	responsesclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/claude/openai/responses"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
@@ -120,5 +127,99 @@ func TestClaudeExecutor_ToolSearchEnabledDiffersFromDevGolden(t *testing.T) {
 	}
 	if got := renderToolSearchExecutorGolden(t); got["official/execute"] == want["official/execute"] {
 		t.Fatal("official/execute matches dev with upstream.claude.tool-search on")
+	}
+}
+
+// toolSearchReloadContext routes the executor to a stub upstream that flips
+// upstream.claude.tool-search to flipTo when the request arrives, as a config
+// reload would, and answers with a Claude call to the tool_search tool.
+func toolSearchReloadContext(t *testing.T, flipTo bool) (context.Context, *[]byte) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	ginCtx, _ := gin.CreateTestContext(nil)
+	ginCtx.Request = httptest_NewRequest()
+	ginCtx.Request.Header = make(http.Header)
+	var sent []byte
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		body, errRead := io.ReadAll(req.Body)
+		if errRead != nil {
+			t.Fatal(errRead)
+		}
+		sent = body
+		responsesclaude.SetClientToolSearchEnabled(flipTo)
+		contentType := "application/json"
+		response := `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"tool_use","id":"toolu_search","name":"tool_search","input":{"query":"calendar"}}],"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}}`
+		if gjson.GetBytes(body, "stream").Bool() {
+			contentType = "text/event-stream"
+			response = strings.Join([]string{
+				`event: message_start` + "\n" + `data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[],"stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}`,
+				`event: content_block_start` + "\n" + `data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_search","name":"tool_search","input":{}}}`,
+				`event: content_block_delta` + "\n" + `data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"calendar\"}"}}`,
+				`event: content_block_stop` + "\n" + `data: {"type":"content_block_stop","index":0}`,
+				`event: message_delta` + "\n" + `data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}`,
+				`event: message_stop` + "\n" + `data: {"type":"message_stop"}`,
+			}, "\n\n") + "\n\n"
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{contentType}}, Body: io.NopCloser(strings.NewReader(response)), Request: req}, nil
+	})
+	ctx := context.WithValue(context.Background(), "gin", ginCtx)
+	return context.WithValue(ctx, "cliproxy.roundtripper", http.RoundTripper(transport)), &sent
+}
+
+// A config reload while a request is upstream must not change how that
+// request's response is translated: the value seen when it started holds.
+func TestClaudeExecutor_ToolSearchSwitchIsPinnedPerRequest(t *testing.T) {
+	payload := []byte(nativeToolSearchResponsesPayload)
+	auth := nativeToolSearchAuth(nil)
+	opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse, OriginalRequest: payload}
+	for _, tc := range []struct {
+		name      string
+		start     bool
+		wantItem  string
+		wantTools bool
+	}{
+		{name: "on then reloaded off", start: true, wantItem: "tool_search_call", wantTools: true},
+		{name: "off then reloaded on", start: false, wantItem: "function_call", wantTools: false},
+	} {
+		t.Run(tc.name+" execute", func(t *testing.T) {
+			enableClaudeToolSearchForTest(t, tc.start)
+			ctx, sent := toolSearchReloadContext(t, !tc.start)
+			resp, errExecute := NewClaudeExecutor(&config.Config{}).Execute(ctx, auth, cliproxyexecutor.Request{Model: "claude-sonnet-4-5", Payload: payload}, opts)
+			if errExecute != nil {
+				t.Fatalf("Execute: %v", errExecute)
+			}
+			if got := gjson.GetBytes(*sent, `tools.#(name=="tool_search")`).Exists(); got != tc.wantTools {
+				t.Fatalf("upstream tool_search declared = %v, want %v: %s", got, tc.wantTools, *sent)
+			}
+			if got := gjson.GetBytes(resp.Payload, "output.0.type").String(); got != tc.wantItem {
+				t.Fatalf("output item = %s, want %s: %s", got, tc.wantItem, resp.Payload)
+			}
+		})
+		t.Run(tc.name+" stream", func(t *testing.T) {
+			enableClaudeToolSearchForTest(t, tc.start)
+			ctx, sent := toolSearchReloadContext(t, !tc.start)
+			result, errStream := NewClaudeExecutor(&config.Config{}).ExecuteStream(ctx, auth, cliproxyexecutor.Request{Model: "claude-sonnet-4-5", Payload: payload}, opts)
+			if errStream != nil {
+				t.Fatalf("ExecuteStream: %v", errStream)
+			}
+			var items []string
+			for chunk := range result.Chunks {
+				if chunk.Err != nil {
+					t.Fatalf("stream chunk: %v", chunk.Err)
+				}
+				for _, line := range strings.Split(string(chunk.Payload), "\n") {
+					data := gjson.Parse(strings.TrimPrefix(line, "data: "))
+					if data.Get("type").String() == "response.output_item.done" {
+						items = append(items, data.Get("item.type").String())
+					}
+				}
+			}
+			if got := gjson.GetBytes(*sent, `tools.#(name=="tool_search")`).Exists(); got != tc.wantTools {
+				t.Fatalf("upstream tool_search declared = %v, want %v: %s", got, tc.wantTools, *sent)
+			}
+			if len(items) != 1 || items[0] != tc.wantItem {
+				t.Fatalf("stream output items = %v, want [%s]", items, tc.wantItem)
+			}
+		})
 	}
 }

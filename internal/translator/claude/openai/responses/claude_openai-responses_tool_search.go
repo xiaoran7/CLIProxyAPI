@@ -1,6 +1,7 @@
 package responses
 
 import (
+	"context"
 	"strings"
 	"sync/atomic"
 
@@ -43,6 +44,29 @@ func SetClientToolSearchEnabled(enabled bool) {
 // ClientToolSearchEnabled reports whether upstream.claude.tool-search is on.
 func ClientToolSearchEnabled() bool {
 	return clientToolSearchEnabled.Load()
+}
+
+type clientToolSearchContextKey struct{}
+
+// WithClientToolSearch pins upstream.claude.tool-search for one request, so
+// its fallback decision, request translation and response translation agree
+// even if the configuration is reloaded while it runs.
+func WithClientToolSearch(ctx context.Context, enabled bool) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, clientToolSearchContextKey{}, enabled)
+}
+
+// ClientToolSearchEnabledFor returns the value pinned in ctx, or the current
+// upstream.claude.tool-search when ctx carries none.
+func ClientToolSearchEnabledFor(ctx context.Context) bool {
+	if ctx != nil {
+		if enabled, ok := ctx.Value(clientToolSearchContextKey{}).(bool); ok {
+			return enabled
+		}
+	}
+	return ClientToolSearchEnabled()
 }
 
 const claudeToolSearchDefaultSchema = `{"type":"object","properties":{"query":{"type":"string","description":"Search query for deferred tools."},"limit":{"type":"number","description":"Maximum number of tools to return."}},"required":["query"],"additionalProperties":false}`
@@ -100,7 +124,7 @@ func convertResponsesToolSearchCallToClaude(item gjson.Result, claudeName string
 // Their full definitions are declared in tools[], so names suffice here.
 func responsesToolSearchOutputText(item gjson.Result, names claudeToolNames) string {
 	var discovered []string
-	for _, descriptor := range appendResponsesToolDescriptors(nil, item.Get("tools"), responsesDiscoveredToolPriority) {
+	for _, descriptor := range appendResponsesToolDescriptors(nil, item.Get("tools"), responsesDiscoveredToolPriority, true) {
 		discovered = append(discovered, names.claudeName(descriptor.name))
 	}
 	if len(discovered) == 0 {
@@ -118,7 +142,7 @@ func responsesToolSearchOutputContent(item gjson.Result, names claudeToolNames, 
 	if nativeReferences {
 		var references [][]byte
 		seen := make(map[string]struct{})
-		for _, descriptor := range appendResponsesToolDescriptors(nil, item.Get("tools"), responsesDiscoveredToolPriority) {
+		for _, descriptor := range appendResponsesToolDescriptors(nil, item.Get("tools"), responsesDiscoveredToolPriority, true) {
 			winner, ok := winners[descriptor.name]
 			if !ok || winner.sourcePriority != responsesDiscoveredToolPriority || (winner.toolType != "function" && winner.toolType != "custom") {
 				continue

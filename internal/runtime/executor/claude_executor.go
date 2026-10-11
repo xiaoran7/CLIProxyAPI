@@ -159,7 +159,11 @@ var _ cliproxyauth.NativeToolSearchSupport = (*ClaudeExecutor)(nil)
 // qualifies while upstream.claude.tool-search is off. That switch is read from
 // the translator so the executor and the translator always agree on it.
 func (e *ClaudeExecutor) SupportsNativeToolSearch(auth *cliproxyauth.Auth, upstreamModel string) bool {
-	if !responsesclaude.ClientToolSearchEnabled() || helps.ClaudeModelLacksToolSearch(upstreamModel) {
+	return e.supportsNativeToolSearch(responsesclaude.ClientToolSearchEnabled(), auth, upstreamModel)
+}
+
+func (e *ClaudeExecutor) supportsNativeToolSearch(toolSearch bool, auth *cliproxyauth.Auth, upstreamModel string) bool {
+	if !toolSearch || helps.ClaudeModelLacksToolSearch(upstreamModel) {
 		return false
 	}
 	_, baseURL := claudeCreds(auth)
@@ -178,22 +182,31 @@ func (e *ClaudeExecutor) SupportsNativeToolSearch(auth *cliproxyauth.Auth, upstr
 // search, so the translated body matches the pre-tool-search translation.
 // While upstream.claude.tool-search is off the translator already produces
 // that translation from the unmodified request, so nothing is removed.
-func (e *ClaudeExecutor) applyNativeToolSearchFallback(auth *cliproxyauth.Auth, from sdktranslator.Format, upstreamModel string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Request, cliproxyexecutor.Options) {
-	if from != sdktranslator.FormatOpenAIResponse || !responsesclaude.ClientToolSearchEnabled() {
-		return req, opts
+//
+// The returned context pins upstream.claude.tool-search for the rest of the
+// request, so this decision and the request and response translations agree
+// even if the configuration is reloaded mid-request.
+func (e *ClaudeExecutor) applyNativeToolSearchFallback(ctx context.Context, auth *cliproxyauth.Auth, from sdktranslator.Format, upstreamModel string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (context.Context, cliproxyexecutor.Request, cliproxyexecutor.Options) {
+	if from != sdktranslator.FormatOpenAIResponse {
+		return ctx, req, opts
+	}
+	toolSearch := responsesclaude.ClientToolSearchEnabledFor(ctx)
+	ctx = responsesclaude.WithClientToolSearch(ctx, toolSearch)
+	if !toolSearch {
+		return ctx, req, opts
 	}
 	if !helps.ResponsesHasToolSearch(req.Payload) && !helps.ResponsesHasToolSearch(opts.OriginalRequest) {
-		return req, opts
+		return ctx, req, opts
 	}
-	if e.SupportsNativeToolSearch(auth, upstreamModel) {
-		return req, opts
+	if e.supportsNativeToolSearch(toolSearch, auth, upstreamModel) {
+		return ctx, req, opts
 	}
 	req.Payload = helps.StripResponsesToolSearch(req.Payload)
 	if len(opts.OriginalRequest) > 0 {
 		opts.OriginalRequest = helps.StripResponsesToolSearch(opts.OriginalRequest)
 	}
 	log.Debugf("claude executor: native tool search unavailable, removed tool_search from request (model=%s)", upstreamModel)
-	return req, opts
+	return ctx, req, opts
 }
 
 func (e *ClaudeExecutor) modelLevelCooling() bool {
