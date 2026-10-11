@@ -116,6 +116,11 @@ type ClaudeConfig struct {
 	// ModelLevelCooling scopes Claude quota cooldowns to the requested model
 	// rather than cooling down the entire credential across all sibling models.
 	ModelLevelCooling bool `yaml:"model-level-cooling" json:"model-level-cooling"`
+	// ToolSearch enables Codex client tool_search on Claude Responses routes:
+	// Anthropic native tool search where the credential supports it, a pre-tool_search
+	// translation elsewhere, and per-credential search advertising in the Codex
+	// catalog. Default false keeps the translation that predates tool_search support.
+	ToolSearch bool `yaml:"tool-search" json:"tool-search"`
 }
 
 // ClaudeHeaderDefaults configures the measured Claude Code software baseline.
