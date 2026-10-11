@@ -13,6 +13,8 @@ import (
 	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -145,6 +147,47 @@ func NewClaudeExecutor(cfg *config.Config) *ClaudeExecutor {
 }
 
 func (e *ClaudeExecutor) Identifier() string { return "claude" }
+
+// SupportsNativeToolSearch reports whether a credential can receive Codex
+// tool_search as Anthropic native tool search (defer_loading tools and
+// tool_reference results) for the given upstream model. Anthropic's own origin
+// qualifies; a custom base URL qualifies only when native-tool-search is
+// enabled for it. Models that predate tool search never qualify.
+func (e *ClaudeExecutor) SupportsNativeToolSearch(auth *cliproxyauth.Auth, upstreamModel string) bool {
+	if helps.ClaudeModelLacksToolSearch(upstreamModel) {
+		return false
+	}
+	_, baseURL := claudeCreds(auth)
+	if baseURL = strings.TrimSpace(baseURL); baseURL == "" || isAnthropicUpstreamBase(baseURL) {
+		return true
+	}
+	if auth != nil && auth.Attributes != nil && strings.EqualFold(strings.TrimSpace(auth.Attributes["native_tool_search"]), "true") {
+		return true
+	}
+	entry := resolveClaudeKeyConfig(e.cfg, auth)
+	return entry != nil && entry.NativeToolSearch
+}
+
+// applyNativeToolSearchFallback removes Codex tool_search from a Responses
+// request before translation when the credential cannot use native tool
+// search, so the translated body matches the pre-tool-search translation.
+func (e *ClaudeExecutor) applyNativeToolSearchFallback(auth *cliproxyauth.Auth, from sdktranslator.Format, upstreamModel string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Request, cliproxyexecutor.Options) {
+	if from != sdktranslator.FormatOpenAIResponse {
+		return req, opts
+	}
+	if !helps.ResponsesHasToolSearch(req.Payload) && !helps.ResponsesHasToolSearch(opts.OriginalRequest) {
+		return req, opts
+	}
+	if e.SupportsNativeToolSearch(auth, upstreamModel) {
+		return req, opts
+	}
+	req.Payload = helps.StripResponsesToolSearch(req.Payload)
+	if len(opts.OriginalRequest) > 0 {
+		opts.OriginalRequest = helps.StripResponsesToolSearch(opts.OriginalRequest)
+	}
+	log.Debugf("claude executor: native tool search unavailable, removed tool_search from request (model=%s)", upstreamModel)
+	return req, opts
+}
 
 func (e *ClaudeExecutor) modelLevelCooling() bool {
 	return e != nil && e.cfg != nil && e.cfg.Claude.ModelLevelCooling
