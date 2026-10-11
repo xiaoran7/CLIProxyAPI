@@ -21,6 +21,8 @@ const (
 
 	codexUserTurn = `{"type":"message","role":"user","content":[{"type":"input_text","text":"create a calendar event"}]}`
 
+	codexCalendarNamespace = `{"type":"namespace","name":"mcp__codex_apps__","description":"Tools in the mcp__codex_apps__ namespace.","tools":[{"type":"function","name":"calendar_create_event","description":"Create a calendar event.","strict":false,"defer_loading":true,"parameters":{"type":"object","properties":{"title":{"type":"string"}},"required":["title"],"additionalProperties":false}}]}`
+
 	codexSearchCall1   = `{"type":"tool_search_call","call_id":"call_search_1","status":"completed","execution":"client","arguments":{"query":"calendar create","limit":8}}`
 	codexSearchOutput1 = `{"type":"tool_search_output","call_id":"call_search_1","status":"completed","execution":"client","tools":[{"type":"namespace","name":"mcp__codex_apps__","description":"Tools in the mcp__codex_apps__ namespace.","tools":[{"type":"function","name":"calendar_create_event","description":"Create a calendar event.","strict":false,"defer_loading":true,"parameters":{"type":"object","properties":{"title":{"type":"string"}},"required":["title"],"additionalProperties":false}}]},{"type":"function","name":"lookup_order","description":"Look up an order.","strict":false,"defer_loading":true,"parameters":{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}}]}`
 	codexNSCall        = `{"type":"function_call","call_id":"call_cal_1","name":"calendar_create_event","namespace":"mcp__codex_apps__","arguments":"{\"title\":\"Standup\"}"}`
@@ -121,8 +123,21 @@ func TestConvertOpenAIResponsesRequestToClaude_ToolSearchHistoryReplaysAndActiva
 	if got := strings.Join(claudeToolNamesOf(turn2), ","); got != wantTurn2 {
 		t.Fatalf("turn 2 tools = %s, want %s", got, wantTurn2)
 	}
+	// Discovered tools are declared as deferred, so adding them never changes
+	// the cached tools prefix; declared tools stay eager.
+	for _, name := range []string{"mcp__codex_apps__calendar_create_event", "lookup_order"} {
+		tool := turn2.Get(`tools.#(name=="` + name + `")`)
+		if !tool.Get("defer_loading").Bool() {
+			t.Fatalf("discovered tool %s is not deferred: %s", name, tool.Raw)
+		}
+	}
+	for _, name := range []string{"exec_command", "tool_search"} {
+		if tool := turn2.Get(`tools.#(name=="` + name + `")`); tool.Get("defer_loading").Exists() {
+			t.Fatalf("declared tool %s must stay eager: %s", name, tool.Raw)
+		}
+	}
 	calendar := turn2.Get(`tools.#(name=="mcp__codex_apps__calendar_create_event")`)
-	if calendar.Get("input_schema.required.0").String() != "title" || calendar.Get("defer_loading").Exists() {
+	if calendar.Get("input_schema.required.0").String() != "title" {
 		t.Fatalf("discovered tool definition = %s", calendar.Raw)
 	}
 
@@ -133,9 +148,9 @@ func TestConvertOpenAIResponsesRequestToClaude_ToolSearchHistoryReplaysAndActiva
 		t.Fatalf("tool_search_call replay = %s", toolUse.Raw)
 	}
 	toolResult := turn2.Get("messages.2.content.0")
-	wantText := "Tools now available to call: mcp__codex_apps__calendar_create_event, lookup_order."
+	wantContent := `[{"type":"tool_reference","tool_name":"mcp__codex_apps__calendar_create_event"},{"type":"tool_reference","tool_name":"lookup_order"}]`
 	if toolResult.Get("type").String() != "tool_result" || toolResult.Get("tool_use_id").String() != "call_search_1" ||
-		toolResult.Get("content").String() != wantText {
+		toolResult.Get("content").Raw != wantContent {
 		t.Fatalf("tool_search_output replay = %s", toolResult.Raw)
 	}
 
@@ -378,5 +393,73 @@ func TestConvertOpenAIResponsesRequestToClaude_ToolSearchNameCollisionRoutesCons
 				t.Fatalf("Claude call became %s, want %s: %s", got, tc.wantType, out)
 			}
 		})
+	}
+
+	// When the user function wins, nothing is deferred and search output stays
+	// text, because the request has no native tool search to expand references.
+	t.Run("user function first keeps history as text", func(t *testing.T) {
+		request := []byte(`{"model":"claude-sonnet-4-5","input":[` + strings.Join([]string{codexUserTurn, codexSearchCall1, codexSearchOutput1}, ",") +
+			`],"tools":[` + userFunction + `,` + codexToolSearchDeclaration + `,` + codexDeferredTool + `]}`)
+		req := convertToolSearchRequest(t, request)
+		if strings.Contains(req.Raw, `"defer_loading"`) || strings.Contains(req.Raw, `"tool_reference"`) {
+			t.Fatalf("user function winner must not use native tool search: %s", req.Raw)
+		}
+	})
+}
+
+func TestConvertOpenAIResponsesRequestToClaude_ToolSearchOutputSkipsDirectlyDeclaredTools(t *testing.T) {
+	declaredOnly := `{"type":"tool_search_output","call_id":"call_search_1","status":"completed","execution":"client","tools":[` + codexExecCommandTool + `]}`
+	req := convertToolSearchRequest(t, codexToolSearchRequest(codexUserTurn, codexSearchCall1, declaredOnly))
+	if got := req.Get("messages.2.content.0.content"); got.Type != gjson.String || got.String() != "Tools now available to call: exec_command." {
+		t.Fatalf("declared-only output content = %s", got.Raw)
+	}
+
+	mixed := `{"type":"tool_search_output","call_id":"call_search_1","status":"completed","execution":"client","tools":[` + codexExecCommandTool + `,` + codexCalendarNamespace + `]}`
+	req = convertToolSearchRequest(t, codexToolSearchRequest(codexUserTurn, codexSearchCall1, mixed))
+	want := `[{"type":"tool_reference","tool_name":"mcp__codex_apps__calendar_create_event"}]`
+	if got := req.Get("messages.2.content.0.content").Raw; got != want {
+		t.Fatalf("mixed output content = %s, want %s", got, want)
+	}
+	if req.Get(`tools.#(name=="exec_command").defer_loading`).Exists() {
+		t.Fatalf("declared exec_command became deferred: %s", req.Get("tools").Raw)
+	}
+}
+
+func TestConvertOpenAIResponsesRequestToClaude_ToolSearchOutputDeduplicatesReferences(t *testing.T) {
+	twice := `{"type":"tool_search_output","call_id":"call_search_1","status":"completed","execution":"client","tools":[` + codexCalendarNamespace + `,` + codexCalendarNamespace + `]}`
+	req := convertToolSearchRequest(t, codexToolSearchRequest(codexUserTurn, codexSearchCall1, twice))
+	want := `[{"type":"tool_reference","tool_name":"mcp__codex_apps__calendar_create_event"}]`
+	if got := req.Get("messages.2.content.0.content").Raw; got != want {
+		t.Fatalf("duplicated output content = %s, want %s", got, want)
+	}
+
+	rediscovered := `{"type":"tool_search_output","call_id":"call_search_2","status":"completed","execution":"client","tools":[` + codexCalendarNamespace + `]}`
+	req = convertToolSearchRequest(t, codexToolSearchRequest(codexUserTurn, codexSearchCall1, codexSearchOutput1, codexSearchCall2, rediscovered))
+	if got := req.Get(`tools.#(name=="mcp__codex_apps__calendar_create_event")#`).Array(); len(got) != 1 {
+		t.Fatalf("calendar declared %d times: %s", len(got), req.Get("tools").Raw)
+	}
+	var references []string
+	req.Get("messages").ForEach(func(_, message gjson.Result) bool {
+		message.Get("content").ForEach(func(_, block gjson.Result) bool {
+			block.Get("content").ForEach(func(_, part gjson.Result) bool {
+				if part.Get("type").String() == "tool_reference" && part.Get("tool_name").String() == "mcp__codex_apps__calendar_create_event" {
+					references = append(references, block.Get("tool_use_id").String())
+				}
+				return true
+			})
+			return true
+		})
+		return true
+	})
+	if strings.Join(references, ",") != "call_search_1,call_search_2" {
+		t.Fatalf("calendar references = %v, want one per search result", references)
+	}
+}
+
+func TestConvertOpenAIResponsesRequestToClaude_ToolSearchOutputWithoutToolsKeepsText(t *testing.T) {
+	empty := `{"type":"tool_search_output","call_id":"call_search_1","status":"completed","execution":"client","tools":[]}`
+	req := convertToolSearchRequest(t, codexToolSearchRequest(codexUserTurn, codexSearchCall1, empty))
+	if got := req.Get("messages.2.content.0.content"); got.Type != gjson.String || got.String() != "No matching tools were found." {
+		t.Fatalf("empty output content = %s", got.Raw)
 	}
 }

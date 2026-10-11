@@ -194,6 +194,10 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 	}
 
 	names := buildClaudeToolNames(root)
+	winners := responsesToolWinners(root)
+	// Native tool search declares discovered tools as deferred and replays
+	// search results as tool_reference blocks, which keeps the cached prefix.
+	nativeToolSearch := responsesClientToolSearchWins(responsesToolDescriptors(root))
 
 	// input array processing
 	var pendingRole string
@@ -547,16 +551,15 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 				}
 				emittedToolResults[rawID] = struct{}{}
 			}
-			summary := responsesToolSearchOutputText(item, names)
 			if _, paired := emittedRawToolUses[rawID]; rawID == "" || !paired {
 				text := []byte(`{"type":"text","text":""}`)
-				text, _ = sjson.SetBytes(text, "text", summary)
+				text, _ = sjson.SetBytes(text, "text", responsesToolSearchOutputText(item, names))
 				appendParts("user", text)
 				continue
 			}
 			toolResult := []byte(`{"type":"tool_result","tool_use_id":"","content":""}`)
 			toolResult, _ = sjson.SetBytes(toolResult, "tool_use_id", util.SanitizeClaudeToolID(rawID))
-			toolResult, _ = sjson.SetBytes(toolResult, "content", summary)
+			toolResult, _ = sjson.SetRawBytes(toolResult, "content", responsesToolSearchOutputContent(item, names, winners, nativeToolSearch))
 			appendParts("user", toolResult)
 
 		default:
@@ -606,7 +609,6 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 	// one winner for each final name, while keeping the original order for the
 	// tools that survive conversion.
 	var toolItems [][]byte
-	winners := responsesToolWinners(root)
 	for _, descriptor := range responsesToolDescriptors(root) {
 		winner, ok := winners[descriptor.name]
 		if !ok || winner.order != descriptor.order {
@@ -616,6 +618,9 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 		tJSON, ok := convertResponsesToolDescriptorToClaude(descriptor, claudeName)
 		if !ok {
 			continue
+		}
+		if nativeToolSearch && descriptor.sourcePriority == responsesDiscoveredToolPriority {
+			tJSON, _ = sjson.SetBytes(tJSON, "defer_loading", true)
 		}
 		toolName := gjson.GetBytes(tJSON, "name").String()
 		if toolName != "" {

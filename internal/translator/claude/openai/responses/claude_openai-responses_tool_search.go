@@ -3,6 +3,7 @@ package responses
 import (
 	"strings"
 
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -89,6 +90,36 @@ func responsesToolSearchOutputText(item gjson.Result, names claudeToolNames) str
 		return "No matching tools were found."
 	}
 	return "Tools now available to call: " + strings.Join(discovered, ", ") + "."
+}
+
+// responsesToolSearchOutputContent returns the raw tool_result content for a
+// paired tool_search_output. With native tool search it lists a tool_reference
+// for each tool that only loads through search, so Claude expands the deferred
+// definition at this point in the conversation. Tools that are already declared
+// directly need no reference; when none qualify, the text summary is used.
+func responsesToolSearchOutputContent(item gjson.Result, names claudeToolNames, winners map[string]responsesToolDescriptor, nativeReferences bool) []byte {
+	if nativeReferences {
+		var references [][]byte
+		seen := make(map[string]struct{})
+		for _, descriptor := range appendResponsesToolDescriptors(nil, item.Get("tools"), responsesDiscoveredToolPriority) {
+			winner, ok := winners[descriptor.name]
+			if !ok || winner.sourcePriority != responsesDiscoveredToolPriority || (winner.toolType != "function" && winner.toolType != "custom") {
+				continue
+			}
+			claudeName := names.claudeName(descriptor.name)
+			if _, duplicate := seen[claudeName]; duplicate {
+				continue
+			}
+			seen[claudeName] = struct{}{}
+			reference, _ := sjson.SetBytes([]byte(`{"type":"tool_reference","tool_name":""}`), "tool_name", claudeName)
+			references = append(references, reference)
+		}
+		if len(references) > 0 {
+			return common.JoinRawArray(references)
+		}
+	}
+	text, _ := sjson.SetBytes([]byte(`{"text":""}`), "text", responsesToolSearchOutputText(item, names))
+	return []byte(gjson.GetBytes(text, "text").Raw)
 }
 
 // toolSearchCallStatus downgrades a completed call whose arguments are not a
