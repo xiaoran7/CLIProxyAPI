@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	responsesclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/claude/openai/responses"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
@@ -219,6 +220,46 @@ func TestClaudeExecutor_ToolSearchSwitchIsPinnedPerRequest(t *testing.T) {
 			}
 			if len(items) != 1 || items[0] != tc.wantItem {
 				t.Fatalf("stream output items = %v, want [%s]", items, tc.wantItem)
+			}
+		})
+	}
+}
+
+// A reload between the fallback decision and translation must not change the
+// translation: it follows the value pinned when the fallback was decided.
+func TestClaudeExecutor_ToolSearchFallbackPinsTranslation(t *testing.T) {
+	hosted := `{"type":"tool_search","name":"HostedSearch"}`
+	payload := []byte(strings.Replace(nativeToolSearchResponsesPayload, `],"stream":false}`, `,`+hosted+`],"stream":false}`, 1))
+	official := nativeToolSearchAuth(nil)
+	gateway := nativeToolSearchAuth(map[string]string{"base_url": nativeToolSearchGateway})
+	for _, tc := range []struct {
+		name          string
+		start         bool
+		auth          *cliproxyauth.Auth
+		wantToolNames map[string]bool
+	}{
+		// Native: the client search tool stays and hosted search is dropped.
+		{name: "on official then off", start: true, auth: official, wantToolNames: map[string]bool{"tool_search": true, "HostedSearch": false}},
+		// Fallback strips client search; the pinned translation still drops hosted search.
+		{name: "on gateway then off", start: true, auth: gateway, wantToolNames: map[string]bool{"tool_search": false, "HostedSearch": false}},
+		// Dev: no client search tool and the named hosted declaration passes through.
+		{name: "off official then on", start: false, auth: official, wantToolNames: map[string]bool{"tool_search": false, "HostedSearch": true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enableClaudeToolSearchForTest(t, tc.start)
+			ex := NewClaudeExecutor(&config.Config{})
+			req := cliproxyexecutor.Request{Model: "claude-sonnet-4-5", Payload: payload}
+			opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatOpenAIResponse, OriginalRequest: payload}
+			ctx, req, _ := ex.applyNativeToolSearchFallback(context.Background(), tc.auth, sdktranslator.FormatOpenAIResponse, "claude-sonnet-4-5", req, opts)
+			responsesclaude.SetClientToolSearchEnabled(!tc.start)
+			body, errTranslate := helps.TranslateRequestReturningError(ctx, nil, &config.Config{}, sdktranslator.FormatOpenAIResponse, sdktranslator.FormatClaude, "claude-sonnet-4-5", req.Payload, false, false)
+			if errTranslate != nil {
+				t.Fatalf("translate: %v", errTranslate)
+			}
+			for name, want := range tc.wantToolNames {
+				if got := gjson.GetBytes(body, `tools.#(name=="`+name+`")`).Exists(); got != want {
+					t.Errorf("tool %s declared = %v, want %v: %s", name, got, want, gjson.GetBytes(body, "tools").Raw)
+				}
 			}
 		})
 	}
