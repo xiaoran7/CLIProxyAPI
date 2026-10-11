@@ -620,6 +620,8 @@ func convertOpenAIResponsesRequestToClaude(modelName string, inputRawJSON []byte
 			continue
 		}
 		if nativeToolSearch && descriptor.sourcePriority == responsesDiscoveredToolPriority {
+			// Anthropic rejects cache_control on deferred tools.
+			tJSON, _ = sjson.DeleteBytes(tJSON, "cache_control")
 			tJSON, _ = sjson.SetBytes(tJSON, "defer_loading", true)
 		}
 		toolName := gjson.GetBytes(tJSON, "name").String()

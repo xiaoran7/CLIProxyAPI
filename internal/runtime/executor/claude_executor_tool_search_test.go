@@ -260,3 +260,50 @@ func TestClaudeExecutor_NativeToolSearchOAuthAliasesReferences(t *testing.T) {
 		t.Fatalf("no tool_reference in OAuth body: %s", gjson.GetBytes(body, "messages").Raw)
 	}
 }
+
+// A discovered non-MCP tool is aliased on cloaked OAuth requests; its
+// tool_reference must carry the same alias as its deferred declaration.
+func TestClaudeExecutor_NativeToolSearchOAuthAliasesRenamedReferences(t *testing.T) {
+	payload := []byte(`{"model":"claude-sonnet-4-5","input":[` +
+		`{"type":"message","role":"user","content":[{"type":"input_text","text":"look up order 7"}]},` +
+		`{"type":"tool_search_call","call_id":"call_search_1","status":"completed","execution":"client","arguments":{"query":"order"}},` +
+		`{"type":"tool_search_output","call_id":"call_search_1","status":"completed","execution":"client","tools":[{"type":"function","name":"lookup_order","description":"Look up an order.","strict":false,"defer_loading":true,"parameters":{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}}]}` +
+		`],"tools":[` +
+		`{"type":"function","name":"exec_command","description":"Run a command.","strict":false,"parameters":{"type":"object","properties":{"cmd":{"type":"string"}},"required":["cmd"]}},` +
+		`{"type":"tool_search","execution":"client","description":"Search deferred tools.","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}` +
+		`],"stream":false}`)
+	auth := &cliproxyauth.Auth{
+		Attributes: map[string]string{"api_key": "sk-ant-oat-test"},
+		Metadata:   map[string]any{"account_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},
+	}
+	body := captureNativeToolSearchBody(t, &config.Config{}, sendNativeToolSearchExecute, auth, "claude-sonnet-4-5", payload, nil)
+	if gjson.GetBytes(body, `tools.#(name=="lookup_order")`).Exists() {
+		t.Fatalf("OAuth request kept the unaliased tool name: %s", gjson.GetBytes(body, "tools").Raw)
+	}
+	var deferred []string
+	gjson.GetBytes(body, "tools").ForEach(func(_, tool gjson.Result) bool {
+		if tool.Get("defer_loading").Bool() {
+			deferred = append(deferred, tool.Get("name").String())
+		}
+		return true
+	})
+	if len(deferred) != 1 {
+		t.Fatalf("deferred tools = %v, want exactly the aliased lookup_order", deferred)
+	}
+	var references []string
+	gjson.GetBytes(body, "messages").ForEach(func(_, message gjson.Result) bool {
+		message.Get("content").ForEach(func(_, block gjson.Result) bool {
+			block.Get("content").ForEach(func(_, part gjson.Result) bool {
+				if part.Get("type").String() == "tool_reference" {
+					references = append(references, part.Get("tool_name").String())
+				}
+				return true
+			})
+			return true
+		})
+		return true
+	})
+	if len(references) != 1 || references[0] != deferred[0] {
+		t.Fatalf("tool_reference names = %v, want the deferred alias %q", references, deferred[0])
+	}
+}

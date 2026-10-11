@@ -463,3 +463,19 @@ func TestConvertOpenAIResponsesRequestToClaude_ToolSearchOutputWithoutToolsKeeps
 		t.Fatalf("empty output content = %s", got.Raw)
 	}
 }
+
+// Deferred tools cannot carry cache_control, so a cache marker on a discovered
+// tool definition must not survive into the deferred Claude tool.
+func TestConvertOpenAIResponsesRequestToClaude_DeferredToolsDropCacheControl(t *testing.T) {
+	cached := `{"type":"tool_search_output","call_id":"call_search_1","status":"completed","execution":"client","tools":[` +
+		`{"type":"function","name":"cached_fn","description":"Cached.","cache_control":{"type":"ephemeral"},"defer_loading":true,"parameters":{"type":"object","properties":{}}},` +
+		`{"type":"custom","name":"cached_custom","description":"Cached custom.","cache_control":{"type":"ephemeral"},"defer_loading":true}` +
+		`]}`
+	req := convertToolSearchRequest(t, codexToolSearchRequest(codexUserTurn, codexSearchCall1, cached))
+	for _, name := range []string{"cached_fn", "cached_custom"} {
+		tool := req.Get(`tools.#(name=="` + name + `")`)
+		if !tool.Get("defer_loading").Bool() || tool.Get("cache_control").Exists() {
+			t.Fatalf("deferred tool %s = %s, want defer_loading without cache_control", name, tool.Raw)
+		}
+	}
+}
