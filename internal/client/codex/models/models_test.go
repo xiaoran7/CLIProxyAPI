@@ -239,6 +239,42 @@ func TestCodexClientModelsResponse_RequiresTemplateAndCodexProvidersForSearchToo
 	}
 }
 
+func TestCodexClientModelsResponse_SearchToolRequiresRoutesThatCloseTheLoop(t *testing.T) {
+	providers := map[string][]string{
+		"claude-sonnet-4-5":     {"claude"},
+		"gpt-5.5":               {"claude"},
+		"gpt-5.6-sol":           {"codex"},
+		"claude-opus-mixed":     {"claude", "openai-compatibility"},
+		"claude-and-codex":      {"claude", "codex"},
+		"claude-unknown-route":  nil,
+		"claude-on-antigravity": {"antigravity"},
+	}
+	want := map[string]bool{
+		"claude-sonnet-4-5":     true,
+		"gpt-5.5":               true,
+		"gpt-5.6-sol":           true,
+		"claude-opus-mixed":     false,
+		"claude-and-codex":      false,
+		"claude-unknown-route":  false,
+		"claude-on-antigravity": false,
+	}
+	available := make([]map[string]any, 0, len(want))
+	for id := range want {
+		available = append(available, map[string]any{"id": id})
+	}
+	resp := BuildResponse(available, func(id string) []string { return providers[id] }, false)
+	models, ok := resp["models"].([]map[string]any)
+	if !ok || len(models) != len(want) {
+		t.Fatalf("models = %#v, want %d entries", resp["models"], len(want))
+	}
+	for _, model := range models {
+		slug := stringModelValue(model, "slug")
+		if got, ok := model["supports_search_tool"].(bool); !ok || got != want[slug] {
+			t.Errorf("%s supports_search_tool = %#v, want %v", slug, model["supports_search_tool"], want[slug])
+		}
+	}
+}
+
 func TestCodexClientModelsResponse_PreservesUltraReasoningEffort(t *testing.T) {
 	resp := BuildResponse([]map[string]any{{"id": "gpt-5.6-sol"}}, nil, false)
 	models, ok := resp["models"].([]map[string]any)

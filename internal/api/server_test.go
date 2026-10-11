@@ -3596,6 +3596,52 @@ func TestModelsWithClientVersionHomeApplyPatchRouting(t *testing.T) {
 	}
 }
 
+func TestModelsWithClientVersionHomeSearchToolRouting(t *testing.T) {
+	server := newTestServer(t)
+	server.cfg.Home.Enabled = true
+	engine := gin.New()
+	engine.GET("/v1/models", server.unifiedModelsHandler(nil, nil))
+	client := newHomeCatalogClient(t, `{
+		"claude":[{"id":"home-claude-only"},{"id":"home-claude-mixed"}],
+		"codex":[{"id":"gpt-5.5"}],
+		"home-custom":[{"id":"home-claude-mixed"},{"id":"team/gpt-5.5"}]
+	}`)
+	previousHome := home.Current()
+	home.SetCurrent(client)
+	t.Cleanup(func() { home.SetCurrent(previousHome) })
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/models?client_version=0.153.4", nil)
+	request.Header.Set("Authorization", "Bearer test-key")
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Models []map[string]any `json:"models"`
+	}
+	if errUnmarshal := json.Unmarshal(recorder.Body.Bytes(), &response); errUnmarshal != nil {
+		t.Fatalf("decode Home catalog: %v", errUnmarshal)
+	}
+	// Home routing evidence decides search support exactly as local routes do:
+	// pure Claude or pure Codex template routes close the tool_search loop.
+	want := map[string]bool{"home-claude-only": true, "gpt-5.5": true, "home-claude-mixed": false, "team/gpt-5.5": false}
+	for _, entry := range response.Models {
+		slug, _ := entry["slug"].(string)
+		wantSearch, ok := want[slug]
+		if !ok {
+			continue
+		}
+		delete(want, slug)
+		if got, _ := entry["supports_search_tool"].(bool); got != wantSearch {
+			t.Errorf("%s supports_search_tool = %v, want %v", slug, got, wantSearch)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing Home catalog entries: %v", want)
+	}
+}
+
 func TestModelsWithClientVersionApplyPatchRequiresExecutor(t *testing.T) {
 	modelRegistry := registry.GetGlobalRegistry()
 	clientID := "http-patch-missing-executor"
