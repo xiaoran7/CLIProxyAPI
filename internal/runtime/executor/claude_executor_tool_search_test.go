@@ -7,6 +7,7 @@ import (
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
+	responsesclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/claude/openai/responses"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
@@ -27,6 +28,14 @@ const nativeToolSearchResponsesPayload = `{"model":"claude-sonnet-4-5","input":[
 const nativeToolSearchCalendar = "mcp__codex_apps__calendar_create_event"
 
 const nativeToolSearchGateway = "https://gateway.example.com"
+
+// enableClaudeToolSearchForTest sets upstream.claude.tool-search for one test.
+func enableClaudeToolSearchForTest(t *testing.T, enabled bool) {
+	t.Helper()
+	previous := responsesclaude.ClientToolSearchEnabled()
+	responsesclaude.SetClientToolSearchEnabled(enabled)
+	t.Cleanup(func() { responsesclaude.SetClientToolSearchEnabled(previous) })
+}
 
 func nativeToolSearchAuth(attrs map[string]string) *cliproxyauth.Auth {
 	out := map[string]string{"api_key": "key-123", "cloak_mode": "never"}
@@ -105,6 +114,7 @@ func assertDevToolSearchBody(t *testing.T, body []byte) {
 }
 
 func TestClaudeExecutor_SupportsNativeToolSearch(t *testing.T) {
+	enableClaudeToolSearchForTest(t, true)
 	forcedCfg := &config.Config{ClaudeKey: []config.ClaudeKey{{APIKey: "k", BaseURL: nativeToolSearchGateway, NativeToolSearch: true}}}
 	for _, tc := range []struct {
 		name  string
@@ -140,6 +150,7 @@ func TestClaudeExecutor_SupportsNativeToolSearch(t *testing.T) {
 }
 
 func TestClaudeExecutor_NativeToolSearchOfficialSendsReferences(t *testing.T) {
+	enableClaudeToolSearchForTest(t, true)
 	payload := []byte(nativeToolSearchResponsesPayload)
 	for _, tc := range []struct {
 		name string
@@ -157,6 +168,7 @@ func TestClaudeExecutor_NativeToolSearchOfficialSendsReferences(t *testing.T) {
 }
 
 func TestClaudeExecutor_NativeToolSearchFallbackMatchesDev(t *testing.T) {
+	enableClaudeToolSearchForTest(t, true)
 	payload := []byte(nativeToolSearchResponsesPayload)
 	stripped := helps.StripResponsesToolSearch(append([]byte(nil), payload...))
 	gateway := nativeToolSearchAuth(map[string]string{"base_url": nativeToolSearchGateway})
@@ -196,6 +208,7 @@ func TestClaudeExecutor_NativeToolSearchFallbackMatchesDev(t *testing.T) {
 }
 
 func TestClaudeExecutor_NativeToolSearchCountTokensLocalFallback(t *testing.T) {
+	enableClaudeToolSearchForTest(t, true)
 	payload := []byte(nativeToolSearchResponsesPayload)
 	stripped := helps.StripResponsesToolSearch(append([]byte(nil), payload...))
 	auth := nativeToolSearchAuth(map[string]string{"base_url": nativeToolSearchGateway})
@@ -214,6 +227,7 @@ func TestClaudeExecutor_NativeToolSearchCountTokensLocalFallback(t *testing.T) {
 }
 
 func TestClaudeExecutor_NativeToolSearchPayloadRuleIsFinal(t *testing.T) {
+	enableClaudeToolSearchForTest(t, true)
 	cfg := &config.Config{}
 	cfg.Payload.Override = []config.PayloadRule{{
 		Models: []config.PayloadModelRule{{Name: "*"}},
@@ -229,6 +243,7 @@ func TestClaudeExecutor_NativeToolSearchPayloadRuleIsFinal(t *testing.T) {
 }
 
 func TestClaudeExecutor_NativeToolSearchOAuthAliasesReferences(t *testing.T) {
+	enableClaudeToolSearchForTest(t, true)
 	auth := &cliproxyauth.Auth{
 		Attributes: map[string]string{"api_key": "sk-ant-oat-test"},
 		Metadata:   map[string]any{"account_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},
@@ -264,6 +279,7 @@ func TestClaudeExecutor_NativeToolSearchOAuthAliasesReferences(t *testing.T) {
 // A discovered non-MCP tool is aliased on cloaked OAuth requests; its
 // tool_reference must carry the same alias as its deferred declaration.
 func TestClaudeExecutor_NativeToolSearchOAuthAliasesRenamedReferences(t *testing.T) {
+	enableClaudeToolSearchForTest(t, true)
 	payload := []byte(`{"model":"claude-sonnet-4-5","input":[` +
 		`{"type":"message","role":"user","content":[{"type":"input_text","text":"look up order 7"}]},` +
 		`{"type":"tool_search_call","call_id":"call_search_1","status":"completed","execution":"client","arguments":{"query":"order"}},` +

@@ -3,6 +3,7 @@ package openai
 import (
 	codexmodels "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/models"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+	responsesclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/claude/openai/responses"
 )
 
 func (h *OpenAIAPIHandler) codexClientModelsResponse(clientVersion ...string) map[string]any {
@@ -16,7 +17,7 @@ func (h *OpenAIAPIHandler) codexClientModelsResponse(clientVersion ...string) ma
 		applyPatchCapabilityForModel = h.SupportsApplyPatchModel
 	}
 	var toolSearchCapabilityForModel codexmodels.ToolSearchCapabilityForModelFunc
-	if h != nil {
+	if h != nil && responsesclaude.ClientToolSearchEnabled() {
 		toolSearchCapabilityForModel = h.SupportsNativeToolSearchModel
 	}
 	modelRegistry := registry.GetGlobalRegistry()

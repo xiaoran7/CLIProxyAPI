@@ -24,6 +24,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
+	responsesclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/claude/openai/responses"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers/claude"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers/gemini"
@@ -704,7 +705,14 @@ func (s *Server) handleHomeCodexClientModels(c *gin.Context, clientVersion strin
 	if s.cfg.Client.Codex.EnableApplyPatch {
 		applyPatchCapabilityForModel = homeApplyPatchCapabilityForModel(entries, manager)
 	}
-	payload := codexmodels.BuildResponseForClientWithSearchToolRoutes(models, nil, homeProvidersForModel(entries), webSearchCapabilityForModel, applyPatchCapabilityForModel, homeToolSearchCapabilityForModel(entries), s.cfg.Client.Codex.OptimizeMultiAgentV2, clientVersion)
+	var payload map[string]any
+	if responsesclaude.ClientToolSearchEnabled() {
+		payload = codexmodels.BuildResponseForClientWithSearchToolRoutes(models, nil, homeProvidersForModel(entries), webSearchCapabilityForModel, applyPatchCapabilityForModel, homeToolSearchCapabilityForModel(entries), s.cfg.Client.Codex.OptimizeMultiAgentV2, clientVersion)
+	} else {
+		// upstream.claude.tool-search off keeps the catalog that predates
+		// tool_search, which never consulted Home routes for search support.
+		payload = codexmodels.BuildResponseForClientWithToolCapabilities(models, nil, webSearchCapabilityForModel, applyPatchCapabilityForModel, nil, s.cfg.Client.Codex.OptimizeMultiAgentV2, clientVersion)
+	}
 	body, errMarshal := codexmodels.MarshalCompact(payload)
 	if errMarshal != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errMarshal.Error()})

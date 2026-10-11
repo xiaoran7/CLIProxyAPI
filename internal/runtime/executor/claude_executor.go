@@ -11,6 +11,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
+	responsesclaude "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/claude/openai/responses"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
@@ -154,9 +155,11 @@ var _ cliproxyauth.NativeToolSearchSupport = (*ClaudeExecutor)(nil)
 // tool_search as Anthropic native tool search (defer_loading tools and
 // tool_reference results) for the given upstream model. Anthropic's own origin
 // qualifies; a custom base URL qualifies only when native-tool-search is
-// enabled for it. Models that predate tool search never qualify.
+// enabled for it. Models that predate tool search never qualify, and nothing
+// qualifies while upstream.claude.tool-search is off. That switch is read from
+// the translator so the executor and the translator always agree on it.
 func (e *ClaudeExecutor) SupportsNativeToolSearch(auth *cliproxyauth.Auth, upstreamModel string) bool {
-	if helps.ClaudeModelLacksToolSearch(upstreamModel) {
+	if !responsesclaude.ClientToolSearchEnabled() || helps.ClaudeModelLacksToolSearch(upstreamModel) {
 		return false
 	}
 	_, baseURL := claudeCreds(auth)
@@ -173,8 +176,10 @@ func (e *ClaudeExecutor) SupportsNativeToolSearch(auth *cliproxyauth.Auth, upstr
 // applyNativeToolSearchFallback removes Codex tool_search from a Responses
 // request before translation when the credential cannot use native tool
 // search, so the translated body matches the pre-tool-search translation.
+// While upstream.claude.tool-search is off the translator already produces
+// that translation from the unmodified request, so nothing is removed.
 func (e *ClaudeExecutor) applyNativeToolSearchFallback(auth *cliproxyauth.Auth, from sdktranslator.Format, upstreamModel string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Request, cliproxyexecutor.Options) {
-	if from != sdktranslator.FormatOpenAIResponse {
+	if from != sdktranslator.FormatOpenAIResponse || !responsesclaude.ClientToolSearchEnabled() {
 		return req, opts
 	}
 	if !helps.ResponsesHasToolSearch(req.Payload) && !helps.ResponsesHasToolSearch(opts.OriginalRequest) {
