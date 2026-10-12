@@ -7,8 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
-- **Upstream Sync (v8.0.24 & Recent Mainline)**:
-  - Merged upstream `v8.0.24` commits through `091ff27f`.
+- **Upstream Sync (v8.0.25 & Latest Mainline)**:
+  - Merged upstream `v8.0.25` commits through `696bbaee`.
+  - Added native Codex "Sign in with ChatGPT" (SIWC) OAuth authentication binding (`internal/auth/codex/siwc_auth.go` and `internal/cmd/siwc_bind.go`).
+  - Added session affinity rebind control (`session-affinity-rebind-on`) across upstream executors.
+  - Added plugin host quota provider resolution and v8 auth file quota provider bindings.
+  - Fixed Gemini schema unsupported dependent keywords sanitization and Codex fallback default model template when `gpt-5.5` is omitted.
   - Added native Claude and Codex Responses API `tool_search` support (`upstream.claude.tool-search` and `native-tool-search` configs).
   - Synchronized Antigravity streaming fixes, Gemini media function response trailing turn adjustments, and Codex over-length tool call ID handling.
   - Refactored Devin and Meta model getters in registry while maintaining compatibility with native OpenCode and WorkBuddy static catalogs.
