@@ -1,0 +1,220 @@
+package workbuddy
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+)
+
+func TestDeriveID(t *testing.T) {
+	// DeriveID("machine", "uid123") should be deterministic MD5 hex
+	id1 := DeriveID("machine", "uid123")
+	id2 := DeriveID("machine", "uid123")
+	if id1 != id2 {
+		t.Fatalf("DeriveID is not deterministic: %q != %q", id1, id2)
+	}
+	if len(id1) != 32 {
+		t.Fatalf("DeriveID length = %d, want 32", len(id1))
+	}
+
+	// Different salt should yield different ID
+	idSession := DeriveID("session", "uid123")
+	if id1 == idSession {
+		t.Fatalf("DeriveID with different salt yielded same ID: %q", id1)
+	}
+
+	// Different UID should yield different ID
+	idOther := DeriveID("machine", "uid456")
+	if id1 == idOther {
+		t.Fatalf("DeriveID with different uid yielded same ID: %q", id1)
+	}
+}
+
+func TestResolveRealm(t *testing.T) {
+	tests := []struct {
+		name string
+		auth *cliproxyauth.Auth
+		want string
+	}{
+		{
+			name: "nil auth defaults to intl",
+			auth: nil,
+			want: RealmIntl,
+		},
+		{
+			name: "attributes realm cn",
+			auth: &cliproxyauth.Auth{
+				Attributes: map[string]string{"realm": "cn"},
+			},
+			want: RealmCN,
+		},
+		{
+			name: "metadata realm cn",
+			auth: &cliproxyauth.Auth{
+				Metadata: map[string]any{"realm": "cn"},
+			},
+			want: RealmCN,
+		},
+		{
+			name: "provider workbuddy-cn",
+			auth: &cliproxyauth.Auth{
+				Provider: "workbuddy-cn",
+			},
+			want: RealmCN,
+		},
+		{
+			name: "base_url contains tencent.com",
+			auth: &cliproxyauth.Auth{
+				Attributes: map[string]string{"base_url": "https://copilot.tencent.com"},
+			},
+			want: RealmCN,
+		},
+		{
+			name: "default intl",
+			auth: &cliproxyauth.Auth{
+				Provider: "workbuddy",
+			},
+			want: RealmIntl,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ResolveRealm(tt.auth)
+			if got != tt.want {
+				t.Errorf("ResolveRealm() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyHeaders(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "https://www.workbuddy.ai/v2/chat/completions", nil)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+
+	auth := &cliproxyauth.Auth{
+		ID:       "test-user-42",
+		Provider: "workbuddy",
+		Metadata: map[string]any{
+			"user_id": "u-42",
+			"realm":   "intl",
+		},
+	}
+
+	ApplyHeaders(req, auth, "test-access-token")
+
+	if got := req.Header.Get("Authorization"); got != "Bearer test-access-token" {
+		t.Errorf("Authorization = %q, want Bearer test-access-token", got)
+	}
+	if got := req.Header.Get("X-IDE-Name"); got != DefaultIDEName {
+		t.Errorf("X-IDE-Name = %q, want %q", got, DefaultIDEName)
+	}
+	if got := req.Header.Get("X-Domain"); got != DomainIntl {
+		t.Errorf("X-Domain = %q, want %q", got, DomainIntl)
+	}
+	if got := req.Header.Get("X-Machine-ID"); got != DeriveID("machine", "u-42") {
+		t.Errorf("X-Machine-ID = %q, want %q", got, DeriveID("machine", "u-42"))
+	}
+	if got := req.Header.Get("X-Session-ID"); got != DeriveID("session", "u-42") {
+		t.Errorf("X-Session-ID = %q, want %q", got, DeriveID("session", "u-42"))
+	}
+	if req.Header.Get("X-Request-ID") == "" {
+		t.Error("X-Request-ID is empty")
+	}
+}
+
+func TestRefreshToken(t *testing.T) {
+	var callCount int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&callCount, 1)
+		if r.Header.Get("X-Refresh-Token") != "valid-refresh" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"code": 401, "msg": "invalid token"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// Return Tencent standard envelope
+		_, _ = w.Write([]byte(`{
+			"code": 0,
+			"msg": "success",
+			"data": {
+				"accessToken": "new-access-123",
+				"refreshToken": "new-refresh-456",
+				"expires_in": 3600
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	// Intercept BaseURLIntl by mocking client roundtripper or hitting server directly
+	customClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.URL.Scheme = "http"
+			req.URL.Host = server.Listener.Addr().String()
+			return http.DefaultTransport.RoundTrip(req)
+		}),
+	}
+
+	data, err := RefreshToken(context.Background(), customClient, RealmIntl, "valid-refresh", "u-1")
+	if err != nil {
+		t.Fatalf("RefreshToken failed: %v", err)
+	}
+
+	if data.AccessToken != "new-access-123" {
+		t.Errorf("AccessToken = %q, want new-access-123", data.AccessToken)
+	}
+	if data.RefreshToken != "new-refresh-456" {
+		t.Errorf("RefreshToken = %q, want new-refresh-456", data.RefreshToken)
+	}
+	if data.ExpiresIn != 3600 {
+		t.Errorf("ExpiresIn = %d, want 3600", data.ExpiresIn)
+	}
+}
+
+func TestRefreshTokenSingleflight(t *testing.T) {
+	var callCount int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&callCount, 1)
+		time.Sleep(30 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"accessToken": "tok-concurrent", "refreshToken": "ref-concurrent"}`))
+	}))
+	defer server.Close()
+
+	customClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.URL.Scheme = "http"
+			req.URL.Host = server.Listener.Addr().String()
+			return http.DefaultTransport.RoundTrip(req)
+		}),
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = RefreshToken(context.Background(), customClient, "singleflight-realm", "same-refresh-token", "u-1")
+		}()
+	}
+	wg.Wait()
+
+	if got := atomic.LoadInt32(&callCount); got != 1 {
+		t.Fatalf("Upstream called %d times; singleflight should have deduplicated to 1", got)
+	}
+}
+
+type roundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}

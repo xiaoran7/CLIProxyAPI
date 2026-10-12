@@ -219,6 +219,9 @@ func baselineExecutorAuths() []*coreauth.Auth {
 		"devin",
 		"meta",
 		"opencode",
+		"workbuddy",
+		"workbuddy-intl",
+		"workbuddy-cn",
 		"openai-compatibility",
 	}
 	auths := make([]*coreauth.Auth, 0, len(providers))
@@ -319,6 +322,8 @@ func (s *Service) registerExecutorForAuth(a *coreauth.Auth, forceReplace bool) {
 		s.coreManager.RegisterExecutor(executor.NewMetaExecutor(cfg))
 	case "opencode", "opencode-zen", "zen":
 		s.coreManager.RegisterExecutor(executor.NewOpenAICompatExecutor("opencode", cfg))
+	case "workbuddy", "workbuddy-intl", "workbuddy-cn", "copilot-tencent":
+		s.coreManager.RegisterExecutor(executor.NewWorkBuddyExecutor(cfg))
 	default:
 		providerKey := strings.ToLower(strings.TrimSpace(a.Provider))
 		if providerKey == "" {

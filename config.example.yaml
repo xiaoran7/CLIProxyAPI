@@ -802,6 +802,16 @@ upstream:
 #   # OpenAI compatibility providers
 #
 #   openai-compatibility:
+#     # WorkBuddy / CodeBuddy provider (Zero-config models, device fingerprinting & WAF cloaking)
+#     # Place credential JSON in auths/ (e.g. auths/workbuddy.json):
+#     # {
+#     #   "type": "workbuddy",
+#     #   "realm": "intl",                       # "intl" (workbuddy.ai) or "cn" (copilot.tencent.com)
+#     #   "access_token": "eyJhbGciOi...",
+#     #   "refresh_token": "...",                # optional: automatic token rotation via refresh endpoint
+#     #   "user_id": "u-123456"                  # optional: used for deterministic device fingerprinting
+#     # }
+#
 #     # OpenCode (Zen) provider (Zero-config models & auto-fingerprinting bypass)
 #     - name: "opencode"
 #       base-url: "https://opencode.ai/zen/v1"
