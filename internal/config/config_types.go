@@ -222,6 +222,23 @@ type CodexConfig struct {
 	// ResponseSteering enables full-duplex Codex WebSockets, bound to one
 	// upstream model/account/socket for their entire lifetime. Default is false.
 	ResponseSteering bool `yaml:"response-steering" json:"response-steering"`
+	// SignInWithChatGPTIdentifier configures the identifier (agent_name_hint and User-Agent prefix)
+	// for Codex Sign in with ChatGPT (SIWC) OAuth authorization and API requests.
+	// Defaults to "CLIProxyAPI".
+	SignInWithChatGPTIdentifier string `yaml:"signin-with-chatgpt-identifier,omitempty" json:"signin-with-chatgpt-identifier,omitempty"`
+}
+
+// DefaultSignInWithChatGPTIdentifier is the default identifier (agent_name_hint and User-Agent prefix)
+// used for Codex Sign in with ChatGPT (SIWC) OAuth authorization and API requests.
+const DefaultSignInWithChatGPTIdentifier = "CLIProxyAPI"
+
+// EffectiveSignInWithChatGPTIdentifier returns the configured Sign in with ChatGPT
+// identifier, or DefaultSignInWithChatGPTIdentifier when unset or blank.
+func (c CodexConfig) EffectiveSignInWithChatGPTIdentifier() string {
+	if v := strings.TrimSpace(c.SignInWithChatGPTIdentifier); v != "" {
+		return v
+	}
+	return DefaultSignInWithChatGPTIdentifier
 }
 
 // DefaultCodexStreamBootstrapTimeout is the default maximum duration to buffer bootstrap events.
