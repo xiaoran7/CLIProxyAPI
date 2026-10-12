@@ -535,6 +535,10 @@ func GetStaticModelDefinitionsByChannel(channel string) []*ModelInfo {
 		return GetMetaModels()
 	case "opencode", "opencode-zen", "zen":
 		return GetOpenCodeModels()
+	case "workbuddy", "workbuddy-intl":
+		return GetWorkBuddyModels("intl")
+	case "workbuddy-cn", "copilot-tencent":
+		return GetWorkBuddyModels("cn")
 	default:
 		return nil
 	}
@@ -580,6 +584,7 @@ func LookupStaticModelInfo(modelID string) *ModelInfo {
 		data.Devin,
 		staticDevinModels,
 		GetOpenCodeModels(),
+		GetAllWorkBuddyModels(),
 		data.Meta,
 	}
 	for _, models := range allModels {

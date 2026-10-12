@@ -196,6 +196,13 @@ func (s *Service) registerModelsForAuthWithCache(ctx context.Context, a *coreaut
 	case "opencode", "opencode-zen", "zen":
 		models = registry.GetOpenCodeModels()
 		models = applyExcludedModels(models, excluded)
+	case "workbuddy", "workbuddy-intl", "workbuddy-cn", "copilot-tencent":
+		realm := "intl"
+		if provider == "workbuddy-cn" || provider == "copilot-tencent" || (a.Attributes != nil && strings.EqualFold(a.Attributes["realm"], "cn")) {
+			realm = "cn"
+		}
+		models = registry.GetWorkBuddyModels(realm)
+		models = applyExcludedModels(models, excluded)
 	default:
 		// Handle OpenAI-compatibility providers by name using config
 		if s.cfg != nil {

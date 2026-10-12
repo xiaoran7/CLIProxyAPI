@@ -247,6 +247,35 @@ func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([
 			a.Attributes["base_url"] = kimiauth.ResolveKimiAPIBaseURL(resolvedDomain)
 		}
 	}
+	// For WorkBuddy auth files, preserve realm, domain and base_url attributes.
+	if provider == "workbuddy" || provider == "workbuddy-intl" || provider == "workbuddy-cn" || provider == "copilot-tencent" {
+		realm := "intl"
+		if provider == "workbuddy-cn" || provider == "copilot-tencent" {
+			realm = "cn"
+		}
+		if r, ok := metadata["realm"].(string); ok && strings.TrimSpace(r) != "" {
+			realm = strings.ToLower(strings.TrimSpace(r))
+		}
+		a.Attributes["realm"] = realm
+		if bu, ok := metadata["base_url"].(string); ok && strings.TrimSpace(bu) != "" {
+			a.Attributes["base_url"] = strings.TrimSpace(bu)
+		} else {
+			if realm == "cn" {
+				a.Attributes["base_url"] = "https://copilot.tencent.com"
+			} else {
+				a.Attributes["base_url"] = "https://www.workbuddy.ai"
+			}
+		}
+		if dom, ok := metadata["domain"].(string); ok && strings.TrimSpace(dom) != "" {
+			a.Attributes["domain"] = strings.TrimSpace(dom)
+		} else {
+			if realm == "cn" {
+				a.Attributes["domain"] = "copilot.tencent.com"
+			} else {
+				a.Attributes["domain"] = "www.workbuddy.ai"
+			}
+		}
+	}
 	// For codex auth files, extract plan_type from metadata or JWT id_token.
 	if provider == "codex" {
 		if ptRaw, ok := metadata["plan_type"].(string); ok && strings.TrimSpace(ptRaw) != "" {
