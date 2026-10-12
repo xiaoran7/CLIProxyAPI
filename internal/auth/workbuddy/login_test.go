@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 )
@@ -87,11 +86,6 @@ func TestStartLoginAndPoll(t *testing.T) {
 
 	// Test StartLogin with custom client redirecting to mock server
 	client := server.Client()
-	customTransport := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Scheme = "http"
-		r.URL.Host = server.Listener.Addr().String()
-		server.Config.Handler.ServeHTTP(w, r)
-	})
 	client.Transport = customTransportRoundTripper{server: server}
 
 	session, err := StartLogin(context.Background(), client, RealmIntl, "CLI")
