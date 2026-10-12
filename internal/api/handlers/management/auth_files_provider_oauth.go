@@ -932,12 +932,12 @@ func (h *Handler) requestWorkBuddyTokenWithRealm(c *gin.Context, realm string) {
 	ctx = PopulateAuthContext(ctx, c)
 
 	isCN := strings.EqualFold(realm, workbuddyauth.RealmCN)
-	displayName := "WorkBuddy"
+	displayName := "WorkBuddy (en)"
 	providerName := "workbuddy"
 	filePrefix := "workbuddy"
 	statePrefix := "wb"
 	if isCN {
-		displayName = "CodeBuddy"
+		displayName = "WorkBuddy (cn)"
 		providerName = "workbuddy-cn"
 		filePrefix = "workbuddy-cn"
 		statePrefix = "wb-cn"

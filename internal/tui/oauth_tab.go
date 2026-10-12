@@ -27,8 +27,8 @@ var oauthProviders = []oauthProvider{
 	{"Kimi (kimi.ai)", "kimi-ai-auth-url", "🟫", true},
 	{"xAI", "xai-auth-url", "⬛", true},
 	{"Meta", "meta-auth-url", "🔵", true},
-	{"WorkBuddy (intl)", "workbuddy-auth-url", "🤖", true},
-	{"WorkBuddy (China / CodeBuddy)", "workbuddy-cn-auth-url", "🇨🇳", true},
+	{"WorkBuddy (en)", "workbuddy-auth-url", "🤖", true},
+	{"WorkBuddy (cn)", "workbuddy-cn-auth-url", "🤖", true},
 }
 
 // oauthTabModel handles OAuth login flows.
