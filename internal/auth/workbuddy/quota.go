@@ -131,41 +131,38 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 	}
 
 	// Build summary metrics
-	summary := []pluginapi.QuotaMetric{
-		{
-			Key:   "realm",
-			Label: "Realm",
-			Text:  strings.ToUpper(realm),
-		},
-	}
-
+	var summary []pluginapi.QuotaMetric
 	if hasExplicitPoints {
 		if totalPoints > 0 {
 			summary = append(summary, pluginapi.QuotaMetric{
-				Key:   "points",
-				Label: "Points",
-				Text:  fmt.Sprintf("%.0f / %.0f", remainPoints, totalPoints),
+				Key:    "points_remain",
+				Label:  "Available Points",
+				Value:  remainPoints,
+				Unit:   "pts",
+				Format: "number",
+			}, pluginapi.QuotaMetric{
+				Key:    "points_total",
+				Label:  "Total Quota",
+				Value:  totalPoints,
+				Unit:   "pts",
+				Format: "number",
 			})
 		} else {
 			summary = append(summary, pluginapi.QuotaMetric{
-				Key:   "points",
-				Label: "Available Points",
-				Text:  fmt.Sprintf("%.0f", remainPoints),
+				Key:    "points_remain",
+				Label:  "Available Points",
+				Value:  remainPoints,
+				Unit:   "pts",
+				Format: "number",
 			})
 		}
 	} else {
 		summary = append(summary, pluginapi.QuotaMetric{
-			Key:   "free_tier",
-			Label: "Free Tier (1M)",
-			Text:  "Active (Unlimited Daily Flash)",
-		})
-	}
-
-	if nickname := extractNickname(auth); nickname != "" {
-		summary = append(summary, pluginapi.QuotaMetric{
-			Key:   "account",
-			Label: "Account",
-			Text:  nickname,
+			Key:    "free_tier_status",
+			Label:  "Daily Free Tier",
+			Value:  1,
+			Unit:   "active",
+			Format: "number",
 		})
 	}
 
@@ -175,14 +172,13 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 		},
 		Groups: []pluginapi.QuotaGroup{
 			{
-				ID:    "workbuddy_daily",
-				Label: "Daily Quota & Free 1M Models",
+				DisplayName: "Daily Quota & Free 1M Models",
 				Buckets: []pluginapi.QuotaBucket{
 					{
-						ID:                "daily_quota",
-						Label:             "Available Quota",
+						Window:            "daily",
 						RemainingFraction: remainingFrac,
 						ResetTime:         nextMidnight,
+						Description:       "Tencent WorkBuddy / CodeBuddy Daily Quota Bucket",
 					},
 				},
 			},
