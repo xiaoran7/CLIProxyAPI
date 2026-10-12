@@ -28,6 +28,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
     - Added WorkBuddy and CodeBuddy options to TUI OAuth tab and Gate admin control panel.
   - Added native static model catalogs for both realms (`internal/registry/workbuddy_models.go`) exposing `deepseek-v4.1-flash`, `gpt-6-astra`, `claude-fable-5-1`, `hy4-preview-f`, `glm-5.3`, and `kimi-k3`.
   - Registered `workbuddy`, `workbuddy-intl`, and `workbuddy-cn` in executor registry, model registry, and file auth synthesizer.
+  - Standardized WorkBuddy edition names to `WorkBuddy (en)` and `WorkBuddy (cn)` in management plugin metadata, OAuth controllers, and TUI menus.
+  - Unified WorkBuddy avatar icon to official green cat-eared robot logo across all editions and OAuth login cards.
+  - Elevated OpenCode as a top-level provider in CPAMC control panel frontend assets (`management.html`) with dedicated brand card, filtering, and independent brand configuration.
 - **AOCI Code Cognition & Baseline Assets**:
   - Initialized AOCI v0.1.0-rc18 code cognition layer (`aoci.txt`, `aoci.meta.txt`, `aoci.code.txt`, `.gitattributes`).
   - Established project baseline across 1,882 managed files with Claude Code MCP hooks and settings integration.
