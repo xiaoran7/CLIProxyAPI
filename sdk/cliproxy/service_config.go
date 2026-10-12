@@ -12,6 +12,16 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+func (s *Service) currentConfig() *config.Config {
+	if s == nil {
+		return nil
+	}
+	s.cfgMu.RLock()
+	cfg := s.cfg
+	s.cfgMu.RUnlock()
+	return cfg
+}
+
 func (s *Service) applyConfigUpdate(newCfg *config.Config) {
 	s.applyConfigUpdateWithAuthSynthesis(context.Background(), newCfg, true)
 }

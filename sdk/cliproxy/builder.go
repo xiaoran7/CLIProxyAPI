@@ -277,7 +277,7 @@ func (b *Builder) Build() (*Service, error) {
 	}
 
 	service := &Service{
-		cfg:                 b.cfg,
+		cfg:                 b.cfg.CloneForRuntime(),
 		configPath:          b.configPath,
 		tokenProvider:       tokenProvider,
 		apiKeyProvider:      apiKeyProvider,
