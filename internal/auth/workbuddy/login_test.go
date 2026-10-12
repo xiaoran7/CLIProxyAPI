@@ -86,7 +86,10 @@ func TestStartLoginAndPoll(t *testing.T) {
 
 	// Test StartLogin with custom client redirecting to mock server
 	client := server.Client()
-	client.Transport = customTransportRoundTripper{server: server}
+	client.Transport = customTransportRoundTripper{
+		server: server,
+		base:   http.DefaultTransport,
+	}
 
 	session, err := StartLogin(context.Background(), client, RealmIntl, "CLI")
 	if err != nil {
@@ -132,10 +135,11 @@ func TestStartLoginAndPoll(t *testing.T) {
 
 type customTransportRoundTripper struct {
 	server *httptest.Server
+	base   http.RoundTripper
 }
 
 func (c customTransportRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.URL.Scheme = "http"
 	req.URL.Host = c.server.Listener.Addr().String()
-	return c.server.Client().Transport.RoundTrip(req)
+	return c.base.RoundTrip(req)
 }
