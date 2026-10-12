@@ -376,8 +376,8 @@ func TestAuthFilesList_IncludesQuotaSupport(t *testing.T) {
 			if qp, ok := f["quota_provider"].(string); !ok || qp != "opencode-go" {
 				t.Fatalf("expected quota_provider: opencode-go, got %#v", f["quota_provider"])
 			}
-			if pluginID, ok := f["quota_plugin_id"].(string); !ok || pluginID != "opencode-plugin" {
-				t.Fatalf("expected quota_plugin_id: opencode-plugin, got %#v", f["quota_plugin_id"])
+			if _, ok := f["quota_plugin_id"]; ok {
+				t.Fatal("v0 auth files should not expose quota_plugin_id")
 			}
 		case "custom-auth-list":
 			foundProbe = true
