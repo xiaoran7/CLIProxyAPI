@@ -42,6 +42,14 @@ CLIProxyAPI 是一个为 CLI 提供 OpenAI/Gemini/Claude/Codex/Grok 兼容 API �
         <td align="center"><a href="https://devin.ai/cli">Devin</a></td>
         <td>Devin 提供的模型（SWE-2、GPT-6 Astra、Claude Fable 5.1 等）。使用 <code>--devin-login</code> 连接 Devin 账户，即可路由该账户可用的模型。</td>
     </tr>
+    <tr>
+        <td align="center"><a href="https://opencode.ai">OpenCode</a></td>
+        <td>OpenCode Zen 与免费层模型（包含 <code>step-5-preview-free</code>、<code>longcat-2.5-preview-free</code>、<code>mimo-v2.6-flash-free</code>、<code>ling-3.1-flash-free</code> 等 100 万 Token 上下文模型）。内置逆向设备指纹与防 WAF 拦截的 Agent 工具伪装引擎，并在 CPAMC 管理面板中原生作为顶级提供商呈现。</td>
+    </tr>
+    <tr>
+        <td align="center"><a href="https://www.workbuddy.ai">WorkBuddy</a></td>
+        <td>腾讯 WorkBuddy（国际版 <code>workbuddy.ai</code>）与 CodeBuddy（国内版 <code>copilot.tencent.com</code>）双区域模型（DeepSeek V4.1 Flash 1M 上下文、GLM 5.3、Kimi K3、混元 Hy4 Preview 等）。支持确定性设备指纹伪装、WAF 指令清洗、单飞 Token 自动保活与一键式交互 OAuth 授权登录。</td>
+    </tr>
 </tbody>
 </table>
 

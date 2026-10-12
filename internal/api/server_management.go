@@ -326,6 +326,13 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 			// Synchronously ensure management.html is available with a detached context.
 			// Control panel bootstrap should not be canceled by client disconnects.
 			if !managementasset.EnsureLatestManagementHTML(context.Background(), managementasset.StaticDir(s.configFilePath), cfg.ProxyURL, cfg.RemoteManagement.PanelGitHubRepository) {
+				if embedded := managementasset.EmbeddedManagementHTML(); len(embedded) > 0 {
+					c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+					c.Header("Pragma", "no-cache")
+					c.Header("Expires", "0")
+					c.Data(http.StatusOK, "text/html; charset=utf-8", embedded)
+					return
+				}
 				c.AbortWithStatus(http.StatusNotFound)
 				return
 			}
@@ -336,5 +343,8 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		}
 	}
 
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	c.File(filePath)
 }

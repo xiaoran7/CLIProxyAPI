@@ -42,6 +42,14 @@ You can access the following providers locally and with multiple CLI accounts th
         <td align="center"><a href="https://devin.ai/cli">Devin</a></td>
         <td>Devin models (SWE-2, GPT-6 Astra, Claude Fable 5.1, etc.). Connect a Devin account with <code>--devin-login</code> to route the models available to that account.</td>
     </tr>
+    <tr>
+        <td align="center"><a href="https://opencode.ai">OpenCode</a></td>
+        <td>OpenCode Zen and Free-tier models (1M-context models such as <code>step-5-preview-free</code>, <code>longcat-2.5-preview-free</code>, <code>mimo-v2.6-flash-free</code>, <code>ling-3.1-flash-free</code>). Features built-in reverse-engineered fingerprinting, anti-detection schema cloaking, and native elevation as a top-level provider in CPAMC control panel.</td>
+    </tr>
+    <tr>
+        <td align="center"><a href="https://www.workbuddy.ai">WorkBuddy</a></td>
+        <td>Tencent WorkBuddy (International, <code>workbuddy.ai</code>) and CodeBuddy (China mainland, <code>copilot.tencent.com</code>) dual-realm models (DeepSeek V4.1 Flash with 1M context, GLM 5.3, Kimi K3, Hy4 Preview). Supports deterministic device fingerprinting, WAF instruction cloaking, singleflight token auto-refresh, and interactive OAuth login with persistent credential management.</td>
+    </tr>
 </tbody>
 </table>
 

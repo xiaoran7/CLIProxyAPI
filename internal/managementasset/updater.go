@@ -231,6 +231,25 @@ func EnsureLatestManagementHTML(ctx context.Context, staticDir string, proxyURL 
 			return nil, nil
 		}
 
+		// If local asset is missing and we have embedded asset, write it out immediately.
+		if localFileMissing && len(defaultEmbeddedManagementHTML) > 0 {
+			if errEmbed := atomicWriteFile(localPath, defaultEmbeddedManagementHTML); errEmbed == nil {
+				log.Info("management asset initialized from embedded bundle (includes native OpenCode & WorkBuddy support)")
+				localFileMissing = false
+			} else {
+				log.WithError(errEmbed).Warn("failed to initialize management asset from embedded bundle")
+			}
+		}
+
+		// If using default upstream panel repository, protect the embedded/customized version
+		// from being overwritten by vanilla upstream CPAMC which lacks native OpenCode brand card.
+		isDefaultRepo := strings.TrimSpace(panelRepository) == "" ||
+			strings.EqualFold(strings.TrimSpace(panelRepository), "router-for-me/Cli-Proxy-API-Management-Center")
+		if isDefaultRepo && len(defaultEmbeddedManagementHTML) > 0 {
+			log.Debug("preserving customized management control panel with native OpenCode & WorkBuddy support")
+			return nil, nil
+		}
+
 		releaseURL := resolveReleaseURL(panelRepository)
 		client := newHTTPClient(proxyURL)
 
