@@ -31,9 +31,9 @@ func TestWorkBuddyExecutorPrepareRequest(t *testing.T) {
 
 	auth := &cliproxyauth.Auth{
 		ID:    "user-101",
-		Token: "tok-101",
 		Metadata: map[string]any{
-			"realm":   "intl",
+			"access_token": "tok-101",
+				"realm":   "intl",
 			"user_id": "u-101",
 		},
 	}
@@ -97,13 +97,13 @@ func TestWorkBuddyExecutorExecuteNonStream(t *testing.T) {
 	exec := NewWorkBuddyExecutor(&config.Config{})
 	auth := &cliproxyauth.Auth{
 		ID:    "user-101",
-		Token: "test-token",
 		Attributes: map[string]string{
 			"base_url": server.URL,
 			"realm":    "intl",
 		},
 		Metadata: map[string]any{
-			"realm": "intl",
+			"access_token": "tok-stream",
+				"realm": "intl",
 		},
 	}
 
@@ -147,9 +147,12 @@ func TestWorkBuddyExecutorExecuteStream(t *testing.T) {
 	exec := NewWorkBuddyExecutor(&config.Config{})
 	auth := &cliproxyauth.Auth{
 		ID:    "user-101",
-		Token: "test-token",
 		Attributes: map[string]string{
 			"base_url": server.URL,
+		},
+		Metadata: map[string]any{
+			"access_token": "tok-stream",
+			"realm":        "intl",
 		},
 	}
 
