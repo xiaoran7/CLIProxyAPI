@@ -64,4 +64,32 @@ func TestLookupWorkBuddyModel(t *testing.T) {
 	if mNonExistent != nil {
 		t.Errorf("LookupWorkBuddyModel returned non-nil for non-existent model: %v", mNonExistent)
 	}
+
+	// Verify base models are labeled with realm names, and -free aliases with (Free / 1M)
+	mFlashIntl := LookupWorkBuddyModel("deepseek-v4.1-flash", "intl")
+	if mFlashIntl == nil || mFlashIntl.DisplayName != "DeepSeek V4.1 Flash (WorkBuddy)" {
+		t.Errorf("deepseek-v4.1-flash (intl) DisplayName = %q, want %q", mFlashIntl.DisplayName, "DeepSeek V4.1 Flash (WorkBuddy)")
+	}
+	mFlashIntlFree := LookupWorkBuddyModel("deepseek-v4.1-flash-free", "intl")
+	if mFlashIntlFree == nil || mFlashIntlFree.DisplayName != "DeepSeek V4.1 Flash (Free / 1M)" {
+		t.Errorf("deepseek-v4.1-flash-free (intl) DisplayName = %q, want %q", mFlashIntlFree.DisplayName, "DeepSeek V4.1 Flash (Free / 1M)")
+	}
+
+	mFlashCN := LookupWorkBuddyModel("deepseek-v4.1-flash", "cn")
+	if mFlashCN == nil || mFlashCN.DisplayName != "DeepSeek V4.1 Flash (CodeBuddy)" {
+		t.Errorf("deepseek-v4.1-flash (cn) DisplayName = %q, want %q", mFlashCN.DisplayName, "DeepSeek V4.1 Flash (CodeBuddy)")
+	}
+	mFlashCNFree := LookupWorkBuddyModel("deepseek-v4.1-flash-free", "cn")
+	if mFlashCNFree == nil || mFlashCNFree.DisplayName != "DeepSeek V4.1 Flash (Free / 1M)" {
+		t.Errorf("deepseek-v4.1-flash-free (cn) DisplayName = %q, want %q", mFlashCNFree.DisplayName, "DeepSeek V4.1 Flash (Free / 1M)")
+	}
+
+	mHy4CN := LookupWorkBuddyModel("hy4-preview-f", "cn")
+	if mHy4CN == nil || mHy4CN.DisplayName != "Hunyuan 4 Preview F (CodeBuddy)" {
+		t.Errorf("hy4-preview-f (cn) DisplayName = %q, want %q", mHy4CN.DisplayName, "Hunyuan 4 Preview F (CodeBuddy)")
+	}
+	mHy4CNFree := LookupWorkBuddyModel("hy4-preview-f-free", "cn")
+	if mHy4CNFree == nil || mHy4CNFree.DisplayName != "Hunyuan 4 Preview F (Free / 1M)" {
+		t.Errorf("hy4-preview-f-free (cn) DisplayName = %q, want %q", mHy4CNFree.DisplayName, "Hunyuan 4 Preview F (Free / 1M)")
+	}
 }
