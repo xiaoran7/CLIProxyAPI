@@ -35,9 +35,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Standardized WorkBuddy edition names to `WorkBuddy (en)` and `WorkBuddy (cn)` in management plugin metadata, OAuth controllers, and TUI menus.
   - Unified WorkBuddy avatar icon to official green cat-eared robot logo across all editions and OAuth login cards.
   - Elevated OpenCode as a top-level provider in CPAMC control panel frontend assets (`management.html`) with dedicated brand card, filtering, and independent brand configuration.
-- **AOCI Code Cognition & Baseline Assets**:
-  - Initialized AOCI v0.1.0-rc18 code cognition layer (`aoci.txt`, `aoci.meta.txt`, `aoci.code.txt`, `.gitattributes`).
-  - Established project baseline across 1,882 managed files with Claude Code MCP hooks and settings integration.
+- **AOCI Zero-Footprint Local Cognition Governance**:
+  - Enforced strict zero-footprint repository boundary for AOCI cognition layer per `aoci-setup` policy.
+  - Standardized `.gitignore` with full AI tooling and local cognition ignore rules (`aoci.*`, `.aoci/`, `.mcp.json`, `AGENT.md`, etc.).
+  - Untracked all AOCI local state and baseline files from Git index without data loss while preserving offline local cognition readiness.
+  - Sanitized `AGENTS.md` by stripping private AOCI operational blocks for clean open-source compliance.
 - **Native OpenCode Provider & Free Tier Support**:
   - Implemented OpenCode Zen reverse-engineered fingerprint engine (`internal/runtime/executor/opencode_cloaking.go`):
     - Injects dynamic 48-bit bitwise-inverted Base62 session and request IDs (`ses_` and `msg_`).
