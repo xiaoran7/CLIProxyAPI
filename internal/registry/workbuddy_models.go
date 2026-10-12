@@ -334,16 +334,24 @@ func LookupWorkBuddyModel(modelID, realm string) *ModelInfo {
 		return nil
 	}
 
-	target := strings.TrimSuffix(clean, "-free")
+	models := GetWorkBuddyModels(realm)
 
-	for _, m := range GetWorkBuddyModels(realm) {
-		if m == nil {
-			continue
-		}
-		idLower := strings.ToLower(m.ID)
-		if idLower == clean || idLower == target {
+	// First pass: exact match (ensures -free alias returns its own dedicated entry)
+	for _, m := range models {
+		if m != nil && strings.ToLower(m.ID) == clean {
 			return cloneModelInfo(m)
 		}
 	}
+
+	// Second pass: fallback without -free suffix if only base model is registered
+	target := strings.TrimSuffix(clean, "-free")
+	if target != clean {
+		for _, m := range models {
+			if m != nil && strings.ToLower(m.ID) == target {
+				return cloneModelInfo(m)
+			}
+		}
+	}
+
 	return nil
 }
