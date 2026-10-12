@@ -30,10 +30,20 @@ func StripWorkBuddyForbiddenHeaders(req *http.Request) {
 	req.Header.Del("x-zcode-trace-id")
 }
 
-// SanitizeWorkBuddyPromptWAF rewrites prompt substrings that trigger Tencent WAF error 11128.
+// SanitizeWorkBuddyPromptWAF rewrites prompt substrings that trigger Tencent WAF error 11128
+// and normalizes -free model aliases to their canonical upstream model IDs.
 func SanitizeWorkBuddyPromptWAF(payload []byte) []byte {
 	if len(payload) == 0 {
 		return payload
+	}
+	if modelRes := gjson.GetBytes(payload, "model"); modelRes.Exists() {
+		m := strings.TrimSpace(modelRes.String())
+		if strings.HasSuffix(strings.ToLower(m), "-free") {
+			cleanModel := m[:len(m)-len("-free")]
+			if updated, err := sjson.SetBytes(payload, "model", cleanModel); err == nil {
+				payload = updated
+			}
+		}
 	}
 	// Replacement map for known 11128 WAF triggers
 	replacements := []struct {

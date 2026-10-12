@@ -18,7 +18,21 @@ var staticWorkBuddyIntlModels = []*ModelInfo{
 		Object:              "model",
 		OwnedBy:             "deepseek",
 		Type:                "workbuddy",
-		DisplayName:         "DeepSeek V4.1 Flash (WorkBuddy)",
+		DisplayName:         "DeepSeek V4.1 Flash (Free / 1M)",
+		ContextLength:       1048576,
+		MaxCompletionTokens: 64000,
+		InputTokenLimit:     1048576,
+		OutputTokenLimit:    64000,
+		Thinking: &ThinkingSupport{
+			Levels: []string{"high", "max"},
+		},
+	},
+	{
+		ID:                  "deepseek-v4.1-flash-free",
+		Object:              "model",
+		OwnedBy:             "deepseek",
+		Type:                "workbuddy",
+		DisplayName:         "DeepSeek V4.1 Flash (Free / 1M)",
 		ContextLength:       1048576,
 		MaxCompletionTokens: 64000,
 		InputTokenLimit:     1048576,
@@ -130,7 +144,18 @@ var staticWorkBuddyIntlModels = []*ModelInfo{
 		Object:              "model",
 		OwnedBy:             "zhipu",
 		Type:                "workbuddy",
-		DisplayName:         "GLM-5.3 Flash (WorkBuddy)",
+		DisplayName:         "GLM-5.3 Flash (Free / 1M)",
+		ContextLength:       1048576,
+		MaxCompletionTokens: 128000,
+		InputTokenLimit:     1048576,
+		OutputTokenLimit:    128000,
+	},
+	{
+		ID:                  "glm-5.3-flash-free",
+		Object:              "model",
+		OwnedBy:             "zhipu",
+		Type:                "workbuddy",
+		DisplayName:         "GLM-5.3 Flash (Free / 1M)",
 		ContextLength:       1048576,
 		MaxCompletionTokens: 128000,
 		InputTokenLimit:     1048576,
@@ -169,7 +194,18 @@ var staticWorkBuddyCNModels = []*ModelInfo{
 		Object:              "model",
 		OwnedBy:             "tencent",
 		Type:                "workbuddy",
-		DisplayName:         "Hunyuan 4 Preview F (CodeBuddy)",
+		DisplayName:         "Hunyuan 4 Preview F (Free / 1M)",
+		ContextLength:       1048576,
+		MaxCompletionTokens: 64000,
+		InputTokenLimit:     1048576,
+		OutputTokenLimit:    64000,
+	},
+	{
+		ID:                  "hy4-preview-f-free",
+		Object:              "model",
+		OwnedBy:             "tencent",
+		Type:                "workbuddy",
+		DisplayName:         "Hunyuan 4 Preview F (Free / 1M)",
 		ContextLength:       1048576,
 		MaxCompletionTokens: 64000,
 		InputTokenLimit:     1048576,
@@ -191,7 +227,21 @@ var staticWorkBuddyCNModels = []*ModelInfo{
 		Object:              "model",
 		OwnedBy:             "deepseek",
 		Type:                "workbuddy",
-		DisplayName:         "DeepSeek V4.1 Flash (CodeBuddy)",
+		DisplayName:         "DeepSeek V4.1 Flash (Free / 1M)",
+		ContextLength:       1048576,
+		MaxCompletionTokens: 64000,
+		InputTokenLimit:     1048576,
+		OutputTokenLimit:    64000,
+		Thinking: &ThinkingSupport{
+			Levels: []string{"high", "max"},
+		},
+	},
+	{
+		ID:                  "deepseek-v4.1-flash-free",
+		Object:              "model",
+		OwnedBy:             "deepseek",
+		Type:                "workbuddy",
+		DisplayName:         "DeepSeek V4.1 Flash (Free / 1M)",
 		ContextLength:       1048576,
 		MaxCompletionTokens: 64000,
 		InputTokenLimit:     1048576,
@@ -284,11 +334,14 @@ func LookupWorkBuddyModel(modelID, realm string) *ModelInfo {
 		return nil
 	}
 
+	target := strings.TrimSuffix(clean, "-free")
+
 	for _, m := range GetWorkBuddyModels(realm) {
 		if m == nil {
 			continue
 		}
-		if strings.ToLower(m.ID) == clean {
+		idLower := strings.ToLower(m.ID)
+		if idLower == clean || idLower == target {
 			return cloneModelInfo(m)
 		}
 	}

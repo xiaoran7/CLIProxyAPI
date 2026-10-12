@@ -690,6 +690,14 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quota authFileQu
 			entry["quota_plugin_id"] = pluginID
 		}
 	}
+	pLower := strings.ToLower(strings.TrimSpace(auth.Provider))
+	if strings.HasPrefix(pLower, "workbuddy") || pLower == "copilot-tencent" {
+		entry["supports_quota"] = true
+		entry["quota_provider"] = auth.Provider
+		if quota.v8 {
+			entry["quota_plugin_id"] = pLower
+		}
+	}
 	// Declarative quota_probe is only executed by the v0 quota/fetch route.
 	if !quota.v8 && auth.Metadata != nil {
 		if probe, okProbe := auth.Metadata["quota_probe"]; okProbe && probe != nil {

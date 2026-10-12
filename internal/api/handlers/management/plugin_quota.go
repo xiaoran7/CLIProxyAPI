@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/workbuddy"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 	log "github.com/sirupsen/logrus"
@@ -82,6 +83,19 @@ func (h *Handler) FetchCredentialQuota(c *gin.Context) {
 	provider := strings.TrimSpace(body.Provider)
 	if provider == "" {
 		provider = auth.Provider
+	}
+
+	// Native WorkBuddy / CodeBuddy quota provider
+	pLower := strings.ToLower(provider)
+	if strings.HasPrefix(pLower, "workbuddy") || pLower == "copilot-tencent" || strings.HasPrefix(strings.ToLower(pluginID), "workbuddy") {
+		quotaResp, errQuota := workbuddy.QueryQuota(c.Request.Context(), nil, auth)
+		if errQuota != nil {
+			log.WithError(errQuota).Warnf("failed to query native workbuddy quota for credential %s", auth.Index)
+			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errQuota)})
+			return
+		}
+		c.JSON(http.StatusOK, quotaResp)
+		return
 	}
 
 	if host != nil {
@@ -267,6 +281,19 @@ func (h *Handler) fetchQuotaForPlugin(c *gin.Context, pluginID, authIndex string
 	auth := h.authByIndex(authIndex)
 	if auth == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "auth not found"})
+		return
+	}
+
+	pLower := strings.ToLower(strings.TrimSpace(pluginID))
+	authPLower := strings.ToLower(strings.TrimSpace(auth.Provider))
+	if strings.HasPrefix(pLower, "workbuddy") || strings.HasPrefix(authPLower, "workbuddy") || authPLower == "copilot-tencent" {
+		quotaResp, errQuota := workbuddy.QueryQuota(c.Request.Context(), nil, auth)
+		if errQuota != nil {
+			log.WithError(errQuota).Warnf("failed to query native workbuddy quota for credential %s", auth.Index)
+			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errQuota)})
+			return
+		}
+		c.JSON(http.StatusOK, quotaResp)
 		return
 	}
 

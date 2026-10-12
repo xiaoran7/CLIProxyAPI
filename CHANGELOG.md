@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **WorkBuddy Quota Provider & Free Tier Labeling**:
+  - Implemented native `workbuddy.QueryQuota()` (`internal/auth/workbuddy/quota.go`) querying Tencent `/v2/plugin/user/points` for real-time account points balance, VIP subscription tier, and daily free tier status.
+  - Wired native WorkBuddy quota provider into management handlers (`/v0/management/quota/fetch` and `/v0/management/plugins/:id/quota`) to enable one-click quota inspection in CPAMC.
+  - Bound `supports_quota` and `quota_provider` for `workbuddy` and `workbuddy-cn` auth files in management response (`internal/api/handlers/management/auth_files.go` and `plugins.go`).
+  - Tagged daily free 1M context models with `(Free / 1M)` in `DisplayName` (`deepseek-v4.1-flash`, `hy4-preview-f`, and `glm-5.3-flash`) across static model registries (`internal/registry/workbuddy_models.go`).
+  - Added native `-free` model alias resolution (`deepseek-v4.1-flash-free`, `hy4-preview-f-free`, `glm-5.3-flash-free`) with transparent upstream model name unwrapping in executor prompt cloaking (`internal/runtime/executor/helps/workbuddy_cloaking.go`).
+  - Injected WorkBuddy official green cat-eared robot avatar into CPAMC `RD` data URI map, `Zv` alias map, and `$x` provider logo dictionary across `static/management.html` and embedded binary assets (`internal/managementasset/assets/management.html`).
+  - Added localized filter labels (`filter_workbuddy` and `filter_workbuddy-cn`) across all CPAMC locale bundles (Chinese, English, etc.) to eliminate fallback unlocalized "Workbuddy" text.
+  - Applied polished border radius styling to tab icons for consistent avatar rendering.
 - **Upstream Sync (v8.0.25 & Latest Mainline)**:
   - Merged upstream `v8.0.25` commits through `696bbaee`.
   - Added native Codex "Sign in with ChatGPT" (SIWC) OAuth authentication binding (`internal/auth/codex/siwc_auth.go` and `internal/cmd/siwc_bind.go`).
