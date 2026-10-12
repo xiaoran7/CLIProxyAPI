@@ -232,8 +232,9 @@ requests:
 
   # Streaming behavior (SSE keep-alives + safe bootstrap retries).
   # streaming:
-  #   keepalive-seconds: 15   # Default: 0 (disabled). <= 0 disables keep-alives.
-  #   bootstrap-retries: 1    # Default: 0 (disabled). Retries before first byte is sent.
+  #   keepalive-seconds: 15         # Default: 0 (disabled). <= 0 disables keep-alives.
+  #   bootstrap-retries: 1          # Default: 0 (disabled). Retries before first byte is sent.
+  #   send-keepalive-before-ft: false # Default: false. When true and keepalive-seconds > 0, send SSE heartbeats before the first token.
 
   # Optional payload configuration
   # payload:
