@@ -152,6 +152,46 @@ func (h *Handler) ListPlugins(c *gin.Context) {
 		out = append(out, entry)
 	}
 
+	nativeOAuthPlugins := []pluginListEntry{
+		{
+			ID:               "workbuddy",
+			Configured:       true,
+			Registered:       true,
+			Enabled:          true,
+			EffectiveEnabled: true,
+			SupportsOAuth:    true,
+			OAuthProvider:    "workbuddy",
+			Logo:             "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z'/%3E%3Crect width='18' height='12' x='3' y='6' rx='2'/%3E%3Cpath d='M9 12h.01'/%3E%3Cpath d='M15 12h.01'/%3E%3Cpath d='M8 15h8'/%3E%3C/svg%3E",
+			ConfigFields:     []pluginConfigFieldInfo{},
+			Menus:            []pluginMenuInfo{},
+			Metadata: &pluginMetadataInfo{
+				Name:   "WorkBuddy",
+				Author: "Tencent",
+			},
+		},
+		{
+			ID:               "workbuddy-cn",
+			Configured:       true,
+			Registered:       true,
+			Enabled:          true,
+			EffectiveEnabled: true,
+			SupportsOAuth:    true,
+			OAuthProvider:    "workbuddy-cn",
+			Logo:             "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ea580c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m18 16 4-4-4-4'/%3E%3Cpath d='m6 8-4 4 4 4'/%3E%3Cpath d='m14.5 4-5 16'/%3E%3C/svg%3E",
+			ConfigFields:     []pluginConfigFieldInfo{},
+			Menus:            []pluginMenuInfo{},
+			Metadata: &pluginMetadataInfo{
+				Name:   "CodeBuddy (China / 腾讯混元)",
+				Author: "Tencent",
+			},
+		},
+	}
+	for _, p := range nativeOAuthPlugins {
+		if _, exists := entries[p.ID]; !exists {
+			out = append(out, p)
+		}
+	}
+
 	c.JSON(http.StatusOK, pluginListResponse{
 		PluginsEnabled: pluginsEnabled,
 		PluginsDir:     htmlsanitize.String(pluginsDir),

@@ -21,6 +21,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
     - Strips foreign billing and client headers (`x-anthropic-billing-header`, `anthropic-version`, etc.).
     - Backfills `reasoning_content` in multi-turn assistant messages for DeepSeek thinking models to avoid 400 validation failures.
   - Added singleflight-protected token refresh (`/v2/plugin/auth/token/refresh`) with envelope unwrapping and disk persistence (`internal/auth/workbuddy/token.go`).
+  - Added native interactive OAuth login authorization flow (`internal/auth/workbuddy/login.go`):
+    - Implemented session initiation (`StartLogin`), single/polling authorization check (`PollToken`, `WaitForAuthorization`), and JWT claim parsing (`ParseJWTClaims`).
+    - Added management endpoints (`/v0/management/workbuddy-auth-url`, `/v0/management/workbuddy-cn-auth-url`, `/v8/management/oauth/auth-url?provider=workbuddy`) with automatic session tracking and token persistence to `auths/workbuddy-*.json`.
+    - Integrated native OAuth discovery in management plugins list so CPAMC (`management.html`) displays WorkBuddy and CodeBuddy cards in the OAuth tab with one-click login.
+    - Added WorkBuddy and CodeBuddy options to TUI OAuth tab and Gate admin control panel.
   - Added native static model catalogs for both realms (`internal/registry/workbuddy_models.go`) exposing `deepseek-v4.1-flash`, `gpt-6-astra`, `claude-fable-5-1`, `hy4-preview-f`, `glm-5.3`, and `kimi-k3`.
   - Registered `workbuddy`, `workbuddy-intl`, and `workbuddy-cn` in executor registry, model registry, and file auth synthesizer.
 - **AOCI Code Cognition & Baseline Assets**:
