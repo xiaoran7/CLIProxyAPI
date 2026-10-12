@@ -35,6 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Standardized WorkBuddy edition names to `WorkBuddy (en)` and `WorkBuddy (cn)` in management plugin metadata, OAuth controllers, and TUI menus.
   - Unified WorkBuddy avatar icon to official green cat-eared robot logo across all editions and OAuth login cards.
   - Elevated OpenCode as a top-level provider in CPAMC control panel frontend assets (`management.html`) with dedicated brand card, filtering, and independent brand configuration.
+  - Upgraded embedded CPAMC management control panel to latest upstream v1.26.2, maintaining native OpenCode brand cards, geometric square icon, and standalone workbench configuration while bringing in upstream Claude extra usage/dollar balance trackers, plugin quota routing fixes, and Korean/Vietnamese locales.
   - Embedded customized `management.html` directly into the binary bundle (`internal/managementasset/embedded.go`) with zero network dependency, ensuring OpenCode brand cards and WorkBuddy assets work out-of-the-box on clean installations.
   - Added HTTP cache busting headers (`no-cache, no-store, must-revalidate`) for `/management.html` to prevent stale browser caching.
   - Protected customized CPAMC assets from upstream auto-update overwrite when using default repository.
