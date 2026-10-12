@@ -46,11 +46,16 @@ func workbuddyCreds(auth *cliproxyauth.Auth) string {
 	if auth == nil {
 		return ""
 	}
-	if strings.TrimSpace(auth.Token) != "" {
-		return auth.Token
-	}
 	if auth.Metadata != nil {
 		if t, ok := auth.Metadata["access_token"].(string); ok && strings.TrimSpace(t) != "" {
+			return t
+		}
+	}
+	if auth.Attributes != nil {
+		if t := auth.Attributes["access_token"]; t != "" {
+			return t
+		}
+		if t := auth.Attributes["api_key"]; t != "" {
 			return t
 		}
 	}
@@ -136,9 +141,14 @@ func (e *WorkBuddyExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth
 
 	realm := workbuddyauth.ResolveRealm(auth)
 	baseURL := workbuddyauth.ResolveBaseURL(realm)
+	if auth != nil && auth.Attributes != nil {
+		if bu := strings.TrimSpace(auth.Attributes["base_url"]); bu != "" {
+			baseURL = strings.TrimRight(bu, "/")
+		}
+	}
 	url := baseURL + workbuddyauth.ChatCompletionsPath
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPOST, url, bytes.NewReader(translated))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(translated))
 	if err != nil {
 		return resp, err
 	}
@@ -254,9 +264,14 @@ func (e *WorkBuddyExecutor) ExecuteStream(ctx context.Context, auth *cliproxyaut
 
 	realm := workbuddyauth.ResolveRealm(auth)
 	baseURL := workbuddyauth.ResolveBaseURL(realm)
+	if auth != nil && auth.Attributes != nil {
+		if bu := strings.TrimSpace(auth.Attributes["base_url"]); bu != "" {
+			baseURL = strings.TrimRight(bu, "/")
+		}
+	}
 	url := baseURL + workbuddyauth.ChatCompletionsPath
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPOST, url, bytes.NewReader(translated))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(translated))
 	if err != nil {
 		return nil, err
 	}
@@ -310,8 +325,8 @@ func (e *WorkBuddyExecutor) ExecuteStream(ctx context.Context, auth *cliproxyaut
 		scanner := bufio.NewScanner(httpResp.Body)
 		scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 
-		streamUsage := helps.NewStreamUsageObserver(reporter)
-		defer streamUsage.Flush(ctx)
+		var streamUsage helps.StreamUsageBuffer
+		defer streamUsage.Publish(ctx, reporter)
 
 		var param any
 		for scanner.Scan() {
@@ -320,12 +335,7 @@ func (e *WorkBuddyExecutor) ExecuteStream(ctx context.Context, auth *cliproxyaut
 			helps.AppendAPIResponseChunk(ctx, e.cfg, []byte("\n"))
 			reporter.ObserveResponseModel(line)
 
-			if bytes.HasPrefix(line, []byte("data:")) {
-				dataBytes := bytes.TrimSpace(line[5:])
-				if usage := helps.ParseOpenAIUsage(dataBytes); usage.TotalTokens > 0 || usage.InputTokens > 0 {
-					streamUsage.Observe(usage, true)
-				}
-			}
+			streamUsage.ObserveOpenAIStream(line)
 
 			lines := sdktranslator.TranslateStream(ctx, sdktranslator.FormatOpenAI, responseFormat, req.Model, originalPayload, translated, line, &param)
 			for _, converted := range lines {
@@ -381,7 +391,10 @@ func (e *WorkBuddyExecutor) CountTokens(ctx context.Context, _ *cliproxyauth.Aut
 	if err != nil {
 		return cliproxyexecutor.Response{}, fmt.Errorf("workbuddy executor: count tokens failed: %w", err)
 	}
-	return helps.TokenCountResponse(count)
+	usageJSON := helps.BuildOpenAIUsageJSON(count)
+	responseFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
+	translatedUsage := sdktranslator.TranslateTokenCount(ctx, to, responseFormat, count, usageJSON)
+	return cliproxyexecutor.Response{Payload: translatedUsage}, nil
 }
 
 // Refresh executes token refresh against WorkBuddy OAuth/refresh endpoints.
@@ -421,7 +434,6 @@ func (e *WorkBuddyExecutor) Refresh(ctx context.Context, auth *cliproxyauth.Auth
 	if auth.Metadata == nil {
 		auth.Metadata = make(map[string]any)
 	}
-	auth.Token = td.AccessToken
 	auth.Metadata["access_token"] = td.AccessToken
 	if td.RefreshToken != "" {
 		auth.Metadata["refresh_token"] = td.RefreshToken

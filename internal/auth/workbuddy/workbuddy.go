@@ -170,7 +170,7 @@ func RefreshToken(ctx context.Context, httpClient *http.Client, realm, refreshTo
 		domain := ResolveDomain(realm)
 		refreshURL := baseURL + TokenRefreshPath
 
-		req, errReq := http.NewRequestWithContext(ctx, http.MethodPOST, refreshURL, bytes.NewReader([]byte("{}")))
+		req, errReq := http.NewRequestWithContext(ctx, http.MethodPost, refreshURL, bytes.NewReader([]byte("{}")))
 		if errReq != nil {
 			return nil, fmt.Errorf("workbuddy: create refresh request failed: %w", errReq)
 		}

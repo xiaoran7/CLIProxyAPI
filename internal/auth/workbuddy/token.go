@@ -3,6 +3,7 @@
 package workbuddy
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -63,7 +64,9 @@ func (ts *WorkBuddyTokenStorage) SaveTokenToFile(authFilePath string) error {
 		_ = f.Close()
 	}()
 
-	if _, err := f.Write(data); err != nil {
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(data); err != nil {
 		return fmt.Errorf("failed to write token file: %w", err)
 	}
 	return nil
