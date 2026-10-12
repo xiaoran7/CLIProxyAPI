@@ -164,6 +164,13 @@ routing:
   # for maximum parallel concurrency.
   # Ignored when routing.session-affinity is false.
   session-affinity-subagents: true
+  # Controls which credential failures rebind an established session to the failover credential:
+  #   - "any" (default): any credential-attributed failure unbinds and rebinds on failover.
+  #   - "quota": transient errors (408, 5xx, empty stream, buffer limit) fail over for that
+  #     request only while keeping the session bound to its original credential; quota and auth
+  #     errors (429, 401/402/403, 404/model support, invalid_grant) rebind as normal.
+  # Ignored when routing.session-affinity is false.
+  session-affinity-rebind-on: "any"
 
   # When true, unprefixed model requests only use credentials without a prefix (except when prefix == model name).
   force-model-prefix: false
