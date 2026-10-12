@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Upstream Sync (v8.0.24 & Recent Mainline)**:
+  - Merged upstream `v8.0.24` commits through `091ff27f`.
+  - Added native Claude and Codex Responses API `tool_search` support (`upstream.claude.tool-search` and `native-tool-search` configs).
+  - Synchronized Antigravity streaming fixes, Gemini media function response trailing turn adjustments, and Codex over-length tool call ID handling.
+  - Refactored Devin and Meta model getters in registry while maintaining compatibility with native OpenCode and WorkBuddy static catalogs.
 - **Native WorkBuddy / CodeBuddy Provider & Dual Realm Support**:
   - Implemented dedicated `WorkBuddyExecutor` (`internal/runtime/executor/workbuddy_executor.go`) with OpenAI-compatible chat completions routing to `/v2/chat/completions`.
   - Added dual-realm resolution (`internal/auth/workbuddy/workbuddy.go`) supporting both international (`intl`, `www.workbuddy.ai`) and China mainland (`cn`, `copilot.tencent.com`) backends with distinct domains, headers, and endpoints.
