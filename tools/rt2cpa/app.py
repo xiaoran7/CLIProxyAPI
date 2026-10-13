@@ -123,6 +123,36 @@ def fetch_user_email(access_token, proxy_url=None):
         return "", f"解析用户信息异常: {e}"
 
 
+ANTIGRAVITY_UA = "antigravity/hub/2.9.1 darwin/arm64"
+ANTIGRAVITY_NODE_UA = "antigravity/hub/2.9.1 darwin/arm64 google-api-nodejs-client/10.3.0"
+ANTIGRAVITY_GOOG_CLIENT_UA = "gl-node/22.21.1"
+
+DEFAULT_ANTIGRAVITY_MODELS = [
+    "chat_20706",
+    "chat_23310",
+    "claude-opus-4-6-thinking",
+    "claude-sonnet-4-6",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash-thinking",
+    "gemini-2.5-pro",
+    "gemini-3-flash",
+    "gemini-3-flash-agent",
+    "gemini-3.1-flash-image",
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash-extra-low",
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash-low",
+    "gemini-3.8-flash-high",
+    "gemini-3.8-flash-low",
+    "gemini-3.8-flash-medium",
+    "gemini-3.8-flash-tiered",
+    "gpt-oss-120b-medium",
+    "tab_flash_lite_preview",
+    "tab_jump_flash_lite_preview"
+]
+
+
 def extract_project_id_from_dict(data):
     if not isinstance(data, dict):
         return ""
@@ -142,34 +172,51 @@ def fetch_antigravity_project_id(access_token, proxy_url=None):
         "Authorization": f"Bearer {access_token.strip()}",
         "Content-Type": "application/json",
         "Accept": "*/*",
-        "User-Agent": "google-cloud-code",
+        "User-Agent": ANTIGRAVITY_UA,
     }
     body = {
         "metadata": {
-            "ideType": "IDE_UNSPECIFIED",
-            "platform": "PLATFORM_UNSPECIFIED",
-            "pluginType": "GEMINI"
+            "ideType": "ANTIGRAVITY"
         }
     }
     status, res_body, err = make_request(LOAD_CODE_ASSIST_ENDPOINT, data=body, headers=headers, proxy_url=proxy_url, timeout=20)
+    tier_id = "standard-tier"
     if status == 200 and res_body:
         try:
             data = json.loads(res_body)
             project_id = extract_project_id_from_dict(data)
             if project_id:
                 return project_id, None
+            # Check default or current tier
+            allowed_tiers = data.get("allowedTiers") or []
+            for t in allowed_tiers:
+                if isinstance(t, dict) and t.get("isDefault") and t.get("id"):
+                    tier_id = t.get("id")
+                    break
+            current_tier = data.get("currentTier") or {}
+            if isinstance(current_tier, dict) and current_tier.get("id"):
+                tier_id = current_tier.get("id")
         except Exception:
             pass
 
     # Try onboard user fallback
+    onboard_headers = {
+        "Authorization": f"Bearer {access_token.strip()}",
+        "Content-Type": "application/json",
+        "Accept": "*/*",
+        "User-Agent": ANTIGRAVITY_NODE_UA,
+        "X-Goog-Api-Client": ANTIGRAVITY_GOOG_CLIENT_UA,
+    }
     onboard_body = {
-        "tier_id": "free-tier",
+        "tier_id": tier_id,
         "metadata": {
-            "ide_type": "ANTIGRAVITY"
+            "ide_type": "ANTIGRAVITY",
+            "ide_version": "2.9.1",
+            "ide_name": "antigravity"
         }
     }
-    for attempt in range(2):
-        st, ob_res, err2 = make_request(ONBOARD_USER_ENDPOINT, data=onboard_body, headers=headers, proxy_url=proxy_url, timeout=20)
+    for attempt in range(3):
+        st, ob_res, err2 = make_request(ONBOARD_USER_ENDPOINT, data=onboard_body, headers=onboard_headers, proxy_url=proxy_url, timeout=20)
         if st == 200 and ob_res:
             try:
                 ob_data = json.loads(ob_res)
@@ -182,30 +229,44 @@ def fetch_antigravity_project_id(access_token, proxy_url=None):
                 pass
         time.sleep(1)
 
-    return "", None
+    # In Antigravity, standard consumer project fallback is always aicode-consumers
+    return "aicode-consumers", None
 
 
-def build_cpa_antigravity_json(refresh_token, token_resp, email="", project_id=""):
+def build_cpa_antigravity_json(refresh_token, token_resp, email="", project_id="", priority=10):
+    project_id = (project_id or "").strip() or "aicode-consumers"
     access_token = token_resp.get("access_token", "")
     new_rt = token_resp.get("refresh_token") or refresh_token
     expires_in = int(token_resp.get("expires_in", 3599))
     now = time.time()
     now_ms = int(now * 1000)
-    expire_dt = datetime.datetime.fromtimestamp(now + expires_in, datetime.timezone.utc)
-    expired_str = expire_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    try:
+        local_tz = datetime.datetime.now().astimezone().tzinfo
+        expire_dt = datetime.datetime.fromtimestamp(now + expires_in, local_tz)
+        expired_str = expire_dt.isoformat(timespec="seconds")
+    except Exception:
+        expire_dt = datetime.datetime.fromtimestamp(now + expires_in, datetime.timezone.utc)
+        expired_str = expire_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     res = {
-        "type": "antigravity",
         "access_token": access_token,
-        "refresh_token": new_rt,
-        "expires_in": expires_in,
-        "timestamp": now_ms,
+        "antigravity_capability_hints": {
+            "endpoint": "https://daily-cloudcode-pa.googleapis.com",
+            "model_ids": DEFAULT_ANTIGRAVITY_MODELS,
+            "project_id": project_id,
+            "web_search_model_ids": ["gemini-3.5-flash-lite"]
+        },
+        "disabled": False,
+        "email": email or "",
         "expired": expired_str,
+        "expires_in": expires_in,
+        "priority": priority,
+        "project_id": project_id,
+        "refresh_token": new_rt,
+        "timestamp": now_ms,
+        "type": "antigravity"
     }
-    if email:
-        res["email"] = email
-    if project_id:
-        res["project_id"] = project_id
 
     filename = f"antigravity-{email}.json" if email else f"antigravity-{int(now)}.json"
     return res, filename
@@ -722,8 +783,16 @@ INDEX_HTML = """<!DOCTYPE html>
 
         <!-- Advanced Client ID toggle -->
         <details style="margin-bottom: 18px; font-size: 13px;">
-          <summary style="cursor: pointer; color: var(--text-muted); font-weight: 500;">高级选项 (自定义 Client ID / Secret)</summary>
+          <summary style="cursor: pointer; color: var(--text-muted); font-weight: 500;">高级选项 (Project ID / 优先级 / Client ID)</summary>
           <div style="margin-top: 10px; display: grid; gap: 10px;">
+            <div>
+              <label style="font-size: 12px;">GCP Project ID (留空自动抓取，默认 aicode-consumers)</label>
+              <input type="text" id="projectIdInput" placeholder="aicode-consumers">
+            </div>
+            <div>
+              <label style="font-size: 12px;">凭证优先级 (默认 10)</label>
+              <input type="text" id="priorityInput" value="10" placeholder="10">
+            </div>
             <div>
               <label style="font-size: 12px;">Client ID (留空使用官方默认)</label>
               <input type="text" id="clientIdInput" placeholder="1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com">
@@ -844,6 +913,8 @@ INDEX_HTML = """<!DOCTYPE html>
       }
       const useProxy = document.getElementById('useProxy').checked;
       const proxyUrl = useProxy ? document.getElementById('proxyUrl').value.trim() : '';
+      const projectId = document.getElementById('projectIdInput').value.trim();
+      const priority = document.getElementById('priorityInput').value.trim() || '10';
       const clientId = document.getElementById('clientIdInput').value.trim();
       const clientSecret = document.getElementById('clientSecretInput').value.trim();
 
@@ -858,6 +929,8 @@ INDEX_HTML = """<!DOCTYPE html>
           body: JSON.stringify({
             refresh_token: rtText,
             proxy: proxyUrl,
+            project_id: projectId,
+            priority: priority,
             client_id: clientId,
             client_secret: clientSecret
           })
@@ -1038,6 +1111,11 @@ class RequestHandler(BaseHTTPRequestHandler):
     def handle_convert_antigravity(self, body):
         rt = body.get("refresh_token", "").strip()
         proxy = body.get("proxy", "").strip() or None
+        custom_project_id = body.get("project_id", "").strip() or None
+        try:
+            priority = int(body.get("priority", 10))
+        except Exception:
+            priority = 10
         client_id = body.get("client_id", "").strip() or None
         client_secret = body.get("client_secret", "").strip() or None
 
@@ -1056,9 +1134,12 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         access_token = token_resp.get("access_token", "")
         email, _ = fetch_user_email(access_token, proxy)
-        project_id, _ = fetch_antigravity_project_id(access_token, proxy)
+        if custom_project_id:
+            project_id = custom_project_id
+        else:
+            project_id, _ = fetch_antigravity_project_id(access_token, proxy)
 
-        json_data, filename = build_cpa_antigravity_json(first_rt, token_resp, email, project_id)
+        json_data, filename = build_cpa_antigravity_json(first_rt, token_resp, email, project_id, priority)
 
         self._send_json({
             "success": True,
