@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **WorkBuddy Dedicated Quota Tabs & Provider Split**:
+  - Split WorkBuddy international (`workbuddy`) and China mainland (`workbuddy-cn`) realms out of generic `Plugin` quota grouping in CPAMC (`static/management.html` and `internal/managementasset/assets/management.html`).
+  - Added dedicated provider definitions to `SN`, `lne`, `dne`, and `DA` so `WorkBuddy (en)` and `WorkBuddy (cn)` render as standalone tabs with official green robot avatars, localized titles, and independent credential counts.
+  - Mapped store selectors (`pluginQuota`) and grouped cache cleanup by store setter (`setPluginQuota`) to prevent shared quota state eviction between WorkBuddy realms.
+  - Dynamically hidden the generic `Plugin` tab when no non-WorkBuddy plugin credentials are registered (`R.plugin === 0`).
+  - Extended Quota Timeline window calculation (`MO` and `uP`) to recognize `workbuddy` and `workbuddy-cn` quota groups and buckets.
 - **WorkBuddy Quota Provider & Free Tier Labeling**:
   - Implemented native `workbuddy.QueryQuota()` (`internal/auth/workbuddy/quota.go`) querying Tencent `/v2/plugin/user/points` for real-time account points balance, VIP subscription tier, and daily free tier status.
   - Wired native WorkBuddy quota provider into management handlers (`/v0/management/quota/fetch` and `/v0/management/plugins/:id/quota`) to enable one-click quota inspection in CPAMC.
