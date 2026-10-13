@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Global Exit Model Exclusion & Management Controls**:
+  - Implemented `GlobalExcludedModels` (`global-excluded-models`) across configuration and model registries to selectively block models at the CPA exit boundary.
+  - Added wildcard and exact model pattern matching to filter models out of client advertisement (`/v1/models`, OpenAI, Claude, Gemini) and request execution (`GetModelInfo`, `GetModelCount`, `GetModelProviders`).
+  - Added REST endpoints for global exclusion management: `GET`, `PUT`, `PATCH`, `DELETE` on `/v0/management/global-excluded-models`, and `POST /v0/management/global-excluded-models/toggle` (with v8 counterparts `/v8/management/models/global-excluded-models` and `/routing/global-excluded-models`).
+  - Wired hot-reload and atomic persistence with zero-value cleanup in `internal/config/config_yaml.go`.
+- **CPAMC Master Key Tagging & Exit Model Controls**:
+  - Added dedicated emerald badge `主 Key (Master)` for the first API key (`n === 0`) in the Client API Keys configuration section of CPAMC (`static/management.html` and `internal/managementasset/assets/management.html`).
+  - Added one-click exit exclusion button (`×`) on every model tag in CPAMC System Info / Available Models view.
+  - Added dedicated "🚫 已屏蔽出口模型" section in CPAMC displaying all currently blocked exit models with one-click restoration (`✓ 恢复`).
 - **WorkBuddy Dedicated Quota Tabs & Provider Split**:
   - Split WorkBuddy international (`workbuddy`) and China mainland (`workbuddy-cn`) realms out of generic `Plugin` quota grouping in CPAMC (`static/management.html` and `internal/managementasset/assets/management.html`).
   - Added dedicated provider definitions to `SN`, `lne`, `dne`, and `DA` so `WorkBuddy (en)` and `WorkBuddy (cn)` render as standalone tabs with official green robot avatars, localized titles, and independent credential counts.

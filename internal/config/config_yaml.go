@@ -69,12 +69,20 @@ func SaveConfigPreserveComments(configFile string, cfg *Config, migrateV8 ...boo
 	pruneMappingToGeneratedKeys(original.Content[0], generated.Content[0], "oauth-model-alias")
 	pruneMappingToGeneratedKeys(original.Content[0], generated.Content[0], "oauth-request-scoped-errors")
 	pruneMappingToGeneratedKeys(original.Content[0], generated.Content[0], "oauth-settings")
+	if len(cfg.GlobalExcludedModels) == 0 {
+		deleteYAMLPath(original.Content[0], "global-excluded-models")
+		deleteYAMLPath(original.Content[0], "models.global-excluded-models")
+	}
 	replacePluginConfigsSubtree(original.Content[0], generated.Content[0])
 
 	// Merge generated into original in-place, preserving comments/order of existing nodes.
 	mergeMappingPreserve(original.Content[0], generated.Content[0])
 	if err = restoreV8Layout(original.Content[0], layout, data, generated.Content[0]); err != nil {
 		return err
+	}
+	if len(cfg.GlobalExcludedModels) == 0 {
+		deleteYAMLPath(original.Content[0], "global-excluded-models")
+		deleteYAMLPath(original.Content[0], "models.global-excluded-models")
 	}
 	if !migrating {
 		// Keep historical client fields at their original legacy paths. Otherwise

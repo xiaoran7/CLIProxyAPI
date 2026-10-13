@@ -25,6 +25,8 @@ type ModelRegistry interface {
 	GetModelsAndEpochForClient(clientID string) ([]*ModelInfo, uint64)
 	ClientRegistrationEpoch(clientID string) uint64
 	ApplyClientModelCapabilities(clientID string, expectedEpoch uint64, mutate func(modelID string, info *ModelInfo)) bool
+	SetGlobalExcludedModels(excluded []string)
+	GetGlobalExcludedModels() []string
 }
 
 // GlobalModelRegistry returns the shared registry instance.

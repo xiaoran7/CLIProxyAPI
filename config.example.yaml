@@ -20,6 +20,12 @@ models:
   codex-catalog: ""
   devin-catalog: ""
 
+# Global model exclusions applied across all providers at the CPA exit.
+# Supports exact model IDs and wildcard patterns (e.g. "*-free", "deepseek-v4.1-flash-free").
+# Excluded models will not be advertised in /v1/models and cannot be invoked.
+# global-excluded-models:
+#   - "*-free"
+
 # Listener, TLS, network discovery, and server operation.
 server:
   # Server host/interface to bind to. Default is empty ("") to bind all interfaces (IPv4 + IPv6).
