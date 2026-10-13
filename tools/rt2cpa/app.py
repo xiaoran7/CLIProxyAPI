@@ -690,12 +690,12 @@ INDEX_HTML = """<!DOCTYPE html>
         <div class="proxy-box">
           <div class="proxy-header">
             <label class="toggle-label">
-              <input type="checkbox" id="useProxy" checked>
-              <span>使用本地代理 (推荐)</span>
+              <input type="checkbox" id="useProxy">
+              <span>使用代理服务器 (海外服务器可直接直连)</span>
             </label>
             <button class="btn btn-outline btn-sm" id="testProxyBtn" type="button">测试连通性</button>
           </div>
-          <input type="text" id="proxyUrl" value="http://127.0.0.1:7897" placeholder="http://127.0.0.1:7897 (Clash Verge Rev 默认)">
+          <input type="text" id="proxyUrl" value="" placeholder="选填，如需要可填 http://127.0.0.1:7897">
         </div>
 
         <!-- Advanced Client ID toggle -->
@@ -1124,14 +1124,15 @@ def find_free_port(start_port):
 
 
 def main():
+    host = os.environ.get("HOST", "0.0.0.0")
     port = DEFAULT_PORT
     if len(sys.argv) > 1 and sys.argv[1].isdigit():
         port = int(sys.argv[1])
     else:
         port = find_free_port(port)
 
-    server = ThreadedHTTPServer(('127.0.0.1', port), RequestHandler)
-    url = f"http://127.0.0.1:{port}"
+    server = ThreadedHTTPServer((host, port), RequestHandler)
+    url = f"http://{host}:{port}"
     print("======================================================")
     print(f"[CPA Token Craft] Antigravity Web Helper Ready!")
     print(f"Address: {url}")
