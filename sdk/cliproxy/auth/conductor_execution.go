@@ -18,6 +18,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/redact"
 	cliproxysession "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/session"
 	coreusage "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
@@ -117,17 +118,53 @@ func preferredExecutionAttemptError(fallback, upstream error) error {
 	return markUpstreamExecutionAttempt(upstream)
 }
 
+func (m *Manager) redactionOptions() (redact.Options, bool) {
+	if m == nil {
+		return redact.Options{}, false
+	}
+	cfg := m.runtimeConfigSnapshot()
+	if cfg == nil || !cfg.Redaction.Enabled {
+		return redact.Options{}, false
+	}
+	return redact.Options{
+		Enabled:  true,
+		Secrets:  cfg.Redaction.SecretsEnabled(),
+		Personal: cfg.Redaction.MaskPersonal,
+	}, true
+}
+
 // Execute performs a non-streaming execution using the configured selector and executor.
 // It supports multiple providers for the same model and round-robins the starting provider per model.
 func (m *Manager) Execute(ctx context.Context, providers []string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 	ctx = cliproxyexecutor.WithRequestProxyURL(ctx, opts.ProxyURL)
 	req, opts = cliproxysession.Enrich(req, opts)
+
+	var redactor *redact.SessionRedactor
+	if redactOpts, ok := m.redactionOptions(); ok && len(req.Payload) > 0 {
+		redactor = redact.NewSessionRedactor(redactOpts)
+		maskedPayload, _ := redactor.Mask(string(req.Payload))
+		req.Payload = []byte(maskedPayload)
+		if len(opts.OriginalRequest) > 0 {
+			maskedOrig, _ := redactor.Mask(string(opts.OriginalRequest))
+			opts.OriginalRequest = []byte(maskedOrig)
+		}
+	}
+	restoreResponse := func(resp cliproxyexecutor.Response) cliproxyexecutor.Response {
+		if redactor != nil && redactor.HasBindings() && len(resp.Payload) > 0 {
+			resp.Payload = []byte(redactor.Restore(string(resp.Payload)))
+		}
+		return resp
+	}
+
 	normalized := m.normalizeProviders(providers)
 	if len(normalized) == 0 {
 		return cliproxyexecutor.Response{}, &Error{Code: "provider_not_found", Message: "no provider supplied"}
 	}
 	if m.HomeEnabled() {
 		resp, errHome := m.executeHome(ctx, normalized, req, opts, false)
+		if errHome == nil {
+			resp = restoreResponse(resp)
+		}
 		return resp, unwrapExecutionBoundaryError(errHome)
 	}
 
@@ -141,7 +178,7 @@ func (m *Manager) Execute(ctx context.Context, providers []string, req cliproxye
 		roundOpts := withAttemptedAuthTracker(opts, roundAttempted)
 		resp, errExec := m.executeMixedOnce(ctx, normalized, req, roundOpts, maxRetryCredentials, attempt, defaultRequestRetry)
 		if errExec == nil {
-			return resp, nil
+			return restoreResponse(resp), nil
 		}
 		if isRequestTerminatedError(errExec) || isRequestStopError(errExec) {
 			return cliproxyexecutor.Response{}, unwrapExecutionBoundaryError(errExec)
@@ -170,7 +207,7 @@ func (m *Manager) Execute(ctx context.Context, providers []string, req cliproxye
 			if resp, ok, errCredits := m.tryAntigravityCreditsExecute(ctx, req, opts); errCredits != nil {
 				return cliproxyexecutor.Response{}, errCredits
 			} else if ok {
-				return resp, nil
+				return restoreResponse(resp), nil
 			}
 		}
 		return cliproxyexecutor.Response{}, lastErr
@@ -182,6 +219,17 @@ func (m *Manager) Execute(ctx context.Context, providers []string, req cliproxye
 func (m *Manager) ExecuteCount(ctx context.Context, providers []string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
 	ctx = cliproxyexecutor.WithRequestProxyURL(ctx, opts.ProxyURL)
 	req, opts = cliproxysession.Enrich(req, opts)
+
+	if redactOpts, ok := m.redactionOptions(); ok && len(req.Payload) > 0 {
+		redactor := redact.NewSessionRedactor(redactOpts)
+		maskedPayload, _ := redactor.Mask(string(req.Payload))
+		req.Payload = []byte(maskedPayload)
+		if len(opts.OriginalRequest) > 0 {
+			maskedOrig, _ := redactor.Mask(string(opts.OriginalRequest))
+			opts.OriginalRequest = []byte(maskedOrig)
+		}
+	}
+
 	normalized := m.normalizeProviders(providers)
 	if len(normalized) == 0 {
 		return cliproxyexecutor.Response{}, &Error{Code: "provider_not_found", Message: "no provider supplied"}
@@ -235,6 +283,19 @@ func (m *Manager) ExecuteCount(ctx context.Context, providers []string, req clip
 func (m *Manager) ExecuteStream(ctx context.Context, providers []string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
 	ctx = cliproxyexecutor.WithRequestProxyURL(ctx, opts.ProxyURL)
 	req, opts = cliproxysession.Enrich(req, opts)
+
+	if redactOpts, ok := m.redactionOptions(); ok && len(req.Payload) > 0 {
+		redactor := redact.NewSessionRedactor(redactOpts)
+		maskedPayload, _ := redactor.Mask(string(req.Payload))
+		req.Payload = []byte(maskedPayload)
+		if len(opts.OriginalRequest) > 0 {
+			maskedOrig, _ := redactor.Mask(string(opts.OriginalRequest))
+			opts.OriginalRequest = []byte(maskedOrig)
+		}
+		if redactor.HasBindings() {
+			opts.EnsureMetadata()["cliproxy_session_redactor"] = redactor
+		}
+	}
 	if m.HomeEnabled() {
 		if unlockSession := m.lockHomeWebsocketSession(ctx, opts); unlockSession != nil {
 			defer unlockSession()

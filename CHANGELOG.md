@@ -13,6 +13,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Synchronized the repaired asset to production servers (`us-zenix` and `vps-tokyo-02`) and restarted Gateway services.
 
 ### Added
+- **Pace & Smart Quota Routing Strategies (`smart` & `pace`) (Expiry-Aware & Headroom Pacing)**:
+  - Implemented `SmartSelector` (`sdk/cliproxy/auth/selector_pace_smart.go`) prioritizing accounts whose quotas reset soonest to avoid forfeiture of unspent quota. Segments candidates into `fine` (<80% used), `low` (80%-98%), and `spent` (>=98%) tiers, truncating reset times to the hour to preserve upstream Prompt Cache affinity.
+  - Implemented `PaceSelector` ranking credentials by hourly available burn rate ($\text{Remaining Allowance} / \max(1, \text{Hours until reset})$), routing to accounts with highest headroom while preserving relative order within a 10% tolerance band for prompt cache stability.
+  - Integrated both selectors with CPA's 429 Rate Limit Sink ordering (`ApplySinkOrdering`) and universal `session-affinity` wrapping.
+  - Wired `"smart"` and `"pace"` routing strategies into `sdk/cliproxy/service_config.go` and `internal/config/config_types.go`.
+- **Zero-Knowledge Local Sensitive Data Redaction & Transparent Streaming Restoration (`redact`)**:
+  - Implemented zero-knowledge redaction engine (`sdk/cliproxy/redact/`) masking sensitive secrets (API keys, private keys, database URLs with passwords, config credentials, JWT tokens) and personal data (emails, Chinese phone numbers, ID cards) into deterministic placeholders (`{{API_KEY_k3v9x2mq}}`).
+  - Employs deterministic HMAC-SHA256 hashing so identical secrets across turns generate identical placeholders, guaranteeing 100% upstream Prompt Cache hits.
+  - Transparently restores placeholders in non-streaming responses (`Execute`) and streaming chunks (`ExecuteStream`), with fuzzy tolerance for LLM formatting variations (spacing, braces, lowercase).
+  - Implemented `StreamRestorer` handling token splits and SSE chunk boundary assembly, ensuring seamless client delivery without exposing raw placeholders or breaking JSON framing.
+  - Added `RedactionConfig` (`redaction: enabled, mask-secrets, mask-personal`) to `Config` with unit and integration tests.
 - **Native WorkBuddy Daily Check-in Engine (Automatic Credit Farming & Streak Maintenance)**:
   - Implemented WorkBuddy (CN realm) daily check-in automation (`internal/auth/workbuddy/checkin.go`) targeting Tencent CodeBuddy / Copilot billing meter APIs (`/v2/billing/meter/checkin-activity-status` and `/v2/billing/meter/daily-checkin`).
   - Added CST/Beijing (UTC+8) day boundary tracking, claim status detection (`claimed`, `done`, `ineligible`, `inactive`, `own-app`), and graceful risk control probing on HTTP 401.

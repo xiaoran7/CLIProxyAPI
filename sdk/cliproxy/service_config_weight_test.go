@@ -21,6 +21,28 @@ func TestWeightedRoundRobinRoutingSelector(t *testing.T) {
 	}
 }
 
+func TestSmartAndPaceRoutingSelectors(t *testing.T) {
+	stateSmart := normalizedRoutingRuntimeState(&internalconfig.Config{
+		Routing: internalconfig.RoutingConfig{Strategy: "smart"},
+	})
+	if stateSmart.strategy != "smart" {
+		t.Fatalf("strategy = %q, want smart", stateSmart.strategy)
+	}
+	if _, ok := newRoutingSelector(stateSmart).(*coreauth.SmartSelector); !ok {
+		t.Fatalf("selector type = %T, want *auth.SmartSelector", newRoutingSelector(stateSmart))
+	}
+
+	statePace := normalizedRoutingRuntimeState(&internalconfig.Config{
+		Routing: internalconfig.RoutingConfig{Strategy: "pace"},
+	})
+	if statePace.strategy != "pace" {
+		t.Fatalf("strategy = %q, want pace", statePace.strategy)
+	}
+	if _, ok := newRoutingSelector(statePace).(*coreauth.PaceSelector); !ok {
+		t.Fatalf("selector type = %T, want *auth.PaceSelector", newRoutingSelector(statePace))
+	}
+}
+
 func TestServiceRejectsInvalidCredentialWeightConfigCommit(t *testing.T) {
 	originalCfg := &internalconfig.Config{}
 	service := &Service{cfg: originalCfg}

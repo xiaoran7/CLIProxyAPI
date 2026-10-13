@@ -8,6 +8,7 @@ import (
 	"time"
 
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/redact"
 )
 
 const defaultSSEKeepAliveInterval = 15 * time.Second
@@ -171,6 +172,12 @@ func (m *Manager) wrapStreamResult(ctx context.Context, auth *Auth, provider, re
 		if aliasResult.ForceMapping && strings.TrimSpace(aliasResult.OriginalAlias) != "" {
 			rewriter = NewStreamRewriter(StreamRewriteOptions{RewriteModel: aliasResult.OriginalAlias})
 		}
+		var restorer *redact.StreamRestorer
+		if opts.Metadata != nil {
+			if r, ok := opts.Metadata["cliproxy_session_redactor"].(*redact.SessionRedactor); ok && r != nil && r.HasBindings() {
+				restorer = redact.NewStreamRestorer(r)
+			}
+		}
 		guard := NewLoopGuard()
 		emit := func(chunk cliproxyexecutor.StreamChunk) bool {
 			if chunk.Err != nil && !failed {
@@ -235,6 +242,9 @@ func (m *Manager) wrapStreamResult(ctx context.Context, auth *Auth, provider, re
 				return false
 			}
 			payload := rewriteForceMappedStreamChunk(rewriter, chunk.Payload)
+			if restorer != nil && len(payload) > 0 {
+				payload = restorer.RestoreChunk(payload)
+			}
 			if len(payload) == 0 {
 				return true
 			}
@@ -290,6 +300,14 @@ func (m *Manager) wrapStreamResult(ctx context.Context, auth *Auth, provider, re
 			tailChunk := cliproxyexecutor.StreamChunk{Payload: tail}
 			if !emit(tailChunk) {
 				return
+			}
+		}
+		if restorer != nil {
+			if tail := restorer.Finish(); len(tail) > 0 {
+				tailChunk := cliproxyexecutor.StreamChunk{Payload: tail}
+				if !emit(tailChunk) {
+					return
+				}
 			}
 		}
 		if !failed && (ephemeralResult || claudeOAuthRequestCancellation(ctx, auth, nil) == nil) {
