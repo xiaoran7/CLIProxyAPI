@@ -172,6 +172,7 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PATCH("/global-excluded-models", s.mgmt.PatchGlobalExcludedModels)
 		mgmt.DELETE("/global-excluded-models", s.mgmt.DeleteGlobalExcludedModels)
 		mgmt.POST("/global-excluded-models/toggle", s.mgmt.ToggleGlobalExcludedModel)
+		mgmt.GET("/exit-models", s.mgmt.GetExitModels)
 
 		mgmt.GET("/oauth-model-alias", s.mgmt.GetOAuthModelAlias)
 		mgmt.PUT("/oauth-model-alias", s.mgmt.PutOAuthModelAlias)

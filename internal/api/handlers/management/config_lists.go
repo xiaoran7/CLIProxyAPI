@@ -1299,6 +1299,15 @@ func (h *Handler) GetGlobalExcludedModels(c *gin.Context) {
 	c.JSON(200, gin.H{"global-excluded-models": config.NormalizeExcludedModels(h.cfg.GlobalExcludedModels)})
 }
 
+// GetExitModels returns all registered models along with their export/exclusion status.
+func (h *Handler) GetExitModels(c *gin.Context) {
+	catalog := registry.GetGlobalRegistry().GetExitModelCatalog()
+	c.JSON(200, gin.H{
+		"models":                 catalog,
+		"global-excluded-models": config.NormalizeExcludedModels(h.cfg.GlobalExcludedModels),
+	})
+}
+
 func (h *Handler) PutGlobalExcludedModels(c *gin.Context) {
 	h.putStringList(c, func(v []string) {
 		h.cfg.GlobalExcludedModels = config.NormalizeExcludedModels(v)
