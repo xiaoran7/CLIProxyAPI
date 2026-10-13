@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Native WorkBuddy Daily Check-in Engine (Automatic Credit Farming & Streak Maintenance)**:
+  - Implemented WorkBuddy (CN realm) daily check-in automation (`internal/auth/workbuddy/checkin.go`) targeting Tencent CodeBuddy / Copilot billing meter APIs (`/v2/billing/meter/checkin-activity-status` and `/v2/billing/meter/daily-checkin`).
+  - Added CST/Beijing (UTC+8) day boundary tracking, claim status detection (`claimed`, `done`, `ineligible`, `inactive`, `own-app`), and graceful risk control probing on HTTP 401.
+  - Implemented `CheckinEngine` background scheduler with atomic persistence (`workbuddy_checkins.json`) preventing duplicate claims per Beijing day and surviving restarts.
+  - Hooked `InitGlobalCheckinEngine` into `Service.Run` lifecycle (`sdk/cliproxy/service_lifecycle.go`) and registered management endpoints `GET /v8/management/workbuddy/checkin` and `POST /v8/management/workbuddy/checkin`.
+  - Added full test suite in `internal/auth/workbuddy/checkin_test.go` covering international realm bypass, claim success, already checked-in status, and state deduplication.
 - **Persistent Session Affinity & Streaming SSE Keep-Alive (Prompt Cache Resilience & Anti-Timeout)**:
   - Implemented `Snapshot` and `Restore` mechanisms on `SessionCache` (`sdk/cliproxy/auth/session_cache.go`) for bulk exporting and loading active unexpired session-to-auth bindings.
   - Added atomic `SessionCacheStore` interface and `FileSessionCacheStore` (`sdk/cliproxy/auth/session_cache_store.go`) allowing session affinities to survive process restarts, guaranteeing prompt cache continuity for long agent conversations across server upgrades.
