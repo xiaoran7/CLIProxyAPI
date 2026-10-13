@@ -6,7 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **WorkBuddy Unified Management Suite (`WorkBuddySuite`) in CPAMC Control Panel**:
+  - Consolidated all WorkBuddy capabilities into a single unified plugin entry in the Plugins view (`/plugins`), featuring custom status badges (`每日自动签到 + 国际/国内双端`) and a dedicated `[管理套件]` primary action button.
+  - Implemented an `xl` full-featured drawer component (`WorkBuddySuite`) comprising four core submodules:
+    1. **每日自动签到**: Real-time Beijing time (CST / UTC+8) day boundary tracking, total / checked-in / streak account statistics, one-click batch check-in trigger via `POST /v8/management/workbuddy/checkin`, per-account status badges (`claimed`/`done`/`ineligible`/`inactive`/`own-app`/`failed`), points reward display, and standalone check-in action.
+    2. **多端授权登录**: Dual-realm OAuth login cards for both international (`workbuddy`, `workbuddy.ai`) and mainland China (`workbuddy-cn`, `copilot.tencent.com`) realms with automated popup opening, copyable links, status polling, and hot credential persistence to `auths/`.
+    3. **额度流水与配额**: Quick inline points inspection across all accounts via `/v8/management/plugins/workbuddy/quota` and direct navigation button to the independent `/quota` tabs.
+    4. **插件设置**: Native plugin toggle, priority configuration, and atomic persistence.
+  - Preserved strict architectural separation in the Quota view (`/quota`), retaining independent `WorkBuddy (en)` and `WorkBuddy (cn)` tabs with isolated stores and timeline calculations.
+
 ### Fixed
+- **Plugin Feature Advertisement in Static Builds (`support_nocgo.go`)**:
+  - Corrected `supportPluginValue` in `internal/pluginhost/support_nocgo.go` from `"0"` to `"1"` so that Linux static container builds (`CGO_ENABLED=0`) advertise `X-CPA-SUPPORT-PLUGIN: 1`.
+  - Resolved missing Plugins and Plugin Store entries in the CPAMC sidebar on headless and Docker deployments (`us-zenix`).
+  - Added fallback empty configuration mapping in `GetPluginConfig` for native suite plugins (`workbuddy` and `workbuddy-cn`) to prevent 404 errors during drawer initialization.
+  - Prevented deletion of native suite plugins in `DeletePlugin`.
 - **Management Center Web Interface Syntax Error Fix (`management.html`)**:
   - Fixed an unclosed bracket syntax error (`SyntaxError: Unexpected token '&&'`) in bundled CPAMC assets (`internal/managementasset/assets/management.html` and `static/management.html`) where the models description section prematurely closed the `children` array before status badges and empty states.
   - Resolved white-screen / failure to load issue when accessing `http://<host>:8315/management.html`.

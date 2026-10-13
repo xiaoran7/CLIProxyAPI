@@ -2,4 +2,4 @@
 
 package pluginhost
 
-const supportPluginValue = "0"
+const supportPluginValue = "1"
