@@ -273,7 +273,7 @@ INDEX_HTML = """<!DOCTYPE html>
     }
 
     .container {
-      max-width: 1080px;
+      max-width: 1280px;
       margin: 0 auto;
     }
 
@@ -363,11 +363,12 @@ INDEX_HTML = """<!DOCTYPE html>
     /* Main Grid */
     .grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: minmax(380px, 460px) minmax(0, 1fr);
       gap: 24px;
+      align-items: start;
     }
 
-    @media (max-width: 860px) {
+    @media (max-width: 900px) {
       .grid {
         grid-template-columns: 1fr;
       }
@@ -380,6 +381,7 @@ INDEX_HTML = """<!DOCTYPE html>
       padding: 24px;
       box-shadow: var(--shadow-soft);
       transition: transform 0.2s ease, box-shadow 0.2s ease;
+      min-width: 0;
     }
 
     .card:hover {
@@ -450,18 +452,21 @@ INDEX_HTML = """<!DOCTYPE html>
 
     .proxy-header {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
+      gap: 8px;
       margin-bottom: 8px;
     }
 
     .toggle-label {
       font-size: 13px;
       font-weight: 600;
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: 6px;
       cursor: pointer;
+      user-select: none;
     }
 
     .btn {
@@ -517,24 +522,28 @@ INDEX_HTML = """<!DOCTYPE html>
     .btn-sm {
       padding: 6px 12px;
       font-size: 12px;
+      white-space: nowrap;
     }
 
     /* Result Preview Area */
     .preview-header {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 12px;
+      gap: 10px;
+      margin-bottom: 14px;
     }
 
     .preview-actions {
       display: flex;
+      flex-wrap: wrap;
       gap: 8px;
     }
 
     .meta-cards {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 10px;
       margin-bottom: 12px;
     }
@@ -544,6 +553,7 @@ INDEX_HTML = """<!DOCTYPE html>
       border: 1px solid var(--card-border);
       border-radius: var(--radius-sm);
       padding: 10px 12px;
+      min-width: 0;
     }
 
     .meta-title {
@@ -558,6 +568,7 @@ INDEX_HTML = """<!DOCTYPE html>
       font-size: 13px;
       font-weight: 600;
       color: var(--text-main);
+      overflow-wrap: break-word;
       word-break: break-all;
     }
 
@@ -570,7 +581,11 @@ INDEX_HTML = """<!DOCTYPE html>
       font-size: 12px;
       line-height: 1.5;
       overflow-x: auto;
-      max-height: 340px;
+      max-height: 420px;
+      min-width: 0;
+      max-width: 100%;
+      white-space: pre;
+      word-break: normal;
     }
 
     .empty-state {
@@ -596,10 +611,17 @@ INDEX_HTML = """<!DOCTYPE html>
       margin-top: 24px;
     }
 
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
     .auth-table {
       width: 100%;
       border-collapse: collapse;
       font-size: 13px;
+      min-width: 600px;
     }
 
     .auth-table th {
@@ -796,7 +818,7 @@ INDEX_HTML = """<!DOCTYPE html>
           container.innerHTML = '<p style="color: var(--text-muted); font-size: 13px;">暂无凭证文件。可使用上方工具生成并保存。</p>';
           return;
         }
-        let html = '<table class="auth-table"><thead><tr><th>文件名</th><th>Provider</th><th>邮箱 / 标识</th><th>修改时间</th><th>大小</th></tr></thead><tbody>';
+        let html = '<div class="table-container"><table class="auth-table"><thead><tr><th>文件名</th><th>Provider</th><th>邮箱 / 标识</th><th>修改时间</th><th>大小</th></tr></thead><tbody>';
         data.files.forEach(f => {
           html += `<tr>
             <td style="font-family: monospace; font-weight: 600;">${f.name}</td>
@@ -806,7 +828,7 @@ INDEX_HTML = """<!DOCTYPE html>
             <td style="color: var(--text-muted);">${f.size_str}</td>
           </tr>`;
         });
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
         container.innerHTML = html;
       } catch (err) {
         document.getElementById('authsTableContainer').innerHTML = '<p style="color: var(--danger); font-size: 13px;">加载凭证列表失败: ' + err.message + '</p>';

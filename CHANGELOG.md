@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Built standalone lightweight Aozora UI Web service (`tools/rt2cpa/app.py`) for generating standard CLIProxyAPI authentication JSON files directly from Google Antigravity Refresh Tokens.
   - Automated token exchange via Google OAuth token endpoint, user email retrieval via userinfo endpoint, and project ID discovery via CloudCode `loadCodeAssist` and `onboardUser`.
   - Added one-click copy, download, and atomic saving into `auths/` directory with live warehouse list preview.
+  - Refined two-column workspace grid layout and responsive constraints (`minmax(380px, 460px)` + `minmax(0, 1fr)`) to prevent JSON preview blowout and column squeezing.
   - Extended Antigravity authentication library with `RefreshToken` and `RefreshTokenWithCredentials` (`internal/auth/antigravity/auth.go`) with regression unit tests (`internal/auth/antigravity/auth_test.go`).
 - **Global Exit Model Exclusion & Management Controls**:
   - Implemented `GlobalExcludedModels` (`global-excluded-models`) across configuration and model registries to selectively block models at the CPA exit boundary.
