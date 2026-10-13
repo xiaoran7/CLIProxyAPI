@@ -445,3 +445,53 @@ func (c *SessionCache) cleanup() {
 		}
 	}
 }
+
+// SessionCacheRecord represents a snapshot of an active session group binding.
+type SessionCacheRecord struct {
+	PrimaryKey string    `json:"primary_key"`
+	AuthID     string    `json:"auth_id"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	Aliases    []string  `json:"aliases"`
+}
+
+// Snapshot exports all unexpired session group bindings.
+func (c *SessionCache) Snapshot() []SessionCacheRecord {
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	now := time.Now()
+	records := make([]SessionCacheRecord, 0, len(c.groups))
+	for primaryKey, group := range c.groups {
+		if now.Before(group.expiresAt) && len(group.aliases) > 0 {
+			records = append(records, SessionCacheRecord{
+				PrimaryKey: primaryKey,
+				AuthID:     group.authID,
+				ExpiresAt:  group.expiresAt,
+				Aliases:    append([]string(nil), group.aliases...),
+			})
+		}
+	}
+	return records
+}
+
+// Restore bulk-loads session group bindings that are not yet expired.
+func (c *SessionCache) Restore(records []SessionCacheRecord) int {
+	if c == nil || len(records) == 0 {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureInitializedLocked()
+	now := time.Now()
+	restored := 0
+	for _, rec := range records {
+		if !now.Before(rec.ExpiresAt) || rec.AuthID == "" || len(rec.Aliases) == 0 {
+			continue
+		}
+		c.replaceAliasGroupsLocked(rec.AuthID, rec.ExpiresAt, rec.Aliases)
+		restored++
+	}
+	return restored
+}
