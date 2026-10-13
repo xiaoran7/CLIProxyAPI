@@ -2029,3 +2029,42 @@ func (r *ModelRegistry) GetModelsForClient(clientID string) []*ModelInfo {
 	models, _ := r.GetModelsAndEpochForClient(clientID)
 	return models
 }
+
+// ExitModelCatalogItem represents a registered model with its export state.
+type ExitModelCatalogItem struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	OwnedBy     string `json:"owned_by"`
+	Type        string `json:"type"`
+	Excluded    bool   `json:"excluded"`
+}
+
+// GetExitModelCatalog returns all active registered models regardless of global exclusion,
+// paired with their current exclusion status at the CPA exit.
+func (r *ModelRegistry) GetExitModelCatalog() []ExitModelCatalogItem {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+
+	items := make([]ExitModelCatalogItem, 0, len(r.models))
+	for id, reg := range r.models {
+		if reg == nil || reg.Info == nil || reg.Count <= 0 {
+			continue
+		}
+		displayName := reg.Info.DisplayName
+		if displayName == "" {
+			displayName = id
+		}
+		items = append(items, ExitModelCatalogItem{
+			ID:          id,
+			DisplayName: displayName,
+			OwnedBy:     reg.Info.OwnedBy,
+			Type:        reg.Info.Type,
+			Excluded:    r.isModelGloballyExcludedLocked(id),
+		})
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].ID < items[j].ID
+	})
+	return items
+}

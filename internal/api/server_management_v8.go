@@ -36,6 +36,7 @@ func (s *Server) registerManagementV8Routes() {
 	v8.GET("/models/global-excluded-models", s.mgmt.GetGlobalExcludedModels)
 	v8.PUT("/models/global-excluded-models", s.mgmt.PutGlobalExcludedModels)
 	v8.DELETE("/models/global-excluded-models", s.mgmt.DeleteGlobalExcludedModels)
+	v8.GET("/models/exit-catalog", s.mgmt.GetExitModels)
 
 	v8.GET("/observability/logs", s.mgmt.GetLogs)
 	v8.DELETE("/observability/logs", s.mgmt.DeleteLogs)

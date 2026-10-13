@@ -14,15 +14,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Aligned CPA Antigravity schema with complete `project_id` resolution (canonical `"aicode-consumers"` fallback), `antigravity_capability_hints` payload, `priority`, and `disabled` status, fixing CPAMC quota discovery failure ("Antigravity 凭证缺少 project_id").
   - Refined two-column workspace grid layout and responsive constraints (`minmax(380px, 460px)` + `minmax(0, 1fr)`) to prevent JSON preview blowout and column squeezing.
   - Extended Antigravity authentication library with `RefreshToken` and `RefreshTokenWithCredentials` (`internal/auth/antigravity/auth.go`) with regression unit tests (`internal/auth/antigravity/auth_test.go`).
-- **Global Exit Model Exclusion & Management Controls**:
+- **Global Exit Model Exclusion & Modal Management Controls**:
   - Implemented `GlobalExcludedModels` (`global-excluded-models`) across configuration and model registries to selectively block models at the CPA exit boundary.
   - Added wildcard and exact model pattern matching to filter models out of client advertisement (`/v1/models`, OpenAI, Claude, Gemini) and request execution (`GetModelInfo`, `GetModelCount`, `GetModelProviders`).
+  - Added full exit model inspection endpoint `GetExitModelCatalog` (`GET /v0/management/exit-models` & `GET /v8/management/models/exit-catalog`) which lists all upstream active models alongside their exclusion status, ensuring models never disappear permanently from operator view.
   - Added REST endpoints for global exclusion management: `GET`, `PUT`, `PATCH`, `DELETE` on `/v0/management/global-excluded-models`, and `POST /v0/management/global-excluded-models/toggle` (with v8 counterparts `/v8/management/models/global-excluded-models` and `/routing/global-excluded-models`).
   - Wired hot-reload and atomic persistence with zero-value cleanup in `internal/config/config_yaml.go`.
-- **CPAMC Master Key Tagging & Exit Model Controls**:
+- **CPAMC Master Key Tagging & Exit Model Modal Interface**:
   - Added dedicated emerald badge `主 Key (Master)` for the first API key (`n === 0`) in the Client API Keys configuration section of CPAMC (`static/management.html` and `internal/managementasset/assets/management.html`).
-  - Added one-click exit exclusion button (`×`) on every model tag in CPAMC System Info / Available Models view.
-  - Added dedicated "🚫 已屏蔽出口模型" section in CPAMC displaying all currently blocked exit models with one-click restoration (`✓ 恢复`).
+  - Redesigned model exit controls into a dedicated "出口模型管理" modal dialog (`Qm`) with live search, batch "全部开启" / "全部取消" buttons, and checkbox-based inclusion (checked by default, unchecked to exclude).
+  - Added dynamic counter badge `(已屏蔽 N 个)` to the modal trigger button for instant visual feedback.
 - **WorkBuddy Dedicated Quota Tabs & Provider Split**:
   - Split WorkBuddy international (`workbuddy`) and China mainland (`workbuddy-cn`) realms out of generic `Plugin` quota grouping in CPAMC (`static/management.html` and `internal/managementasset/assets/management.html`).
   - Added dedicated provider definitions to `SN`, `lne`, `dne`, and `DA` so `WorkBuddy (en)` and `WorkBuddy (cn)` render as standalone tabs with official green robot avatars, localized titles, and independent credential counts.
