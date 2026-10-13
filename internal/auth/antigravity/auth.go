@@ -298,11 +298,11 @@ func (o *AntigravityAuth) FetchProjectID(ctx context.Context, accessToken string
 
 	if projectID == "" {
 		projectID, err = o.OnboardUser(ctx, accessToken, defaultAntigravityTierID(loadResp))
-		if err != nil {
-			return "", err
-		}
 		if projectID == "" {
-			return "", fmt.Errorf("project id not found in loadCodeAssist or onboardUser response")
+			if err != nil {
+				log.Warnf("antigravity: onboardUser failed (%v), falling back to default consumer project", err)
+			}
+			projectID = "aicode-consumers"
 		}
 		return projectID, nil
 	}
