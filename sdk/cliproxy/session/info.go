@@ -472,7 +472,71 @@ func ExtractSessionInfo(headers http.Header, payload []byte, metadata map[string
 		return finalizeSessionInfo(info)
 	}
 
-	// 5. OpenCode / Pi Slot / Task / Generic Headers
+	// 5. OpenCode / Pi Slot / Task / Generic / Magpie Headers
+	if sid := sessionHeaderValue(headers, "X-Magpie-Session"); sid != "" {
+		info.ClientType = "magpie"
+		info.SessionID = "magpie:" + sid
+		parentSID := sessionHeaderValue(headers, "X-Parent-Magpie-Session")
+		if parentSID == "" {
+			parentSID = sessionHeaderValue(headers, "X-Parent-Session-ID")
+		}
+		if parentSID == "" {
+			parentSID = sessionHeaderValue(headers, "X-Parent-Session-Id")
+		}
+		if parentSID != "" && parentSID != sid {
+			info.ParentSessionID = "magpie:" + parentSID
+			info.AgentName = "subagent"
+		} else if parentCandidate != "" && parentCandidate != sid {
+			info.ParentSessionID = "magpie:" + parentCandidate
+			info.AgentName = "subagent"
+		} else {
+			info.AgentName = "main"
+		}
+		return finalizeSessionInfo(info)
+	}
+	if sid := sessionHeaderValue(headers, "X-OpenCode-Session"); sid != "" {
+		info.ClientType = "opencode"
+		info.SessionID = "opencode:" + sid
+		parentSID := sessionHeaderValue(headers, "X-Parent-OpenCode-Session")
+		if parentSID == "" {
+			parentSID = sessionHeaderValue(headers, "X-Parent-Session-ID")
+		}
+		if parentSID == "" {
+			parentSID = sessionHeaderValue(headers, "X-Parent-Session-Id")
+		}
+		if parentSID != "" && parentSID != sid {
+			info.ParentSessionID = "opencode:" + parentSID
+			info.AgentName = "subagent"
+		} else if parentCandidate != "" && parentCandidate != sid {
+			info.ParentSessionID = "opencode:" + parentCandidate
+			info.AgentName = "subagent"
+		} else {
+			info.AgentName = "main"
+		}
+		return finalizeSessionInfo(info)
+	}
+	if sid := sessionHeaderValue(headers, "X-Continue-Session-Id"); sid != "" {
+		info.ClientType = "continue"
+		info.SessionID = "continue:" + sid
+		if parentCandidate != "" && parentCandidate != sid {
+			info.ParentSessionID = "continue:" + parentCandidate
+			info.AgentName = "subagent"
+		} else {
+			info.AgentName = "main"
+		}
+		return finalizeSessionInfo(info)
+	}
+	if sid := sessionHeaderValue(headers, "X-Cursor-Session-Id"); sid != "" {
+		info.ClientType = "cursor"
+		info.SessionID = "cursor:" + sid
+		if parentCandidate != "" && parentCandidate != sid {
+			info.ParentSessionID = "cursor:" + parentCandidate
+			info.AgentName = "subagent"
+		} else {
+			info.AgentName = "main"
+		}
+		return finalizeSessionInfo(info)
+	}
 	if sid := sessionHeaderValue(headers, "X-Session-ID"); sid != "" {
 		info.ClientType = "generic"
 		info.SessionID = "header:" + sid

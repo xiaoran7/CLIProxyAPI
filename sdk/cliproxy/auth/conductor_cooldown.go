@@ -907,6 +907,7 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 								state.NextRetryAfter = next
 							}
 						case 429:
+							RecordRateLimitSink(auth.ID, now)
 							var next time.Time
 							var credentialNext time.Time
 							backoffLevel := state.Quota.BackoffLevel
@@ -2344,6 +2345,7 @@ func applyAuthFailureState(auth *Auth, resultErr *Error, retryAfter *time.Durati
 				auth.NextRetryAfter = now.Add(12 * time.Hour)
 			}
 		case 429:
+			RecordRateLimitSink(auth.ID, now)
 			auth.StatusMessage = "quota exhausted"
 			auth.Quota.Exceeded = true
 			auth.Quota.Reason = "quota"

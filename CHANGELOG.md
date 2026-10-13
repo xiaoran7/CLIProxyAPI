@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Rate Limit Sink Mechanism & Session Affinity Resilience (Inspired by magpie architecture)**:
+  - Implemented 429 Rate Limit Sink ordering algorithm (`sdk/cliproxy/auth/sink.go`) to prevent repeated account thrashing. Sunk credentials are smoothly demoted to the back of availability queues, cycling fairly among rate-limited accounts once cooled.
+  - Wired `RecordRateLimitSink` into credential and model-level HTTP 429 response handling in `conductor_cooldown.go`.
+  - Applied `ApplySinkOrdering` to `FillFirstSelector.Pick` to ensure accounts recovering from cooldown do not immediately starve alternate credentials.
+  - Enhanced session hash derivation (`extractMessageHashIDs` in `sdk/cliproxy/auth/selector.go`) with first-user-turn anchor binding (`userAnchor`), improving multi-turn Prompt Cache affinity when system prompts dynamically change across turns.
+  - Expanded `ExtractSessionInfo` in `sdk/cliproxy/session/info.go` to natively identify session headers across popular coding agent ecosystems (`X-Magpie-Session`, `X-OpenCode-Session`, `X-Continue-Session-Id`, `X-Cursor-Session-Id`).
 - **Antigravity Refresh Token to CPA Auth Web Tool (`tools/rt2cpa`)**:
   - Built standalone lightweight Aozora UI Web service (`tools/rt2cpa/app.py`) for generating standard CLIProxyAPI authentication JSON files directly from Google Antigravity Refresh Tokens.
   - Automated token exchange via Google OAuth token endpoint, user email retrieval via userinfo endpoint, and project ID discovery via CloudCode `loadCodeAssist` and `onboardUser`.
