@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Management Center Web Interface Syntax Error Fix (`management.html`)**:
+  - Fixed an unclosed bracket syntax error (`SyntaxError: Unexpected token '&&'`) in bundled CPAMC assets (`internal/managementasset/assets/management.html` and `static/management.html`) where the models description section prematurely closed the `children` array before status badges and empty states.
+  - Resolved white-screen / failure to load issue when accessing `http://<host>:8315/management.html`.
+  - Synchronized the repaired asset to production servers (`us-zenix` and `vps-tokyo-02`) and restarted Gateway services.
+
 ### Added
 - **Native WorkBuddy Daily Check-in Engine (Automatic Credit Farming & Streak Maintenance)**:
   - Implemented WorkBuddy (CN realm) daily check-in automation (`internal/auth/workbuddy/checkin.go`) targeting Tencent CodeBuddy / Copilot billing meter APIs (`/v2/billing/meter/checkin-activity-status` and `/v2/billing/meter/daily-checkin`).
