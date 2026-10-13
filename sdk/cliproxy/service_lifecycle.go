@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/workbuddy"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/redisqueue"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
@@ -97,6 +98,14 @@ func (s *Service) Run(ctx context.Context) error {
 		interval := 15 * time.Minute
 		s.coreManager.StartAutoRefresh(ctx, interval)
 		log.Infof("core auth auto-refresh started (interval=%s)", interval)
+
+		workbuddy.InitGlobalCheckinEngine(s.cfg.AuthDir, func() []*coreauth.Auth {
+			if s.coreManager == nil {
+				return nil
+			}
+			return s.coreManager.List()
+		})
+		log.Info("workbuddy daily checkin engine initialized")
 	}
 
 	if !homeEnabled {
@@ -240,6 +249,9 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	}
 	var shutdownErr error
 	s.shutdownOnce.Do(func() {
+		if engine := workbuddy.GetGlobalCheckinEngine(); engine != nil {
+			engine.Stop()
+		}
 		if ctx == nil {
 			ctx = context.Background()
 		}
