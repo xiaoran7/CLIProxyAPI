@@ -373,7 +373,7 @@ type QuotaExceeded struct {
 // RoutingConfig configures how credentials are selected for requests.
 type RoutingConfig struct {
 	// Strategy selects the credential selection strategy.
-	// Supported values: "round-robin" (default), "weighted-round-robin", "fill-first".
+	// Supported values: "round-robin" (default), "weighted-round-robin", "fill-first", "smart", "pace".
 	Strategy string `yaml:"strategy,omitempty" json:"strategy,omitempty"`
 
 	// SessionAffinity enables universal session-sticky routing for all clients.
@@ -403,6 +403,28 @@ type RoutingConfig struct {
 	//     auth errors (429, 401/402/403, 404/model support, invalid_grant) rebind as normal.
 	// Ignored when SessionAffinity is false.
 	SessionAffinityRebindOn string `yaml:"session-affinity-rebind-on,omitempty" json:"session-affinity-rebind-on,omitempty"`
+}
+
+// RedactionConfig configures zero-knowledge local sensitive data masking and restoration.
+type RedactionConfig struct {
+	// Enabled toggles local zero-knowledge redaction.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// MaskSecrets masks API keys, passwords, connection strings, private keys, and tokens.
+	// Default is true when Redaction is enabled.
+	MaskSecrets *bool `yaml:"mask-secrets,omitempty" json:"mask-secrets,omitempty"`
+
+	// MaskPersonal masks emails, Chinese phone numbers, and ID cards.
+	// Default is false.
+	MaskPersonal bool `yaml:"mask-personal,omitempty" json:"mask-personal,omitempty"`
+}
+
+// SecretsEnabled returns whether secret redaction is active (defaults to true).
+func (r RedactionConfig) SecretsEnabled() bool {
+	if r.MaskSecrets == nil {
+		return true
+	}
+	return *r.MaskSecrets
 }
 
 // OAuthModelAlias defines a model ID alias for a specific channel.

@@ -108,6 +108,9 @@ type Config struct {
 	// Routing controls credential selection behavior.
 	Routing RoutingConfig `yaml:"routing" json:"routing"`
 
+	// Redaction configures zero-knowledge local sensitive data masking and restoration.
+	Redaction RedactionConfig `yaml:"redaction" json:"redaction"`
+
 	// WebsocketAuth enables or disables authentication for the WebSocket API.
 	WebsocketAuth bool `yaml:"ws-auth" json:"ws-auth"`
 
