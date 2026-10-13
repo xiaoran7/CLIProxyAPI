@@ -91,6 +91,14 @@ func (s *Service) Run(ctx context.Context) error {
 				log.Warnf("failed to restore cooldown state: %v", errRestoreCooldown)
 			}
 		}
+		if store := s.resolveSessionCacheStore(s.cfg); store != nil {
+			if records, err := store.Load(ctx); err == nil && len(records) > 0 {
+				if sc := s.coreManager.SessionCache(); sc != nil {
+					restored := sc.Restore(records)
+					log.Infof("restored %d session affinity records from disk", restored)
+				}
+			}
+		}
 		s.registerAvailableExecutors(ctx, executorRegistrationOptions{
 			includeBaseline: true,
 			auths:           s.coreManager.List(),
@@ -99,7 +107,11 @@ func (s *Service) Run(ctx context.Context) error {
 		s.coreManager.StartAutoRefresh(ctx, interval)
 		log.Infof("core auth auto-refresh started (interval=%s)", interval)
 
-		workbuddy.InitGlobalCheckinEngine(s.cfg.AuthDir, func() []*coreauth.Auth {
+		authDir := ""
+		if s.cfg != nil {
+			authDir = s.cfg.AuthDir
+		}
+		workbuddy.InitGlobalCheckinEngine(authDir, func() []*coreauth.Auth {
 			if s.coreManager == nil {
 				return nil
 			}
@@ -251,6 +263,18 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	s.shutdownOnce.Do(func() {
 		if engine := workbuddy.GetGlobalCheckinEngine(); engine != nil {
 			engine.Stop()
+		}
+		if s.coreManager != nil {
+			if store := s.resolveSessionCacheStore(s.cfg); store != nil {
+				if sc := s.coreManager.SessionCache(); sc != nil {
+					records := sc.Snapshot()
+					if err := store.Save(ctx, records); err != nil {
+						log.Warnf("failed to persist session affinity records: %v", err)
+					} else {
+						log.Infof("persisted %d session affinity records to disk", len(records))
+					}
+				}
+			}
 		}
 		if ctx == nil {
 			ctx = context.Background()

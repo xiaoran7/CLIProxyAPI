@@ -1085,6 +1085,14 @@ func (s *SessionAffinitySelector) Trees() *cliproxysession.InMemorySessionTreeSt
 	return cliproxysession.NewInMemorySessionTreeStore(0, time.Hour)
 }
 
+// Cache returns the underlying session cache for snapshot and restore operations.
+func (s *SessionAffinitySelector) Cache() *SessionCache {
+	if s == nil {
+		return nil
+	}
+	return s.cache
+}
+
 // Pick selects an auth with session affinity when possible.
 // Explicit Claude Code, Codex, OpenCode, pi, and request-body session signals
 // are absolute authority. Requests without those signals use the Merkle LCP

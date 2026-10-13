@@ -2,6 +2,7 @@ package cliproxy
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -597,6 +598,17 @@ func (s *Service) resolveCooldownStateStore(cfg *config.Config) coreauth.Cooldow
 		return nil
 	}
 	return coreauth.NewFileCooldownStateStoreWithAuthDir(authDir, authDir)
+}
+
+func (s *Service) resolveSessionCacheStore(cfg *config.Config) coreauth.SessionCacheStore {
+	if cfg == nil || cfg.Home.Enabled {
+		return nil
+	}
+	authDir, errResolve := resolveCooldownStateAuthDir(cfg)
+	if errResolve != nil || authDir == "" {
+		return nil
+	}
+	return coreauth.NewFileSessionCacheStore(filepath.Join(authDir, "session_affinity.json"))
 }
 
 func resolveCooldownStateAuthDir(cfg *config.Config) (string, error) {

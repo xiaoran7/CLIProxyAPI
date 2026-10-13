@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
@@ -206,5 +205,43 @@ func TestCheckinEngine_PersistenceAndDeduplication(t *testing.T) {
 	}
 	if callCount != 1 {
 		t.Fatalf("expected call count to remain 1 due to dedup, got %d", callCount)
+	}
+}
+
+func TestWorkBuddyCheckin_InactiveCampaign(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/billing/meter/checkin-activity-status" {
+			resp := map[string]any{
+				"code": 0,
+				"msg":  "ok",
+				"data": map[string]any{
+					"active": false,
+				},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	auth := &cliproxyauth.Auth{
+		ID:       "wb-cn-inactive",
+		Provider: "workbuddy-cn",
+		Attributes: map[string]string{
+			"realm":    RealmCN,
+			"base_url": server.URL,
+		},
+		Metadata: map[string]any{
+			"access_token": "valid-token-123",
+		},
+	}
+
+	res, err := Checkin(context.Background(), server.Client(), auth)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Outcome != CheckinInactive {
+		t.Fatalf("expected outcome %q, got %q", CheckinInactive, res.Outcome)
 	}
 }
