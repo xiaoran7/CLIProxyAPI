@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Streaming Loop Guard (Reasoning & Text Infinite Loop Circuit Breaker)**:
+  - Implemented multi-protocol SSE streaming loop guard in `sdk/cliproxy/auth/loop_guard.go` inspecting reasoning and text deltas across OpenAI, Anthropic, Responses, and Gemini.
+  - Applied a 256-unit sliding window with sentence/line boundaries to detect degenerative repetitive thinking cycles (e.g. models getting stuck repeating thought fragments).
+  - Integrated `LoopGuard` into `wrapStreamResult` in `sdk/cliproxy/auth/conductor_stream.go`, immediately aborting stuck upstream streams and delivering clean `stream_loop_detected` errors, preserving user quota and preventing hung agent sessions.
 - **Rate Limit Sink Mechanism & Session Affinity Resilience (Inspired by magpie architecture)**:
   - Implemented 429 Rate Limit Sink ordering algorithm (`sdk/cliproxy/auth/sink.go`) to prevent repeated account thrashing. Sunk credentials are smoothly demoted to the back of availability queues, cycling fairly among rate-limited accounts once cooled.
   - Wired `RecordRateLimitSink` into credential and model-level HTTP 429 response handling in `conductor_cooldown.go`.

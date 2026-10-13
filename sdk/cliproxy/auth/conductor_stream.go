@@ -153,6 +153,7 @@ func (m *Manager) wrapStreamResult(ctx context.Context, auth *Auth, provider, re
 		if aliasResult.ForceMapping && strings.TrimSpace(aliasResult.OriginalAlias) != "" {
 			rewriter = NewStreamRewriter(StreamRewriteOptions{RewriteModel: aliasResult.OriginalAlias})
 		}
+		guard := NewLoopGuard()
 		emit := func(chunk cliproxyexecutor.StreamChunk) bool {
 			if chunk.Err != nil && !failed {
 				failed = true
@@ -184,6 +185,23 @@ func (m *Manager) wrapStreamResult(ctx context.Context, auth *Auth, provider, re
 			}
 			if len(chunk.Payload) == 0 {
 				return true
+			}
+			if trip, looped := guard.Feed(chunk.Payload); looped {
+				entry := logEntryWithRequestID(ctx)
+				entry.Warnf("conductor_stream: loop guard tripped | provider=%s model=%s auth=%s msg=%s", provider, resultModel, auth.ID, trip.Message())
+				loopErr := &Error{Code: "stream_loop_detected", Message: trip.Message()}
+				chunk.Err = loopErr
+				chunk.Payload = nil
+				if ctx == nil {
+					out <- chunk
+				} else {
+					select {
+					case <-ctx.Done():
+					case out <- chunk:
+					}
+				}
+				forward = false
+				return false
 			}
 			payload := rewriteForceMappedStreamChunk(rewriter, chunk.Payload)
 			if len(payload) == 0 {
