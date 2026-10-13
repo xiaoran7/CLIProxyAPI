@@ -817,6 +817,7 @@ func (s *FillFirstSelector) Pick(ctx context.Context, provider, model string, op
 		return nil, err
 	}
 	available = preferCodexWebsocketAuths(ctx, provider, available)
+	available = ApplySinkOrdering(available)
 	return available[0], nil
 }
 
@@ -2002,6 +2003,10 @@ func extractMessageHashIDs(payload []byte) (primaryID, fallbackID string) {
 
 	shortHash := computeSessionHash(systemPrompt, firstUserMsg, "")
 	if firstAssistantMsg == "" {
+		userAnchor := computeSessionHash("", firstUserMsg, "")
+		if userAnchor != shortHash {
+			return shortHash, userAnchor
+		}
 		return shortHash, ""
 	}
 
