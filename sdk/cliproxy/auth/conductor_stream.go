@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"strings"
@@ -8,6 +9,23 @@ import (
 
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 )
+
+const defaultSSEKeepAliveInterval = 15 * time.Second
+
+func isSSEStream(headers http.Header, buffered []cliproxyexecutor.StreamChunk) bool {
+	if headers != nil {
+		ct := strings.ToLower(headers.Get("Content-Type"))
+		if strings.Contains(ct, "text/event-stream") {
+			return true
+		}
+	}
+	for _, chunk := range buffered {
+		if bytes.Contains(chunk.Payload, []byte("data:")) {
+			return true
+		}
+	}
+	return false
+}
 
 func discardStreamChunks(ch <-chan cliproxyexecutor.StreamChunk) {
 	if ch == nil {
@@ -186,6 +204,19 @@ func (m *Manager) wrapStreamResult(ctx context.Context, auth *Auth, provider, re
 			if len(chunk.Payload) == 0 {
 				return true
 			}
+			if bytes.HasPrefix(chunk.Payload, []byte(":")) {
+				if ctx == nil {
+					out <- chunk
+					return true
+				}
+				select {
+				case <-ctx.Done():
+					forward = false
+					return false
+				case out <- chunk:
+					return true
+				}
+			}
 			if trip, looped := guard.Feed(chunk.Payload); looped {
 				entry := logEntryWithRequestID(ctx)
 				entry.Warnf("conductor_stream: loop guard tripped | provider=%s model=%s auth=%s msg=%s", provider, resultModel, auth.ID, trip.Message())
@@ -226,10 +257,33 @@ func (m *Manager) wrapStreamResult(ctx context.Context, auth *Auth, provider, re
 				return
 			}
 		}
-		for chunk := range remaining {
-			if ok := emit(chunk); !ok {
-				discardStreamChunks(remaining)
-				return
+
+		isSSE := isSSEStream(headers, buffered)
+		keepAliveTicker := time.NewTicker(defaultSSEKeepAliveInterval)
+		defer keepAliveTicker.Stop()
+
+	streamLoop:
+		for {
+			select {
+			case chunk, ok := <-remaining:
+				if !ok {
+					break streamLoop
+				}
+				if !emit(chunk) {
+					discardStreamChunks(remaining)
+					return
+				}
+				keepAliveTicker.Reset(defaultSSEKeepAliveInterval)
+			case <-keepAliveTicker.C:
+				if isSSE {
+					keepAliveChunk := cliproxyexecutor.StreamChunk{
+						Payload: []byte(": keep-alive\n\n"),
+					}
+					if !emit(keepAliveChunk) {
+						discardStreamChunks(remaining)
+						return
+					}
+				}
 			}
 		}
 		if tail := finishForceMappedStreamChunks(rewriter); len(tail) > 0 {

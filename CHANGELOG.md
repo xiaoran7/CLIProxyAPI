@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Persistent Session Affinity & Streaming SSE Keep-Alive (Prompt Cache Resilience & Anti-Timeout)**:
+  - Implemented `Snapshot` and `Restore` mechanisms on `SessionCache` (`sdk/cliproxy/auth/session_cache.go`) for bulk exporting and loading active unexpired session-to-auth bindings.
+  - Added atomic `SessionCacheStore` interface and `FileSessionCacheStore` (`sdk/cliproxy/auth/session_cache_store.go`) allowing session affinities to survive process restarts, guaranteeing prompt cache continuity for long agent conversations across server upgrades.
+  - Implemented W3C-compliant SSE comment keep-alive pumper (`: keep-alive\n\n`) in `wrapStreamResult` (`sdk/cliproxy/auth/conductor_stream.go`), emitting 15-second heartbeats during slow upstream model reasoning or retrieval phases, completely eliminating 504 Gateway Timeouts from intermediate proxies (Nginx / Cloudflare).
 - **Streaming Loop Guard (Reasoning & Text Infinite Loop Circuit Breaker)**:
   - Implemented multi-protocol SSE streaming loop guard in `sdk/cliproxy/auth/loop_guard.go` inspecting reasoning and text deltas across OpenAI, Anthropic, Responses, and Gemini.
   - Applied a 256-unit sliding window with sentence/line boundaries to detect degenerative repetitive thinking cycles (e.g. models getting stuck repeating thought fragments).
