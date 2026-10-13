@@ -155,3 +155,35 @@ func jsonResponse(body string) *http.Response {
 		Body:       io.NopCloser(strings.NewReader(body)),
 	}
 }
+
+func TestRefreshToken(t *testing.T) {
+	auth := NewAntigravityAuth(nil, &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.String() != TokenEndpoint {
+			t.Fatalf("unexpected request URL: %s", req.URL.String())
+		}
+		if got := req.Header.Get("Content-Type"); got != "application/x-www-form-urlencoded" {
+			t.Fatalf("unexpected content type: %s", got)
+		}
+		bodyBytes, _ := io.ReadAll(req.Body)
+		bodyStr := string(bodyBytes)
+		if !strings.Contains(bodyStr, "grant_type=refresh_token") {
+			t.Fatalf("body missing grant_type: %s", bodyStr)
+		}
+		if !strings.Contains(bodyStr, "refresh_token=mock-rt-123") {
+			t.Fatalf("body missing refresh_token: %s", bodyStr)
+		}
+		return jsonResponse(`{"access_token":"new-mock-access-token","expires_in":3600,"token_type":"Bearer"}`), nil
+	})})
+
+	resp, err := auth.RefreshToken(context.Background(), "mock-rt-123")
+	if err != nil {
+		t.Fatalf("RefreshToken error: %v", err)
+	}
+	if resp.AccessToken != "new-mock-access-token" {
+		t.Fatalf("expected access token new-mock-access-token, got %s", resp.AccessToken)
+	}
+	if resp.ExpiresIn != 3600 {
+		t.Fatalf("expected expires in 3600, got %d", resp.ExpiresIn)
+	}
+}
+
