@@ -404,3 +404,64 @@ func (o *AntigravityAuth) OnboardUser(ctx context.Context, accessToken, tierID s
 
 	return "", fmt.Errorf("onboard user did not complete after %d attempts", maxAttempts)
 }
+
+// RefreshToken exchanges a refresh token for new access credentials using default Antigravity client credentials.
+func (o *AntigravityAuth) RefreshToken(ctx context.Context, refreshToken string) (*TokenResponse, error) {
+	return o.RefreshTokenWithCredentials(ctx, refreshToken, ClientID, ClientSecret)
+}
+
+// RefreshTokenWithCredentials exchanges a refresh token for new access credentials using specified client credentials.
+func (o *AntigravityAuth) RefreshTokenWithCredentials(ctx context.Context, refreshToken, clientID, clientSecret string) (*TokenResponse, error) {
+	refreshToken = strings.TrimSpace(refreshToken)
+	if refreshToken == "" {
+		return nil, fmt.Errorf("antigravity token refresh: empty refresh token")
+	}
+	if strings.TrimSpace(clientID) == "" {
+		clientID = ClientID
+	}
+	if strings.TrimSpace(clientSecret) == "" {
+		clientSecret = ClientSecret
+	}
+
+	data := url.Values{}
+	data.Set("client_id", clientID)
+	data.Set("client_secret", clientSecret)
+	data.Set("grant_type", "refresh_token")
+	data.Set("refresh_token", refreshToken)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, TokenEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("antigravity token refresh: create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "Go-http-client/2.0")
+
+	resp, errDo := o.httpClient.Do(req)
+	if errDo != nil {
+		return nil, fmt.Errorf("antigravity token refresh: execute request: %w", errDo)
+	}
+	defer func() {
+		if errClose := resp.Body.Close(); errClose != nil {
+			log.Errorf("antigravity token refresh: close body error: %v", errClose)
+		}
+	}()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		bodyBytes, errRead := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+		if errRead != nil {
+			return nil, fmt.Errorf("antigravity token refresh: read response: %w", errRead)
+		}
+		body := strings.TrimSpace(string(bodyBytes))
+		msg := fmt.Sprintf("antigravity token refresh: request failed: status %d", resp.StatusCode)
+		if body != "" {
+			msg = fmt.Sprintf("antigravity token refresh: request failed: status %d: %s", resp.StatusCode, body)
+		}
+		return nil, &HTTPStatusError{StatusCodeValue: resp.StatusCode, Message: msg}
+	}
+
+	var token TokenResponse
+	if errDecode := json.NewDecoder(resp.Body).Decode(&token); errDecode != nil {
+		return nil, fmt.Errorf("antigravity token refresh: decode response: %w", errDecode)
+	}
+	return &token, nil
+}
