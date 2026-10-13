@@ -279,3 +279,14 @@ func (m *Manager) ResultPolicy() ResultPolicy {
 	}
 	return holder.policy
 }
+
+// SessionCache returns the underlying SessionCache if the configured selector supports session affinity.
+func (m *Manager) SessionCache() *SessionCache {
+	if m == nil {
+		return nil
+	}
+	if sa, ok := m.selector.(*SessionAffinitySelector); ok {
+		return sa.Cache()
+	}
+	return nil
+}

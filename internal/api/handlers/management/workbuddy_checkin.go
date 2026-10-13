@@ -69,7 +69,7 @@ func (h *Handler) PostWorkBuddyCheckin(c *gin.Context) {
 	if authID != "" {
 		var targetAuth *cliproxyauth.Auth
 		if h.authManager != nil {
-			targetAuth, _ = h.authManager.Get(authID)
+			targetAuth, _ = h.authManager.GetByID(authID)
 		}
 		if targetAuth == nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "auth not found"})

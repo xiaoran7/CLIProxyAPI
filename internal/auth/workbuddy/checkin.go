@@ -240,8 +240,8 @@ func Checkin(ctx context.Context, client *http.Client, auth *cliproxyauth.Auth) 
 // handleUnauthorizedCheckin handles 401 response from checkin endpoint gracefully.
 func handleUnauthorizedCheckin(ctx context.Context, client *http.Client, baseURL string, auth *cliproxyauth.Auth, token string, result *CheckinResult) (*CheckinResult, error) {
 	// Probe user quota summary to see if the credential itself is healthy
-	summaryURL := baseURL + "/billing/meter/get-user-resource-summary"
-	reqSummary, errReq := http.NewRequestWithContext(ctx, http.MethodPost, summaryURL, bytes.NewReader([]byte("{}")))
+	summaryURL := baseURL + UserPointsPath
+	reqSummary, errReq := http.NewRequestWithContext(ctx, http.MethodGet, summaryURL, nil)
 	if errReq == nil {
 		ApplyHeaders(reqSummary, auth, token)
 		if respSummary, errDo := client.Do(reqSummary); errDo == nil {
@@ -314,11 +314,15 @@ func (e *CheckinEngine) Stop() {
 }
 
 func (e *CheckinEngine) runLoop() {
+	e.mu.RLock()
+	stopCh := e.stopCh
+	e.mu.RUnlock()
+
 	// Run initial check-in cycle 5 seconds after startup
 	select {
 	case <-time.After(5 * time.Second):
 		e.RunCheckinAll(context.Background())
-	case <-e.stopCh:
+	case <-stopCh:
 		return
 	}
 
@@ -329,7 +333,7 @@ func (e *CheckinEngine) runLoop() {
 		select {
 		case <-ticker.C:
 			e.RunCheckinAll(context.Background())
-		case <-e.stopCh:
+		case <-stopCh:
 			return
 		}
 	}
@@ -366,7 +370,7 @@ func (e *CheckinEngine) RunCheckinAll(ctx context.Context) map[string]CheckinRes
 		existing, ok := e.records[a.ID]
 		e.mu.RUnlock()
 
-		if ok && existing.Day == today && (existing.Outcome == CheckinClaimed || existing.Outcome == CheckinDone || existing.Outcome == CheckinOwnApp || existing.Outcome == CheckinIneligible) {
+		if ok && existing.Day == today && (existing.Outcome == CheckinClaimed || existing.Outcome == CheckinDone || existing.Outcome == CheckinOwnApp || existing.Outcome == CheckinIneligible || existing.Outcome == CheckinInactive) {
 			results[a.ID] = existing
 			continue
 		}
@@ -428,7 +432,14 @@ func (e *CheckinEngine) saveRecordsLocked() {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(e.storePath, data, 0o600)
+	tmpFile := e.storePath + ".tmp"
+	if err := os.WriteFile(tmpFile, data, 0o600); err != nil {
+		return
+	}
+	if err := os.Rename(tmpFile, e.storePath); err != nil {
+		_ = os.Remove(tmpFile)
+		_ = os.WriteFile(e.storePath, data, 0o600)
+	}
 }
 
 var (
