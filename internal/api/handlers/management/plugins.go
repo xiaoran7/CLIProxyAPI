@@ -169,26 +169,10 @@ func (h *Handler) ListPlugins(c *gin.Context) {
 			ConfigFields:     []pluginConfigFieldInfo{},
 			Menus:            []pluginMenuInfo{},
 			Metadata: &pluginMetadataInfo{
-				Name:   "WorkBuddy (en)",
-				Author: "Tencent",
-			},
-		},
-		{
-			ID:               "workbuddy-cn",
-			Configured:       true,
-			Registered:       true,
-			Enabled:          true,
-			EffectiveEnabled: true,
-			SupportsOAuth:    true,
-			OAuthProvider:    "workbuddy-cn",
-			SupportsQuota:    true,
-			QuotaProvider:    "workbuddy",
-			Logo:             workbuddyLogoDataURI,
-			ConfigFields:     []pluginConfigFieldInfo{},
-			Menus:            []pluginMenuInfo{},
-			Metadata: &pluginMetadataInfo{
-				Name:   "WorkBuddy (cn)",
-				Author: "Tencent",
+				Name:             "WorkBuddy",
+				Author:           "Tencent",
+				Version:          "1.0.0",
+				GitHubRepository: "https://copilot.tencent.com",
 			},
 		},
 	}
@@ -237,7 +221,7 @@ func (h *Handler) GetPluginConfig(c *gin.Context) {
 		return
 	}
 
-	if pluginRegistered(host, id) {
+	if pluginRegistered(host, id) || id == "workbuddy" || id == "workbuddy-cn" {
 		c.JSON(http.StatusOK, gin.H{})
 		return
 	}
@@ -369,6 +353,10 @@ func (h *Handler) PatchPluginConfig(c *gin.Context) {
 func (h *Handler) DeletePlugin(c *gin.Context) {
 	id, okID := pluginIDFromRequest(c)
 	if !okID {
+		return
+	}
+	if id == "workbuddy" || id == "workbuddy-cn" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot_delete_native_plugin", "message": "native suite plugin cannot be deleted"})
 		return
 	}
 	if h == nil {
