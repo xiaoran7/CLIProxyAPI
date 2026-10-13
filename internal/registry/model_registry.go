@@ -205,6 +205,8 @@ type ModelRegistry struct {
 	registrationEpoch atomic.Uint64
 	// hook is an optional callback sink for model registration changes
 	hook ModelRegistryHook
+	// globalExcludedModels defines exit model exclusions applied across all providers
+	globalExcludedModels []string
 }
 
 // Global model registry instance
@@ -390,6 +392,91 @@ func (r *ModelRegistry) SetHook(hook ModelRegistryHook) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	r.hook = hook
+}
+
+// SetGlobalExcludedModels updates the global model exclusion patterns at the CPA exit
+// and invalidates the cached available model listings.
+func (r *ModelRegistry) SetGlobalExcludedModels(excluded []string) {
+	if r == nil {
+		return
+	}
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	patterns := make([]string, 0, len(excluded))
+	for _, item := range excluded {
+		if trimmed := strings.ToLower(strings.TrimSpace(item)); trimmed != "" {
+			patterns = append(patterns, trimmed)
+		}
+	}
+	r.globalExcludedModels = patterns
+	r.invalidateAvailableModelsCacheLocked()
+}
+
+// GetGlobalExcludedModels returns a copy of current global exit model exclusions.
+func (r *ModelRegistry) GetGlobalExcludedModels() []string {
+	if r == nil {
+		return nil
+	}
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	return append([]string(nil), r.globalExcludedModels...)
+}
+
+func (r *ModelRegistry) isModelGloballyExcludedLocked(modelID string) bool {
+	if r == nil || len(r.globalExcludedModels) == 0 || modelID == "" {
+		return false
+	}
+	clean := strings.ToLower(strings.TrimSpace(modelID))
+	for _, pattern := range r.globalExcludedModels {
+		if matchWildcard(pattern, clean) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsModelGloballyExcluded reports whether a model is excluded by global exit rules.
+func (r *ModelRegistry) IsModelGloballyExcluded(modelID string) bool {
+	if r == nil {
+		return false
+	}
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	return r.isModelGloballyExcludedLocked(modelID)
+}
+
+func matchWildcard(pattern, value string) bool {
+	if pattern == "" {
+		return false
+	}
+	if !strings.Contains(pattern, "*") {
+		return pattern == value
+	}
+	parts := strings.Split(pattern, "*")
+	if prefix := parts[0]; prefix != "" {
+		if !strings.HasPrefix(value, prefix) {
+			return false
+		}
+		value = value[len(prefix):]
+	}
+	if suffix := parts[len(parts)-1]; suffix != "" {
+		if !strings.HasSuffix(value, suffix) {
+			return false
+		}
+		value = value[:len(value)-len(suffix)]
+	}
+	for i := 1; i < len(parts)-1; i++ {
+		segment := parts[i]
+		if segment == "" {
+			continue
+		}
+		idx := strings.Index(value, segment)
+		if idx == -1 {
+			return false
+		}
+		value = value[idx+len(segment):]
+	}
+	return true
 }
 
 const defaultModelRegistryHookTimeout = 5 * time.Second
@@ -1372,7 +1459,7 @@ func (r *ModelRegistry) GetAvailableModelInfos() []*ModelInfo {
 	result := make([]*ModelInfo, 0, len(r.models))
 	for _, registration := range r.models {
 		available, _ := modelRegistrationAvailability(registration, now)
-		if !available || registration == nil || registration.Info == nil {
+		if !available || registration == nil || registration.Info == nil || r.isModelGloballyExcludedLocked(registration.Info.ID) {
 			continue
 		}
 		result = append(result, cloneModelInfo(registration.Info))
@@ -1392,7 +1479,7 @@ func (r *ModelRegistry) buildAvailableModelsLocked(handlerType string, now time.
 		if !registrationExpiresAt.IsZero() && (expiresAt.IsZero() || registrationExpiresAt.Before(expiresAt)) {
 			expiresAt = registrationExpiresAt
 		}
-		if !available || registration == nil {
+		if !available || registration == nil || registration.Info == nil || r.isModelGloballyExcludedLocked(registration.Info.ID) {
 			continue
 		}
 
@@ -1580,6 +1667,10 @@ func (r *ModelRegistry) GetModelCount(modelID string) int {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 
+	if r.isModelGloballyExcludedLocked(modelID) {
+		return 0
+	}
+
 	if registration, exists := r.models[modelID]; exists {
 		now := time.Now()
 
@@ -1615,6 +1706,10 @@ func (r *ModelRegistry) GetModelCount(modelID string) int {
 func (r *ModelRegistry) GetModelProviders(modelID string) []string {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
+
+	if r.isModelGloballyExcludedLocked(modelID) {
+		return nil
+	}
 
 	registration, exists := r.models[modelID]
 	if !exists || registration == nil || len(registration.Providers) == 0 {
@@ -1667,6 +1762,11 @@ func (r *ModelRegistry) GetModelProviders(modelID string) []string {
 func (r *ModelRegistry) GetModelInfo(modelID, provider string) *ModelInfo {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
+
+	if r.isModelGloballyExcludedLocked(modelID) {
+		return nil
+	}
+
 	if reg, ok := r.models[modelID]; ok && reg != nil {
 		// Try provider specific definition first
 		if provider != "" && reg.InfoByProvider != nil {

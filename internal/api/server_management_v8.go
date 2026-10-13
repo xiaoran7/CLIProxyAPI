@@ -31,6 +31,11 @@ func (s *Server) registerManagementV8Routes() {
 	v8.POST("/requests/api-call", s.mgmt.APICall)
 	v8.POST("/routing/cooldown/reset", s.mgmt.ResetQuota)
 	v8.GET("/routing/model-definitions/:channel", s.mgmt.GetStaticModelDefinitions)
+	v8.POST("/routing/global-excluded-models/toggle", s.mgmt.ToggleGlobalExcludedModel)
+	v8.POST("/models/global-excluded-models/toggle", s.mgmt.ToggleGlobalExcludedModel)
+	v8.GET("/models/global-excluded-models", s.mgmt.GetGlobalExcludedModels)
+	v8.PUT("/models/global-excluded-models", s.mgmt.PutGlobalExcludedModels)
+	v8.DELETE("/models/global-excluded-models", s.mgmt.DeleteGlobalExcludedModels)
 
 	v8.GET("/observability/logs", s.mgmt.GetLogs)
 	v8.DELETE("/observability/logs", s.mgmt.DeleteLogs)

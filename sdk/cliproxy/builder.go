@@ -10,6 +10,7 @@ import (
 	configaccess "github.com/router-for-me/CLIProxyAPI/v8/internal/access/config_access"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
@@ -274,6 +275,10 @@ func (b *Builder) Build() (*Service, error) {
 	}
 	if b.resultPolicy != nil {
 		coreManager.SetResultPolicy(b.resultPolicy)
+	}
+
+	if b.cfg != nil {
+		registry.GetGlobalRegistry().SetGlobalExcludedModels(b.cfg.GlobalExcludedModels)
 	}
 
 	service := &Service{

@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 )
 
 func parseCredentialWeightPatch(raw json.RawMessage) (*int, error) {
@@ -1291,6 +1292,73 @@ func (h *Handler) DeleteOAuthExcludedModels(c *gin.Context) {
 		h.cfg.OAuthExcludedModels = nil
 	}
 	h.persist(c)
+}
+
+// global-excluded-models: []string
+func (h *Handler) GetGlobalExcludedModels(c *gin.Context) {
+	c.JSON(200, gin.H{"global-excluded-models": config.NormalizeExcludedModels(h.cfg.GlobalExcludedModels)})
+}
+
+func (h *Handler) PutGlobalExcludedModels(c *gin.Context) {
+	h.putStringList(c, func(v []string) {
+		h.cfg.GlobalExcludedModels = config.NormalizeExcludedModels(v)
+	}, func() {
+		registry.GetGlobalRegistry().SetGlobalExcludedModels(h.cfg.GlobalExcludedModels)
+	})
+}
+
+func (h *Handler) PatchGlobalExcludedModels(c *gin.Context) {
+	h.patchStringList(c, &h.cfg.GlobalExcludedModels, func() {
+		h.cfg.GlobalExcludedModels = config.NormalizeExcludedModels(h.cfg.GlobalExcludedModels)
+		registry.GetGlobalRegistry().SetGlobalExcludedModels(h.cfg.GlobalExcludedModels)
+	})
+}
+
+func (h *Handler) DeleteGlobalExcludedModels(c *gin.Context) {
+	h.deleteFromStringList(c, &h.cfg.GlobalExcludedModels, func() {
+		h.cfg.GlobalExcludedModels = config.NormalizeExcludedModels(h.cfg.GlobalExcludedModels)
+		registry.GetGlobalRegistry().SetGlobalExcludedModels(h.cfg.GlobalExcludedModels)
+	})
+}
+
+func (h *Handler) ToggleGlobalExcludedModel(c *gin.Context) {
+	var body struct {
+		Model   string `json:"model"`
+		Enabled *bool  `json:"enabled"` // if provided: enabled=true means NOT excluded; enabled=false means EXCLUDED
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.Model) == "" {
+		c.JSON(400, gin.H{"error": "model is required"})
+		return
+	}
+	modelID := strings.TrimSpace(body.Model)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	current := config.NormalizeExcludedModels(h.cfg.GlobalExcludedModels)
+	isExcluded := false
+	matchIdx := -1
+	for i, m := range current {
+		if strings.EqualFold(m, modelID) {
+			isExcluded = true
+			matchIdx = i
+			break
+		}
+	}
+
+	targetExcluded := !isExcluded
+	if body.Enabled != nil {
+		targetExcluded = !(*body.Enabled)
+	}
+
+	if targetExcluded && !isExcluded {
+		current = append(current, modelID)
+	} else if !targetExcluded && isExcluded && matchIdx >= 0 {
+		current = append(current[:matchIdx], current[matchIdx+1:]...)
+	}
+
+	h.cfg.GlobalExcludedModels = config.NormalizeExcludedModels(current)
+	registry.GetGlobalRegistry().SetGlobalExcludedModels(h.cfg.GlobalExcludedModels)
+	h.persistLocked(c)
 }
 
 // oauth-model-alias: map[string][]OAuthModelAlias
