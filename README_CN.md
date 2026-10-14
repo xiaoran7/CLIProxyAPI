@@ -128,13 +128,15 @@ PackyCode 为本软件用户提供了特别优惠：使用<a href="https://www.p
 - 支持流式、非流式响应，以及受支持场景下的 WebSocket 响应
 - 函数调用/工具支持
 - 多模态输入（文本、图片）
-- 多账户支持与轮询负载均衡（Gemini、OpenAI、Claude、Grok）
-- 简单的 CLI 身份验证流程（Gemini、OpenAI、Claude、Grok）
+- 多账户支持与灵活负载均衡（轮询 Round-Robin、加权轮询 WRR、主备优先 Fill-First、智能临期优先 Smart Quota、步调均衡 Pace Quota）
+- 会话亲和度（Session Affinity）跨服务重启持久化与滑动 TTL，最大化 Prompt Cache 命中率
+- 简单的 CLI 身份验证流程（Gemini、OpenAI、Claude、Grok、WorkBuddy、OpenCode）
 - 支持 Gemini AIStudio API 密钥
 - 支持 AI Studio Build 多账户轮询
 - 支持 Claude Code 多账户轮询
 - 支持 OpenAI Codex 多账户轮询
 - 支持 Grok Build 多账户轮询
+- 腾讯 WorkBuddy / CodeBuddy 原生管理套件（每日自动签到、积分流水、双端额度透视与 WAF 流量清洗）
 - 通过配置接入上游 OpenAI 兼容提供商（例如 OpenRouter）
 - 可复用的 Go SDK（见 `docs/sdk-usage_CN.md`）
 
@@ -335,6 +337,13 @@ CLIProxyAPI 的 Rust 移植版，读取相同的 `config.yaml` 和认证文件�
 
 > [!NOTE]  
 > 如果你开发了 CLIProxyAPI 的移植或衍生项目，请提交 PR 将其添加到此列表中。
+
+## 特别鸣谢（Acknowledgements）
+
+衷心感谢以下开源项目带来的技术灵感、架构设计与生态贡献：
+
+- **[Magpie](https://github.com/magpie-project)**：特别感谢 Magpie 项目在**跨服务重启会话亲和度（Session Affinity）持久化**、**滑动 TTL 会话窗口**、**限流池沉降算法**与**零知识脱敏日志**方面所给予的深度架构启发。
+- **[WorkBuddy](https://github.com/workbuddy)**：特别感谢 WorkBuddy 项目在**腾讯 Copilot / CodeBuddy / WorkBuddy 双端协议逆向**、**计费计量接口发现**、**WAF 指令清洗规避**与**自动化签到保活流程**上的探索与技术洞察。
 
 ## 许可证
 
