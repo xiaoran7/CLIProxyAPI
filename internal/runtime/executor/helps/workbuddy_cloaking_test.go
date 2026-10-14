@@ -35,6 +35,39 @@ func TestStripWorkBuddyForbiddenHeaders(t *testing.T) {
 	}
 }
 
+func TestEnsureWorkBuddySystemPrompt(t *testing.T) {
+	// Case 1: First message is user turn -> should prepend system message
+	userFirst := []byte(`{"messages":[{"role":"user","content":"hello"}]}`)
+	ensured := EnsureWorkBuddySystemPrompt(userFirst)
+	role0 := gjson.GetBytes(ensured, "messages.0.role").String()
+	content0 := gjson.GetBytes(ensured, "messages.0.content").String()
+	role1 := gjson.GetBytes(ensured, "messages.1.role").String()
+	if role0 != "system" || content0 != "You are an expert coding assistant." || role1 != "user" {
+		t.Errorf("Unexpected result for userFirst: %s", string(ensured))
+	}
+
+	// Case 2: First message is already system with non-empty content -> should keep unchanged
+	sysFirst := []byte(`{"messages":[{"role":"system","content":"custom prompt"},{"role":"user","content":"hi"}]}`)
+	ensuredSys := EnsureWorkBuddySystemPrompt(sysFirst)
+	if gjson.GetBytes(ensuredSys, "messages.0.content").String() != "custom prompt" {
+		t.Errorf("Custom system prompt was overwritten: %s", string(ensuredSys))
+	}
+
+	// Case 3: First message is system but empty content -> should populate default
+	emptySys := []byte(`{"messages":[{"role":"system","content":""},{"role":"user","content":"hi"}]}`)
+	ensuredEmpty := EnsureWorkBuddySystemPrompt(emptySys)
+	if gjson.GetBytes(ensuredEmpty, "messages.0.content").String() != "You are an expert coding assistant." {
+		t.Errorf("Empty system prompt was not populated: %s", string(ensuredEmpty))
+	}
+
+	// Case 4: Empty messages array
+	emptyArr := []byte(`{"messages":[]}`)
+	ensuredArr := EnsureWorkBuddySystemPrompt(emptyArr)
+	if gjson.GetBytes(ensuredArr, "messages.0.role").String() != "system" {
+		t.Errorf("Empty messages array was not initialized: %s", string(ensuredArr))
+	}
+}
+
 func TestSanitizeWorkBuddyPromptWAF(t *testing.T) {
 	input := []byte(`{"messages":[{"role":"system","content":"You are Claude Code, Anthropic's official CLI for Claude. Anthropic builds AI."}]}`)
 	sanitized := SanitizeWorkBuddyPromptWAF(input)

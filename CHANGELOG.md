@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **WorkBuddy Multi-Account Free Model Routing & WAF Protocol Compliance (`conductor_selection.go`, `workbuddy_cloaking.go`, `workbuddy_cloaking_test.go`)**:
+  - **Dynamic Provider Alias Resolution**: Added automatic executor resolution in `conductor_selection.go` (`executorLocked`), routing provider identities `workbuddy-cn`, `workbuddy-intl`, and `copilot-tencent` to the unified `WorkBuddyExecutor`, preventing `auth_not_found` dispatch failures when targeting domestic credentials.
+  - **Automated System Prompt Injection**: Tencent WAF strictly enforces error `11128` (`first message is not system prompt`) on chat streams; implemented `EnsureWorkBuddySystemPrompt` in `workbuddy_cloaking.go` to automatically prepend or backfill `{"role": "system", "content": "You are an expert coding assistant."}` when missing or blank.
+  - **Free Model Alias Normalization**: Stripped `-free` suffixes (`deepseek-v4.1-flash-free`, `glm-5.3-flash-free`, `hy4-preview-f-free`) to upstream model identifiers in `SanitizeWorkBuddyPromptWAF`.
+  - **Regression Coverage**: Added unit tests in `workbuddy_cloaking_test.go` verifying system prompt prepending, preservation of custom system messages, and empty-array fallback handling.
+
 ### Merged
 - **Sync with Upstream (`router-for-me/CLIProxyAPI:main`)**:
   - Merged 28 upstream commits bringing models and stability enhancements:

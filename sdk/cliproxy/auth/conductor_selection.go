@@ -1609,6 +1609,8 @@ func (m *Manager) executorLocked(provider string) (ProviderExecutor, bool) {
 		switch strings.ToLower(provider) {
 		case "kimi-ai", "kimi.ai", "kimi.com":
 			executor, okExecutor = m.executors["kimi"]
+		case "workbuddy-cn", "workbuddy-intl", "copilot-tencent":
+			executor, okExecutor = m.executors["workbuddy"]
 		}
 	}
 	if !okExecutor || executor == nil {

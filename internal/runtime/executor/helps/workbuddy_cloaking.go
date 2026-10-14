@@ -30,12 +30,56 @@ func StripWorkBuddyForbiddenHeaders(req *http.Request) {
 	req.Header.Del("x-zcode-trace-id")
 }
 
-// SanitizeWorkBuddyPromptWAF rewrites prompt substrings that trigger Tencent WAF error 11128
-// and normalizes -free model aliases to their canonical upstream model IDs.
+// EnsureWorkBuddySystemPrompt ensures that the first message in the payload is a system prompt,
+// injecting a default one if absent, to satisfy Tencent WAF rules.
+func EnsureWorkBuddySystemPrompt(payload []byte) []byte {
+	if len(payload) == 0 {
+		return payload
+	}
+	msgs := gjson.GetBytes(payload, "messages")
+	if !msgs.Exists() || !msgs.IsArray() {
+		return payload
+	}
+	arr := msgs.Array()
+	if len(arr) == 0 {
+		newRaw := `[{"role":"system","content":"You are an expert coding assistant."}]`
+		if updated, err := sjson.SetRawBytes(payload, "messages", []byte(newRaw)); err == nil {
+			return updated
+		}
+		return payload
+	}
+
+	firstMsg := arr[0]
+	firstRole := strings.TrimSpace(firstMsg.Get("role").String())
+	if firstRole == "system" {
+		content := strings.TrimSpace(firstMsg.Get("content").String())
+		if content != "" {
+			return payload
+		}
+		if updated, err := sjson.SetBytes(payload, "messages.0.content", "You are an expert coding assistant."); err == nil {
+			return updated
+		}
+		return payload
+	}
+
+	raw := strings.TrimSpace(msgs.Raw)
+	if strings.HasPrefix(raw, "[") {
+		newRaw := `[{"role":"system","content":"You are an expert coding assistant."},` + strings.TrimPrefix(raw, "[")
+		if updated, err := sjson.SetRawBytes(payload, "messages", []byte(newRaw)); err == nil {
+			return updated
+		}
+	}
+	return payload
+}
+
+// SanitizeWorkBuddyPromptWAF rewrites prompt substrings that trigger Tencent WAF error 11128,
+// normalizes -free model aliases to their canonical upstream model IDs,
+// and guarantees the first message is a valid system prompt.
 func SanitizeWorkBuddyPromptWAF(payload []byte) []byte {
 	if len(payload) == 0 {
 		return payload
 	}
+	payload = EnsureWorkBuddySystemPrompt(payload)
 	if modelRes := gjson.GetBytes(payload, "model"); modelRes.Exists() {
 		m := strings.TrimSpace(modelRes.String())
 		if strings.HasSuffix(strings.ToLower(m), "-free") {
