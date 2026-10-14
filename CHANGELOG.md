@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Extended `normalizeRoutingStrategy` in backend handler (`internal/api/handlers/management/config_basic.go`) and added regression tests to accept `smart` and `pace` via management REST endpoints.
 
 ### Fixed
+- **WorkBuddy Suite API Request Path Fix in CPAMC (`management.html`)**:
+  - Corrected WorkBuddy checkin endpoints from absolute `/v8/management/workbuddy/checkin` to relative `/workbuddy/checkin` under the Axios API client `G`.
+  - Resolved 404 Not Found error caused by URL duplication (`/v8/management/v8/management/workbuddy/checkin`) because `G.instance.defaults.baseURL` already includes `/v8/management`.
+  - Re-verified 100% clean ESM AST syntax across both bundles and deployed to `us-zenix` and `vps-tokyo-02`.
 - **CPAMC Control Panel Syntax Repair (`management.html`)**:
   - Fixed unclosed JSX child container div after `j.map(...)` in `WorkBuddySuite` checkin drawer tab list.
   - Removed dangling open parenthesis in plugin drawer body ternary expression (`children:x&&v?v.id===\`workbuddy\`?...`).
