@@ -36,6 +36,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Nickname Resolution**: Exported `workbuddy.ExtractNickname` and added `RecordCheckin` to ensure individual manual check-in updates persist immediately to `workbuddy_checkins.json`.
 
 ### Documentation
+- **Purge Third-Party Ads & Overhaul Fork Architecture Documentation (`README.md` & `README_CN.md`)**:
+  - Completely purged third-party ad links, paid relay affiliate promotions, and irrelevant sponsorship tables from the root documentation.
+  - Rewrote the project overview to focus entirely on fork-specific architectural innovations: Tencent WorkBuddy / CodeBuddy dual-realm integration, OpenCode 1M free tier protocol support, five multi-strategy quota load balancing modes (Smart & Pace Quota), cross-restart persistent session affinity (`session_affinity.json`), streaming loop guard circuit breaker, SSE keepalive pumper, zero-knowledge log redaction, and turnkey CPAMC v1.26.2 management suite.
 - **Updated Project Overview and Special Acknowledgements (`README.md` & `README_CN.md`)**:
   - Added multi-strategy load balancing features (Round-Robin, Weighted Round-Robin, Fill-First, Smart Quota, Pace Quota) and persistent session affinity across restarts.
   - Documented native WorkBuddy & CodeBuddy management suite, automated daily check-in, points tracking, and dual-realm integration.
