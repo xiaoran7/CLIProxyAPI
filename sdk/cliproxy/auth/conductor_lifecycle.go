@@ -61,6 +61,9 @@ func (m *Manager) RegisterExecutor(executor ProviderExecutor) {
 	if replaced == nil || replaced == executor {
 		return
 	}
+	if sharer, ok := replaced.(ExecutionSessionSharer); ok && sharer != nil && sharer.SharesExecutionSessionsWith(executor) {
+		return
+	}
 	if closer, ok := replaced.(ExecutionSessionCloser); ok && closer != nil {
 		closer.CloseExecutionSession(CloseAllExecutionSessionsID)
 	}
@@ -415,7 +418,9 @@ func (m *Manager) Remove(ctx context.Context, id string) {
 
 	if provider != "" {
 		if exec, ok := m.Executor(provider); ok && exec != nil {
-			if closer, okCloser := exec.(ExecutionSessionCloser); okCloser {
+			if authCloser, okAuthCloser := exec.(AuthExecutionSessionCloser); okAuthCloser && authCloser != nil {
+				authCloser.CloseAuthExecutionSessions(id)
+			} else if closer, okCloser := exec.(ExecutionSessionCloser); okCloser {
 				closer.CloseExecutionSession(CloseAllExecutionSessionsID)
 			}
 		}

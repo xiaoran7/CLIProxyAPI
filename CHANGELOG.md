@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Merged
+- **Upstream v8.0.26 & v8.0.27 Core Alignment (`upstream/main`)**:
+  - Synchronized official commits up to `bf934162` (`v8.0.27`).
+  - **WebSocket Session Preservation Across Reloads**: Preserved active Codex and xAI WebSocket sessions during config reloads and single-auth removals via `ExecutionSessionSharer` and `AuthExecutionSessionCloser` (`sdk/cliproxy/auth/conductor.go`, `internal/runtime/executor/`).
+  - **Request Body Size Limiting (`server.max-request-body-bytes`)**: Added protection against payload abuse with HTTP 413 handling across handlers and management endpoints (`internal/api/handlers/`).
+  - **Multi-Auth & State Management in Plugins**: Enhanced plugin auth handling with multi-auth file parsing, stale auth unregistration, dynamic auth ID assignment, and file-based deduplication (`internal/pluginhost/auth_callbacks.go`).
+  - **Pre-First-Token Streaming Keep-Alive**: Added `streaming.send-keepalive-before-ft` option to pump SSE heartbeats before initial token generation, gracefully handling early errors after headers commit.
+  - **Conflict Resolution**: Cleanly resolved import collision in `internal/api/handlers/management/plugin_quota.go`, preserving native WorkBuddy quota provider while integrating upstream `clienterror` size limit handling.
+
 ### Added
 - **WorkBuddy Unified Management Suite (`WorkBuddySuite`) in CPAMC Control Panel**:
   - Consolidated all WorkBuddy capabilities into a single unified plugin entry in the Plugins view (`/plugins`), featuring custom status badges (`每日自动签到 + 国际/国内双端`) and a dedicated `[管理套件]` primary action button.
