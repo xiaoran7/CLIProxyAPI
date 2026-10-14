@@ -369,25 +369,155 @@ func TestConvertGeminiResponseToClaudeStream_PartlessMalformedFunctionCallCloses
 	output = append(output, bytes.Join(ConvertGeminiResponseToClaude(ctx, "claude-opus-5-5", requestJSON, requestJSON, []byte("[DONE]"), &param), nil)...)
 	outputText := string(output)
 
-	if !strings.Contains(outputText, `"type":"message_delta"`) {
-		t.Fatalf("expected message_delta in output:\n%s", outputText)
+	if strings.Contains(outputText, `"stop_reason":"refusal"`) {
+		t.Fatalf("unexpected refusal stop_reason in output:\n%s", outputText)
 	}
-	if !strings.Contains(outputText, `"type":"message_stop"`) {
-		t.Fatalf("expected message_stop in output:\n%s", outputText)
+	if strings.Contains(outputText, `"type":"message_delta"`) {
+		t.Fatalf("unexpected message_delta in output:\n%s", outputText)
+	}
+	if strings.Contains(outputText, `"type":"message_stop"`) {
+		t.Fatalf("unexpected message_stop in output:\n%s", outputText)
+	}
+	if !strings.Contains(outputText, "event: error\n") {
+		t.Fatalf("expected SSE error event in output:\n%s", outputText)
 	}
 
-	var foundDelta bool
+	var foundError bool
 	for _, line := range strings.Split(outputText, "\n") {
-		if strings.HasPrefix(line, "data: ") && strings.Contains(line, `"type":"message_delta"`) {
-			foundDelta = true
-			deltaJSON := gjson.Parse(strings.TrimPrefix(line, "data: "))
-			if got := deltaJSON.Get("delta.stop_reason").String(); got != "refusal" {
-				t.Fatalf("stop_reason = %q, want refusal. Payload: %s", got, line)
+		if strings.HasPrefix(line, "data: ") && strings.Contains(line, `"type":"error"`) {
+			foundError = true
+			errJSON := gjson.Parse(strings.TrimPrefix(line, "data: "))
+			if got := errJSON.Get("error.type").String(); got != "api_error" {
+				t.Fatalf("error.type = %q, want api_error. Payload: %s", got, line)
+			}
+			if !strings.Contains(errJSON.Get("error.message").String(), "MALFORMED_FUNCTION_CALL") {
+				t.Fatalf("error.message = %q, want mention of MALFORMED_FUNCTION_CALL. Payload: %s", errJSON.Get("error.message").String(), line)
 			}
 		}
 	}
-	if !foundDelta {
-		t.Fatalf("failed to find message_delta in output:\n%s", outputText)
+	if !foundError {
+		t.Fatalf("failed to find error event data in output:\n%s", outputText)
+	}
+}
+
+func TestConvertGeminiResponseToClaudeStream_MalformedFunctionCallAfterThinkingEmitsError(t *testing.T) {
+	requestJSON := []byte(`{"model":"claude-opus-5-5","messages":[{"role":"user","content":"hi"}]}`)
+	chunk1 := []byte(`{
+		"candidates": [{
+			"content": {"role": "model", "parts": [{"thought": true, "text": "planning tool call"}]},
+			"index": 0
+		}],
+		"modelVersion": "m"
+	}`)
+	chunk2 := []byte(`{
+		"candidates": [{
+			"content": {"role": "model", "parts": []},
+			"index": 0,
+			"finishReason": "MALFORMED_FUNCTION_CALL"
+		}],
+		"modelVersion": "m",
+		"usageMetadata": {
+			"promptTokenCount": 50,
+			"candidatesTokenCount": 10,
+			"thoughtsTokenCount": 313,
+			"totalTokenCount": 373
+		}
+	}`)
+
+	var param any
+	ctx := context.Background()
+	output := bytes.Join(ConvertGeminiResponseToClaude(ctx, "claude-opus-5-5", requestJSON, requestJSON, chunk1, &param), nil)
+	output = append(output, bytes.Join(ConvertGeminiResponseToClaude(ctx, "claude-opus-5-5", requestJSON, requestJSON, chunk2, &param), nil)...)
+	output = append(output, bytes.Join(ConvertGeminiResponseToClaude(ctx, "claude-opus-5-5", requestJSON, requestJSON, []byte("[DONE]"), &param), nil)...)
+	outputText := string(output)
+
+	stopIdx := strings.Index(outputText, "event: content_block_stop\n")
+	errIdx := strings.Index(outputText, "event: error\n")
+	if stopIdx < 0 || errIdx < 0 || stopIdx >= errIdx {
+		t.Fatalf("expected content_block_stop before error event in output:\n%s", outputText)
+	}
+	if strings.Contains(outputText, `"type":"message_delta"`) || strings.Contains(outputText, `"type":"message_stop"`) {
+		t.Fatalf("unexpected normal completion events after MALFORMED_FUNCTION_CALL:\n%s", outputText)
+	}
+}
+
+func TestConvertGeminiResponseToClaudeStream_MalformedFunctionCallWithoutUsageAndDuplicateTerminalChunk(t *testing.T) {
+	requestJSON := []byte(`{"model":"claude-opus-5-5","messages":[{"role":"user","content":"hi"}]}`)
+	chunkWithoutUsage := []byte(`{
+		"candidates": [{
+			"content": {"role": "model", "parts": []},
+			"index": 0,
+			"finishReason": "MALFORMED_FUNCTION_CALL"
+		}],
+		"modelVersion": "m"
+	}`)
+	duplicateTerminalChunk := []byte(`{
+		"candidates": [{
+			"content": {"role": "model", "parts": [{"text": "late text"}]},
+			"index": 0,
+			"finishReason": "MALFORMED_FUNCTION_CALL"
+		}],
+		"modelVersion": "m",
+		"usageMetadata": {
+			"promptTokenCount": 50,
+			"candidatesTokenCount": 10,
+			"totalTokenCount": 60
+		}
+	}`)
+
+	var param any
+	ctx := context.Background()
+	output := bytes.Join(ConvertGeminiResponseToClaude(ctx, "claude-opus-5-5", requestJSON, requestJSON, chunkWithoutUsage, &param), nil)
+	lateOutput := bytes.Join(ConvertGeminiResponseToClaude(ctx, "claude-opus-5-5", requestJSON, requestJSON, duplicateTerminalChunk, &param), nil)
+	doneOutput := bytes.Join(ConvertGeminiResponseToClaude(ctx, "claude-opus-5-5", requestJSON, requestJSON, []byte("[DONE]"), &param), nil)
+	if len(lateOutput) != 0 {
+		t.Fatalf("expected duplicate terminal chunk after error to emit nothing, got:\n%s", string(lateOutput))
+	}
+	if len(doneOutput) != 0 {
+		t.Fatalf("expected [DONE] after error to emit nothing, got:\n%s", string(doneOutput))
+	}
+	outputText := string(output)
+	if got := strings.Count(outputText, "event: error\n"); got != 1 {
+		t.Fatalf("error event count = %d, want 1. Output:\n%s", got, outputText)
+	}
+}
+
+func TestConvertGeminiResponseToClaude_MalformedFunctionCallWithToolUsePreservesToolUse(t *testing.T) {
+	requestJSON := []byte(`{"model":"claude-opus-5-5","messages":[{"role":"user","content":"hi"}],"tools":[{"name":"Bash","input_schema":{"type":"object"}}]}`)
+	rawJSON := []byte(`{
+		"candidates": [{
+			"content": {
+				"role": "model",
+				"parts": [{"functionCall": {"name": "Bash", "args": {"command": "ls"}}}]
+			},
+			"index": 0,
+			"finishReason": "MALFORMED_FUNCTION_CALL"
+		}],
+		"usageMetadata": {
+			"promptTokenCount": 50,
+			"candidatesTokenCount": 10,
+			"totalTokenCount": 60
+		},
+		"modelVersion": "m",
+		"responseId": "resp-tool"
+	}`)
+
+	ctx := context.Background()
+	nonStream := ConvertGeminiResponseToClaudeNonStream(ctx, "claude-opus-5-5", requestJSON, requestJSON, rawJSON, nil)
+	nonStreamJSON := gjson.ParseBytes(nonStream)
+	if got := nonStreamJSON.Get("stop_reason").String(); got != "tool_use" {
+		t.Fatalf("non-stream stop_reason = %q, want tool_use. Output: %s", got, string(nonStream))
+	}
+
+	var param any
+	streamOut := bytes.Join(ConvertGeminiResponseToClaude(ctx, "claude-opus-5-5", requestJSON, requestJSON, rawJSON, &param), nil)
+	streamOut = append(streamOut, bytes.Join(ConvertGeminiResponseToClaude(ctx, "claude-opus-5-5", requestJSON, requestJSON, []byte("[DONE]"), &param), nil)...)
+	streamText := string(streamOut)
+	if strings.Contains(streamText, "event: error\n") {
+		t.Fatalf("unexpected error event when valid functionCall is present:\n%s", streamText)
+	}
+	if !strings.Contains(streamText, `"stop_reason":"tool_use"`) {
+		t.Fatalf("expected stop_reason tool_use in stream output:\n%s", streamText)
 	}
 }
 
@@ -447,11 +577,11 @@ func TestConvertGeminiResponseToClaudeNonStream_SafetyAndMalformedFunctionCallRe
 		wantReason   string
 	}{
 		{finishReason: "SAFETY", wantReason: "refusal"},
-		{finishReason: "MALFORMED_FUNCTION_CALL", wantReason: "refusal"},
 		{finishReason: "RECITATION", wantReason: "refusal"},
 		{finishReason: "PROHIBITED_CONTENT", wantReason: "refusal"},
 		{finishReason: "SPII", wantReason: "refusal"},
 		{finishReason: "BLOCKLIST", wantReason: "refusal"},
+		{finishReason: "IMAGE_SAFETY", wantReason: "refusal"},
 		{finishReason: "MAX_TOKENS", wantReason: "max_tokens"},
 		{finishReason: "STOP", wantReason: "end_turn"},
 	}
@@ -478,6 +608,38 @@ func TestConvertGeminiResponseToClaudeNonStream_SafetyAndMalformedFunctionCallRe
 				t.Fatalf("stop_reason = %q, want %q. Output: %s", got, tc.wantReason, string(output))
 			}
 		})
+	}
+}
+
+func TestConvertGeminiResponseToClaudeNonStream_MalformedFunctionCallReturnsAPIError(t *testing.T) {
+	requestJSON := []byte(`{"model":"claude-opus-5-5","messages":[{"role":"user","content":"hi"}]}`)
+	rawJSON := []byte(`{
+		"candidates": [{
+			"content": {"role": "model", "parts": []},
+			"finishReason": "MALFORMED_FUNCTION_CALL"
+		}],
+		"usageMetadata": {
+			"promptTokenCount": 120,
+			"candidatesTokenCount": 37,
+			"totalTokenCount": 157
+		},
+		"modelVersion": "m",
+		"responseId": "resp-test"
+	}`)
+
+	output := ConvertGeminiResponseToClaudeNonStream(context.Background(), "claude-opus-5-5", requestJSON, requestJSON, rawJSON, nil)
+	outputJSON := gjson.ParseBytes(output)
+	if got := outputJSON.Get("stop_reason").String(); got == "refusal" {
+		t.Fatalf("unexpected stop_reason = %q. Output: %s", got, string(output))
+	}
+	if got := outputJSON.Get("type").String(); got != "error" {
+		t.Fatalf("type = %q, want error. Output: %s", got, string(output))
+	}
+	if got := outputJSON.Get("error.type").String(); got != "api_error" {
+		t.Fatalf("error.type = %q, want api_error. Output: %s", got, string(output))
+	}
+	if !strings.Contains(outputJSON.Get("error.message").String(), "MALFORMED_FUNCTION_CALL") {
+		t.Fatalf("error.message = %q, want mention of MALFORMED_FUNCTION_CALL. Output: %s", outputJSON.Get("error.message").String(), string(output))
 	}
 }
 

@@ -36,6 +36,12 @@ type Params struct {
 	CachedTokens     int64
 }
 
+const geminiMalformedFunctionCallErrorPayload = `{"type":"error","error":{"type":"api_error","message":"Gemini response finished with MALFORMED_FUNCTION_CALL"}}`
+
+func isGeminiMalformedFunctionCall(finishReason string, sawToolCall bool) bool {
+	return finishReason == "MALFORMED_FUNCTION_CALL" && !sawToolCall
+}
+
 func resolveGeminiClaudeStopReason(finishReason string, sawToolCall bool) string {
 	if sawToolCall {
 		return "tool_use"
@@ -43,7 +49,7 @@ func resolveGeminiClaudeStopReason(finishReason string, sawToolCall bool) string
 	switch finishReason {
 	case "MAX_TOKENS":
 		return "max_tokens"
-	case "SAFETY", "RECITATION", "PROHIBITED_CONTENT", "SPII", "BLOCKLIST", "MALFORMED_FUNCTION_CALL", "IMAGE_SAFETY":
+	case "SAFETY", "RECITATION", "PROHIBITED_CONTENT", "SPII", "BLOCKLIST", "IMAGE_SAFETY":
 		return "refusal"
 	case "STOP", "FINISH_REASON_UNSPECIFIED", "UNKNOWN", "":
 		return "end_turn"
@@ -91,6 +97,20 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 	p := (*param).(*Params)
 
 	if bytes.Equal(rawJSON, []byte("[DONE]")) {
+		if isGeminiMalformedFunctionCall(p.FinishReason, p.SawToolCall) {
+			if p.ResponseType != 0 {
+				appendEvent("content_block_stop", fmt.Sprintf(`{"type":"content_block_stop","index":%d}`, p.ResponseIndex))
+				p.ResponseType = 0
+			}
+			if !p.HasFinalEvents {
+				appendEvent("error", geminiMalformedFunctionCallErrorPayload)
+				p.HasFinalEvents = true
+			}
+			if len(output) > 0 {
+				return [][]byte{output}
+			}
+			return [][]byte{}
+		}
 		if p.HasFirstResponse && !p.HasContent {
 			appendEvent("content_block_start", fmt.Sprintf(`{"type":"content_block_start","index":%d,"content_block":{"type":"text","text":""}}`, p.ResponseIndex))
 			p.ResponseType = 1
@@ -115,6 +135,10 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 			appendEvent("message_stop", `{"type":"message_stop"}`)
 			return [][]byte{output}
 		}
+		return [][]byte{}
+	}
+
+	if isGeminiMalformedFunctionCall(p.FinishReason, p.SawToolCall) && p.HasFinalEvents {
 		return [][]byte{}
 	}
 
@@ -336,6 +360,16 @@ func ConvertGeminiResponseToClaude(_ context.Context, _ string, originalRequestR
 		(*param).(*Params).CachedTokens = cachedTokens
 	}
 
+	if isGeminiMalformedFunctionCall((*param).(*Params).FinishReason, (*param).(*Params).SawToolCall) && !(*param).(*Params).HasFinalEvents {
+		if (*param).(*Params).ResponseType != 0 {
+			appendEvent("content_block_stop", fmt.Sprintf(`{"type":"content_block_stop","index":%d}`, (*param).(*Params).ResponseIndex))
+			(*param).(*Params).ResponseType = 0
+		}
+		appendEvent("error", geminiMalformedFunctionCallErrorPayload)
+		(*param).(*Params).HasFinalEvents = true
+		return [][]byte{output}
+	}
+
 	if usageResult.Exists() && bytes.Contains(rawJSON, []byte(`"finishReason"`)) && !(*param).(*Params).HasFinalEvents {
 		if !(*param).(*Params).HasContent && (*param).(*Params).HasFirstResponse {
 			appendEvent("content_block_start", fmt.Sprintf(`{"type":"content_block_start","index":%d,"content_block":{"type":"text","text":""}}`, (*param).(*Params).ResponseIndex))
@@ -532,6 +566,9 @@ func ConvertGeminiResponseToClaudeNonStream(_ context.Context, _ string, origina
 	var finishReason string
 	if finish := root.Get("candidates.0.finishReason"); finish.Exists() {
 		finishReason = finish.String()
+	}
+	if isGeminiMalformedFunctionCall(finishReason, hasToolCall) {
+		return []byte(geminiMalformedFunctionCallErrorPayload)
 	}
 	out, _ = sjson.SetBytes(out, "stop_reason", resolveGeminiClaudeStopReason(finishReason, hasToolCall))
 
