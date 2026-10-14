@@ -152,7 +152,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 	var errDial error
 	dialCtx := ctx
 	if cliproxyexecutor.RequiredUpstreamWebsocket(ctx) {
-		conn, closer = existingWebsocketSessionConn(sess, authID, wsURL, executionProxyURL(ctx, e.cfg, auth))
+		conn, closer = existingWebsocketSessionConn(sess, authID, wsURL, executionProxyURL(ctx, sess.effectiveConfig(authID, e.cfg), auth))
 		if conn == nil {
 			return resp, cliproxyexecutor.NewUpstreamWebsocketReplayRequiredError()
 		}
