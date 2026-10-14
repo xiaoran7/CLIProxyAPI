@@ -252,6 +252,91 @@ func TestAuthFileLookupAndEntryBuildConcurrentEnsureIndex(t *testing.T) {
 	wg.Wait()
 }
 
+func TestListAuthFilesExcludesInternalStorageFiles(t *testing.T) {
+	t.Setenv("MANAGEMENT_PASSWORD", "")
+
+	authDir := t.TempDir()
+	files := []string{"session_affinity.json", "workbuddy_checkins.json", "valid_auth.json"}
+	for _, fn := range files {
+		_ = os.WriteFile(filepath.Join(authDir, fn), []byte(`{"type":"codex"}`), 0o600)
+	}
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	registerAuthForLookupTest(t, manager, &coreauth.Auth{
+		ID:       "session_affinity.json",
+		FileName: "session_affinity.json",
+		Provider: "unknown",
+		Status:   coreauth.StatusActive,
+		Attributes: map[string]string{
+			"path": filepath.Join(authDir, "session_affinity.json"),
+		},
+	})
+	registerAuthForLookupTest(t, manager, &coreauth.Auth{
+		ID:       "workbuddy_checkins.json",
+		FileName: "workbuddy_checkins.json",
+		Provider: "unknown",
+		Status:   coreauth.StatusActive,
+		Attributes: map[string]string{
+			"path": filepath.Join(authDir, "workbuddy_checkins.json"),
+		},
+	})
+	registerAuthForLookupTest(t, manager, &coreauth.Auth{
+		ID:       "valid_auth.json",
+		FileName: "valid_auth.json",
+		Provider: "codex",
+		Status:   coreauth.StatusActive,
+		Attributes: map[string]string{
+			"path": filepath.Join(authDir, "valid_auth.json"),
+		},
+	})
+
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: authDir}, manager)
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v0/management/auth-files", nil)
+
+	h.ListAuthFiles(ctx)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var payload struct {
+		Files []map[string]any `json:"files"`
+	}
+	if errDecode := json.Unmarshal(rec.Body.Bytes(), &payload); errDecode != nil {
+		t.Fatalf("decode response: %v", errDecode)
+	}
+	if len(payload.Files) != 1 {
+		t.Fatalf("files len = %d, want 1 payload=%s", len(payload.Files), rec.Body.String())
+	}
+	if got := payload.Files[0]["name"]; got != "valid_auth.json" {
+		t.Fatalf("expected valid_auth.json, got %v", got)
+	}
+
+	// Test disk fallback excludes internal storage files
+	hDisk := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: authDir}, nil)
+	recDisk := httptest.NewRecorder()
+	ctxDisk, _ := gin.CreateTestContext(recDisk)
+	ctxDisk.Request = httptest.NewRequest(http.MethodGet, "/v0/management/auth-files", nil)
+
+	hDisk.ListAuthFiles(ctxDisk)
+	if recDisk.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", recDisk.Code, http.StatusOK, recDisk.Body.String())
+	}
+	var payloadDisk struct {
+		Files []map[string]any `json:"files"`
+	}
+	if errDecode := json.Unmarshal(recDisk.Body.Bytes(), &payloadDisk); errDecode != nil {
+		t.Fatalf("decode disk response: %v", errDecode)
+	}
+	if len(payloadDisk.Files) != 1 {
+		t.Fatalf("disk files len = %d, want 1 payload=%s", len(payloadDisk.Files), recDisk.Body.String())
+	}
+	if got := payloadDisk.Files[0]["name"]; got != "valid_auth.json" {
+		t.Fatalf("disk expected valid_auth.json, got %v", got)
+	}
+}
+
 func registerAuthForLookupTest(t *testing.T, manager *coreauth.Manager, auth *coreauth.Auth) {
 	t.Helper()
 	if _, errRegister := manager.Register(context.Background(), auth); errRegister != nil {

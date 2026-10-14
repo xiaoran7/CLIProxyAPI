@@ -47,6 +47,25 @@ var (
 	newCodexOAuthService  = func(cfg *config.Config) codexOAuthService { return codex.NewCodexAuth(cfg) }
 )
 
+// internalStorageFileNames lists internal data persistence files stored in auths directory
+// that must not be surfaced as user credentials.
+var internalStorageFileNames = map[string]struct{}{
+	"session_affinity.json":   {},
+	"workbuddy_checkins.json": {},
+}
+
+func isInternalStorageFile(name string) bool {
+	clean := strings.ToLower(strings.TrimSpace(name))
+	base := filepath.Base(clean)
+	if _, ok := internalStorageFileNames[base]; ok {
+		return true
+	}
+	if _, ok := internalStorageFileNames[clean]; ok {
+		return true
+	}
+	return false
+}
+
 func extractLastRefreshTimestamp(meta map[string]any) (time.Time, bool) {
 	if len(meta) == 0 {
 		return time.Time{}, false
@@ -154,7 +173,7 @@ func (h *Handler) ListAuthFiles(c *gin.Context) {
 	}
 	files := make([]gin.H, 0, len(auths))
 	for _, auth := range auths {
-		if !matchesAuthFileLookup(auth, nameFilter, authIndexFilter) {
+		if !matchesAuthFileLookup(auth, nameFilter, authIndexFilter) || !isAuthFileListable(auth) {
 			continue
 		}
 		if entry := h.buildAuthFileEntry(auth, quota); entry != nil {
@@ -265,11 +284,17 @@ func isAuthFileListable(auth *coreauth.Auth) bool {
 	if auth == nil {
 		return false
 	}
+	if isInternalStorageFile(auth.ID) || isInternalStorageFile(auth.FileName) {
+		return false
+	}
+	path := strings.TrimSpace(authAttribute(auth, "path"))
+	if path != "" && isInternalStorageFile(path) {
+		return false
+	}
 	runtimeOnly := isRuntimeOnlyAuth(auth)
 	if runtimeOnly && (auth.Disabled || auth.Status == coreauth.StatusDisabled) {
 		return false
 	}
-	path := strings.TrimSpace(authAttribute(auth, "path"))
 	if path == "" {
 		return runtimeOnly
 	}
@@ -397,6 +422,9 @@ func (h *Handler) listAuthFilesFromDisk(c *gin.Context, pagination authFilesPagi
 			continue
 		}
 		name := e.Name()
+		if isInternalStorageFile(name) {
+			continue
+		}
 		if nameFilter != "" && name != nameFilter {
 			continue
 		}
@@ -647,12 +675,18 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quota authFileQu
 	if auth == nil {
 		return nil
 	}
+	if isInternalStorageFile(auth.ID) || isInternalStorageFile(auth.FileName) {
+		return nil
+	}
+	path := strings.TrimSpace(authAttribute(auth, "path"))
+	if path != "" && isInternalStorageFile(path) {
+		return nil
+	}
 	auth.EnsureIndex()
 	runtimeOnly := isRuntimeOnlyAuth(auth)
 	if runtimeOnly && (auth.Disabled || auth.Status == coreauth.StatusDisabled) {
 		return nil
 	}
-	path := strings.TrimSpace(authAttribute(auth, "path"))
 	if path == "" && !runtimeOnly {
 		return nil
 	}

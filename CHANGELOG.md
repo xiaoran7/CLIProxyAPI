@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Filter Internal Storage Files from Management Auth Files List (`auth_files.go`)**:
+  - Filtered out internal data persistence files (`session_affinity.json`, `workbuddy_checkins.json`) from `isAuthFileListable`, `buildAuthFileEntryLocked`, and `listAuthFilesFromDisk`.
+  - Prevented internal persistence JSON files in `auths/` directory from being misclassified as `unknown` provider credentials ("其他" / Other) on the CPAMC management panel.
+  - Added unit regression tests `TestListAuthFilesExcludesInternalStorageFiles` to ensure memory and disk fallback listings reliably suppress internal storage files.
 - **WorkBuddy Suite Drawer UX Overhaul & Credential Visibility (`management.html` & `workbuddy_checkin.go`)**:
   - **100% Credential Visibility**: Merged all managed WorkBuddy accounts from `AuthManager` with existing checkin records, rendering un-checked-in domestic accounts as "待签到" and international accounts as "国际版无打卡", eliminating false "未检测到已纳管的 WorkBuddy 账号" alerts.
   - **Drawer Refinement & Separation of Concerns**: Removed legacy "多端授权登录" and "插件设置" tabs from the suite drawer (relegating authentication to the global `/oauth` management panel with quick-action navigation buttons). Retained only "每日自动打卡" and "额度流水与配额" tabs.
