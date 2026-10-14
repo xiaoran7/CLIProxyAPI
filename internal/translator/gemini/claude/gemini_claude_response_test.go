@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/tidwall/gjson"
@@ -859,5 +860,59 @@ func TestConvertGeminiResponseToClaudeStream_Issue6409_ThinkingFollowedBySignedV
 	}
 	if !strings.Contains(outputText, `{"type":"content_block_delta","index":2,"delta":{"type":"text_delta","text":"visible text"}}`) {
 		t.Fatalf("expected block 2 text_delta, got: %s", outputText)
+	}
+}
+
+func TestConvertGeminiResponseToClaudeNonStream_UniqueToolUseIDsAcrossTurns(t *testing.T) {
+	atomic.StoreUint64(&toolUseIDCounter, 0)
+
+	requestJSON := []byte(`{"model":"gemini-4-argon","messages":[{"role":"user","content":"run command"}]}`)
+	rawResponse := []byte(`{
+		"candidates": [{
+			"content": {
+				"parts": [
+					{"functionCall": {"name": "Bash", "args": {"command": "ls"}}}
+				],
+				"role": "model"
+			},
+			"finishReason": "STOP"
+		}],
+		"modelVersion": "gemini-4-argon",
+		"responseId": "resp-tool"
+	}`)
+
+	ctx := context.Background()
+
+	var param any
+	streamBytes := bytes.Join(ConvertGeminiResponseToClaude(ctx, "gemini-4-argon", requestJSON, requestJSON, rawResponse, &param), nil)
+	streamBytes = append(streamBytes, bytes.Join(ConvertGeminiResponseToClaude(ctx, "gemini-4-argon", requestJSON, requestJSON, []byte("[DONE]"), &param), nil)...)
+	var streamToolID string
+	for _, line := range strings.Split(string(streamBytes), "\n") {
+		if strings.HasPrefix(line, "data: ") && strings.Contains(line, `"type":"tool_use"`) {
+			streamToolID = gjson.Get(strings.TrimPrefix(line, "data: "), "content_block.id").String()
+			break
+		}
+	}
+	if streamToolID == "" {
+		t.Fatalf("expected tool_use id in streamed response, got: %s", string(streamBytes))
+	}
+
+	nonStream1 := ConvertGeminiResponseToClaudeNonStream(ctx, "gemini-4-argon", requestJSON, requestJSON, rawResponse, nil)
+	nonStreamID1 := gjson.GetBytes(nonStream1, "content.0.id").String()
+	if nonStreamID1 == "" {
+		t.Fatalf("expected tool_use id in first non-stream response, got: %s", string(nonStream1))
+	}
+
+	nonStream2 := ConvertGeminiResponseToClaudeNonStream(ctx, "gemini-4-argon", requestJSON, requestJSON, rawResponse, nil)
+	nonStreamID2 := gjson.GetBytes(nonStream2, "content.0.id").String()
+	if nonStreamID2 == "" {
+		t.Fatalf("expected tool_use id in second non-stream response, got: %s", string(nonStream2))
+	}
+
+	if nonStreamID1 == streamToolID {
+		t.Fatalf("non-stream tool_use id %q collided with prior streamed tool_use id %q", nonStreamID1, streamToolID)
+	}
+	if nonStreamID1 == nonStreamID2 {
+		t.Fatalf("non-stream tool_use ids repeated across turns: first=%q second=%q", nonStreamID1, nonStreamID2)
 	}
 }
