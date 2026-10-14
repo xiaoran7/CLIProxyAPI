@@ -132,13 +132,15 @@ PackyCode provides special discounts for our software users: register using <a h
 - Streaming, non-streaming, and WebSocket responses where supported
 - Function calling/tools support
 - Multimodal input support (text and images)
-- Multiple accounts with round-robin load balancing (Gemini, OpenAI, Claude, Grok)
-- Simple CLI authentication flows (Gemini, OpenAI, Claude, Grok)
+- Multiple accounts with flexible load balancing (Round-Robin, Weighted Round-Robin, Fill-First, Smart Quota, and Pace Quota)
+- Session affinity with persistent cross-restart state and sliding TTL for prompt caching
+- Simple CLI authentication flows (Gemini, OpenAI, Claude, Grok, WorkBuddy, OpenCode)
 - Generative Language API Key support
 - AI Studio Build multi-account load balancing
 - Claude Code multi-account load balancing
 - OpenAI Codex multi-account load balancing
 - Grok Build multi-account load balancing
+- WorkBuddy & CodeBuddy multi-account suite with automated daily check-in and quota meters
 - OpenAI-compatible upstream providers via config (e.g., OpenRouter)
 - Reusable Go SDK for embedding the proxy (see `docs/sdk-usage.md`)
 
@@ -342,6 +344,13 @@ A Rust port of CLIProxyAPI that reads the same `config.yaml` and auth files and 
 
 > [!NOTE]  
 > If you have developed a port of CLIProxyAPI or a project inspired by it, please open a PR to add it to this list.
+
+## Acknowledgements
+
+Special thanks to the following open-source projects for their ideas, architectural inspiration, and technical contributions:
+
+- **[Magpie](https://github.com/magpie-project)**: Sincere appreciation for the architectural inspiration on persistent session affinity across restarts, sliding-window session affinity TTL, rate limit sink scheduling, and zero-knowledge log/audit redaction.
+- **[WorkBuddy](https://github.com/workbuddy)**: Sincere thanks for the insights and discovery into Tencent CodeBuddy / WorkBuddy dual-realm APIs, billing meter protocols, WAF cloaking practices, and automated daily check-in workflows.
 
 ## License
 

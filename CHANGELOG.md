@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Documentation
+- **Updated Project Overview and Special Acknowledgements (`README.md` & `README_CN.md`)**:
+  - Added multi-strategy load balancing features (Round-Robin, Weighted Round-Robin, Fill-First, Smart Quota, Pace Quota) and persistent session affinity across restarts.
+  - Documented native WorkBuddy & CodeBuddy management suite, automated daily check-in, points tracking, and dual-realm integration.
+  - Added Special Acknowledgements (特别鸣谢) to **Magpie project** (session affinity persistence across restarts, sliding-window TTL, rate-limit sink scheduling, and zero-knowledge redaction) and **WorkBuddy project** (Tencent Copilot/CodeBuddy dual-realm reverse engineering, billing meters, WAF cloaking, and check-in workflows).
+
 ### Added
 - **Smart & Pace Routing Strategies Integration in CPAMC Control Panel (`management.html`) & Management API**:
   - Added `smart` ("临期优先 (Smart Quota)") and `pace` ("步调均衡 (Pace Quota)") options to the visual network settings routing strategy dropdown menu (`Oae`).
