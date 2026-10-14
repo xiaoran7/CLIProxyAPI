@@ -2,6 +2,7 @@
 package workbuddy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -126,6 +127,41 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 				}
 			} else if remainPoints > 0 {
 				remainingFrac = 1.0
+			}
+		}
+	}
+
+	if !hasExplicitPoints {
+		statusURL := baseURL + "/v2/billing/meter/checkin-activity-status"
+		reqActivity, errActivityReq := http.NewRequestWithContext(ctx, http.MethodPost, statusURL, bytes.NewReader([]byte("{}")))
+		if errActivityReq == nil {
+			ApplyHeaders(reqActivity, auth, token)
+			reqActivity.Header.Set("Content-Type", "application/json")
+			respActivity, errActivityDo := client.Do(reqActivity)
+			if errActivityDo == nil {
+				defer func() { _ = respActivity.Body.Close() }()
+				bodyActivity, _ := io.ReadAll(respActivity.Body)
+				if respActivity.StatusCode == http.StatusOK && json.Valid(bodyActivity) {
+					data := gjson.GetBytes(bodyActivity, "data")
+					if data.Exists() {
+						if totalCredits := data.Get("total_credits"); totalCredits.Exists() {
+							remainPoints = totalCredits.Float()
+							hasExplicitPoints = true
+						}
+						if dailyCredit := data.Get("daily_credit"); dailyCredit.Exists() && dailyCredit.Float() > 0 {
+							totalPoints = dailyCredit.Float()
+						}
+						theme := strings.TrimSpace(data.Get("theme_name").String())
+						season := data.Get("season").Int()
+						if theme != "" {
+							if season > 0 {
+								planName = fmt.Sprintf("%s · %s (第%d季)", editionLabel, theme, season)
+							} else {
+								planName = fmt.Sprintf("%s · %s", editionLabel, theme)
+							}
+						}
+					}
+				}
 			}
 		}
 	}

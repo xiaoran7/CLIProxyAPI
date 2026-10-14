@@ -22,7 +22,7 @@ func (h *Handler) GetWorkBuddyCheckin(c *gin.Context) {
 			record, found := engine.GetStatus(authID)
 			if found {
 				c.JSON(http.StatusOK, gin.H{
-					"enabled": true,
+					"enabled": engine.IsEnabled(),
 					"today":   today,
 					"found":   true,
 					"record":  record,
@@ -31,7 +31,7 @@ func (h *Handler) GetWorkBuddyCheckin(c *gin.Context) {
 			}
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"enabled": engine != nil,
+			"enabled": engine != nil && engine.IsEnabled(),
 			"today":   today,
 			"found":   false,
 		})
@@ -97,23 +97,35 @@ func (h *Handler) GetWorkBuddyCheckin(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"enabled": engine != nil,
+		"enabled": engine != nil && engine.IsEnabled(),
 		"today":   today,
 		"records": records,
 	})
 }
 
-// PostWorkBuddyCheckin triggers an immediate checkin for one or all WorkBuddy accounts.
+// PostWorkBuddyCheckin triggers an immediate checkin for one or all WorkBuddy accounts,
+// or toggles the automated check-in engine state if {"enabled": bool} is provided.
 func (h *Handler) PostWorkBuddyCheckin(c *gin.Context) {
 	engine := workbuddy.GetGlobalCheckinEngine()
+	var req struct {
+		AuthID  string `json:"auth_id"`
+		Enabled *bool  `json:"enabled"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	if req.Enabled != nil {
+		if engine != nil {
+			engine.SetEnabled(*req.Enabled)
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"enabled": engine != nil && engine.IsEnabled(),
+		})
+		return
+	}
+
 	authID := strings.TrimSpace(c.Query("auth_id"))
-	if authID == "" {
-		var req struct {
-			AuthID string `json:"auth_id"`
-		}
-		if err := c.ShouldBindJSON(&req); err == nil {
-			authID = strings.TrimSpace(req.AuthID)
-		}
+	if authID == "" && strings.TrimSpace(req.AuthID) != "" {
+		authID = strings.TrimSpace(req.AuthID)
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
@@ -159,5 +171,24 @@ func (h *Handler) PostWorkBuddyCheckin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"today":   workbuddy.TodayBeijing(),
 		"results": map[string]any{},
+	})
+}
+
+// PutWorkBuddyCheckin updates the checkin engine configuration (e.g. enabled state).
+func (h *Handler) PutWorkBuddyCheckin(c *gin.Context) {
+	engine := workbuddy.GetGlobalCheckinEngine()
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	if req.Enabled != nil && engine != nil {
+		engine.SetEnabled(*req.Enabled)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "ok",
+		"enabled": engine != nil && engine.IsEnabled(),
 	})
 }

@@ -271,6 +271,7 @@ type CheckinEngine struct {
 	client     *http.Client
 	stopCh     chan struct{}
 	running    bool
+	enabled    bool
 }
 
 // NewCheckinEngine initializes a new checkin engine with persistence.
@@ -285,9 +286,31 @@ func NewCheckinEngine(storeDir string, authGetter func() []*cliproxyauth.Auth) *
 		authGetter: authGetter,
 		client:     &http.Client{Timeout: 30 * time.Second},
 		stopCh:     make(chan struct{}),
+		enabled:    true,
 	}
 	engine.loadRecords()
 	return engine
+}
+
+// IsEnabled returns whether the automated background check-in scheduler is enabled.
+func (e *CheckinEngine) IsEnabled() bool {
+	if e == nil {
+		return false
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.enabled
+}
+
+// SetEnabled toggles the automated check-in engine on or off and persists state.
+func (e *CheckinEngine) SetEnabled(enabled bool) {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.enabled = enabled
+	e.saveRecordsLocked()
 }
 
 // Start launches the daily background scheduler.
@@ -320,10 +343,12 @@ func (e *CheckinEngine) runLoop() {
 	stopCh := e.stopCh
 	e.mu.RUnlock()
 
-	// Run initial check-in cycle 5 seconds after startup
+	// Run initial check-in cycle 5 seconds after startup if enabled
 	select {
 	case <-time.After(5 * time.Second):
-		e.RunCheckinAll(context.Background())
+		if e.IsEnabled() {
+			e.RunCheckinAll(context.Background())
+		}
 	case <-stopCh:
 		return
 	}
@@ -334,7 +359,9 @@ func (e *CheckinEngine) runLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			e.RunCheckinAll(context.Background())
+			if e.IsEnabled() {
+				e.RunCheckinAll(context.Background())
+			}
 		case <-stopCh:
 			return
 		}
@@ -437,14 +464,34 @@ func (e *CheckinEngine) RecordCheckin(authID string, res CheckinResult) {
 	e.saveRecordsLocked()
 }
 
+type checkinStorePayload struct {
+	Enabled *bool                    `json:"enabled,omitempty"`
+	Records map[string]CheckinResult `json:"records"`
+}
+
 func (e *CheckinEngine) loadRecords() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.enabled = true
 	data, err := os.ReadFile(e.storePath)
 	if err != nil {
 		return
 	}
-	_ = json.Unmarshal(data, &e.records)
+	var payload checkinStorePayload
+	if errUnmarshal := json.Unmarshal(data, &payload); errUnmarshal == nil && (payload.Enabled != nil || payload.Records != nil) {
+		if payload.Records != nil {
+			e.records = payload.Records
+		}
+		if payload.Enabled != nil {
+			e.enabled = *payload.Enabled
+		}
+	} else {
+		// Fallback for legacy format: map[string]CheckinResult
+		_ = json.Unmarshal(data, &e.records)
+	}
+	if e.records == nil {
+		e.records = make(map[string]CheckinResult)
+	}
 	var dirty bool
 	for k := range e.records {
 		if isInternalCheckinKey(k) {
@@ -464,7 +511,11 @@ func (e *CheckinEngine) saveRecordsLocked() {
 	dir := filepath.Dir(e.storePath)
 	_ = os.MkdirAll(dir, 0o755)
 
-	data, err := json.MarshalIndent(e.records, "", "  ")
+	payload := checkinStorePayload{
+		Enabled: &e.enabled,
+		Records: e.records,
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return
 	}

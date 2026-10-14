@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **WorkBuddy Quota Resolution, Check-in Engine Lifecycle & Account Isolation (`quota.go`, `checkin.go`, `plugin_quota.go`, `workbuddy_checkin.go`, `management.html`)**:
+  - **Tencent Quota 404 Intelligent Fallback**: Upstream Tencent endpoints returned 404 on `/v2/plugin/user/points` for standard user queries; added seamless secondary fallback to `POST /v2/billing/meter/checkin-activity-status`, extracting `total_credits` (e.g. 200 points), `daily_credit`, season theme (e.g. "Buddy加油站 第10季"), and VIP status.
+  - **Automated Check-in Engine Lifecycle Toggle**: Implemented persistent enable/disable switch in `CheckinEngine` (`IsEnabled()`, `SetEnabled(bool)`) backed by structured JSON (`{"enabled": bool, "records": {...}}`) with full backward compatibility for legacy flat map stores. Exposed via `GET`, `POST`, and `PUT /v8/management/workbuddy/checkin`.
+  - **Interactive CPAMC Management Badge**: Added real-time engine status badge and toggle button in `WorkBuddySuite` drawer in `management.html`, allowing operators to pause or resume background check-in execution with instant visual feedback.
+  - **Strict Multi-Account Isolation**: Ensured exactly two real WorkBuddy accounts (Domestic CN and International) are enumerated, permanently eliminating `workbuddy_checkins.json` and internal state files from being exposed in credentials or check-in drawer lists.
+  - **Unit Regression Suite**: Added `TestCheckinEngine_EnabledToggle` for disk persistence verification and `TestQueryQuota_ActivityStatusFallback` for mock activity meter fallback testing.
 - **Auth File Management & Conductor Safety Hardening (`auth_files.go`, `auth_files_crud.go`, `quota.go`, `conductor_cooldown.go`)**:
   - **Internal Storage File Protection**: Guarded `isUnsafeAuthFileName` to reject internal storage files (`session_affinity.json`, `workbuddy_checkins.json`, `*checkins.json`), preventing accidental deletion, download, or overwrite via management auth file CRUD APIs.
   - **Upload Multipart Validation**: Enforced `isUnsafeAuthFileName` check on uploaded multipart file headers in `storeUploadedAuthFile`.

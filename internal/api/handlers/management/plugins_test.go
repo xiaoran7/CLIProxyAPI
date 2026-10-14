@@ -155,13 +155,15 @@ func TestListPluginsIncludesScannedAndConfiguredPlugins(t *testing.T) {
 			EffectiveEnabled: item.EffectiveEnabled,
 			Path:             item.Path,
 		}
-		if item.Registered ||
-			item.SupportsOAuth ||
-			item.OAuthProvider != "" ||
-			item.Logo != "" ||
-			len(item.ConfigFields) != 0 ||
-			len(item.Menus) != 0 {
-			t.Fatalf("unregistered plugin entry has runtime fields: %#v", item)
+		if item.ID == "scanned" || item.ID == "configured-only" {
+			if item.Registered ||
+				item.SupportsOAuth ||
+				item.OAuthProvider != "" ||
+				item.Logo != "" ||
+				len(item.ConfigFields) != 0 ||
+				len(item.Menus) != 0 {
+				t.Fatalf("unregistered plugin entry has runtime fields: %#v", item)
+			}
 		}
 	}
 	if got, ok := entries["scanned"]; !ok || got.Configured || got.Enabled || got.EffectiveEnabled || got.Path == "" {

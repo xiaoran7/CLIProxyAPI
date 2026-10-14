@@ -217,3 +217,96 @@ type roundTripFunc func(req *http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
+
+func TestCheckinEngine_EnabledToggle(t *testing.T) {
+	tmpDir := t.TempDir()
+	engine := NewCheckinEngine(tmpDir, nil)
+	if !engine.IsEnabled() {
+		t.Fatalf("new engine should be enabled by default")
+	}
+
+	engine.SetEnabled(false)
+	if engine.IsEnabled() {
+		t.Fatalf("engine should be disabled after SetEnabled(false)")
+	}
+
+	// Reload from disk to verify persistence
+	engineReloaded := NewCheckinEngine(tmpDir, nil)
+	if engineReloaded.IsEnabled() {
+		t.Fatalf("reloaded engine should retain disabled state from disk")
+	}
+
+	engineReloaded.SetEnabled(true)
+	if !engineReloaded.IsEnabled() {
+		t.Fatalf("engine should be enabled after SetEnabled(true)")
+	}
+
+	engineReloaded2 := NewCheckinEngine(tmpDir, nil)
+	if !engineReloaded2.IsEnabled() {
+		t.Fatalf("reloaded engine should retain enabled state from disk")
+	}
+}
+
+func TestQueryQuota_ActivityStatusFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case UserPointsPath:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code": 404, "msg": "route not found"}`))
+		case "/v2/billing/meter/checkin-activity-status":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"code": 0,
+				"msg": "ok",
+				"data": {
+					"active": true,
+					"total_credits": 200,
+					"daily_credit": 100,
+					"theme_name": "Buddy加油站",
+					"season": 10
+				}
+			}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	customClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.URL.Scheme = "http"
+			req.URL.Host = server.Listener.Addr().String()
+			return http.DefaultTransport.RoundTrip(req)
+		}),
+	}
+
+	auth := &cliproxyauth.Auth{
+		ID:       "wb-test-1",
+		Provider: "workbuddy-cn",
+		Attributes: map[string]string{
+			"access_token": "mock-token",
+			"base_url":     server.URL,
+		},
+	}
+
+	res, err := QueryQuota(context.Background(), customClient, auth)
+	if err != nil {
+		t.Fatalf("QueryQuota returned unexpected error: %v", err)
+	}
+
+	if res.Subscription == nil || res.Subscription.Plan != "WorkBuddy (cn) · Buddy加油站 (第10季)" {
+		t.Errorf("Subscription.Plan = %v, want WorkBuddy (cn) · Buddy加油站 (第10季)", res.Subscription)
+	}
+
+	var foundPoints bool
+	for _, m := range res.Summary {
+		if m.Key == "points_remain" && m.Value == 200 {
+			foundPoints = true
+			break
+		}
+	}
+	if !foundPoints {
+		t.Errorf("Summary points_remain 200 not found in %v", res.Summary)
+	}
+}
+

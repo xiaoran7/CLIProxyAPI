@@ -88,19 +88,6 @@ func (h *Handler) FetchCredentialQuota(c *gin.Context) {
 		provider = auth.Provider
 	}
 
-	// Native WorkBuddy / CodeBuddy quota provider
-	pLower := strings.ToLower(provider)
-	if strings.HasPrefix(pLower, "workbuddy") || pLower == "copilot-tencent" || strings.HasPrefix(strings.ToLower(pluginID), "workbuddy") {
-		quotaResp, errQuota := workbuddy.QueryQuota(c.Request.Context(), nil, auth)
-		if errQuota != nil {
-			log.WithError(errQuota).Warnf("failed to query native workbuddy quota for credential %s", auth.Index)
-			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errQuota)})
-			return
-		}
-		c.JSON(http.StatusOK, quotaResp)
-		return
-	}
-
 	if host != nil {
 		req := pluginapi.QuotaFetchRequest{
 			AuthIndex:  auth.Index,
@@ -112,9 +99,9 @@ func (h *Handler) FetchCredentialQuota(c *gin.Context) {
 		var quotaResp pluginapi.QuotaFetchResponse
 		var handled bool
 		var errFetch error
-		if pluginID != "" {
+		if pluginID != "" && host.HasQuotaProviderForPlugin(pluginID) {
 			quotaResp, handled, errFetch = host.FetchQuotaByPlugin(c.Request.Context(), pluginID, req)
-		} else {
+		} else if pluginID == "" && host.HasQuotaProvider(provider) {
 			quotaResp, handled, errFetch = host.FetchQuota(c.Request.Context(), req)
 		}
 		if handled {
@@ -126,6 +113,19 @@ func (h *Handler) FetchCredentialQuota(c *gin.Context) {
 			c.JSON(http.StatusOK, quotaResp)
 			return
 		}
+	}
+
+	// Native WorkBuddy / CodeBuddy quota provider
+	pLower := strings.ToLower(provider)
+	if strings.HasPrefix(pLower, "workbuddy") || pLower == "copilot-tencent" || strings.HasPrefix(strings.ToLower(pluginID), "workbuddy") {
+		quotaResp, errQuota := workbuddy.QueryQuota(c.Request.Context(), nil, auth)
+		if errQuota != nil {
+			log.WithError(errQuota).Warnf("failed to query native workbuddy quota for credential %s", auth.Index)
+			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errQuota)})
+			return
+		}
+		c.JSON(http.StatusOK, quotaResp)
+		return
 	}
 
 	// Fallback to declarative quota probe if configured in metadata
@@ -375,6 +375,28 @@ func (h *Handler) fetchQuotaForPlugin(c *gin.Context, pluginID, authIndex string
 		return
 	}
 
+	h.mu.Lock()
+	host := h.pluginHost
+	h.mu.Unlock()
+
+	if host != nil && host.HasQuotaProviderForPlugin(pluginID) {
+		quotaResp, handled, errFetch := host.FetchQuotaByPlugin(c.Request.Context(), pluginID, pluginapi.QuotaFetchRequest{
+			AuthIndex:  auth.Index,
+			AuthID:     auth.ID,
+			Provider:   auth.Provider,
+			Metadata:   auth.Metadata,
+			Attributes: auth.Attributes,
+		})
+		if handled {
+			if errFetch != nil {
+				c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errFetch)})
+				return
+			}
+			c.JSON(http.StatusOK, quotaResp)
+			return
+		}
+	}
+
 	pLower := strings.ToLower(strings.TrimSpace(pluginID))
 	authPLower := strings.ToLower(strings.TrimSpace(auth.Provider))
 	if strings.HasPrefix(pLower, "workbuddy") || strings.HasPrefix(authPLower, "workbuddy") || authPLower == "copilot-tencent" {
@@ -388,31 +410,7 @@ func (h *Handler) fetchQuotaForPlugin(c *gin.Context, pluginID, authIndex string
 		return
 	}
 
-	h.mu.Lock()
-	host := h.pluginHost
-	h.mu.Unlock()
-
-	if host == nil || !host.HasQuotaProviderForPlugin(pluginID) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "quota provider not found for plugin"})
-		return
-	}
-
-	quotaResp, handled, errFetch := host.FetchQuotaByPlugin(c.Request.Context(), pluginID, pluginapi.QuotaFetchRequest{
-		AuthIndex:  auth.Index,
-		AuthID:     auth.ID,
-		Provider:   auth.Provider,
-		Metadata:   auth.Metadata,
-		Attributes: auth.Attributes,
-	})
-	if !handled {
-		c.JSON(http.StatusNotFound, gin.H{"error": "quota provider not found for plugin"})
-		return
-	}
-	if errFetch != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errFetch)})
-		return
-	}
-	c.JSON(http.StatusOK, quotaResp)
+	c.JSON(http.StatusNotFound, gin.H{"error": "quota provider not found for plugin"})
 }
 
 // ResetPluginQuota handles DELETE /v0/management/plugins/:id/quota and POST /v0/management/plugins/:id/quota/reset

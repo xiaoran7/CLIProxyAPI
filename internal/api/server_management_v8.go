@@ -60,6 +60,7 @@ func (s *Server) registerManagementV8Routes() {
 	v8.DELETE("/oauth/session", s.mgmt.CancelAuthSession)
 	v8.GET("/workbuddy/checkin", s.mgmt.GetWorkBuddyCheckin)
 	v8.POST("/workbuddy/checkin", s.mgmt.PostWorkBuddyCheckin)
+	v8.PUT("/workbuddy/checkin", s.mgmt.PutWorkBuddyCheckin)
 
 	v8.GET("/plugins", s.mgmt.ListPlugins)
 	v8.DELETE("/plugins/:id", s.mgmt.DeletePlugin)
