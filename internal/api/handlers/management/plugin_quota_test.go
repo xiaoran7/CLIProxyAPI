@@ -1300,3 +1300,89 @@ func TestFetchCredentialQuota_MissingTokenDoesNotHitUpstream(t *testing.T) {
 		t.Fatal("upstream server must NOT be contacted when template requires token but token is missing")
 	}
 }
+
+func TestWorkBuddyPluginQuota_BatchWithoutAuthIndex(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"code": 0,
+			"msg": "ok",
+			"data": {
+				"total_points": 123.45,
+				"balance": 100.0,
+				"vip_level": "VIP1",
+				"free_tier": false
+			}
+		}`))
+	}))
+	defer upstream.Close()
+
+	manager := coreauth.NewManager(nil, nil, nil)
+
+	// Valid WorkBuddy CN account pointing to mock server
+	auth1 := &coreauth.Auth{
+		ID:       "workbuddy_account1.json",
+		FileName: "workbuddy_account1.json",
+		Provider: "workbuddy-cn",
+		Attributes: map[string]string{
+			"base_url": upstream.URL,
+		},
+		Metadata: map[string]any{
+			"type":         "workbuddy",
+			"access_token": "mock-token-1",
+			"nick_name":    "UserOne",
+		},
+	}
+	auth1.EnsureIndex()
+	_, _ = manager.Register(context.Background(), auth1)
+
+	// Internal storage file that must be filtered out
+	internalAuth := &coreauth.Auth{
+		ID:       "workbuddy_checkins.json",
+		FileName: "workbuddy_checkins.json",
+		Provider: "workbuddy",
+		Metadata: map[string]any{
+			"type": "workbuddy",
+		},
+	}
+	internalAuth.EnsureIndex()
+	_, _ = manager.Register(context.Background(), internalAuth)
+
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: t.TempDir()}, manager)
+
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Params = gin.Params{{Key: "id", Value: "workbuddy"}}
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v8/management/plugins/workbuddy/quota", nil)
+
+	h.GetPluginQuota(ctx)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Accounts []struct {
+			AuthID   string  `json:"auth_id"`
+			User     string  `json:"user"`
+			Points   float64 `json:"points"`
+			Balance  float64 `json:"balance"`
+			VIPLevel string  `json:"vip_level"`
+			FreeTier bool    `json:"free_tier"`
+			Realm    string  `json:"realm"`
+		} `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.Accounts) != 1 {
+		t.Fatalf("expected exactly 1 account (internal file filtered out), got %d: %+v", len(resp.Accounts), resp.Accounts)
+	}
+	if resp.Accounts[0].AuthID != "workbuddy_account1.json" {
+		t.Fatalf("unexpected account: %+v", resp.Accounts[0])
+	}
+	if resp.Accounts[0].Points != 100.0 {
+		t.Fatalf("expected points 100.0, got %v", resp.Accounts[0].Points)
+	}
+}

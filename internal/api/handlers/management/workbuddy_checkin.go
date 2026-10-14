@@ -41,7 +41,7 @@ func (h *Handler) GetWorkBuddyCheckin(c *gin.Context) {
 	records := make(map[string]any)
 	if engine != nil {
 		for k, v := range engine.GetAllRecords() {
-			if strings.HasSuffix(strings.ToLower(k), "checkins.json") {
+			if isInternalStorageFile(k) || strings.HasSuffix(strings.ToLower(k), "checkins.json") {
 				continue
 			}
 			records[k] = v
@@ -51,12 +51,16 @@ func (h *Handler) GetWorkBuddyCheckin(c *gin.Context) {
 	// Merge all managed WorkBuddy credentials from AuthManager so un-checked-in accounts are also visible
 	if h.authManager != nil {
 		for _, a := range h.authManager.List() {
-			if a == nil || strings.HasSuffix(strings.ToLower(a.ID), "checkins.json") {
+			if a == nil || isInternalStorageFile(a.ID) || isInternalStorageFile(a.FileName) || strings.HasSuffix(strings.ToLower(a.ID), "checkins.json") {
+				continue
+			}
+			path := strings.TrimSpace(authAttribute(a, "path"))
+			if path != "" && isInternalStorageFile(path) {
 				continue
 			}
 			provider := strings.ToLower(strings.TrimSpace(a.Provider))
 			authKind := strings.ToLower(strings.TrimSpace(a.Attributes["auth_kind"]))
-			isWorkbuddy := provider == "workbuddy" || provider == "workbuddy-cn" || authKind == "workbuddy" || strings.HasPrefix(strings.ToLower(a.ID), "workbuddy")
+			isWorkbuddy := provider == "workbuddy" || provider == "workbuddy-cn" || authKind == "workbuddy" || provider == "copilot-tencent"
 			if !isWorkbuddy {
 				continue
 			}

@@ -1,6 +1,7 @@
 package management
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -256,10 +258,98 @@ func (h *Handler) GetPluginQuota(c *gin.Context) {
 		authIndex = strings.TrimSpace(c.Query("authIndex"))
 	}
 	if authIndex == "" {
+		pLower := strings.ToLower(pluginID)
+		if strings.HasPrefix(pLower, "workbuddy") {
+			h.listWorkBuddyQuotas(c)
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "auth_index is required"})
 		return
 	}
 	h.fetchQuotaForPlugin(c, pluginID, authIndex)
+}
+
+func (h *Handler) listWorkBuddyQuotas(c *gin.Context) {
+	if h.authManager == nil {
+		c.JSON(http.StatusOK, gin.H{"accounts": []any{}})
+		return
+	}
+
+	auths := h.authManager.List()
+	type accountQuota struct {
+		AuthID   string  `json:"auth_id"`
+		User     string  `json:"user"`
+		Points   float64 `json:"points"`
+		Balance  float64 `json:"balance"`
+		VIPLevel string  `json:"vip_level"`
+		FreeTier bool    `json:"free_tier"`
+		Realm    string  `json:"realm"`
+	}
+
+	var targets []*coreauth.Auth
+	for _, a := range auths {
+		if a == nil || isInternalStorageFile(a.ID) || isInternalStorageFile(a.FileName) || strings.HasSuffix(strings.ToLower(a.ID), "checkins.json") {
+			continue
+		}
+		path := strings.TrimSpace(authAttribute(a, "path"))
+		if path != "" && isInternalStorageFile(path) {
+			continue
+		}
+		provider := strings.ToLower(strings.TrimSpace(a.Provider))
+		authKind := strings.ToLower(strings.TrimSpace(a.Attributes["auth_kind"]))
+		isWorkbuddy := provider == "workbuddy" || provider == "workbuddy-cn" || authKind == "workbuddy" || provider == "copilot-tencent"
+		if isWorkbuddy {
+			targets = append(targets, a)
+		}
+	}
+
+	if len(targets) == 0 {
+		c.JSON(http.StatusOK, gin.H{"accounts": []accountQuota{}})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	results := make([]accountQuota, len(targets))
+	var wg sync.WaitGroup
+	for idx, a := range targets {
+		wg.Add(1)
+		go func(i int, auth *coreauth.Auth) {
+			defer wg.Done()
+			realm := workbuddy.ResolveRealm(auth)
+			user := workbuddy.ExtractNickname(auth)
+			if user == "" {
+				user = auth.ID
+			}
+			aq := accountQuota{
+				AuthID:   auth.ID,
+				User:     user,
+				VIPLevel: "标准版",
+				FreeTier: true,
+				Realm:    realm,
+			}
+
+			quotaResp, errQuota := workbuddy.QueryQuota(ctx, nil, auth)
+			if errQuota == nil {
+				if quotaResp.Subscription != nil && quotaResp.Subscription.Plan != "" {
+					aq.VIPLevel = quotaResp.Subscription.Plan
+				}
+				for _, m := range quotaResp.Summary {
+					if m.Key == "points_remain" {
+						aq.Points = m.Value
+						aq.Balance = m.Value
+					}
+				}
+			}
+			results[i] = aq
+		}(idx, a)
+	}
+	wg.Wait()
+
+	c.JSON(http.StatusOK, gin.H{
+		"accounts": results,
+	})
 }
 
 // FetchPluginQuota handles POST /v0/management/plugins/:id/quota

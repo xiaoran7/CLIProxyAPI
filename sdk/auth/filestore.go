@@ -51,6 +51,26 @@ func currentPluginAuthParser() PluginAuthParser {
 	return holder.parser
 }
 
+var internalStorageFileNames = map[string]struct{}{
+	"session_affinity.json":   {},
+	"workbuddy_checkins.json": {},
+}
+
+func isInternalStorageFileName(name string) bool {
+	clean := strings.ToLower(strings.TrimSpace(name))
+	base := filepath.Base(clean)
+	if _, ok := internalStorageFileNames[base]; ok {
+		return true
+	}
+	if _, ok := internalStorageFileNames[clean]; ok {
+		return true
+	}
+	if strings.HasSuffix(clean, "checkins.json") {
+		return true
+	}
+	return false
+}
+
 // FileTokenStore persists token records and auth metadata using the filesystem as backing storage.
 type FileTokenStore struct {
 	mu      sync.Mutex
@@ -186,6 +206,9 @@ func (s *FileTokenStore) List(ctx context.Context) ([]*cliproxyauth.Auth, error)
 			return walkErr
 		}
 		if d.IsDir() {
+			return nil
+		}
+		if isInternalStorageFileName(d.Name()) {
 			return nil
 		}
 		if !strings.HasSuffix(strings.ToLower(d.Name()), ".json") {

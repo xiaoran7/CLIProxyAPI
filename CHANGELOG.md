@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **WorkBuddy Multi-Account Checkin & Quota Isolation (`filestore.go`, `checkin.go`, `workbuddy_checkin.go`, `plugin_quota.go`, `management.html`)**:
+  - **Phantom Account Elimination**: Excluded internal persistence files (`workbuddy_checkins.json`, `session_affinity.json`, and any `*checkins.json`) from `FileTokenStore.List` and `CheckinEngine`, preventing `workbuddy_checkins.json` from being loaded as a third phantom WorkBuddy credential.
+  - **Strict Credential Matching**: Hardened credential matching in `workbuddy_checkin.go` to require explicit provider (`workbuddy`, `workbuddy-cn`, `copilot-tencent`) or `auth_kind: workbuddy`, eliminating broad prefix matches on arbitrary files starting with `workbuddy`.
+  - **Batch Quota Endpoint & 404 Resolution**: Added batch quota query fallback (`listWorkBuddyQuotas`) in `GetPluginQuota` when `auth_index` is omitted, returning point balances, VIP tiers, and free tier status for all managed WorkBuddy accounts. Fixed request URL in CPAMC (`management.html`) from `/v8/management/plugins/workbuddy/quota` to relative `/plugins/workbuddy/quota` under Axios `baseURL`.
+  - **UI Emoji Cleanup**: Removed all emojis across the WorkBuddy Suite drawer UI (`📅`, `📊`, `🟢`, `🔥`, `💡`, `👉`) for a clean, distraction-free interface.
+  - **Regression Coverage**: Added unit test `TestWorkBuddyPluginQuota_BatchWithoutAuthIndex` to verify batch quota fetching and internal storage file suppression.
 - **Filter Internal Storage Files from Management Auth Files List (`auth_files.go`)**:
   - Filtered out internal data persistence files (`session_affinity.json`, `workbuddy_checkins.json`) from `isAuthFileListable`, `buildAuthFileEntryLocked`, and `listAuthFilesFromDisk`.
   - Prevented internal persistence JSON files in `auths/` directory from being misclassified as `unknown` provider credentials ("其他" / Other) on the CPAMC management panel.

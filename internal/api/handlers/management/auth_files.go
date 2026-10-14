@@ -63,6 +63,9 @@ func isInternalStorageFile(name string) bool {
 	if _, ok := internalStorageFileNames[clean]; ok {
 		return true
 	}
+	if strings.HasSuffix(base, "checkins.json") || strings.HasSuffix(clean, "checkins.json") {
+		return true
+	}
 	return false
 }
 

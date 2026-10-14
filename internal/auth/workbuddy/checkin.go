@@ -264,13 +264,13 @@ func handleUnauthorizedCheckin(ctx context.Context, client *http.Client, baseURL
 
 // CheckinEngine manages scheduled background daily check-ins for all WorkBuddy accounts.
 type CheckinEngine struct {
-	mu          sync.RWMutex
-	storePath   string
-	records     map[string]CheckinResult // key: authID
-	authGetter  func() []*cliproxyauth.Auth
-	client      *http.Client
-	stopCh      chan struct{}
-	running     bool
+	mu         sync.RWMutex
+	storePath  string
+	records    map[string]CheckinResult // key: authID
+	authGetter func() []*cliproxyauth.Auth
+	client     *http.Client
+	stopCh     chan struct{}
+	running    bool
 }
 
 // NewCheckinEngine initializes a new checkin engine with persistence.
@@ -394,8 +394,18 @@ func (e *CheckinEngine) RunCheckinAll(ctx context.Context) map[string]CheckinRes
 	return results
 }
 
+// isInternalCheckinKey checks if the key belongs to an internal persistence file rather than a user account.
+func isInternalCheckinKey(key string) bool {
+	lower := strings.ToLower(strings.TrimSpace(key))
+	base := filepath.Base(lower)
+	return strings.HasSuffix(base, "checkins.json") || base == "session_affinity.json" || strings.HasSuffix(lower, "checkins.json") || lower == "session_affinity.json"
+}
+
 // GetStatus returns the today check-in status for an authID or all records.
 func (e *CheckinEngine) GetStatus(authID string) (CheckinResult, bool) {
+	if isInternalCheckinKey(authID) {
+		return CheckinResult{}, false
+	}
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	res, ok := e.records[authID]
@@ -408,6 +418,9 @@ func (e *CheckinEngine) GetAllRecords() map[string]CheckinResult {
 	defer e.mu.RUnlock()
 	out := make(map[string]CheckinResult, len(e.records))
 	for k, v := range e.records {
+		if isInternalCheckinKey(k) {
+			continue
+		}
 		out[k] = v
 	}
 	return out
@@ -415,7 +428,7 @@ func (e *CheckinEngine) GetAllRecords() map[string]CheckinResult {
 
 // RecordCheckin stores a check-in result into the engine memory and disk store.
 func (e *CheckinEngine) RecordCheckin(authID string, res CheckinResult) {
-	if e == nil {
+	if e == nil || isInternalCheckinKey(authID) {
 		return
 	}
 	e.mu.Lock()
@@ -432,6 +445,16 @@ func (e *CheckinEngine) loadRecords() {
 		return
 	}
 	_ = json.Unmarshal(data, &e.records)
+	var dirty bool
+	for k := range e.records {
+		if isInternalCheckinKey(k) {
+			delete(e.records, k)
+			dirty = true
+		}
+	}
+	if dirty {
+		e.saveRecordsLocked()
+	}
 }
 
 func (e *CheckinEngine) saveRecordsLocked() {
@@ -478,4 +501,3 @@ func GetGlobalCheckinEngine() *CheckinEngine {
 	defer globalEngineMu.RUnlock()
 	return globalEngine
 }
-
