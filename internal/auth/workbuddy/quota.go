@@ -210,7 +210,8 @@ func extractAccessToken(auth *cliproxyauth.Auth) string {
 	return ""
 }
 
-func extractNickname(auth *cliproxyauth.Auth) string {
+// ExtractNickname retrieves the display name, email, or user ID from an auth object.
+func ExtractNickname(auth *cliproxyauth.Auth) string {
 	if auth == nil {
 		return ""
 	}
@@ -222,4 +223,8 @@ func extractNickname(auth *cliproxyauth.Auth) string {
 		}
 	}
 	return ""
+}
+
+func extractNickname(auth *cliproxyauth.Auth) string {
+	return ExtractNickname(auth)
 }

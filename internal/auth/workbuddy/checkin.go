@@ -54,6 +54,7 @@ type CheckinResult struct {
 	Credit  float64   `json:"credit,omitempty"`
 	Streak  int       `json:"streak,omitempty"`
 	Message string    `json:"message,omitempty"`
+	Realm   string    `json:"realm,omitempty"`
 	At      time.Time `json:"at"`
 }
 
@@ -76,6 +77,7 @@ func Checkin(ctx context.Context, client *http.Client, auth *cliproxyauth.Auth) 
 
 	// Only mainland China (cn realm) has the daily check-in campaign.
 	realm := ResolveRealm(auth)
+	result.Realm = realm
 	if !strings.EqualFold(realm, RealmCN) {
 		result.Outcome = CheckinInactive
 		result.Message = "WorkBuddy (intl) does not have check-in activity"
@@ -409,6 +411,17 @@ func (e *CheckinEngine) GetAllRecords() map[string]CheckinResult {
 		out[k] = v
 	}
 	return out
+}
+
+// RecordCheckin stores a check-in result into the engine memory and disk store.
+func (e *CheckinEngine) RecordCheckin(authID string, res CheckinResult) {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.records[authID] = res
+	e.saveRecordsLocked()
 }
 
 func (e *CheckinEngine) loadRecords() {

@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **WorkBuddy Suite Drawer UX Overhaul & Credential Visibility (`management.html` & `workbuddy_checkin.go`)**:
+  - **100% Credential Visibility**: Merged all managed WorkBuddy accounts from `AuthManager` with existing checkin records, rendering un-checked-in domestic accounts as "待签到" and international accounts as "国际版无打卡", eliminating false "未检测到已纳管的 WorkBuddy 账号" alerts.
+  - **Drawer Refinement & Separation of Concerns**: Removed legacy "多端授权登录" and "插件设置" tabs from the suite drawer (relegating authentication to the global `/oauth` management panel with quick-action navigation buttons). Retained only "每日自动打卡" and "额度流水与配额" tabs.
+  - **Axios Response Unwrapping Fix**: Fixed date/time and record list hanging on "正在拉取..." caused by double unwrap of `G.get()` responses (`e?.data || e`).
+  - **Nickname Resolution**: Exported `workbuddy.ExtractNickname` and added `RecordCheckin` to ensure individual manual check-in updates persist immediately to `workbuddy_checkins.json`.
+
 ### Documentation
 - **Updated Project Overview and Special Acknowledgements (`README.md` & `README_CN.md`)**:
   - Added multi-strategy load balancing features (Round-Robin, Weighted Round-Robin, Fill-First, Smart Quota, Pace Quota) and persistent session affinity across restarts.

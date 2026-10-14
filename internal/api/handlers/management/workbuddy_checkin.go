@@ -14,39 +14,88 @@ import (
 // GetWorkBuddyCheckin returns the current daily checkin records.
 func (h *Handler) GetWorkBuddyCheckin(c *gin.Context) {
 	engine := workbuddy.GetGlobalCheckinEngine()
-	if engine == nil {
-		c.JSON(http.StatusOK, gin.H{
-			"enabled": false,
-			"today":   workbuddy.TodayBeijing(),
-			"records": map[string]any{},
-		})
-		return
-	}
+	today := workbuddy.TodayBeijing()
 
 	authID := strings.TrimSpace(c.Query("auth_id"))
 	if authID != "" {
-		record, found := engine.GetStatus(authID)
-		if !found {
-			c.JSON(http.StatusOK, gin.H{
-				"enabled": true,
-				"today":   workbuddy.TodayBeijing(),
-				"found":   false,
-			})
-			return
+		if engine != nil {
+			record, found := engine.GetStatus(authID)
+			if found {
+				c.JSON(http.StatusOK, gin.H{
+					"enabled": true,
+					"today":   today,
+					"found":   true,
+					"record":  record,
+				})
+				return
+			}
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"enabled": true,
-			"today":   workbuddy.TodayBeijing(),
-			"found":   true,
-			"record":  record,
+			"enabled": engine != nil,
+			"today":   today,
+			"found":   false,
 		})
 		return
 	}
 
+	records := make(map[string]any)
+	if engine != nil {
+		for k, v := range engine.GetAllRecords() {
+			if strings.HasSuffix(strings.ToLower(k), "checkins.json") {
+				continue
+			}
+			records[k] = v
+		}
+	}
+
+	// Merge all managed WorkBuddy credentials from AuthManager so un-checked-in accounts are also visible
+	if h.authManager != nil {
+		for _, a := range h.authManager.List() {
+			if a == nil || strings.HasSuffix(strings.ToLower(a.ID), "checkins.json") {
+				continue
+			}
+			provider := strings.ToLower(strings.TrimSpace(a.Provider))
+			authKind := strings.ToLower(strings.TrimSpace(a.Attributes["auth_kind"]))
+			isWorkbuddy := provider == "workbuddy" || provider == "workbuddy-cn" || authKind == "workbuddy" || strings.HasPrefix(strings.ToLower(a.ID), "workbuddy")
+			if !isWorkbuddy {
+				continue
+			}
+
+			realm := workbuddy.ResolveRealm(a)
+			if existing, exists := records[a.ID]; exists {
+				if rec, ok := existing.(workbuddy.CheckinResult); ok && rec.Realm == "" {
+					rec.Realm = realm
+					records[a.ID] = rec
+				}
+				continue
+			}
+
+			outcome := "inactive"
+			msg := "国际版无打卡活动"
+			if strings.EqualFold(realm, workbuddy.RealmCN) {
+				outcome = "pending"
+				msg = "今日待签到"
+			}
+			user := workbuddy.ExtractNickname(a)
+			if user == "" {
+				user = a.ID
+			}
+
+			records[a.ID] = gin.H{
+				"auth_id": a.ID,
+				"user":    user,
+				"day":     today,
+				"outcome": outcome,
+				"realm":   realm,
+				"message": msg,
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"enabled": true,
-		"today":   workbuddy.TodayBeijing(),
-		"records": engine.GetAllRecords(),
+		"enabled": engine != nil,
+		"today":   today,
+		"records": records,
 	})
 }
 
@@ -83,6 +132,9 @@ func (h *Handler) PostWorkBuddyCheckin(c *gin.Context) {
 				"result": res,
 			})
 			return
+		}
+		if engine != nil && res != nil {
+			engine.RecordCheckin(targetAuth.ID, *res)
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"today":  workbuddy.TodayBeijing(),
