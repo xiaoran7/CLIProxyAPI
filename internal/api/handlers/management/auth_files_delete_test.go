@@ -170,3 +170,31 @@ func TestDeleteAuthFile_RemovesRuntimeAuth(t *testing.T) {
 		t.Fatalf("expected runtime auth %q to be removed", record.ID)
 	}
 }
+
+func TestDeleteAuthFile_RejectsInternalStorageFiles(t *testing.T) {
+	t.Setenv("MANAGEMENT_PASSWORD", "")
+
+	authDir := t.TempDir()
+	storageFile := "workbuddy_checkins.json"
+	filePath := filepath.Join(authDir, storageFile)
+	if err := os.WriteFile(filePath, []byte(`{}`), 0o600); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: authDir}, manager)
+
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Request = httptest.NewRequest(http.MethodDelete, "/v0/management/auth-files?name="+url.QueryEscape(storageFile), nil)
+	h.DeleteAuthFile(ctx)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for deleting internal storage file, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Verify file was not deleted
+	if _, err := os.Stat(filePath); err != nil {
+		t.Fatalf("expected internal storage file to remain on disk: %v", err)
+	}
+}

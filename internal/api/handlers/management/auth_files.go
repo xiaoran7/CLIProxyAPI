@@ -1032,5 +1032,8 @@ func isUnsafeAuthFileName(name string) bool {
 	if filepath.VolumeName(name) != "" {
 		return true
 	}
+	if isInternalStorageFile(name) {
+		return true
+	}
 	return false
 }

@@ -58,3 +58,25 @@ func TestDownloadAuthFile_RejectsPathSeparators(t *testing.T) {
 		}
 	}
 }
+
+func TestDownloadAuthFile_RejectsInternalStorageFiles(t *testing.T) {
+	t.Setenv("MANAGEMENT_PASSWORD", "")
+
+	authDir := t.TempDir()
+	for _, f := range []string{"workbuddy_checkins.json", "session_affinity.json", "custom_checkins.json"} {
+		_ = os.WriteFile(filepath.Join(authDir, f), []byte(`{}`), 0o600)
+	}
+
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: authDir}, nil)
+
+	for _, name := range []string{"workbuddy_checkins.json", "session_affinity.json", "custom_checkins.json"} {
+		rec := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(rec)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/v0/management/auth-files/download?name="+url.QueryEscape(name), nil)
+		h.DownloadAuthFile(ctx)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected %d for internal storage file %q, got %d with body %s", http.StatusBadRequest, name, rec.Code, rec.Body.String())
+		}
+	}
+}

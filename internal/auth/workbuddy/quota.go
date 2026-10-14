@@ -215,12 +215,23 @@ func ExtractNickname(auth *cliproxyauth.Auth) string {
 	if auth == nil {
 		return ""
 	}
+	keys := []string{"nickname", "nick_name", "username", "user_name", "name", "email", "user_id"}
 	if auth.Metadata != nil {
-		for _, k := range []string{"nickname", "email", "user_id"} {
+		for _, k := range keys {
 			if v, ok := auth.Metadata[k].(string); ok && strings.TrimSpace(v) != "" {
 				return strings.TrimSpace(v)
 			}
 		}
+	}
+	if auth.Attributes != nil {
+		for _, k := range keys {
+			if v := strings.TrimSpace(auth.Attributes[k]); v != "" {
+				return v
+			}
+		}
+	}
+	if strings.TrimSpace(auth.Label) != "" {
+		return strings.TrimSpace(auth.Label)
 	}
 	return ""
 }

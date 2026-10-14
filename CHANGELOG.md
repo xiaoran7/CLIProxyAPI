@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Auth File Management & Conductor Safety Hardening (`auth_files.go`, `auth_files_crud.go`, `quota.go`, `conductor_cooldown.go`)**:
+  - **Internal Storage File Protection**: Guarded `isUnsafeAuthFileName` to reject internal storage files (`session_affinity.json`, `workbuddy_checkins.json`, `*checkins.json`), preventing accidental deletion, download, or overwrite via management auth file CRUD APIs.
+  - **Upload Multipart Validation**: Enforced `isUnsafeAuthFileName` check on uploaded multipart file headers in `storeUploadedAuthFile`.
+  - **WorkBuddy Nickname Fallback**: Expanded `ExtractNickname` lookup keys to support `"nickname", "nick_name", "username", "user_name", "name", "email", "user_id"`, plus attributes and label fallback.
+  - **Conductor Nil Hook Protection**: Added safe `notifyResultHook` with nil checks in `conductor_cooldown.go`, preventing nil pointer panics when executing stream callbacks under test or unhooked manager instances.
+  - **Regression Tests**: Added `TestDownloadAuthFile_RejectsInternalStorageFiles` and `TestDeleteAuthFile_RejectsInternalStorageFiles`.
 - **WorkBuddy Multi-Account Checkin & Quota Isolation (`filestore.go`, `checkin.go`, `workbuddy_checkin.go`, `plugin_quota.go`, `management.html`)**:
   - **Phantom Account Elimination**: Excluded internal persistence files (`workbuddy_checkins.json`, `session_affinity.json`, and any `*checkins.json`) from `FileTokenStore.List` and `CheckinEngine`, preventing `workbuddy_checkins.json` from being loaded as a third phantom WorkBuddy credential.
   - **Strict Credential Matching**: Hardened credential matching in `workbuddy_checkin.go` to require explicit provider (`workbuddy`, `workbuddy-cn`, `copilot-tencent`) or `auth_kind: workbuddy`, eliminating broad prefix matches on arbitrary files starting with `workbuddy`.

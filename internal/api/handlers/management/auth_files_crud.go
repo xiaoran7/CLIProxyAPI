@@ -240,6 +240,9 @@ func (h *Handler) storeUploadedAuthFile(ctx context.Context, file *multipart.Fil
 		return "", fmt.Errorf("no file uploaded")
 	}
 	name := filepath.Base(strings.TrimSpace(file.Filename))
+	if isUnsafeAuthFileName(name) {
+		return "", fmt.Errorf("invalid file name")
+	}
 	if !strings.HasSuffix(strings.ToLower(name), ".json") {
 		return "", errAuthFileMustBeJSON
 	}
