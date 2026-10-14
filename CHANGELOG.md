@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **CPAMC Control Panel Syntax Repair (`management.html`)**:
+  - Fixed unclosed JSX child container div after `j.map(...)` in `WorkBuddySuite` checkin drawer tab list.
+  - Removed dangling open parenthesis in plugin drawer body ternary expression (`children:x&&v?v.id===\`workbuddy\`?...`).
+  - Verified 100% clean AST compilation via Acorn across the entire 2.78MB SPA JavaScript bundle.
+
 ### Merged
 - **Upstream v8.0.26 & v8.0.27 Core Alignment (`upstream/main`)**:
   - Synchronized official commits up to `bf934162` (`v8.0.27`).
