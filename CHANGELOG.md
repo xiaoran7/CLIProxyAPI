@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Smart & Pace Routing Strategies Integration in CPAMC Control Panel (`management.html`) & Management API**:
+  - Added `smart` ("临期优先 (Smart Quota)") and `pace` ("步调均衡 (Pace Quota)") options to the visual network settings routing strategy dropdown menu (`Oae`).
+  - Extended parser `kB(e)` in CPAMC to recognize `smart`, `smart-routing`, `pace`, and `pace-routing` without fallback degradation to `round-robin`.
+  - Added dashboard status summary badge localization and global settings search keywords (`smart`, `pace`).
+  - Supported localized strings across 6 languages (Simplified Chinese, Traditional Chinese, English, Russian, Vietnamese, Korean).
+  - Extended `normalizeRoutingStrategy` in backend handler (`internal/api/handlers/management/config_basic.go`) and added regression tests to accept `smart` and `pace` via management REST endpoints.
+
 ### Fixed
 - **CPAMC Control Panel Syntax Repair (`management.html`)**:
   - Fixed unclosed JSX child container div after `j.map(...)` in `WorkBuddySuite` checkin drawer tab list.
