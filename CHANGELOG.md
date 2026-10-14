@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Merged
+- **Sync with Upstream (`router-for-me/CLIProxyAPI:main`)**:
+  - Merged 28 upstream commits bringing models and stability enhancements:
+    - Added new models: `claude-haiku-5-5`, `gemini-4-argon`, `gemini-4-argon-high`, `muse-wonder-1.0`.
+    - Supported model-specific default `max_tokens` from registry in Claude OpenAI chat completions.
+    - Implemented `CodexSSEScanner` for robust event parsing in Codex streams.
+    - Added request-scoped HTTP transport decorator (`sdk/httptransport`).
+    - Fixed concurrent configuration access data races (`fix(server)`).
+    - Hardened schema sanitization preserving multi-branch `anyOf/oneOf` unions and stripping out-of-bounds int64 ranges.
+    - Preserved custom fork architecture: WorkBuddy suite, OpenCode integration, Smart/Pace routing, persistent session affinity, and ad-free READMEs.
+
 ### Fixed
 - **WorkBuddy Quota Resolution, Check-in Engine Lifecycle & Account Isolation (`quota.go`, `checkin.go`, `plugin_quota.go`, `workbuddy_checkin.go`, `management.html`)**:
   - **Tencent Quota 404 Intelligent Fallback**: Upstream Tencent endpoints returned 404 on `/v2/plugin/user/points` for standard user queries; added seamless secondary fallback to `POST /v2/billing/meter/checkin-activity-status`, extracting `total_credits` (e.g. 200 points), `daily_credit`, season theme (e.g. "Buddy加油站 第10季"), and VIP status.
