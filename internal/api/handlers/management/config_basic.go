@@ -314,6 +314,10 @@ func normalizeRoutingStrategy(strategy string) (string, bool) {
 		return "weighted-round-robin", true
 	case "fill-first", "fillfirst", "ff":
 		return "fill-first", true
+	case "smart", "smart-routing":
+		return "smart", true
+	case "pace", "pace-routing":
+		return "pace", true
 	default:
 		return "", false
 	}

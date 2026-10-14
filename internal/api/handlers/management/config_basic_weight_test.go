@@ -10,3 +10,18 @@ func TestNormalizeRoutingStrategyWeightedRoundRobin(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeRoutingStrategySmartAndPace(t *testing.T) {
+	for _, input := range []string{"smart", "smart-routing", "SMART"} {
+		got, ok := normalizeRoutingStrategy(input)
+		if !ok || got != "smart" {
+			t.Fatalf("normalizeRoutingStrategy(%q) = %q, %v; want smart, true", input, got, ok)
+		}
+	}
+	for _, input := range []string{"pace", "pace-routing", "PACE"} {
+		got, ok := normalizeRoutingStrategy(input)
+		if !ok || got != "pace" {
+			t.Fatalf("normalizeRoutingStrategy(%q) = %q, %v; want pace, true", input, got, ok)
+		}
+	}
+}
