@@ -406,7 +406,7 @@ func TestClaudeCodeTLSHandshakeTimeoutPreservesSuccessfulConnection(t *testing.T
 
 // TestNewUtlsHTTPClientStampsConfiguredHandshakeBound verifies the config
 // wiring end to end at the client seam: when
-// upstream.claude.tls-handshake-timeout-seconds is positive, every request
+// requests.tls-handshake-timeout-seconds is positive, every request
 // issued by the client carries the bound so the uTLS dial paths can read
 // it; when it is 0 (or no config is given), requests stay unstamped and
 // behavior is unchanged.
@@ -439,7 +439,8 @@ func TestNewUtlsHTTPClientStampsConfiguredHandshakeBound(t *testing.T) {
 			ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", capture(&seen))
 			var cfg *config.Config
 			if tt.hasCfg {
-				cfg = &config.Config{Claude: config.ClaudeConfig{TLSHandshakeTimeoutSeconds: tt.seconds}}
+				cfg = &config.Config{}
+				cfg.TLSHandshakeTimeoutSeconds = tt.seconds
 			}
 			client := NewUtlsHTTPClient(ctx, cfg, &cliproxyauth.Auth{}, 0)
 			resp, errGet := client.Get("https://api.anthropic.com/v1/messages")

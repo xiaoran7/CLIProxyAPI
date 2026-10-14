@@ -420,7 +420,7 @@ func (f *fallbackRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 // for Anthropic and a Chrome profile for ChatGPT, with a standard-transport
 // fallback for other hosts.
 func NewUtlsHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, timeout time.Duration) (clientOut *http.Client) {
-	// Carry the opt-in TLS establishment bound (upstream.claude
+	// Carry the opt-in TLS establishment bound (requests
 	// tls-handshake-timeout-seconds) on a request-scoped wrapper. This
 	// client is shared, so the bound intentionally reaches both the Claude
 	// Code Anthropic dial path and the Chrome ChatGPT/Codex dial path; the
@@ -429,7 +429,7 @@ func NewUtlsHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyau
 	// when the value changes. A disabled bound (0) leaves requests untouched.
 	var handshakeTimeout time.Duration
 	if cfg != nil {
-		handshakeTimeout = cfg.Claude.TLSHandshakeTimeout()
+		handshakeTimeout = cfg.TLSHandshakeTimeout()
 	}
 	defer func() {
 		clientOut = httptransport.Decorate(ctx, clientOut)

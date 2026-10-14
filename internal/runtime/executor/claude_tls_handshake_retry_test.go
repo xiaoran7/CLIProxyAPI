@@ -193,7 +193,7 @@ func TestClaudeExecutorManagerRetriesSilentTLSHandshakeThroughConnectProxy(t *te
 
 	cfg := &config.Config{}
 	cfg.ProxyURL = proxyURL
-	cfg.Claude.TLSHandshakeTimeoutSeconds = 1
+	cfg.TLSHandshakeTimeoutSeconds = 1
 
 	manager := cliproxyauth.NewManager(nil, nil, nil)
 	manager.SetRetryConfig(3, 0, 0)
