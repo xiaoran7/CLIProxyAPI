@@ -121,6 +121,35 @@ type ClaudeConfig struct {
 	// translation elsewhere, and per-credential search advertising in the Codex
 	// catalog. Default false keeps the translation that predates tool_search support.
 	ToolSearch bool `yaml:"tool-search" json:"tool-search"`
+	// TLSHandshakeTimeoutSeconds bounds the upstream TLS handshake for
+	// requests using the shared uTLS client, in seconds. Although the setting
+	// lives under upstream.claude, NewUtlsHTTPClient applies it to both its
+	// Claude Code Anthropic transport and its Chrome ChatGPT/Codex transport;
+	// the standard fallback transport is unaffected. It starts after TCP or proxy connection
+	// establishment returns and does not bound dialing or proxy CONNECT. The
+	// built-in Claude transport uses a custom DialTLSContext, for which Go
+	// ignores http.Transport.TLSHandshakeTimeout, so a peer that accepts the
+	// connection but never answers the ClientHello would otherwise block the
+	// request indefinitely and request-retry could never engage. The bound
+	// applies only during the TLS handshake and is removed once it succeeds,
+	// so inference and long-running streams are unaffected. The default 0
+	// disables the bound (previous behavior); negative values are treated as
+	// 0, and values beyond the representable duration range saturate.
+	TLSHandshakeTimeoutSeconds int `yaml:"tls-handshake-timeout-seconds" json:"tls-handshake-timeout-seconds"`
+}
+
+// TLSHandshakeTimeout returns the configured upstream TLS establishment
+// bound for Claude requests. A non-positive configured value disables the
+// bound and yields 0.
+func (c *ClaudeConfig) TLSHandshakeTimeout() time.Duration {
+	if c == nil || c.TLSHandshakeTimeoutSeconds <= 0 {
+		return 0
+	}
+	const maxTLSHandshakeTimeoutSeconds = math.MaxInt64 / int64(time.Second)
+	if int64(c.TLSHandshakeTimeoutSeconds) > maxTLSHandshakeTimeoutSeconds {
+		return time.Duration(math.MaxInt64)
+	}
+	return time.Duration(c.TLSHandshakeTimeoutSeconds) * time.Second
 }
 
 // ClaudeHeaderDefaults configures the measured Claude Code software baseline.

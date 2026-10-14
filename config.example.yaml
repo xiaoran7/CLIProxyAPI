@@ -411,6 +411,17 @@ upstream:
     # Default false keeps the translation and catalog behavior that predate tool_search support.
     tool-search: false
 
+    # Maximum time, in seconds, for upstream TLS handshakes made by the shared built-in
+    # uTLS client. Although configured here, it applies to both the Claude Code Anthropic
+    # transport and the Chrome ChatGPT/Codex transport; the standard fallback transport is
+    # unaffected. The timer starts after TCP or proxy connection
+    # establishment returns; it does not bound dialing or proxy CONNECT. When the upstream
+    # path accepts the connection but never answers the TLS ClientHello, the request would
+    # otherwise wait indefinitely and request-retry could never engage. The bound applies
+    # only during the TLS handshake and is lifted once it succeeds, so inference and
+    # long-running streams are never time-limited. Set to 0 to disable (default).
+    tls-handshake-timeout-seconds: 0
+
     # When true, disable Claude request cloaking on OAuth and API-key CLI profiles (the Claude Code CLI disguise and
     # system prompt replacement), so the original system prompt is passed through to Claude as-is.
     # Credential attributes and explicit per-key cloak modes override this shared default.

@@ -470,7 +470,7 @@ func pluginConfigFields(fields []pluginapi.ConfigField) []pluginConfigFieldInfo 
 		out = append(out, pluginConfigFieldInfo{
 			Name:        htmlsanitize.String(field.Name),
 			Type:        htmlsanitize.String(string(field.Type)),
-			Default:     field.Default,
+			Default:     htmlsanitize.JSONValue(field.Default),
 			EnumValues:  htmlsanitize.Strings(field.EnumValues),
 			Description: htmlsanitize.String(field.Description),
 		})
