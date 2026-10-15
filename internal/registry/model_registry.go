@@ -105,9 +105,24 @@ type ModelInfo struct {
 	// UserDefined models have thinking configuration passed through without validation.
 	UserDefined bool `json:"-"`
 
+	// Credits carries the upstream billing multiplier of the model, when the
+	// provider publishes one. nil means the rate is unknown.
+	Credits *ModelCredits `json:"credits,omitempty"`
+
 	// IsCompat enables compatibility handling for this configured API-key model.
 	// It is internal metadata and is not exposed in model listings.
 	IsCompat bool `json:"-"`
+}
+
+// ModelCredits describes the per-request billing multiplier of a model.
+type ModelCredits struct {
+	// Multiplier is the multiplier in provider credits per unit.
+	Multiplier float64 `json:"multiplier"`
+	// Source identifies where the rate came from (e.g. "workbuddy").
+	Source string `json:"source,omitempty"`
+	// PromotionID and PromotionNote describe an applied discount, if any.
+	PromotionID   string `json:"promotion_id,omitempty"`
+	PromotionNote string `json:"promotion_note,omitempty"`
 }
 
 // ModelConfig holds optional runtime overrides for a model definition.
@@ -928,6 +943,10 @@ func cloneModelInfo(model *ModelInfo) *ModelInfo {
 			copyThinking.Levels = append([]string(nil), model.Thinking.Levels...)
 		}
 		copyModel.Thinking = &copyThinking
+	}
+	if model.Credits != nil {
+		copyCredits := *model.Credits
+		copyModel.Credits = &copyCredits
 	}
 	if model.Config != nil {
 		copyConfig := *model.Config
@@ -1854,6 +1873,19 @@ func (r *ModelRegistry) convertModelToMap(model *ModelInfo, handlerType string) 
 		}
 		if len(model.SupportedParameters) > 0 {
 			result["supported_parameters"] = append([]string(nil), model.SupportedParameters...)
+		}
+		if model.Credits != nil {
+			result["credits"] = map[string]any{
+				"multiplier": model.Credits.Multiplier,
+				"free":       model.Credits.Multiplier == 0,
+				"source":     model.Credits.Source,
+			}
+			if model.Credits.PromotionID != "" {
+				result["credits"].(map[string]any)["promotion_id"] = model.Credits.PromotionID
+			}
+			if model.Credits.PromotionNote != "" {
+				result["credits"].(map[string]any)["promotion_note"] = model.Credits.PromotionNote
+			}
 		}
 		return result
 

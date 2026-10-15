@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/workbuddy"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 	log "github.com/sirupsen/logrus"
@@ -276,6 +278,12 @@ func (h *Handler) listWorkBuddyQuotas(c *gin.Context) {
 	}
 
 	auths := h.authManager.List()
+	type accountRateRange struct {
+		FreeCount int     `json:"free_count"`
+		PaidCount int     `json:"paid_count"`
+		Min       float64 `json:"min"`
+		Max       float64 `json:"max"`
+	}
 	type accountQuota struct {
 		AuthID   string  `json:"auth_id"`
 		User     string  `json:"user"`
@@ -284,6 +292,14 @@ func (h *Handler) listWorkBuddyQuotas(c *gin.Context) {
 		VIPLevel string  `json:"vip_level"`
 		FreeTier bool    `json:"free_tier"`
 		Realm    string  `json:"realm"`
+		// Multipliers describes the credit rates published for this realm, so
+		// the panel can show what a call actually costs. It is null when the
+		// catalogue is unavailable, which must read as "unknown", not "free".
+		Multipliers *accountRateRange `json:"multipliers,omitempty"`
+		// FreeModels and PaidModels list the free / paid model IDs so a client
+		// can explain the multiplier range without a second request.
+		FreeModels []string `json:"free_models,omitempty"`
+		PaidModels []string `json:"paid_models,omitempty"`
 	}
 
 	var targets []*coreauth.Auth
@@ -326,8 +342,31 @@ func (h *Handler) listWorkBuddyQuotas(c *gin.Context) {
 				AuthID:   auth.ID,
 				User:     user,
 				VIPLevel: "标准版",
-				FreeTier: true,
 				Realm:    realm,
+			}
+
+			// Report the credit multipliers actually published for the realm's
+			// catalogue. free_tier is derived from those rates instead of being
+			// asserted unconditionally; when the catalogue is unknown it stays
+			// false and Multipliers is null.
+			credits := registry.GetWorkBuddyCreditsSummary(realm)
+			if credits.HasRates {
+				aq.Multipliers = &accountRateRange{
+					FreeCount: credits.FreeCount,
+					PaidCount: credits.PaidCount,
+					Min:       credits.MinMultiplier,
+					Max:       credits.MaxMultiplier,
+				}
+				aq.FreeTier = credits.FreeCount > 0
+				for id, rate := range registry.WorkBuddyCreditsModelRates(realm) {
+					if rate.Free {
+						aq.FreeModels = append(aq.FreeModels, id)
+						continue
+					}
+					aq.PaidModels = append(aq.PaidModels, id)
+				}
+				sort.Strings(aq.FreeModels)
+				sort.Strings(aq.PaidModels)
 			}
 
 			quotaResp, errQuota := workbuddy.QueryQuota(ctx, nil, auth)

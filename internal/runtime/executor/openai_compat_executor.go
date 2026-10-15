@@ -151,9 +151,10 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
 	reporter.SetTranslatedReasoningEffort(translated, to.String())
 
 	isOC := e.isOpenCode(auth)
+	var ocInfo *openCodeToolsInfo
 	if isOC {
 		var errOC error
-		translated, errOC = applyOpenCodePayload(translated, true)
+		translated, ocInfo, errOC = applyOpenCodePayload(translated, true)
 		if errOC != nil {
 			return resp, errOC
 		}
@@ -220,7 +221,7 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
 	var body []byte
 	if isOC {
 		var errAgg error
-		body, errAgg = aggregateOpenCodeSSEToChatCompletion(httpResp.Body, baseModel)
+		body, errAgg = aggregateOpenCodeSSEToChatCompletion(httpResp.Body, baseModel, ocInfo)
 		if errAgg != nil {
 			helps.RecordAPIResponseError(ctx, e.cfg, errAgg)
 			err = errAgg
@@ -402,9 +403,10 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
 	reporter.SetTranslatedReasoningEffort(translated, to.String())
 
 	isOC := e.isOpenCode(auth)
+	var ocInfo *openCodeToolsInfo
 	if isOC {
 		var errOC error
-		translated, errOC = applyOpenCodePayload(translated, true)
+		translated, ocInfo, errOC = applyOpenCodePayload(translated, true)
 		if errOC != nil {
 			return nil, errOC
 		}
@@ -490,6 +492,11 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
 		var frameData [][]byte
 		defer streamUsage.Publish(ctx, reporter)
 
+		var ocFilter *openCodeStreamFilter
+		if isOC {
+			ocFilter = newOpenCodeStreamFilter(ocInfo)
+		}
+
 		publishStreamError := func(streamErr statusErr, containsPayload bool) {
 			loggedErr := streamErr
 			if containsPayload {
@@ -539,6 +546,13 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
 				if streamErr, isError := openAICompatStreamDataError(dataPayload, eventName); isError {
 					publishStreamError(streamErr, true)
 					return true
+				}
+				if ocFilter != nil {
+					filtered, drop := ocFilter.FilterChunk(dataPayload)
+					if drop {
+						return false
+					}
+					dataPayload = filtered
 				}
 			}
 

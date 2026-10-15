@@ -116,6 +116,32 @@ func ResolveDomain(realm string) string {
 }
 
 // ApplyHeaders injects WorkBuddy device fingerprint and client headers.
+// AccessToken returns the bearer token held by an auth object, or an empty
+// string when the auth carries no usable token.
+func AccessToken(auth *cliproxyauth.Auth) string {
+	return extractAccessToken(auth)
+}
+
+// ResolveUserID returns the upstream user identifier used by the desktop client
+// headers, falling back to the auth ID and then "anonymous".
+func ResolveUserID(auth *cliproxyauth.Auth) string {
+	if auth == nil {
+		return "anonymous"
+	}
+	if auth.Metadata != nil {
+		if u, ok := auth.Metadata["user_id"].(string); ok && u != "" {
+			return u
+		}
+		if u, ok := auth.Metadata["uid"].(string); ok && u != "" {
+			return u
+		}
+	}
+	if auth.ID != "" {
+		return auth.ID
+	}
+	return "anonymous"
+}
+
 func ApplyHeaders(req *http.Request, auth *cliproxyauth.Auth, token string) {
 	if req == nil {
 		return
@@ -123,22 +149,7 @@ func ApplyHeaders(req *http.Request, auth *cliproxyauth.Auth, token string) {
 	realm := ResolveRealm(auth)
 	domain := ResolveDomain(realm)
 
-	uid := ""
-	if auth != nil {
-		if auth.Metadata != nil {
-			if u, ok := auth.Metadata["user_id"].(string); ok && u != "" {
-				uid = u
-			} else if u, ok := auth.Metadata["uid"].(string); ok && u != "" {
-				uid = u
-			}
-		}
-		if uid == "" {
-			uid = auth.ID
-		}
-	}
-	if uid == "" {
-		uid = "anonymous"
-	}
+	uid := ResolveUserID(auth)
 
 	machineID := DeriveID("machine", uid)
 	sessionID := DeriveID("session", uid)
@@ -156,6 +167,20 @@ func ApplyHeaders(req *http.Request, auth *cliproxyauth.Auth, token string) {
 	req.Header.Set("X-Machine-ID", machineID)
 	req.Header.Set("X-Session-ID", sessionID)
 	req.Header.Set("X-Request-ID", requestID)
+}
+
+// ApplyCatalogHeaders applies the headers the desktop client sends when reading
+// its configuration catalogue. ApplyHeaders covers ordinary API traffic; the
+// catalogue additionally identifies the account.
+func ApplyCatalogHeaders(req *http.Request, auth *cliproxyauth.Auth, token string) {
+	ApplyHeaders(req, auth, token)
+	if req == nil || auth == nil {
+		return
+	}
+	uid := ResolveUserID(auth)
+	if uid != "" && uid != "anonymous" {
+		req.Header.Set("X-User-Id", uid)
+	}
 }
 
 // RefreshToken executes token refresh against /v2/plugin/auth/token/refresh with singleflight protection.

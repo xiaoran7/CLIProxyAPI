@@ -3,52 +3,50 @@ package executor
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/cache"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
 const (
-	openCodeBase62Chars    = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	openCodeUserAgent      = "opencode/1.18.35 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
-	openCodeClientHeader   = "cli"
-	openCodeProjectHeader  = "global"
+	openCodeBase62Chars      = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	openCodeVersion          = "1.19.0"
+	openCodeUserAgent        = "opencode/" + openCodeVersion + " ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
+	openCodeClientHeader     = "cli"
+	openCodeProjectHeader    = "global"
 	openCodeDefaultMaxTokens = 32000
+	openCodeStubDescription  = "Not available in this session. Never call this tool."
+	openCodeStubNote         = "(The model asked for a tool this session doesn't have.)"
 )
 
-var openCodeDummyTools = []map[string]any{
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "read",
-			"description": "Internal placeholder tool. DO NOT CALL THIS TOOL. Always reply directly in natural language text.",
-			"parameters":  map[string]any{"type": "object"},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "bash",
-			"description": "Internal placeholder tool. DO NOT CALL THIS TOOL. Always reply directly in natural language text.",
-			"parameters":  map[string]any{"type": "object"},
-		},
-	},
-	{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "write",
-			"description": "Internal placeholder tool. DO NOT CALL THIS TOOL. Always reply directly in natural language text.",
-			"parameters":  map[string]any{"type": "object"},
-		},
-	},
-}
+var (
+	// OpenCode mandatory tools required by Zen Free tier.
+	openCodeRequiredTools = []string{"bash", "read"}
+
+	openCodeIDRe = regexp.MustCompile(`^[a-z]{3}_[0-9a-f]{12}[0-9A-Za-z]{14}$`)
+
+	openCodeClock = struct {
+		sync.Mutex
+		last    int64
+		counter int64
+	}{}
+
+	// openCodeSessionCache keeps session IDs across conversation turns (up to 1000 items).
+	openCodeSessionCache = cache.NewBoundedLRU[string, string](1000, nil)
+)
 
 // isOpenCodeTarget checks whether an upstream endpoint/provider is OpenCode.
 func isOpenCodeTarget(baseURL, provider, compatName string) bool {
@@ -62,38 +60,73 @@ func isOpenCodeTarget(baseURL, provider, compatName string) bool {
 }
 
 // genOpenCodeID generates a timestamp-bound Base62 ID according to OpenCode's reverse-engineered schema.
-// descending = true for session ID (~current & 0xFFFFFFFFFFFF)
+// descending = true for session ID (^current & 0xFFFFFFFFFFFF)
 // descending = false for request ID (current & 0xFFFFFFFFFFFF)
-func genOpenCodeID(prefix string, descending bool) string {
-	ts := time.Now().UnixMilli()
-	current := uint64(ts)*4096 + 1
-	var val uint64
+func genOpenCodeID(prefix string, descending bool, now time.Time) string {
+	ms := now.UnixMilli()
+	openCodeClock.Lock()
+	if ms != openCodeClock.last {
+		openCodeClock.last, openCodeClock.counter = ms, 0
+	}
+	openCodeClock.counter++
+	current := uint64(ms)*0x1000 + uint64(openCodeClock.counter)
+	openCodeClock.Unlock()
+
 	if descending {
-		val = (^current) & 0xFFFFFFFFFFFF
-	} else {
-		val = current & 0xFFFFFFFFFFFF
+		current = ^current
 	}
 
-	var timePart strings.Builder
-	for i := 0; i < 6; i++ {
-		shift := 40 - 8*i
-		b := byte((val >> shift) & 0xFF)
-		fmt.Fprintf(&timePart, "%02x", b)
-	}
-
-	randBytes := make([]byte, 14)
-	if _, err := rand.Read(randBytes); err != nil {
-		// Fallback deterministic random bytes
+	var randBytes [14]byte
+	if _, err := rand.Read(randBytes[:]); err != nil {
 		for i := range randBytes {
 			randBytes[i] = byte(i * 17)
 		}
 	}
-	var randPart strings.Builder
-	for _, b := range randBytes {
-		randPart.WriteByte(openCodeBase62Chars[int(b)%len(openCodeBase62Chars)])
-	}
 
-	return fmt.Sprintf("%s_%s%s", prefix, timePart.String(), randPart.String())
+	id := []byte(fmt.Sprintf("%s_%012x", prefix, current&0xffffffffffff))
+	for _, b := range randBytes {
+		id = append(id, openCodeBase62Chars[int(b)%len(openCodeBase62Chars)])
+	}
+	return string(id)
+}
+
+// openCodeRealSession validates if id is a structurally genuine OpenCode session ID.
+func openCodeRealSession(id string) bool {
+	if !strings.HasPrefix(id, "ses_") || !openCodeIDRe.MatchString(id) {
+		return false
+	}
+	low, err := strconv.ParseUint(id[13:16], 16, 16)
+	return err == nil && 0xfff-low < 16
+}
+
+// resolveOpenCodeSessionID finds or creates a persistent session ID for the given conversation seed.
+func resolveOpenCodeSessionID(seed string) string {
+	if openCodeRealSession(seed) {
+		return seed
+	}
+	if seed == "" {
+		return genOpenCodeID("ses", true, time.Now())
+	}
+	return openCodeSessionCache.GetOrAdd(seed, func() string {
+		return genOpenCodeID("ses", true, time.Now())
+	})
+}
+
+// extractOpenCodeSessionSeed extracts a candidate session identity seed from the HTTP request or context.
+func extractOpenCodeSessionSeed(ctx context.Context, req *http.Request) string {
+	if req != nil {
+		for _, h := range []string{"x-opencode-session", "x-opencode-session-id", "x-session-affinity", "X-Session-Id", "x-session-id"} {
+			if val := strings.TrimSpace(req.Header.Get(h)); val != "" {
+				return val
+			}
+		}
+	}
+	if ctx != nil {
+		if sessID := strings.TrimSpace(util.SessionIDFromContext(ctx)); sessID != "" {
+			return sessID
+		}
+	}
+	return ""
 }
 
 // applyOpenCodeHeaders injects required authentication & fingerprint headers to pass OpenCode cloud inspection.
@@ -111,93 +144,300 @@ func applyOpenCodeHeaders(req *http.Request) {
 	req.Header.Del("x-zcode-session-type")
 	req.Header.Del("x-zcode-trace-id")
 
+	seed := extractOpenCodeSessionSeed(req.Context(), req)
+	sesID := resolveOpenCodeSessionID(seed)
+	msgID := genOpenCodeID("msg", false, time.Now())
+
 	req.Header.Set("User-Agent", openCodeUserAgent)
 	req.Header.Set("x-opencode-client", openCodeClientHeader)
 	req.Header.Set("x-opencode-project", openCodeProjectHeader)
-
-	sesID := genOpenCodeID("ses", true)
-	msgID := genOpenCodeID("msg", false)
-
 	req.Header.Set("x-opencode-session", sesID)
 	req.Header.Set("x-opencode-session-id", sesID)
+	req.Header.Set("x-session-affinity", sesID)
+	req.Header.Set("X-Session-Id", sesID)
 	req.Header.Set("x-opencode-request", msgID)
 }
 
+// openCodeToolsInfo holds mappings for tool normalization and injected stubs.
+type openCodeToolsInfo struct {
+	back  map[string]string // normalized name ("bash", "read") -> original client name ("Bash", "Read")
+	stubs map[string]bool   // set of tool names injected as stubs
+}
+
+// makeOpenCodeStubTool creates a function tool definition matching OpenCode Zen Free's requirements.
+func makeOpenCodeStubTool(name string) map[string]any {
+	return map[string]any{
+		"type": "function",
+		"function": map[string]any{
+			"name":        name,
+			"description": openCodeStubDescription,
+			"parameters":  map[string]any{"type": "object", "properties": map[string]any{}},
+		},
+	}
+}
+
 // applyOpenCodePayload adjusts request body to satisfy OpenCode's FreeTier requirements.
-// Specifically, tools are mandatory, and stream is required upstream.
-func applyOpenCodePayload(payload []byte, forceStream bool) ([]byte, error) {
+// Specifically:
+// 1. Normalizes client tool names like "Bash" or "Read" to lowercase "bash" and "read".
+// 2. Injects missing required tools ("bash", "read") as non-callable stubs.
+// 3. Defaults max_tokens if missing.
+// 4. Forces stream: true upstream if required.
+func applyOpenCodePayload(payload []byte, forceStream bool) ([]byte, *openCodeToolsInfo, error) {
 	if len(payload) == 0 {
-		return payload, nil
+		return payload, nil, nil
 	}
 
-	// 1. Ensure OpenCode mandatory tools (read, bash, write) are present in the tools array
+	info := &openCodeToolsInfo{
+		back:  make(map[string]string),
+		stubs: make(map[string]bool),
+	}
+
 	toolsVal := gjson.GetBytes(payload, "tools")
-	if !toolsVal.Exists() || !toolsVal.IsArray() || len(toolsVal.Array()) == 0 {
-		var err error
-		payload, err = sjson.SetBytes(payload, "tools", openCodeDummyTools)
-		if err != nil {
-			return nil, fmt.Errorf("opencode: inject dummy tools error: %w", err)
+	var existingTools []any
+	if toolsVal.Exists() && toolsVal.IsArray() {
+		for _, item := range toolsVal.Array() {
+			existingTools = append(existingTools, item.Value())
 		}
-		if !gjson.GetBytes(payload, "tool_choice").Exists() {
-			payload, err = sjson.SetBytes(payload, "tool_choice", "auto")
-			if err != nil {
-				return nil, fmt.Errorf("opencode: inject tool_choice error: %w", err)
-			}
-		}
-	} else {
-		// Even if the caller passed tools (e.g. ZCode, Cursor), OpenCode FreeTier strictly
-		// checks for the presence of its standard tools ("read", "bash", "write").
-		existingTools := toolsVal.Array()
-		hasRead, hasBash, hasWrite := false, false, false
-		for _, t := range existingTools {
-			name := t.Get("function.name").String()
-			switch name {
-			case "read":
-				hasRead = true
-			case "bash":
-				hasBash = true
-			case "write":
-				hasWrite = true
-			}
-		}
-		for _, dummy := range openCodeDummyTools {
-			dName := dummy["function"].(map[string]any)["name"].(string)
-			if (dName == "read" && !hasRead) || (dName == "bash" && !hasBash) || (dName == "write" && !hasWrite) {
-				var err error
-				payload, err = sjson.SetBytes(payload, "tools.-1", dummy)
-				if err != nil {
-					return nil, fmt.Errorf("opencode: append required dummy tool %s error: %w", dName, err)
+	}
+
+	for _, reqName := range openCodeRequiredTools {
+		foundIdx := -1
+		for i, t := range existingTools {
+			var name string
+			switch tv := t.(type) {
+			case map[string]any:
+				if fn, ok := tv["function"].(map[string]any); ok {
+					if n, ok := fn["name"].(string); ok {
+						name = n
+					}
 				}
 			}
+			if strings.EqualFold(name, reqName) {
+				foundIdx = i
+				if name != reqName {
+					// Rename in payload
+					info.back[reqName] = name
+					if tv, ok := existingTools[i].(map[string]any); ok {
+						if fn, ok := tv["function"].(map[string]any); ok {
+							fn["name"] = reqName
+						}
+					}
+				}
+				break
+			}
+		}
+
+		if foundIdx < 0 {
+			// Not found, inject as stub
+			stub := makeOpenCodeStubTool(reqName)
+			existingTools = append(existingTools, stub)
+			info.stubs[reqName] = true
+		}
+	}
+
+	var err error
+	payload, err = sjson.SetBytes(payload, "tools", existingTools)
+	if err != nil {
+		return nil, nil, fmt.Errorf("opencode: set tools error: %w", err)
+	}
+
+	if !gjson.GetBytes(payload, "tool_choice").Exists() {
+		payload, err = sjson.SetBytes(payload, "tool_choice", "auto")
+		if err != nil {
+			return nil, nil, fmt.Errorf("opencode: inject tool_choice error: %w", err)
 		}
 	}
 
 	// 2. Default max_tokens if missing
 	if !gjson.GetBytes(payload, "max_tokens").Exists() && !gjson.GetBytes(payload, "max_completion_tokens").Exists() {
-		var err error
 		payload, err = sjson.SetBytes(payload, "max_tokens", openCodeDefaultMaxTokens)
 		if err != nil {
-			return nil, fmt.Errorf("opencode: inject max_tokens error: %w", err)
+			return nil, nil, fmt.Errorf("opencode: inject max_tokens error: %w", err)
 		}
 	}
 
 	// 3. Force stream upstream if required
 	if forceStream {
-		var err error
 		payload, err = sjson.SetBytes(payload, "stream", true)
 		if err != nil {
-			return nil, fmt.Errorf("opencode: force stream error: %w", err)
+			return nil, nil, fmt.Errorf("opencode: force stream error: %w", err)
 		}
 	}
 
-	return payload, nil
+	return payload, info, nil
+}
+
+// openCodeStreamFilter tracks and suppresses stub tool calls in real-time SSE streaming.
+type openCodeStreamFilter struct {
+	info           *openCodeToolsInfo
+	droppingCallID map[string]bool
+	droppingIdx    map[int64]bool
+	stubCalled     bool
+	realCallsCount int
+	hasSaidContent bool
+}
+
+func newOpenCodeStreamFilter(info *openCodeToolsInfo) *openCodeStreamFilter {
+	if info == nil {
+		info = &openCodeToolsInfo{
+			back:  make(map[string]string),
+			stubs: make(map[string]bool),
+		}
+	}
+	return &openCodeStreamFilter{
+		info:           info,
+		droppingCallID: make(map[string]bool),
+		droppingIdx:    make(map[int64]bool),
+	}
+}
+
+// FilterChunk inspects a single upstream SSE data JSON payload.
+// Returns the filtered data payload and a boolean `drop` indicating whether to drop this frame completely.
+func (f *openCodeStreamFilter) FilterChunk(dataPayload []byte) ([]byte, bool) {
+	if len(dataPayload) == 0 || bytes.Equal(dataPayload, []byte("[DONE]")) {
+		return dataPayload, false
+	}
+
+	parsed := gjson.ParseBytes(dataPayload)
+	choices := parsed.Get("choices")
+	if !choices.Exists() || !choices.IsArray() || len(choices.Array()) == 0 {
+		return dataPayload, false
+	}
+
+	choice := choices.Array()[0]
+	delta := choice.Get("delta")
+
+	// Track if content was spoken
+	if delta.Exists() {
+		if content := delta.Get("content").String(); content != "" {
+			f.hasSaidContent = true
+		}
+	}
+
+	toolCalls := delta.Get("tool_calls")
+	modified := false
+
+	if delta.Exists() && toolCalls.Exists() && toolCalls.IsArray() && len(toolCalls.Array()) > 0 {
+		var keptCalls []any
+		for _, tc := range toolCalls.Array() {
+			idx := tc.Get("index").Int()
+			id := tc.Get("id").String()
+			name := tc.Get("function.name").String()
+
+			// Check if this tool call is a stub
+			isStub := false
+			if name != "" {
+				if f.info.stubs[name] {
+					isStub = true
+					f.stubCalled = true
+					f.droppingIdx[idx] = true
+					if id != "" {
+						f.droppingCallID[id] = true
+					}
+				} else {
+					f.droppingIdx[idx] = false
+					if id != "" {
+						f.droppingCallID[id] = false
+					}
+					// Restore original casing if client used different casing (e.g. "Bash")
+					if ownName, ok := f.info.back[name]; ok {
+						modified = true
+						name = ownName
+					}
+					f.realCallsCount++
+				}
+			} else {
+				// Continuation chunk with arguments only
+				if f.droppingIdx[idx] || (id != "" && f.droppingCallID[id]) {
+					isStub = true
+				}
+			}
+
+			if isStub {
+				modified = true
+				continue
+			}
+
+			// Keep this tool call
+			tcVal := tc.Value()
+			if ownName, ok := f.info.back[name]; ok && name != "" {
+				if tcMap, ok := tcVal.(map[string]any); ok {
+					if fnMap, ok := tcMap["function"].(map[string]any); ok {
+						fnMap["name"] = ownName
+					}
+				}
+			}
+			keptCalls = append(keptCalls, tcVal)
+		}
+
+		if len(keptCalls) == 0 {
+			// All tool calls in this chunk were stubs
+			var err error
+			dataPayload, err = sjson.DeleteBytes(dataPayload, "choices.0.delta.tool_calls")
+			if err != nil {
+				return dataPayload, false
+			}
+			modified = true
+		} else if modified {
+			var err error
+			dataPayload, err = sjson.SetBytes(dataPayload, "choices.0.delta.tool_calls", keptCalls)
+			if err != nil {
+				return dataPayload, false
+			}
+		}
+	}
+
+	// Handle finish_reason conversion
+	finishReason := choice.Get("finish_reason").String()
+	if finishReason != "" {
+		if finishReason == "tool_calls" && f.stubCalled && f.realCallsCount == 0 {
+			// Convert to "stop" since only stubs were called
+			var err error
+			dataPayload, err = sjson.SetBytes(dataPayload, "choices.0.finish_reason", "stop")
+			if err != nil {
+				return dataPayload, false
+			}
+			if !f.hasSaidContent {
+				// Inject fallback stub note so downstream client doesn't receive an empty stop
+				dataPayload, _ = sjson.SetBytes(dataPayload, "choices.0.delta.content", openCodeStubNote)
+				f.hasSaidContent = true
+			}
+			modified = true
+		}
+	}
+
+	// If this chunk now has empty delta (no content, no role, no tool_calls, no finish_reason), drop it
+	updatedChoice := gjson.GetBytes(dataPayload, "choices.0")
+	updatedDelta := updatedChoice.Get("delta")
+	updatedFinish := updatedChoice.Get("finish_reason").String()
+	if updatedFinish == "" {
+		if !updatedDelta.Exists() {
+			return nil, true
+		}
+		hasAnyDelta := updatedDelta.Get("content").Exists() ||
+			updatedDelta.Get("role").Exists() ||
+			updatedDelta.Get("tool_calls").Exists() ||
+			updatedDelta.Get("reasoning").Exists() ||
+			updatedDelta.Get("reasoning_content").Exists()
+		if !hasAnyDelta {
+			return nil, true
+		}
+	}
+
+	return dataPayload, false
 }
 
 // aggregateOpenCodeSSEToChatCompletion consumes an SSE stream from OpenCode Zen
 // and rebuilds a standard non-streaming OpenAI chat completion JSON response.
-func aggregateOpenCodeSSEToChatCompletion(sseReader io.Reader, fallbackModel string) ([]byte, error) {
+func aggregateOpenCodeSSEToChatCompletion(sseReader io.Reader, fallbackModel string, info *openCodeToolsInfo) ([]byte, error) {
+	if info == nil {
+		info = &openCodeToolsInfo{
+			back:  make(map[string]string),
+			stubs: make(map[string]bool),
+		}
+	}
+
 	scanner := bufio.NewScanner(sseReader)
-	// OpenCode chunks can be large (up to 1MB)
 	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
 
 	var (
@@ -210,6 +450,15 @@ func aggregateOpenCodeSSEToChatCompletion(sseReader io.Reader, fallbackModel str
 		promptTokens  int64
 		compTokens    int64
 	)
+
+	type toolCallState struct {
+		id      string
+		name    string
+		argsBuf bytes.Buffer
+		typeVal string
+	}
+	toolCallsByIdx := make(map[int64]*toolCallState)
+	var toolIdxOrder []int64
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -250,6 +499,26 @@ func aggregateOpenCodeSSEToChatCompletion(sseReader io.Reader, fallbackModel str
 				if rc := delta.Get("reasoning_content").String(); rc != "" {
 					reasoningBuf.WriteString(rc)
 				}
+				if tcs := delta.Get("tool_calls"); tcs.Exists() && tcs.IsArray() {
+					for _, tc := range tcs.Array() {
+						idx := tc.Get("index").Int()
+						st, ok := toolCallsByIdx[idx]
+						if !ok {
+							st = &toolCallState{typeVal: "function"}
+							toolCallsByIdx[idx] = st
+							toolIdxOrder = append(toolIdxOrder, idx)
+						}
+						if id := tc.Get("id").String(); id != "" {
+							st.id = id
+						}
+						if name := tc.Get("function.name").String(); name != "" {
+							st.name = name
+						}
+						if args := tc.Get("function.arguments").String(); args != "" {
+							st.argsBuf.WriteString(args)
+						}
+					}
+				}
 			}
 			if fr := choice.Get("finish_reason").String(); fr != "" {
 				finishReason = fr
@@ -280,16 +549,57 @@ func aggregateOpenCodeSSEToChatCompletion(sseReader io.Reader, fallbackModel str
 		promptTokens = 10
 	}
 	if compTokens == 0 {
-		// Estimate completion tokens from character count
 		compTokens = int64(contentBuffer.Len() / 4)
 		if compTokens == 0 && contentBuffer.Len() > 0 {
 			compTokens = 1
 		}
 	}
 
+	// Filter and normalize tool calls
+	var finalToolCalls []map[string]any
+	stubCalled := false
+	for _, idx := range toolIdxOrder {
+		st := toolCallsByIdx[idx]
+		if st == nil {
+			continue
+		}
+		if info.stubs[st.name] {
+			stubCalled = true
+			continue
+		}
+		displayName := st.name
+		if own, ok := info.back[st.name]; ok {
+			displayName = own
+		}
+		finalToolCalls = append(finalToolCalls, map[string]any{
+			"id":   st.id,
+			"type": st.typeVal,
+			"function": map[string]any{
+				"name":      displayName,
+				"arguments": st.argsBuf.String(),
+			},
+		})
+	}
+
+	// If only stubs were called, convert finish_reason from tool_calls to stop
+	if len(finalToolCalls) == 0 && stubCalled && finishReason == "tool_calls" {
+		finishReason = "stop"
+	}
+
 	finalContent := contentBuffer.String()
 	if finalContent == "" && reasoningBuf.Len() > 0 {
 		finalContent = reasoningBuf.String()
+	}
+	if finalContent == "" && len(finalToolCalls) == 0 && stubCalled {
+		finalContent = openCodeStubNote
+	}
+
+	message := map[string]any{
+		"role":    "assistant",
+		"content": finalContent,
+	}
+	if len(finalToolCalls) > 0 {
+		message["tool_calls"] = finalToolCalls
 	}
 
 	finalResponse := map[string]any{
@@ -299,11 +609,8 @@ func aggregateOpenCodeSSEToChatCompletion(sseReader io.Reader, fallbackModel str
 		"model":   resModel,
 		"choices": []map[string]any{
 			{
-				"index": 0,
-				"message": map[string]any{
-					"role":    "assistant",
-					"content": finalContent,
-				},
+				"index":         0,
+				"message":       message,
 				"finish_reason": finishReason,
 			},
 		},

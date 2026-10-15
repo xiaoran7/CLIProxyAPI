@@ -210,6 +210,12 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 			realm = "cn"
 		}
 		models = registry.GetWorkBuddyModels(realm)
+		// The upstream catalogue is authoritative for per-model credit
+		// multipliers, so refresh it with this account's credentials and overlay
+		// whatever it knows onto the static list. A failed or empty fetch leaves
+		// the models untouched with their rates unknown.
+		s.warmWorkBuddyCreditsForAuth(ctx, a, realm)
+		models = registry.ApplyWorkBuddyCredits(models, realm)
 		models = applyExcludedModels(models, excluded)
 	default:
 		// Handle OpenAI-compatibility providers by name using config

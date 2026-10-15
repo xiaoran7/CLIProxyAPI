@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 )
@@ -1384,5 +1385,153 @@ func TestWorkBuddyPluginQuota_BatchWithoutAuthIndex(t *testing.T) {
 	}
 	if resp.Accounts[0].Points != 100.0 {
 		t.Fatalf("expected points 100.0, got %v", resp.Accounts[0].Points)
+	}
+}
+
+// TestWorkBuddyPluginQuota_ReportsCreditMultipliers verifies the batch endpoint
+// reports the realm's real credit multipliers instead of asserting a free tier
+// unconditionally.
+func TestWorkBuddyPluginQuota_ReportsCreditMultipliers(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"msg":"ok","data":{"total_points":123.45,"balance":100.0,"vip_type":"VIP1"}}`))
+	}))
+	defer upstream.Close()
+
+	const catalog = `{"data":{"models":[
+		{"id":"deepseek-v4.1-flash","credits":"x0.00"},
+		{"id":"glm-5.3","credits":"x0.79"},
+		{"id":"gpt-5.5","credits":"x3.31"}
+	]}}`
+	restore := registry.SetWorkBuddyCreditsFetcherForTest(
+		func(string) ([]byte, bool) { return []byte(catalog), true },
+		nil,
+	)
+	defer restore()
+	registry.InvalidateWorkBuddyCredits("")
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	auth := &coreauth.Auth{
+		ID:       "workbuddy_account1.json",
+		FileName: "workbuddy_account1.json",
+		Provider: "workbuddy",
+		Attributes: map[string]string{
+			"base_url": upstream.URL,
+		},
+		Metadata: map[string]any{
+			"type":         "workbuddy",
+			"access_token": "mock-token-1",
+			"nick_name":    "UserOne",
+		},
+	}
+	auth.EnsureIndex()
+	_, _ = manager.Register(context.Background(), auth)
+
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: t.TempDir()}, manager)
+
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Params = gin.Params{{Key: "id", Value: "workbuddy"}}
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v8/management/plugins/workbuddy/quota", nil)
+
+	h.GetPluginQuota(ctx)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Accounts []struct {
+			AuthID      string `json:"auth_id"`
+			FreeTier    bool   `json:"free_tier"`
+			Realm       string `json:"realm"`
+			Multipliers *struct {
+				FreeCount int     `json:"free_count"`
+				PaidCount int     `json:"paid_count"`
+				Min       float64 `json:"min"`
+				Max       float64 `json:"max"`
+			} `json:"multipliers"`
+			FreeModels []string `json:"free_models"`
+			PaidModels []string `json:"paid_models"`
+		} `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.Accounts) != 1 {
+		t.Fatalf("expected 1 account, got %d", len(resp.Accounts))
+	}
+
+	got := resp.Accounts[0]
+	if got.Multipliers == nil {
+		t.Fatalf("multipliers missing: %s", rec.Body.String())
+	}
+	if got.Multipliers.FreeCount != 1 {
+		t.Errorf("multipliers.free_count = %d, want 1", got.Multipliers.FreeCount)
+	}
+	if got.Multipliers.PaidCount != 2 {
+		t.Errorf("multipliers.paid_count = %d, want 2", got.Multipliers.PaidCount)
+	}
+	if got.Multipliers.Min != 0.79 {
+		t.Errorf("multipliers.min = %v, want 0.79", got.Multipliers.Min)
+	}
+	if got.Multipliers.Max != 3.31 {
+		t.Errorf("multipliers.max = %v, want 3.31", got.Multipliers.Max)
+	}
+	// free_tier is now derived from real rates rather than hardcoded true.
+	if !got.FreeTier {
+		t.Error("free_tier = false, want true when the realm publishes free models")
+	}
+	if len(got.FreeModels) != 1 || got.FreeModels[0] != "deepseek-v4.1-flash" {
+		t.Errorf("free_models = %v", got.FreeModels)
+	}
+	if len(got.PaidModels) != 2 {
+		t.Errorf("paid_models = %v", got.PaidModels)
+	}
+}
+
+// TestWorkBuddyPluginQuota_MultipliersNullWhenCatalogUnknown ensures an
+// unavailable catalogue reads as unknown rather than as free.
+func TestWorkBuddyPluginQuota_MultipliersNullWhenCatalogUnknown(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"msg":"ok","data":{"total_points":10,"balance":10}}`))
+	}))
+	defer upstream.Close()
+
+	restore := registry.SetWorkBuddyCreditsFetcherForTest(
+		func(string) ([]byte, bool) { return nil, false },
+		nil,
+	)
+	defer restore()
+	registry.InvalidateWorkBuddyCredits("")
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	auth := &coreauth.Auth{
+		ID:       "workbuddy_account2.json",
+		FileName: "workbuddy_account2.json",
+		Provider: "workbuddy",
+		Attributes: map[string]string{
+			"base_url": upstream.URL,
+		},
+		Metadata: map[string]any{"type": "workbuddy", "access_token": "mock-token-2"},
+	}
+	auth.EnsureIndex()
+	_, _ = manager.Register(context.Background(), auth)
+
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: t.TempDir()}, manager)
+
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Params = gin.Params{{Key: "id", Value: "workbuddy"}}
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v8/management/plugins/workbuddy/quota", nil)
+
+	h.GetPluginQuota(ctx)
+
+	if !strings.Contains(rec.Body.String(), `"free_tier":false`) {
+		t.Errorf("free_tier should be false without a catalogue: %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"multipliers":{`) {
+		t.Errorf("multipliers should be absent without a catalogue: %s", rec.Body.String())
 	}
 }

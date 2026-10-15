@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 	"github.com/tidwall/gjson"
@@ -202,6 +203,11 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 		})
 	}
 
+	// Report the real credit multipliers the catalogue publishes for this realm,
+	// so the panel can show what an account actually spends per call instead of
+	// only whether a free tier exists.
+	summary = append(summary, workbuddyCreditMetrics(realm)...)
+
 	return pluginapi.QuotaFetchResponse{
 		Subscription: &pluginapi.QuotaSubscription{
 			Plan: planName,
@@ -221,6 +227,48 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 		},
 		Summary: summary,
 	}, nil
+}
+
+// workbuddyCreditMetrics summarizes the realm's published credit multipliers.
+//
+// It returns no metrics when the catalogue is unavailable, so an unknown rate is
+// reported as absent rather than as free.
+func workbuddyCreditMetrics(realm string) []pluginapi.QuotaMetric {
+	summary := registry.GetWorkBuddyCreditsSummary(realm)
+	if !summary.HasRates {
+		return nil
+	}
+	metrics := []pluginapi.QuotaMetric{
+		{
+			Key:    "credits_free_count",
+			Label:  "Free Models (0x)",
+			Value:  float64(summary.FreeCount),
+			Unit:   "models",
+			Format: "number",
+		},
+	}
+	if summary.PaidCount > 0 {
+		metrics = append(metrics, pluginapi.QuotaMetric{
+			Key:    "credits_paid_count",
+			Label:  "Paid Models",
+			Value:  float64(summary.PaidCount),
+			Unit:   "models",
+			Format: "number",
+		}, pluginapi.QuotaMetric{
+			Key:    "credits_rate_min",
+			Label:  "Lowest Credit Rate",
+			Value:  summary.MinMultiplier,
+			Unit:   "x",
+			Format: "number",
+		}, pluginapi.QuotaMetric{
+			Key:    "credits_rate_max",
+			Label:  "Highest Credit Rate",
+			Value:  summary.MaxMultiplier,
+			Unit:   "x",
+			Format: "number",
+		})
+	}
+	return metrics
 }
 
 func extractAccessToken(auth *cliproxyauth.Auth) string {
