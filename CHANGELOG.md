@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Management UI Backward Compatibility for Legacy CPA Endpoints & Configuration Layout (`management.html`)**:
+  - **Flat Configuration Fallback in `Fp`**: Added backward compatibility in `Fp` config parsing to check legacy flat keys (`e["logging-to-file"]`, `e["debug"]`, `e["request-log"]`, `e["logs-max-total-size-mb"]`, `e["error-logs-max-files"]`) when v8 nested namespace (`observability.logs.*`) is absent, preventing false-positive "日志查看需要先开启日志记录到文件" empty state barriers when connected to CPA nodes with flat configuration layouts.
+  - **HTTP 404 Automatic Fallback in `Wy` Log Client**: Added 404 fallback routing in `Wy` log client methods:
+    - `fetchLogs`: queries `/observability/logs` and falls back automatically to `/logs`.
+    - `clearLogs`: falls back from `DELETE /observability/logs` to `DELETE /logs`.
+    - `fetchErrorLogs`: falls back from `/observability/logs/errors` to `/request-error-logs`.
+    - `downloadErrorLog`: falls back from `/observability/logs/errors/:name` to `/request-error-logs/:name`.
+    - `downloadRequestLogById`: falls back from `/observability/logs/requests/:id` to `/request-log-by-id/:id`.
+  - **Distributed Deployment Synchronization**: Synchronized updated `management.html` to Tokyo production VPS (`vps-tokyo-02`, `/opt/gate/static/management.html` + Gate in-memory cache reload) and US sandbox VPS (`us-zenix`, `/opt/cliproxyapi/static/management.html`).
+
+### Fixed
 - **WorkBuddy Checkin Engine & Quota Flow Anomaly Elimination (`checkin.go`, `workbuddy_checkin.go`, `plugin_quota.go`)**:
   - **Phantom Account Key Purging**: Filtered serialization envelope keys `"enabled"` and `"records"` in `isInternalCheckinKey` and management checkin/quota credential enumerators, preventing empty entries and `workbuddy_checkins.json` from leaking into account listings.
   - **Batch Quota Endpoint Contract**: Handled empty `auth_index` in `POST /v8/management/plugins/workbuddy/quota` by delegating directly to `listWorkBuddyQuotas`, eliminating `400 Bad Request: auth_index is required` when pulling batch point flow in the management drawer.
