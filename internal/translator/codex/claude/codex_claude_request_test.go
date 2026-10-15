@@ -714,6 +714,45 @@ func TestConvertClaudeRequestToCodex_AssistantGrokSignatureToReasoningItem(t *te
 	}
 }
 
+func testMetaClaudeSignature() string {
+	// Shape-valid synthetic Meta envelope; no captured value is embedded.
+	signature := "Q-PaDgE"
+	for len(signature) < 1426 {
+		signature += "A"
+	}
+	return signature
+}
+
+func TestConvertClaudeRequestToCodex_AssistantMetaSignatureToReasoningItem(t *testing.T) {
+	signature := testMetaClaudeSignature()
+	payload := []byte(`{"model":"muse-spark-1.3","messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"summary","signature":""},{"type":"text","text":"answer"}]},{"role":"user","content":"next"}]}`)
+	payload, _ = sjson.SetBytes(payload, "messages.0.content.0.signature", signature)
+
+	out, _ := ConvertClaudeRequestToCodex("muse-spark-1.3", payload, false)
+	reasoning := gjson.GetBytes(out, "input.0")
+	if reasoning.Get("type").String() != "reasoning" {
+		t.Fatalf("input.0 type = %q, want reasoning; output=%s", reasoning.Get("type").String(), out)
+	}
+	if got := reasoning.Get("encrypted_content").String(); got != signature {
+		t.Fatalf("encrypted_content = %q, want Meta signature", got)
+	}
+}
+
+func TestConvertClaudeRequestToCodex_IgnoresMetaSignatureForNonMetaTargets(t *testing.T) {
+	signature := testMetaClaudeSignature()
+	payload := []byte(`{"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"summary","signature":""},{"type":"text","text":"answer"}]},{"role":"user","content":"next"}]}`)
+	payload, _ = sjson.SetBytes(payload, "messages.0.content.0.signature", signature)
+
+	for _, modelName := range []string{"gpt-5.4", "claude-sonnet-4-6", "grok-4.5"} {
+		t.Run(modelName, func(t *testing.T) {
+			out, _ := ConvertClaudeRequestToCodex(modelName, payload, false)
+			if got := countRequestInputItemsByType(out, "reasoning"); got != 0 {
+				t.Fatalf("got %d reasoning items for non-Meta target, want 0; output=%s", got, out)
+			}
+		})
+	}
+}
+
 func TestConvertClaudeRequestToCodex_IgnoresGrokSignatureForNonGrokTargets(t *testing.T) {
 	signature := "HmlYdr2aCAqCYP/m9mr8PS6KOsdMs72FGDigmydR+Jsmuv8KX97yWPlbOwmXJgWn0CbHaCacdQD3+n5EvpgLfPNmafS3kdICBjRuDf4bzHy7uBiUhNVhqPtp/ee1y9q4imPE4LYgD1VZ4J+bp9mTeqA1+nC9Oue58CiNEMV9SVaGenCD+aBnVuSTzQhD32Y+68i6HLJW0Dx6ifaRfb8hxYtA/sPM+/FTvAMW11nRho5a2BBSkpnzfqqAz/e/vGJ77/bygpXM823QA9wL9i0X"
 	payload := []byte(`{"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"summary","signature":""},{"type":"text","text":"answer"}]},{"role":"user","content":"next"}]}`)

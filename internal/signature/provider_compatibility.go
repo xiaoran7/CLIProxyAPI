@@ -22,6 +22,10 @@ const (
 	SignatureProviderGrok SignatureProvider = "grok"
 	// SignatureProviderSWE represents Cognition's SWE model family emitting sealed.v1 envelopes.
 	SignatureProviderSWE SignatureProvider = "swe"
+	// SignatureProviderMeta is identified by the observed Meta Muse envelope:
+	// a fixed five-byte header plus a power-of-two padded payload length. See
+	// meta_validation.go for the capture basis and its limits.
+	SignatureProviderMeta SignatureProvider = "meta"
 )
 
 type SignatureBlockKind string
@@ -78,6 +82,8 @@ func SignatureProviderFromModelName(modelName string) SignatureProvider {
 		return SignatureProviderKimi
 	case strings.Contains(lower, "grok"):
 		return SignatureProviderGrok
+	case strings.HasPrefix(lower, "muse-") || strings.Contains(lower, "/muse-"):
+		return SignatureProviderMeta
 	case strings.Contains(lower, "swe-"):
 		return SignatureProviderSWE
 	default:
@@ -92,7 +98,7 @@ func SignatureProviderFromModelName(modelName string) SignatureProvider {
 //
 //	'C' -> 0x08..0x0b : Claude CAIS (0x08)
 //	'E' -> 0x10..0x13 : Claude single-layer (0x12), Gemini protobuf_field_2 (0x12)
-//	'Q' -> 0x40..0x43 : Antigravity double-layer CAQS (0x43, inner 'C')
+//	'Q' -> 0x40..0x43 : Antigravity double-layer CAQS (0x43, inner 'C'), Meta Muse (0x43)
 //	'R' -> 0x44..0x47 : Claude double-layer R (0x45, inner 'E')
 //	'g' -> 0x80..0x83 : GPT Fernet reasoning (0x80)
 //
@@ -207,9 +213,11 @@ func DetectSignatureProviderForBlock(rawSignature string, blockKind SignatureBlo
 	// Probes run from the strongest marker to the weakest:
 	//   1. GPT carries the literal "gAAAA" prefix, which pins both the version
 	//      byte and the high timestamp bytes.
-	//   2. Claude CAIS/CAQS carries marker 0x08 with nested container/channel structure.
-	//   3. Claude single/double-layer carries marker 0x12 plus the same literal.
-	//   4. Gemini validates wire shape only and has no literal to anchor on, so
+	//   2. Meta Muse carries a fixed five-byte decoded header plus an exact
+	//      power-of-two padded length, which no other family can collide with.
+	//   3. Claude CAIS/CAQS carries marker 0x08 with nested container/channel structure.
+	//   4. Claude single/double-layer carries marker 0x12 plus the same literal.
+	//   5. Gemini validates wire shape only and has no literal to anchor on, so
 	//      it is the weakest judge and goes last.
 	//
 	// This ordering is defense in depth rather than a correctness requirement:
@@ -227,6 +235,9 @@ func DetectSignatureProviderForBlock(rawSignature string, blockKind SignatureBlo
 	if maybeSelfDescribingSignatureEnvelope(sig) {
 		if IsValidGPTReasoningSignature(sig) {
 			return SignatureProviderGPT
+		}
+		if IsValidMetaReasoningSignature(sig) {
+			return SignatureProviderMeta
 		}
 		if IsValidClaudeCAISSignature(sig) {
 			return SignatureProviderClaude
@@ -316,6 +327,9 @@ func DecideSignatureCompatibilityForModel(targetProvider SignatureProvider, targ
 	case SignatureProviderSWE:
 		decision.Action = SignatureActionDropBlock
 		decision.Reason = "SWE requires sealed.v1 signature from its own backend"
+	case SignatureProviderMeta:
+		decision.Action = SignatureActionDropBlock
+		decision.Reason = "Meta Muse requires its native encrypted_content envelope and has no cross-provider bypass sentinel"
 	case SignatureProviderKimi:
 		// Kimi is the only target that can keep the reasoning text when the
 		// signature does not match. Its Messages endpoint never reads the field
@@ -460,6 +474,8 @@ func signatureProviderMatchesTarget(target, detected SignatureProvider) bool {
 		return detected == SignatureProviderGPT
 	case SignatureProviderSWE:
 		return detected == SignatureProviderSWE
+	case SignatureProviderMeta:
+		return detected == SignatureProviderMeta
 	case SignatureProviderKimi:
 		return detected == SignatureProviderKimi
 	default:
@@ -497,6 +513,10 @@ func normalizeCompatibleSignatureForProvider(targetProvider SignatureProvider, r
 		if strings.HasPrefix(payload, "sealed.v1.") {
 			return payload
 		}
+	case SignatureProviderMeta:
+		if IsValidMetaReasoningSignature(payload) {
+			return payload
+		}
 	case SignatureProviderKimi:
 		if IsValidKimiThinkingSignature(payload) {
 			return payload
@@ -517,7 +537,7 @@ func isRecognizedGeminiProviderSignature(rawSignature string, blockKind Signatur
 
 // IsRecognizedReasoningSignature reports whether rawSignature is a structurally valid
 // reasoning signature or encrypted_content payload from any known provider
-// (GPT, Claude, Gemini, Kimi, Grok, Devin).
+// (GPT, Claude, Gemini, Kimi, Grok, Devin, Meta).
 func IsRecognizedReasoningSignature(rawSignature string) bool {
 	sig := strings.TrimSpace(rawSignature)
 	if sig == "" {

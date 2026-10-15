@@ -181,6 +181,10 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool, 
 					signature = rawSignature
 					ok = true
 				}
+				if !ok && codexClaudeTargetAcceptsMetaSignature(modelName) && sigcompat.IsValidMetaReasoningSignature(rawSignature) {
+					signature = rawSignature
+					ok = true
+				}
 				if !ok {
 					if preserveEmptyThinkingBlocks && strings.TrimSpace(rawSignature) == "" {
 						signature = rawSignature
@@ -462,6 +466,16 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool, 
 	template = translatorcommon.SetRawArrayItems(template, "input", inputItems)
 
 	return template, drops.Err()
+}
+
+// codexClaudeTargetAcceptsMetaSignature reports whether the target model is
+// a Meta Muse model, in which case a positively recognized native Meta
+// envelope carried in a Claude thinking signature must survive translation
+// into a Responses reasoning item so it can replay to Meta. For every other
+// target the same blob is foreign and dropped by the caller.
+func codexClaudeTargetAcceptsMetaSignature(modelName string) bool {
+	baseModel := thinking.ParseSuffix(modelName).ModelName
+	return sigcompat.SignatureProviderFromModelName(baseModel) == sigcompat.SignatureProviderMeta
 }
 
 func codexClaudeTargetAcceptsGrokSignature(modelName string) bool {

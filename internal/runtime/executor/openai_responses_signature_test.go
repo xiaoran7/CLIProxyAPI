@@ -260,6 +260,60 @@ func TestSanitizeOpenAIResponsesReasoningEncryptedContentKeepForeign_Issue6450(t
 	}
 }
 
+func TestSanitizeOpenAIResponsesReasoningEncryptedContentForMeta_PreservesRecognizedMuse(t *testing.T) {
+	// Synthetic shape-valid Meta envelope: "Q-PaDgE" pins the observed
+	// five-byte header, and 1426 unpadded base64url chars decode to
+	// 45 + 1024 bytes. No captured signature is embedded in tests.
+	metaSig := "Q-PaDgE" + strings.Repeat("A", 1419)
+	const unknownSig = "Q-PaDg-mock-muse-spark-encrypted-reasoning-payload"
+	body := []byte(`{"store":false,"input":[` +
+		`{"id":"rs_meta","type":"reasoning","summary":[],"content":null,"encrypted_content":"` + metaSig + `"},` +
+		`{"id":"rs_unknown","type":"reasoning","summary":[],"content":null,"encrypted_content":"` + unknownSig + `"},` +
+		`{"id":"rs_claude","type":"reasoning","summary":[],"content":null,"encrypted_content":"` + testClaudeCAISSample + `"} ` +
+		`]}`)
+
+	got := sanitizeOpenAIResponsesReasoningEncryptedContentForMeta(context.Background(), "test", body)
+
+	// The Meta target is native-only: the recognized Meta envelope survives,
+	// while unknown-format and known-foreign values are both stripped so no
+	// wrong signature can reach the Meta upstream.
+	if gotSig := gjson.GetBytes(got, "input.0.encrypted_content").String(); gotSig != metaSig {
+		t.Fatalf("recognized Meta encrypted_content not preserved; body=%s", got)
+	}
+	if gjson.GetBytes(got, "input.1.encrypted_content").Exists() {
+		t.Fatalf("unknown-format encrypted_content should be stripped on Meta target: %s", got)
+	}
+	if gjson.GetBytes(got, "input.2.encrypted_content").Exists() {
+		t.Fatalf("Claude signature should be stripped on Meta target: %s", got)
+	}
+
+	// The generic keepForeign path has no Meta allowance: once Muse is a
+	// positively recognized family, its envelope is known-foreign there and
+	// must be stripped instead of riding the unknown-format exemption.
+	generic := sanitizeOpenAIResponsesReasoningEncryptedContentKeepForeign(context.Background(), "test", body)
+	if gjson.GetBytes(generic, "input.0.encrypted_content").Exists() {
+		t.Fatalf("recognized Meta signature should be stripped by generic keepForeign: %s", generic)
+	}
+	if gotSig := gjson.GetBytes(generic, "input.1.encrypted_content").String(); gotSig != unknownSig {
+		t.Fatalf("unknown-format encrypted_content should remain preserved by generic keepForeign; body=%s", generic)
+	}
+
+	// The compat path preserves a recognized Meta envelope only when its
+	// target model is itself a Meta-family model (cascaded/third-party
+	// compat endpoints serving muse-*); other compat targets strip it.
+	compatMeta := sanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel(context.Background(), "test", body, true, "muse-spark-1.3")
+	if gotSig := gjson.GetBytes(compatMeta, "input.0.encrypted_content").String(); gotSig != metaSig {
+		t.Fatalf("compat Meta-model target should preserve recognized Meta signature; body=%s", compatMeta)
+	}
+	if gjson.GetBytes(compatMeta, "input.1.encrypted_content").Exists() {
+		t.Fatalf("compat Meta-model target should strip unknown-format signature: %s", compatMeta)
+	}
+	compatOther := sanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel(context.Background(), "test", body, true, "deepseek-v4")
+	if gjson.GetBytes(compatOther, "input.0.encrypted_content").Exists() {
+		t.Fatalf("compat non-Meta target should strip recognized Meta signature: %s", compatOther)
+	}
+}
+
 func BenchmarkSanitizeOpenAIResponsesReasoningEncryptedContentLargeNoopPayload(b *testing.B) {
 	body := []byte(`{"store":false,"input":[{"type":"message","role":"user","content":"` + strings.Repeat("x", 8<<20) + `"}]}`)
 	b.ReportAllocs()
