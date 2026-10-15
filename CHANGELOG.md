@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Management UI Premature Return & Sequence Operator Bug in `Fp` Config Parser (`management.html`)**:
+  - **Eliminated Premature Return**: Corrected comma-sequence evaluation bug in minified `Fp` where `return t.apiKeys = ..., t.quotaExceeded = ...;` prematurely returned `{ antigravityCredits: false }` instead of the fully parsed configuration object `t`. This bug had caused `config.loggingToFile` to evaluate to `undefined` in `Wae` React hook, triggering a false-positive warning barrier ("当前连接的是 CPA，日志查看需要先开启“日志记录到文件”。") and preventing log retrieval even when logging to file was enabled.
+  - **Distributed Deployment Synchronization**: Synchronized updated `management.html` to Tokyo production VPS (`vps-tokyo-02`, `/opt/gate/static/management.html` + Gate in-memory cache reload) and US sandbox VPS (`us-zenix`, `/opt/cliproxyapi/static/management.html`).
 - **Management UI Backward Compatibility for Legacy CPA Endpoints & Configuration Layout (`management.html`)**:
   - **Flat Configuration Fallback in `Fp`**: Added backward compatibility in `Fp` config parsing to check legacy flat keys (`e["logging-to-file"]`, `e["debug"]`, `e["request-log"]`, `e["logs-max-total-size-mb"]`, `e["error-logs-max-files"]`) when v8 nested namespace (`observability.logs.*`) is absent, preventing false-positive "日志查看需要先开启日志记录到文件" empty state barriers when connected to CPA nodes with flat configuration layouts.
   - **HTTP 404 Automatic Fallback in `Wy` Log Client**: Added 404 fallback routing in `Wy` log client methods:
