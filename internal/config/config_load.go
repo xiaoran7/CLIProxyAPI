@@ -2,6 +2,8 @@ package config
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -24,6 +26,12 @@ import (
 //   - error: An error if the configuration could not be loaded
 func LoadConfig(configFile string) (*Config, error) {
 	return LoadConfigOptional(configFile, false)
+}
+
+// ComputeSourceHash returns the Config.SourceHash value for config file bytes.
+func ComputeSourceHash(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // PrepareConfigFileForUpload applies the file rewrites of a startup load: a plaintext
@@ -336,6 +344,10 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 			return nil, fmt.Errorf("clean conflicting config fields: %w", errWrite)
 		}
 	}
+
+	// Record the exact bytes this config was parsed from, so a consumer can tell
+	// it apart from a newer version of the file.
+	cfg.SourceHash = ComputeSourceHash(data)
 
 	// Return the populated configuration struct.
 	return &cfg, nil
