@@ -834,7 +834,18 @@ func (r *ModelRegistry) addModelRegistration(modelID, provider string, model *Mo
 		existing.Count++
 		existing.LastUpdated = now
 		hasWebSearch := model.SupportsWebSearch || r.hasClientSupportingWebSearchLocked(modelID, "", excludeClientID)
-		existing.Info = cloneModelInfo(model)
+		incoming := cloneModelInfo(model)
+		// Several providers may expose the same model ID (for example an
+		// openai-compatibility upstream and a built-in provider). The last
+		// registration owns the shared Info, but billing annotations are
+		// provider-specific and must not be erased by a provider that has none:
+		// a WorkBuddy rate would otherwise disappear as soon as another provider
+		// re-registered the same ID.
+		if incoming.Credits == nil && existing.Info != nil && existing.Info.Credits != nil {
+			credits := *existing.Info.Credits
+			incoming.Credits = &credits
+		}
+		existing.Info = incoming
 		existing.Info.SupportsWebSearch = hasWebSearch
 		if existing.SuspendedClients == nil {
 			existing.SuspendedClients = make(map[string]string)
