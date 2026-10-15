@@ -2,6 +2,9 @@ package handlers
 
 import (
 	"bytes"
+	"compress/flate"
+	"compress/gzip"
+	"compress/zlib"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/andybalholm/brotli"
 	"github.com/gin-gonic/gin"
 	"github.com/klauspost/compress/zstd"
 )
@@ -59,6 +63,24 @@ func decodeRequestBody(raw []byte, encoding string, maxBytes int64) ([]byte, err
 		switch enc {
 		case "", "identity":
 			continue
+		case "gzip", "x-gzip":
+			decoded, err := decodeGzipRequestBody(body, maxBytes)
+			if err != nil {
+				return nil, err
+			}
+			body = decoded
+		case "br":
+			decoded, err := decodeBrotliRequestBody(body, maxBytes)
+			if err != nil {
+				return nil, err
+			}
+			body = decoded
+		case "deflate":
+			decoded, err := decodeDeflateRequestBody(body, maxBytes)
+			if err != nil {
+				return nil, err
+			}
+			body = decoded
 		case "zstd":
 			decoded, err := decodeZstdRequestBody(body, maxBytes)
 			if err != nil {
@@ -70,6 +92,79 @@ func decodeRequestBody(raw []byte, encoding string, maxBytes int64) ([]byte, err
 		}
 	}
 	return body, nil
+}
+
+func decodeGzipRequestBody(raw []byte, maxBytes int64) ([]byte, error) {
+	reader, err := gzip.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gzip request decoder: %w", err)
+	}
+	defer func() {
+		_ = reader.Close()
+	}()
+
+	var r io.Reader = reader
+	if maxBytes > 0 && maxBytes < math.MaxInt64 {
+		r = io.LimitReader(reader, maxBytes+1)
+	}
+	decoded, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode gzip request body: %w", err)
+	}
+	if maxBytes > 0 && int64(len(decoded)) > maxBytes {
+		return nil, &http.MaxBytesError{Limit: maxBytes}
+	}
+	return decoded, nil
+}
+
+func decodeBrotliRequestBody(raw []byte, maxBytes int64) ([]byte, error) {
+	reader := brotli.NewReader(bytes.NewReader(raw))
+	var r io.Reader = reader
+	if maxBytes > 0 && maxBytes < math.MaxInt64 {
+		r = io.LimitReader(reader, maxBytes+1)
+	}
+	decoded, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode brotli request body: %w", err)
+	}
+	if maxBytes > 0 && int64(len(decoded)) > maxBytes {
+		return nil, &http.MaxBytesError{Limit: maxBytes}
+	}
+	return decoded, nil
+}
+
+func decodeDeflateRequestBody(raw []byte, maxBytes int64) ([]byte, error) {
+	zlibReader, err := zlib.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		flateReader := flate.NewReader(bytes.NewReader(raw))
+		defer func() { _ = flateReader.Close() }()
+		var r io.Reader = flateReader
+		if maxBytes > 0 && maxBytes < math.MaxInt64 {
+			r = io.LimitReader(flateReader, maxBytes+1)
+		}
+		decoded, readErr := io.ReadAll(r)
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to decode deflate request body: %w", err)
+		}
+		if maxBytes > 0 && int64(len(decoded)) > maxBytes {
+			return nil, &http.MaxBytesError{Limit: maxBytes}
+		}
+		return decoded, nil
+	}
+	defer func() { _ = zlibReader.Close() }()
+
+	var r io.Reader = zlibReader
+	if maxBytes > 0 && maxBytes < math.MaxInt64 {
+		r = io.LimitReader(zlibReader, maxBytes+1)
+	}
+	decoded, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode deflate request body: %w", err)
+	}
+	if maxBytes > 0 && int64(len(decoded)) > maxBytes {
+		return nil, &http.MaxBytesError{Limit: maxBytes}
+	}
+	return decoded, nil
 }
 
 func decodeZstdRequestBody(raw []byte, maxBytes int64) ([]byte, error) {

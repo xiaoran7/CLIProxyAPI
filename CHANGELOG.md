@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Multi-Format Request Body Decompression & Uniform Ingestion (`request_body.go`, `request_body_test.go`, `code_handlers.go`, `gemini_handlers.go`, `interactions_handlers.go`)**:
+  - **Comprehensive Decompression Support**: Expanded `ReadRequestBody` and `decodeRequestBody` to support RFC-compliant HTTP `Content-Encoding` decoding for `gzip`, `x-gzip`, `br` (Brotli), `deflate` (zlib with raw flate fallback), and chained multi-stage encodings alongside existing `zstd`.
+  - **Decompression Bomb Protection**: Enforced bounds checking on all decompression streams using `io.LimitReader(decoder, maxBytes+1)`, returning `*http.MaxBytesError` when uncompressed payloads exceed `MaxRequestBodyBytes`.
+  - **Uniform Handler Body Ingestion**: Replaced raw `c.GetRawData()` calls across Claude `/v1/messages` and `/v1/messages/count_tokens`, as well as Gemini `/v1beta/models/*` and `/v1beta/interactions` handlers, with `handlers.ReadRequestBody(c)` to ensure transparent decompression across all upstream endpoints.
+  - **Unit Test Coverage**: Added comprehensive test suite in `request_body_test.go` verifying plain text, gzip, x-gzip, brotli, deflate, zstd, chained encodings, max bytes limit enforcement, unsupported encodings, and corrupt data rejection.
+
 ### Fixed
 - **Management UI Premature Return & Sequence Operator Bug in `Fp` Config Parser (`management.html`)**:
   - **Eliminated Premature Return**: Corrected comma-sequence evaluation bug in minified `Fp` where `return t.apiKeys = ..., t.quotaExceeded = ...;` prematurely returned `{ antigravityCredits: false }` instead of the fully parsed configuration object `t`. This bug had caused `config.loggingToFile` to evaluate to `undefined` in `Wae` React hook, triggering a false-positive warning barrier ("当前连接的是 CPA，日志查看需要先开启“日志记录到文件”。") and preventing log retrieval even when logging to file was enabled.
