@@ -310,3 +310,200 @@ func TestQueryQuota_ActivityStatusFallback(t *testing.T) {
 	}
 }
 
+func TestQueryQuota_UserResourceSummaryAndPackages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case MeterUserResourceSummaryPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"code": 0,
+				"msg": "ok",
+				"data": {
+					"IsPaidUser": true,
+					"Packages": [
+						{
+							"PackageCode": "TCACA_code_002_AkiJS3ZHF5",
+							"CycleTotalCapacity": "500.00000000",
+							"CycleUsedCapacity": "61.12000000",
+							"CycleRemainCapacity": "438.88000000"
+						}
+					]
+				}
+			}`))
+		case MeterPaidPackagesPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"code": 0,
+				"msg": "ok",
+				"data": {
+					"TotalCount": 1,
+					"Accounts": [
+						{
+							"PackageCode": "TCACA_code_002_AkiJS3ZHF5",
+							"CycleCapacityRemainPrecise": "438.88000000",
+							"ExpiredTime": "2026-11-20 18:00:00",
+							"CapacityType": "1"
+						}
+					]
+				}
+			}`))
+		case MeterFreePackagesPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"code": 0,
+				"msg": "ok",
+				"data": {
+					"TotalCount": 0,
+					"Accounts": []
+				}
+			}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	customClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.URL.Scheme = "http"
+			req.URL.Host = server.Listener.Addr().String()
+			return http.DefaultTransport.RoundTrip(req)
+		}),
+	}
+
+	auth := &cliproxyauth.Auth{
+		ID:       "wb-summary-test",
+		Provider: "workbuddy",
+		Attributes: map[string]string{
+			"access_token": "mock-token",
+			"base_url":     server.URL,
+		},
+	}
+
+	res, err := QueryQuota(context.Background(), customClient, auth)
+	if err != nil {
+		t.Fatalf("QueryQuota returned error: %v", err)
+	}
+
+	if res.Subscription == nil || res.Subscription.Plan != "WorkBuddy (en) · Pro" {
+		t.Errorf("Subscription.Plan = %v, want WorkBuddy (en) · Pro", res.Subscription)
+	}
+
+	var remain, total, used, runsOut float64
+	var expiresAt string
+	for _, m := range res.Summary {
+		switch m.Key {
+		case "points_remain":
+			remain = m.Value
+		case "points_total":
+			total = m.Value
+		case "points_used":
+			used = m.Value
+		case "runs_out_points":
+			runsOut = m.Value
+		case "expires_at":
+			expiresAt = m.Unit
+		}
+	}
+
+	if remain != 438.88 {
+		t.Errorf("remain = %v, want 438.88", remain)
+	}
+	if total != 500 {
+		t.Errorf("total = %v, want 500", total)
+	}
+	if used != 61.12 {
+		t.Errorf("used = %v, want 61.12", used)
+	}
+	if runsOut != 438.88 {
+		t.Errorf("runsOut = %v, want 438.88", runsOut)
+	}
+	if expiresAt != "2026-11-20 18:00:00" {
+		t.Errorf("expiresAt = %q, want 2026-11-20 18:00:00", expiresAt)
+	}
+}
+
+func TestQueryQuota_EnterpriseUsage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case MeterUserResourceSummaryPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"code": 0,
+				"msg": "ok",
+				"data": {
+					"IsPaidUser": false,
+					"Packages": []
+				}
+			}`))
+		case MeterEnterpriseUsagePath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"code": 0,
+				"msg": "ok",
+				"data": {
+					"limitNum": 1000,
+					"credit": 250,
+					"cycleResetTime": "2026-12-01 00:00:00"
+				}
+			}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	customClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.URL.Scheme = "http"
+			req.URL.Host = server.Listener.Addr().String()
+			return http.DefaultTransport.RoundTrip(req)
+		}),
+	}
+
+	auth := &cliproxyauth.Auth{
+		ID:       "wb-ent-test",
+		Provider: "workbuddy-cn",
+		Attributes: map[string]string{
+			"access_token": "mock-token",
+			"base_url":     server.URL,
+		},
+	}
+
+	res, err := QueryQuota(context.Background(), customClient, auth)
+	if err != nil {
+		t.Fatalf("QueryQuota returned error: %v", err)
+	}
+
+	if res.Subscription == nil || res.Subscription.Plan != "WorkBuddy (cn) · Enterprise" {
+		t.Errorf("Subscription.Plan = %v, want WorkBuddy (cn) · Enterprise", res.Subscription)
+	}
+
+	var remain, total, used float64
+	var expiresAt string
+	for _, m := range res.Summary {
+		switch m.Key {
+		case "points_remain":
+			remain = m.Value
+		case "points_total":
+			total = m.Value
+		case "points_used":
+			used = m.Value
+		case "expires_at":
+			expiresAt = m.Unit
+		}
+	}
+
+	if remain != 750 {
+		t.Errorf("remain = %v, want 750", remain)
+	}
+	if total != 1000 {
+		t.Errorf("total = %v, want 1000", total)
+	}
+	if used != 250 {
+		t.Errorf("used = %v, want 250", used)
+	}
+	if expiresAt != "2026-12-01 00:00:00" {
+		t.Errorf("expiresAt = %q, want 2026-12-01 00:00:00", expiresAt)
+	}
+}

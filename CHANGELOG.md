@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **WorkBuddy / CodeBuddy Quota Meter & Expiration Tracking Alignment (`quota.go`, `plugin_quota.go`, `workbuddy_test.go`, `management.html`)**:
+  - **Billing Meter Architecture Alignment**: Upgraded WorkBuddy / CodeBuddy quota querying to directly consume Tencent's billing meter endpoints (`POST /billing/meter/get-user-resource-summary`, `/get-enterprise-user-usage`, `/get-user-resource-paid-packages`, `/get-user-resource-free-packages`), aligning with Magpie's production reverse-engineered capacity structure.
+  - **Accurate Point Balances**: Replaced fallback to activity check-in status with true plan capacities (`CycleTotalCapacity`, `CycleUsedCapacity`, `CycleRemainCapacity`), accurately reflecting total and available package credits across personal Pro, Free, and Enterprise team plans.
+  - **Soonest Expiry / Cutoff Calculation**: Implemented pagination and expiration parsing for paid and free packages (`runsOutOf`), tracking exact package end times (`DeductionEndTime`, `ExpiredTime`, `CycleEndTime` in CST UTC+8), surfacing earliest cutoff timestamps (`expires_at`, `runs_out_at`, `runs_out_points`) in both API quota metrics and management endpoints.
+  - **Frontend Display**: Updated management dashboard WorkBuddy quota card to show earliest expiration dates (`截止: YYYY-MM-DD HH:MM:SS`) or total points alongside the available point balance.
+
+### Added
 - **WorkBuddy / CodeBuddy Per-Model Credit Multipliers (`workbuddy_credits.go`, `workbuddy_credits_test.go`, `service_models.go`, `workbuddy.go`, `quota.go`, `plugin_quota.go`)**:
   - **Live Multiplier Sourcing Instead of a Boolean Free Flag**: The WorkBuddy / CodeBuddy catalogue (`GET /v3/config`) publishes a real per-model billing multiplier (`credits`, e.g. `x0.00` free, `x0.79`, `x3.31`). That catalogue is now fetched with the account's own credentials, cached per realm for 30 minutes (2 minutes after a failure), and overlaid onto the static model registry, so callers see the actual rate instead of a coarse "is it free" answer.
   - **Promotion-Aware Effective Rate**: Time-boxed promotions (`modelPromotions`) are applied only when `enabled`, inside their `validFrom` / `validUntil` window and inside their `daily` window (midnight-crossing windows included), and only when they carry a real `discount` block — a badge-only entry is used as an annotation and can never imply a model is free. The effective rate is the cheaper of the base rate and any active promotion.

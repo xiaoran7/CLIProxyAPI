@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,7 +24,108 @@ const (
 	UserPointsPath = "/v2/plugin/user/points"
 	// UserProfilePath queries user profile details.
 	UserProfilePath = "/v2/plugin/user/profile"
+
+	// MeterUserResourceSummaryPath is the resource summary endpoint on /billing/meter without /v2 gateway prefix.
+	MeterUserResourceSummaryPath = "/billing/meter/get-user-resource-summary"
+	// MeterEnterpriseUsagePath is the enterprise user usage endpoint for team/enterprise accounts.
+	MeterEnterpriseUsagePath = "/billing/meter/get-enterprise-user-usage"
+	// MeterPaidPackagesPath is the paid packages endpoint with expiration info.
+	MeterPaidPackagesPath = "/billing/meter/get-user-resource-paid-packages"
+	// MeterFreePackagesPath is the free packages endpoint with slice and expiration info.
+	MeterFreePackagesPath = "/billing/meter/get-user-resource-free-packages"
+
+	// DailySlicePackageCode is the daily package refreshed every midnight.
+	DailySlicePackageCode = "TCACA_code_001_PqouKr6QWV"
+	// SliceCapacityType is the capacity type for daily slice packages.
+	SliceCapacityType = "4"
 )
+
+var (
+	paidPackageCodes = []string{
+		"TCACA_code_002_AkiJS3ZHF5",
+		"TCACA_code_005_maRGyrHhw1",
+		"TCACA_code_003_FAnt7lcmRT",
+		"TCACA_code_023_4xbGhMrE6q",
+		"TCACA_code_026_BaESVICNoi",
+		"TCACA_code_027_0FCGVA6vSa",
+		"TCACA_code_009_0XmEQc2xOf",
+		"TCACA_code_038_OhvqZtiPKr",
+		"TCACA_code_036_lupO5WgNdG",
+	}
+
+	freePackageCodes = []string{
+		DailySlicePackageCode,
+		"TCACA_code_008_cfWoLwvjU4",
+		"TCACA_code_035_ArVxJcGDsm",
+		"TCACA_code_006_DbXS0lrypC",
+		"TCACA_code_039_KRcQj7wUat",
+		"TCACA_code_040_mi9rCYg46x",
+		"TCACA_code_007_nzdH5h4Nl0",
+		"TCACA_code_028_NtpWi0jzXs",
+		"TCACA_code_037_WxOD3MpI2o",
+		"TCACA_code_029_6wCGEWquYy",
+		"TCACA_code_030_BjSt89qTvr",
+	}
+
+	beijingLocation = time.FixedZone("CST", 8*3600)
+)
+
+// parseCapacity parses a number or string capacity ("438.88" or 438.88) to float64.
+func parseCapacity(val gjson.Result) float64 {
+	if !val.Exists() {
+		return 0
+	}
+	switch val.Type {
+	case gjson.Number:
+		v := val.Float()
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return 0
+		}
+		return v
+	case gjson.String:
+		s := strings.TrimSpace(val.String())
+		if s == "" {
+			return 0
+		}
+		n, err := strconv.ParseFloat(s, 64)
+		if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
+			return 0
+		}
+		return n
+	default:
+		return 0
+	}
+}
+
+// parseBeijingTime parses "2006-01-02 15:04:05" in CST (UTC+8).
+func parseBeijingTime(s string) time.Time {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}
+	}
+	if t, err := time.ParseInLocation("2006-01-02 15:04:05", s, beijingLocation); err == nil {
+		return t
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t
+	}
+	return time.Time{}
+}
+
+// parseEndOfPackage determines the expiration time in milliseconds for a package.
+func parseEndOfPackage(pkg gjson.Result) int64 {
+	if ms := pkg.Get("DeductionEndTime").Int(); ms > 0 {
+		return ms
+	}
+	for _, k := range []string{"ExpiredTime", "CycleEndTime"} {
+		if v := strings.TrimSpace(pkg.Get(k).String()); v != "" {
+			if t := parseBeijingTime(v); !t.IsZero() {
+				return t.UnixMilli()
+			}
+		}
+	}
+	return 0
+}
 
 // QueryQuota queries WorkBuddy / CodeBuddy account points and subscription status.
 func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Auth) (pluginapi.QuotaFetchResponse, error) {
@@ -51,25 +154,6 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 		editionLabel = "WorkBuddy (cn)"
 	}
 
-	// Query points endpoint first; fall back to profile/account info if points endpoint returns 404 or non-standard shape
-	pointsURL := baseURL + UserPointsPath
-	req, errReq := http.NewRequestWithContext(ctx, http.MethodGet, pointsURL, nil)
-	if errReq != nil {
-		return pluginapi.QuotaFetchResponse{}, fmt.Errorf("workbuddy: create quota request: %w", errReq)
-	}
-	ApplyHeaders(req, auth, token)
-
-	var respBytes []byte
-	var statusCode int
-	resp, errDo := client.Do(req)
-	if errDo == nil {
-		defer func() {
-			_ = resp.Body.Close()
-		}()
-		statusCode = resp.StatusCode
-		respBytes, _ = io.ReadAll(resp.Body)
-	}
-
 	now := time.Now().UTC()
 	nextMidnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
 
@@ -77,61 +161,238 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 	var remainingFrac = 1.0
 	var usedPoints, totalPoints, remainPoints float64
 	var hasExplicitPoints bool
+	var expiresAt string
+	var runsOutAt string
+	var runsOutPoints float64
+	var hasRunsOut bool
 
-	if statusCode >= 200 && statusCode < 300 && len(respBytes) > 0 && json.Valid(respBytes) {
-		data := gjson.GetBytes(respBytes, "data")
+	// Helper for POST requests to /billing/meter/...
+	postMeter := func(path string, reqBody any) ([]byte, int, error) {
+		bodyBytes, _ := json.Marshal(reqBody)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+path, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return nil, 0, err
+		}
+		ApplyHeaders(req, auth, token)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/plain, */*")
+		req.Header.Set("X-Product", "SaaS")
+		req.Header.Set("X-IDE-Type", "WorkBuddy")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, 0, err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		respBytes, errRead := io.ReadAll(resp.Body)
+		return respBytes, resp.StatusCode, errRead
+	}
+
+	// 1. Primary path: query /billing/meter/get-user-resource-summary
+	summaryBytes, summaryStatus, errSummary := postMeter(MeterUserResourceSummaryPath, map[string]any{})
+	if errSummary == nil && summaryStatus == http.StatusOK && json.Valid(summaryBytes) {
+		data := gjson.GetBytes(summaryBytes, "data")
 		if !data.Exists() {
-			data = gjson.ParseBytes(respBytes)
+			data = gjson.ParseBytes(summaryBytes)
 		}
 
-		if vip := strings.TrimSpace(data.Get("vip_type").String()); vip != "" {
-			planName = fmt.Sprintf("%s · %s", editionLabel, vip)
-		} else if plan := strings.TrimSpace(data.Get("plan_name").String()); plan != "" {
-			planName = fmt.Sprintf("%s · %s", editionLabel, plan)
-		} else if level := strings.TrimSpace(data.Get("user_level").String()); level != "" {
-			planName = fmt.Sprintf("%s · %s", editionLabel, level)
+		isPaidUser := data.Get("IsPaidUser").Bool()
+		if isPaidUser {
+			planName = editionLabel + " · Pro"
+		} else {
+			planName = editionLabel + " · Free"
 		}
 
-		// Parse total / remaining / used points across possible field names
-		for _, k := range []string{"total_points", "total_quota", "limit", "daily_limit", "total"} {
-			if v := data.Get(k); v.Exists() && v.Type == gjson.Number && v.Float() > 0 {
-				totalPoints = v.Float()
-				hasExplicitPoints = true
-				break
-			}
-		}
-		for _, k := range []string{"remaining_points", "remain_points", "available_points", "balance", "remaining", "left_points"} {
-			if v := data.Get(k); v.Exists() && v.Type == gjson.Number {
-				remainPoints = v.Float()
-				hasExplicitPoints = true
-				break
-			}
-		}
-		for _, k := range []string{"used_points", "used_quota", "used", "consumed_points"} {
-			if v := data.Get(k); v.Exists() && v.Type == gjson.Number {
-				usedPoints = v.Float()
-				hasExplicitPoints = true
-				break
-			}
-		}
-
-		if hasExplicitPoints {
-			if totalPoints > 0 {
-				if remainPoints == 0 && usedPoints > 0 && usedPoints <= totalPoints {
-					remainPoints = totalPoints - usedPoints
+		pkgs := data.Get("Packages")
+		if pkgs.IsArray() && len(pkgs.Array()) > 0 {
+			countedCodes := make(map[string]bool)
+			for _, p := range pkgs.Array() {
+				code := p.Get("PackageCode").String()
+				if code != "" {
+					countedCodes[code] = true
 				}
-				remainingFrac = remainPoints / totalPoints
-				if remainingFrac < 0 {
-					remainingFrac = 0
-				} else if remainingFrac > 1 {
-					remainingFrac = 1
+				tot := parseCapacity(p.Get("CycleTotalCapacity"))
+				used := parseCapacity(p.Get("CycleUsedCapacity"))
+				rem := parseCapacity(p.Get("CycleRemainCapacity"))
+				if rem == 0 && tot > used {
+					rem = tot - used
 				}
-			} else if remainPoints > 0 {
-				remainingFrac = 1.0
+				totalPoints += tot
+				usedPoints += used
+				remainPoints += rem
+			}
+			hasExplicitPoints = true
+
+			// Fetch package details to discover earliest expiration / cutoff date
+			nowBeijing := time.Now().In(beijingLocation)
+			dayStr := nowBeijing.Format("2006-01-02")
+			nowMs := now.UnixMilli()
+
+			type meterPackageCall struct {
+				path  string
+				extra map[string]any
+			}
+			calls := []meterPackageCall{
+				{
+					path: MeterPaidPackagesPath,
+					extra: map[string]any{
+						"PackageCodes":  paidPackageCodes,
+						"NeedRenewInfo": true,
+					},
+				},
+				{
+					path: MeterFreePackagesPath,
+					extra: map[string]any{
+						"PackageCodes":         freePackageCodes,
+						"SlicePeriodStartTime": dayStr + " 00:00:00",
+						"SlicePeriodEndTime":   dayStr + " 23:59:59",
+					},
+				},
+			}
+
+			var earliestAt int64
+			var earliestAmount float64
+
+			for _, c := range calls {
+				for page := 1; page <= 5; page++ {
+					bodyMap := map[string]any{
+						"PageNumber": page,
+						"PageSize":   200,
+						"Status":     []int{0, 3},
+					}
+					for k, v := range c.extra {
+						bodyMap[k] = v
+					}
+					pkgBytes, pkgStatus, errPkg := postMeter(c.path, bodyMap)
+					if errPkg != nil || pkgStatus != http.StatusOK || !json.Valid(pkgBytes) {
+						break
+					}
+					pkgData := gjson.GetBytes(pkgBytes, "data")
+					if !pkgData.Exists() {
+						pkgData = gjson.ParseBytes(pkgBytes)
+					}
+					accounts := pkgData.Get("Accounts")
+					if !accounts.IsArray() || len(accounts.Array()) == 0 {
+						break
+					}
+					for _, p := range accounts.Array() {
+						pCode := p.Get("PackageCode").String()
+						capType := strings.TrimSpace(p.Get("CapacityType").String())
+						if !countedCodes[pCode] || pCode == DailySlicePackageCode || capType == SliceCapacityType {
+							continue
+						}
+						remPrecise := p.Get("CycleCapacityRemainPrecise")
+						if !remPrecise.Exists() {
+							remPrecise = p.Get("CycleCapacityRemain")
+						}
+						left := parseCapacity(remPrecise)
+						end := parseEndOfPackage(p)
+						if left <= 0 || end <= nowMs {
+							continue
+						}
+						if earliestAt == 0 || end < earliestAt {
+							earliestAt = end
+							earliestAmount = left
+						} else if end == earliestAt {
+							earliestAmount += left
+						}
+					}
+					totalCount := pkgData.Get("TotalCount").Int()
+					if int64(len(accounts.Array())) < 200 || int64(page*200) >= totalCount {
+						break
+					}
+				}
+			}
+
+			if earliestAt > 0 {
+				earliestTime := time.UnixMilli(earliestAt).UTC()
+				runsOutAt = earliestTime.Format(time.RFC3339)
+				expiresAt = earliestTime.In(beijingLocation).Format("2006-01-02 15:04:05")
+				runsOutPoints = earliestAmount
+				hasRunsOut = true
+			}
+		} else {
+			// Packages array is empty: query enterprise usage endpoint
+			entBytes, entStatus, errEnt := postMeter(MeterEnterpriseUsagePath, map[string]any{})
+			if errEnt == nil && entStatus == http.StatusOK && json.Valid(entBytes) {
+				entData := gjson.GetBytes(entBytes, "data")
+				if !entData.Exists() {
+					entData = gjson.ParseBytes(entBytes)
+				}
+				limit := parseCapacity(entData.Get("limitNum"))
+				if limit > 0 {
+					planName = editionLabel + " · Enterprise"
+					credit := parseCapacity(entData.Get("credit"))
+					totalPoints = limit
+					usedPoints = credit
+					if limit >= credit {
+						remainPoints = limit - credit
+					}
+					hasExplicitPoints = true
+
+					resetTimeStr := strings.TrimSpace(entData.Get("cycleResetTime").String())
+					if resetTimeStr != "" {
+						if t := parseBeijingTime(resetTimeStr); !t.IsZero() {
+							runsOutAt = t.UTC().Format(time.RFC3339)
+							expiresAt = t.In(beijingLocation).Format("2006-01-02 15:04:05")
+							runsOutPoints = remainPoints
+							hasRunsOut = true
+						}
+					}
+				}
 			}
 		}
 	}
 
+	// 2. Fallback to /v2/plugin/user/points if meter endpoints didn't yield explicit points
+	if !hasExplicitPoints {
+		pointsURL := baseURL + UserPointsPath
+		req, errReq := http.NewRequestWithContext(ctx, http.MethodGet, pointsURL, nil)
+		if errReq == nil {
+			ApplyHeaders(req, auth, token)
+			resp, errDo := client.Do(req)
+			if errDo == nil {
+				defer func() { _ = resp.Body.Close() }()
+				if respBytes, errRead := io.ReadAll(resp.Body); errRead == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 && json.Valid(respBytes) {
+					data := gjson.GetBytes(respBytes, "data")
+					if !data.Exists() {
+						data = gjson.ParseBytes(respBytes)
+					}
+					if vip := strings.TrimSpace(data.Get("vip_type").String()); vip != "" {
+						planName = fmt.Sprintf("%s · %s", editionLabel, vip)
+					} else if plan := strings.TrimSpace(data.Get("plan_name").String()); plan != "" {
+						planName = fmt.Sprintf("%s · %s", editionLabel, plan)
+					} else if level := strings.TrimSpace(data.Get("user_level").String()); level != "" {
+						planName = fmt.Sprintf("%s · %s", editionLabel, level)
+					}
+
+					for _, k := range []string{"total_points", "total_quota", "limit", "daily_limit", "total"} {
+						if v := data.Get(k); v.Exists() && parseCapacity(v) > 0 {
+							totalPoints = parseCapacity(v)
+							hasExplicitPoints = true
+							break
+						}
+					}
+					for _, k := range []string{"remaining_points", "remain_points", "available_points", "balance", "remaining", "left_points"} {
+						if v := data.Get(k); v.Exists() {
+							remainPoints = parseCapacity(v)
+							hasExplicitPoints = true
+							break
+						}
+					}
+					for _, k := range []string{"used_points", "used_quota", "used", "consumed_points"} {
+						if v := data.Get(k); v.Exists() {
+							usedPoints = parseCapacity(v)
+							hasExplicitPoints = true
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 3. Fallback to /v2/billing/meter/checkin-activity-status if still no explicit points
 	if !hasExplicitPoints {
 		statusURL := baseURL + "/v2/billing/meter/checkin-activity-status"
 		reqActivity, errActivityReq := http.NewRequestWithContext(ctx, http.MethodPost, statusURL, bytes.NewReader([]byte("{}")))
@@ -146,11 +407,11 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 					data := gjson.GetBytes(bodyActivity, "data")
 					if data.Exists() {
 						if totalCredits := data.Get("total_credits"); totalCredits.Exists() {
-							remainPoints = totalCredits.Float()
+							remainPoints = parseCapacity(totalCredits)
 							hasExplicitPoints = true
 						}
-						if dailyCredit := data.Get("daily_credit"); dailyCredit.Exists() && dailyCredit.Float() > 0 {
-							totalPoints = dailyCredit.Float()
+						if dailyCredit := data.Get("daily_credit"); dailyCredit.Exists() && parseCapacity(dailyCredit) > 0 {
+							totalPoints = parseCapacity(dailyCredit)
 						}
 						theme := strings.TrimSpace(data.Get("theme_name").String())
 						season := data.Get("season").Int()
@@ -167,28 +428,44 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 		}
 	}
 
+	// Calculate remaining fraction
+	if hasExplicitPoints {
+		if totalPoints > 0 {
+			if remainPoints == 0 && usedPoints > 0 && usedPoints <= totalPoints {
+				remainPoints = totalPoints - usedPoints
+			}
+			remainingFrac = remainPoints / totalPoints
+			if remainingFrac < 0 {
+				remainingFrac = 0
+			} else if remainingFrac > 1 {
+				remainingFrac = 1
+			}
+		} else if remainPoints > 0 {
+			remainingFrac = 1.0
+		}
+	}
+
 	// Build summary metrics
 	var summary []pluginapi.QuotaMetric
 	if hasExplicitPoints {
+		summary = append(summary, pluginapi.QuotaMetric{
+			Key:    "points_remain",
+			Label:  "Available Points",
+			Value:  remainPoints,
+			Unit:   "pts",
+			Format: "number",
+		})
 		if totalPoints > 0 {
 			summary = append(summary, pluginapi.QuotaMetric{
-				Key:    "points_remain",
-				Label:  "Available Points",
-				Value:  remainPoints,
-				Unit:   "pts",
-				Format: "number",
-			}, pluginapi.QuotaMetric{
 				Key:    "points_total",
 				Label:  "Total Quota",
 				Value:  totalPoints,
 				Unit:   "pts",
 				Format: "number",
-			})
-		} else {
-			summary = append(summary, pluginapi.QuotaMetric{
-				Key:    "points_remain",
-				Label:  "Available Points",
-				Value:  remainPoints,
+			}, pluginapi.QuotaMetric{
+				Key:    "points_used",
+				Label:  "Used Quota",
+				Value:  usedPoints,
 				Unit:   "pts",
 				Format: "number",
 			})
@@ -203,10 +480,51 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 		})
 	}
 
-	// Report the real credit multipliers the catalogue publishes for this realm,
-	// so the panel can show what an account actually spends per call instead of
-	// only whether a free tier exists.
+	if hasRunsOut {
+		summary = append(summary, pluginapi.QuotaMetric{
+			Key:    "runs_out_points",
+			Label:  "Soonest Expiring Points",
+			Value:  runsOutPoints,
+			Unit:   "pts",
+			Format: "number",
+		})
+		if expiresAt != "" {
+			summary = append(summary, pluginapi.QuotaMetric{
+				Key:    "expires_at",
+				Label:  "Expiration Date (CST)",
+				Value:  0,
+				Unit:   expiresAt,
+				Format: "text",
+			})
+		}
+		if runsOutAt != "" {
+			summary = append(summary, pluginapi.QuotaMetric{
+				Key:    "runs_out_at",
+				Label:  "Expiration Timestamp (UTC)",
+				Value:  0,
+				Unit:   runsOutAt,
+				Format: "text",
+			})
+		}
+	}
+
+	// Report the real credit multipliers the catalogue publishes for this realm
 	summary = append(summary, workbuddyCreditMetrics(realm)...)
+
+	bucketResetTime := nextMidnight
+	if hasRunsOut && runsOutAt != "" {
+		bucketResetTime = runsOutAt
+	}
+
+	quotaBucket := pluginapi.QuotaBucket{
+		Window:            "daily",
+		RemainingFraction: remainingFrac,
+		ResetTime:         bucketResetTime,
+		Description:       "Tencent WorkBuddy / CodeBuddy Quota Bucket",
+	}
+	if hasRunsOut && expiresAt != "" {
+		quotaBucket.Description = fmt.Sprintf("Tencent WorkBuddy / CodeBuddy (Expires at %s CST)", expiresAt)
+	}
 
 	return pluginapi.QuotaFetchResponse{
 		Subscription: &pluginapi.QuotaSubscription{
@@ -214,14 +532,9 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 		},
 		Groups: []pluginapi.QuotaGroup{
 			{
-				DisplayName: "Daily Quota & Free 1M Models",
+				DisplayName: "WorkBuddy Resource Quota",
 				Buckets: []pluginapi.QuotaBucket{
-					{
-						Window:            "daily",
-						RemainingFraction: remainingFrac,
-						ResetTime:         nextMidnight,
-						Description:       "Tencent WorkBuddy / CodeBuddy Daily Quota Bucket",
-					},
+					quotaBucket,
 				},
 			},
 		},
@@ -230,9 +543,6 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 }
 
 // workbuddyCreditMetrics summarizes the realm's published credit multipliers.
-//
-// It returns no metrics when the catalogue is unavailable, so an unknown rate is
-// reported as absent rather than as free.
 func workbuddyCreditMetrics(realm string) []pluginapi.QuotaMetric {
 	summary := registry.GetWorkBuddyCreditsSummary(realm)
 	if !summary.HasRates {

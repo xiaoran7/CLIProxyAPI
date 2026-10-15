@@ -1535,3 +1535,126 @@ func TestWorkBuddyPluginQuota_MultipliersNullWhenCatalogUnknown(t *testing.T) {
 		t.Errorf("multipliers should be absent without a catalogue: %s", rec.Body.String())
 	}
 }
+
+func TestWorkBuddyPluginQuota_IncludesExpirationAndTotals(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/billing/meter/get-user-resource-summary":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"code": 0,
+				"msg": "ok",
+				"data": {
+					"IsPaidUser": true,
+					"Packages": [
+						{
+							"PackageCode": "TCACA_code_002_AkiJS3ZHF5",
+							"CycleTotalCapacity": "1000",
+							"CycleUsedCapacity": "150",
+							"CycleRemainCapacity": "850"
+						}
+					]
+				}
+			}`))
+		case "/billing/meter/get-user-resource-paid-packages":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"code": 0,
+				"msg": "ok",
+				"data": {
+					"TotalCount": 1,
+					"Accounts": [
+						{
+							"PackageCode": "TCACA_code_002_AkiJS3ZHF5",
+							"CycleCapacityRemainPrecise": "850",
+							"ExpiredTime": "2026-12-31 23:59:59",
+							"CapacityType": "1"
+						}
+					]
+				}
+			}`))
+		case "/billing/meter/get-user-resource-free-packages":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"code": 0,
+				"msg": "ok",
+				"data": {
+					"TotalCount": 0,
+					"Accounts": []
+				}
+			}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer upstream.Close()
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	auth := &coreauth.Auth{
+		ID:       "workbuddy_exp.json",
+		FileName: "workbuddy_exp.json",
+		Provider: "workbuddy-cn",
+		Attributes: map[string]string{
+			"base_url": upstream.URL,
+		},
+		Metadata: map[string]any{
+			"type":         "workbuddy",
+			"access_token": "mock-token-exp",
+			"nick_name":    "ExpTester",
+		},
+	}
+	auth.EnsureIndex()
+	_, _ = manager.Register(context.Background(), auth)
+
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: t.TempDir()}, manager)
+
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Params = gin.Params{{Key: "id", Value: "workbuddy"}}
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v8/management/plugins/workbuddy/quota", nil)
+
+	h.GetPluginQuota(ctx)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Accounts []struct {
+			AuthID        string  `json:"auth_id"`
+			User          string  `json:"user"`
+			Points        float64 `json:"points"`
+			TotalPoints   float64 `json:"total_points"`
+			UsedPoints    float64 `json:"used_points"`
+			ExpiresAt     string  `json:"expires_at"`
+			RunsOutPoints float64 `json:"runs_out_points"`
+			VIPLevel      string  `json:"vip_level"`
+		} `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.Accounts) != 1 {
+		t.Fatalf("expected 1 account, got %d", len(resp.Accounts))
+	}
+	acc := resp.Accounts[0]
+	if acc.Points != 850 {
+		t.Errorf("Points = %v, want 850", acc.Points)
+	}
+	if acc.TotalPoints != 1000 {
+		t.Errorf("TotalPoints = %v, want 1000", acc.TotalPoints)
+	}
+	if acc.UsedPoints != 150 {
+		t.Errorf("UsedPoints = %v, want 150", acc.UsedPoints)
+	}
+	if acc.ExpiresAt != "2026-12-31 23:59:59" {
+		t.Errorf("ExpiresAt = %q, want 2026-12-31 23:59:59", acc.ExpiresAt)
+	}
+	if acc.RunsOutPoints != 850 {
+		t.Errorf("RunsOutPoints = %v, want 850", acc.RunsOutPoints)
+	}
+	if acc.VIPLevel != "WorkBuddy (cn) · Pro" {
+		t.Errorf("VIPLevel = %q, want WorkBuddy (cn) · Pro", acc.VIPLevel)
+	}
+}

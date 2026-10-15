@@ -285,13 +285,18 @@ func (h *Handler) listWorkBuddyQuotas(c *gin.Context) {
 		Max       float64 `json:"max"`
 	}
 	type accountQuota struct {
-		AuthID   string  `json:"auth_id"`
-		User     string  `json:"user"`
-		Points   float64 `json:"points"`
-		Balance  float64 `json:"balance"`
-		VIPLevel string  `json:"vip_level"`
-		FreeTier bool    `json:"free_tier"`
-		Realm    string  `json:"realm"`
+		AuthID        string  `json:"auth_id"`
+		User          string  `json:"user"`
+		Points        float64 `json:"points"`
+		Balance       float64 `json:"balance"`
+		TotalPoints   float64 `json:"total_points,omitempty"`
+		UsedPoints    float64 `json:"used_points,omitempty"`
+		ExpiresAt     string  `json:"expires_at,omitempty"`
+		RunsOutAt     string  `json:"runs_out_at,omitempty"`
+		RunsOutPoints float64 `json:"runs_out_points,omitempty"`
+		VIPLevel      string  `json:"vip_level"`
+		FreeTier      bool    `json:"free_tier"`
+		Realm         string  `json:"realm"`
 		// Multipliers describes the credit rates published for this realm, so
 		// the panel can show what a call actually costs. It is null when the
 		// catalogue is unavailable, which must read as "unknown", not "free".
@@ -374,10 +379,28 @@ func (h *Handler) listWorkBuddyQuotas(c *gin.Context) {
 				if quotaResp.Subscription != nil && quotaResp.Subscription.Plan != "" {
 					aq.VIPLevel = quotaResp.Subscription.Plan
 				}
+				for _, g := range quotaResp.Groups {
+					for _, b := range g.Buckets {
+						if b.ResetTime != "" && aq.RunsOutAt == "" {
+							aq.RunsOutAt = b.ResetTime
+						}
+					}
+				}
 				for _, m := range quotaResp.Summary {
-					if m.Key == "points_remain" {
+					switch m.Key {
+					case "points_remain":
 						aq.Points = m.Value
 						aq.Balance = m.Value
+					case "points_total":
+						aq.TotalPoints = m.Value
+					case "points_used":
+						aq.UsedPoints = m.Value
+					case "runs_out_points":
+						aq.RunsOutPoints = m.Value
+					case "expires_at":
+						aq.ExpiresAt = m.Unit
+					case "runs_out_at":
+						aq.RunsOutAt = m.Unit
 					}
 				}
 			}
