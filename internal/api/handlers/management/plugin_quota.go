@@ -288,7 +288,7 @@ func (h *Handler) listWorkBuddyQuotas(c *gin.Context) {
 
 	var targets []*coreauth.Auth
 	for _, a := range auths {
-		if a == nil || isInternalStorageFile(a.ID) || isInternalStorageFile(a.FileName) || strings.HasSuffix(strings.ToLower(a.ID), "checkins.json") {
+		if a == nil || isInternalStorageFile(a.ID) || isInternalStorageFile(a.FileName) || strings.HasSuffix(strings.ToLower(a.ID), "checkins.json") || a.ID == "enabled" || a.ID == "records" {
 			continue
 		}
 		path := strings.TrimSpace(authAttribute(a, "path"))
@@ -362,6 +362,11 @@ func (h *Handler) FetchPluginQuota(c *gin.Context) {
 	}
 	authIndex := body.resolveAuthIndex()
 	if authIndex == "" {
+		pLower := strings.ToLower(pluginID)
+		if strings.HasPrefix(pLower, "workbuddy") {
+			h.listWorkBuddyQuotas(c)
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "auth_index is required"})
 		return
 	}

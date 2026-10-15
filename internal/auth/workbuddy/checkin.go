@@ -421,10 +421,13 @@ func (e *CheckinEngine) RunCheckinAll(ctx context.Context) map[string]CheckinRes
 	return results
 }
 
-// isInternalCheckinKey checks if the key belongs to an internal persistence file rather than a user account.
+// isInternalCheckinKey checks if the key belongs to an internal persistence file or envelope key rather than a user account.
 func isInternalCheckinKey(key string) bool {
 	lower := strings.ToLower(strings.TrimSpace(key))
 	base := filepath.Base(lower)
+	if lower == "enabled" || lower == "records" || base == "enabled" || base == "records" {
+		return true
+	}
 	return strings.HasSuffix(base, "checkins.json") || base == "session_affinity.json" || strings.HasSuffix(lower, "checkins.json") || lower == "session_affinity.json"
 }
 

@@ -41,7 +41,7 @@ func (h *Handler) GetWorkBuddyCheckin(c *gin.Context) {
 	records := make(map[string]any)
 	if engine != nil {
 		for k, v := range engine.GetAllRecords() {
-			if isInternalStorageFile(k) || strings.HasSuffix(strings.ToLower(k), "checkins.json") {
+			if isInternalStorageFile(k) || strings.HasSuffix(strings.ToLower(k), "checkins.json") || k == "enabled" || k == "records" {
 				continue
 			}
 			records[k] = v
@@ -51,7 +51,7 @@ func (h *Handler) GetWorkBuddyCheckin(c *gin.Context) {
 	// Merge all managed WorkBuddy credentials from AuthManager so un-checked-in accounts are also visible
 	if h.authManager != nil {
 		for _, a := range h.authManager.List() {
-			if a == nil || isInternalStorageFile(a.ID) || isInternalStorageFile(a.FileName) || strings.HasSuffix(strings.ToLower(a.ID), "checkins.json") {
+			if a == nil || isInternalStorageFile(a.ID) || isInternalStorageFile(a.FileName) || strings.HasSuffix(strings.ToLower(a.ID), "checkins.json") || a.ID == "enabled" || a.ID == "records" {
 				continue
 			}
 			path := strings.TrimSpace(authAttribute(a, "path"))

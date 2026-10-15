@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **WorkBuddy Checkin Engine & Quota Flow Anomaly Elimination (`checkin.go`, `workbuddy_checkin.go`, `plugin_quota.go`)**:
+  - **Phantom Account Key Purging**: Filtered serialization envelope keys `"enabled"` and `"records"` in `isInternalCheckinKey` and management checkin/quota credential enumerators, preventing empty entries and `workbuddy_checkins.json` from leaking into account listings.
+  - **Batch Quota Endpoint Contract**: Handled empty `auth_index` in `POST /v8/management/plugins/workbuddy/quota` by delegating directly to `listWorkBuddyQuotas`, eliminating `400 Bad Request: auth_index is required` when pulling batch point flow in the management drawer.
+
 ### Added
 - **WorkBuddy Multi-Account Free Model Routing & WAF Protocol Compliance (`conductor_selection.go`, `workbuddy_cloaking.go`, `workbuddy_cloaking_test.go`)**:
   - **Dynamic Provider Alias Resolution**: Added automatic executor resolution in `conductor_selection.go` (`executorLocked`), routing provider identities `workbuddy-cn`, `workbuddy-intl`, and `copilot-tencent` to the unified `WorkBuddyExecutor`, preventing `auth_not_found` dispatch failures when targeting domestic credentials.
