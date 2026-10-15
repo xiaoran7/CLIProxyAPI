@@ -14,6 +14,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Regression Coverage**: Added unit tests in `workbuddy_cloaking_test.go` verifying system prompt prepending, preservation of custom system messages, and empty-array fallback handling.
 
 ### Merged
+- **Sync with Upstream (`router-for-me/CLIProxyAPI:main` up to v8.0.29)**:
+  - Merged 12 upstream commits bringing model updates and architectural stability enhancements:
+    - **Models**: Added `gemini-3.8` variants and `muse-wonder-full-1.0` variants with updated context limits in model registry.
+    - **Model Registration Fencing**: Introduced epoch-checked client registration and removal (`RegisterClientIfEpochCurrent`, `UnregisterClientIfEpochCurrent`) to prevent superseded async publications from clobbering newer client state.
+    - **Deletion Reconciliation**: Added `AuthFileSnapshot` and whole-file removal tracking to accurately reconcile deletions without dropping re-created auths.
+    - **Gemini / Claude Translation**: Ensured unique tool use IDs across turns in Gemini-to-Claude response translation, treated `MALFORMED_FUNCTION_CALL` as retryable API error, and flattened multi-branch tool unions in Antigravity.
+    - **TLS Handshake Resilience**: Added root request config `tls-handshake-timeout-seconds` and retry logic for silent upstream TLS handshakes.
+    - **Token Usage**: Corrected cached token calculation in Gemini responses and bumped Antigravity fallback client version to 2.23.0.
+    - **Plugin API**: Exposed plugin config field defaults (`Default any`) in management endpoints.
+    - **Preserved Fork Features**: Maintained all custom features without regression (WorkBuddy suite & checkin engine, OpenCode, Smart/Pace routing, persistent session affinity, clean ad-free docs).
+
 - **Sync with Upstream (`router-for-me/CLIProxyAPI:main`)**:
   - Merged 28 upstream commits bringing models and stability enhancements:
     - Added new models: `claude-haiku-5-5`, `gemini-4-argon`, `gemini-4-argon-high`, `muse-wonder-1.0`.
