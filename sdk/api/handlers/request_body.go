@@ -12,11 +12,70 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/andybalholm/brotli"
 	"github.com/gin-gonic/gin"
 	"github.com/klauspost/compress/zstd"
 )
+
+var (
+	gzipReaderPool   sync.Pool
+	brotliReaderPool sync.Pool
+	zstdDecoderPool  sync.Pool
+)
+
+func getGzipReader(r io.Reader) (*gzip.Reader, error) {
+	if v := gzipReaderPool.Get(); v != nil {
+		zr := v.(*gzip.Reader)
+		if err := zr.Reset(r); err != nil {
+			return nil, err
+		}
+		return zr, nil
+	}
+	return gzip.NewReader(r)
+}
+
+func putGzipReader(zr *gzip.Reader) {
+	if zr != nil {
+		_ = zr.Close()
+		gzipReaderPool.Put(zr)
+	}
+}
+
+func getBrotliReader(r io.Reader) (*brotli.Reader, error) {
+	if v := brotliReaderPool.Get(); v != nil {
+		br := v.(*brotli.Reader)
+		if err := br.Reset(r); err != nil {
+			return nil, err
+		}
+		return br, nil
+	}
+	return brotli.NewReader(r), nil
+}
+
+func putBrotliReader(br *brotli.Reader) {
+	if br != nil {
+		brotliReaderPool.Put(br)
+	}
+}
+
+func getZstdDecoder(r io.Reader) (*zstd.Decoder, error) {
+	if v := zstdDecoderPool.Get(); v != nil {
+		d := v.(*zstd.Decoder)
+		if err := d.Reset(r); err != nil {
+			return nil, err
+		}
+		return d, nil
+	}
+	return zstd.NewReader(r, zstd.WithDecoderConcurrency(1))
+}
+
+func putZstdDecoder(d *zstd.Decoder) {
+	if d != nil {
+		zstdDecoderPool.Put(d)
+	}
+}
 
 // MaxRequestBodyBytesContextKey stores the configured request body size limit (in bytes) on the Gin context.
 const MaxRequestBodyBytesContextKey = "maxRequestBodyBytes"
@@ -95,13 +154,11 @@ func decodeRequestBody(raw []byte, encoding string, maxBytes int64) ([]byte, err
 }
 
 func decodeGzipRequestBody(raw []byte, maxBytes int64) ([]byte, error) {
-	reader, err := gzip.NewReader(bytes.NewReader(raw))
+	reader, err := getGzipReader(bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gzip request decoder: %w", err)
 	}
-	defer func() {
-		_ = reader.Close()
-	}()
+	defer putGzipReader(reader)
 
 	var r io.Reader = reader
 	if maxBytes > 0 && maxBytes < math.MaxInt64 {
@@ -118,7 +175,12 @@ func decodeGzipRequestBody(raw []byte, maxBytes int64) ([]byte, error) {
 }
 
 func decodeBrotliRequestBody(raw []byte, maxBytes int64) ([]byte, error) {
-	reader := brotli.NewReader(bytes.NewReader(raw))
+	reader, err := getBrotliReader(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create brotli request decoder: %w", err)
+	}
+	defer putBrotliReader(reader)
+
 	var r io.Reader = reader
 	if maxBytes > 0 && maxBytes < math.MaxInt64 {
 		r = io.LimitReader(reader, maxBytes+1)
@@ -168,11 +230,11 @@ func decodeDeflateRequestBody(raw []byte, maxBytes int64) ([]byte, error) {
 }
 
 func decodeZstdRequestBody(raw []byte, maxBytes int64) ([]byte, error) {
-	decoder, err := zstd.NewReader(bytes.NewReader(raw))
+	decoder, err := getZstdDecoder(bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create zstd request decoder: %w", err)
 	}
-	defer decoder.Close()
+	defer putZstdDecoder(decoder)
 
 	var reader io.Reader = decoder
 	if maxBytes > 0 && maxBytes < math.MaxInt64 {
