@@ -760,7 +760,9 @@ func (r *ModelRegistry) registerClientLocked(clientID, clientProvider string, mo
 		model := newModels[id]
 		if reg, ok := r.models[id]; ok {
 			hasWebSearch := model.SupportsWebSearch || r.hasClientSupportingWebSearchLocked(id, "", clientID)
-			reg.Info = cloneModelInfo(model)
+			refreshed := cloneModelInfo(model)
+			preserveModelCredits(refreshed, reg.Info)
+			reg.Info = refreshed
 			reg.Info.SupportsWebSearch = hasWebSearch
 			if provider != "" {
 				if reg.InfoByProvider == nil {
@@ -838,13 +840,12 @@ func (r *ModelRegistry) addModelRegistration(modelID, provider string, model *Mo
 		// Several providers may expose the same model ID (for example an
 		// openai-compatibility upstream and a built-in provider). The last
 		// registration owns the shared Info, but billing annotations are
-		// provider-specific and must not be erased by a provider that has none:
-		// a WorkBuddy rate would otherwise disappear as soon as another provider
-		// re-registered the same ID.
-		if incoming.Credits == nil && existing.Info != nil && existing.Info.Credits != nil {
-			credits := *existing.Info.Credits
-			incoming.Credits = &credits
-		}
+		// provider-specific and must be resolved independently of registration
+		// order: a provider that publishes a rate may be registered before or
+		// after one that does not, and whichever order it happens in the rate
+		// must survive. Without this a WorkBuddy multiplier disappears as soon
+		// as another provider touches the same ID.
+		preserveModelCredits(incoming, existing.Info)
 		existing.Info = incoming
 		existing.Info.SupportsWebSearch = hasWebSearch
 		if existing.SuspendedClients == nil {
@@ -970,6 +971,23 @@ func cloneModelInfo(model *ModelInfo) *ModelInfo {
 		copyModel.Config = &copyConfig
 	}
 	return &copyModel
+}
+
+// preserveModelCredits copies a billing annotation from previous onto incoming
+// when the incoming definition carries none of its own.
+//
+// A model ID may be served by several providers at once, and the shared
+// registration's Info is replaced on every registration, so which provider
+// happens to register last decides what a client sees. Credits are a property of
+// the provider that publishes them, not of the ID, so an incoming definition
+// without credits must not erase a rate an earlier provider established.
+// A provider that does publish credits still wins.
+func preserveModelCredits(incoming, previous *ModelInfo) {
+	if incoming == nil || incoming.Credits != nil || previous == nil || previous.Credits == nil {
+		return
+	}
+	credits := *previous.Credits
+	incoming.Credits = &credits
 }
 
 func cloneModelInfosUnique(models []*ModelInfo) []*ModelInfo {

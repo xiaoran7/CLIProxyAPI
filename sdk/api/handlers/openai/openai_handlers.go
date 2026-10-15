@@ -81,7 +81,9 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 	// Get all available models
 	allModels := h.Models()
 
-	// Filter to only include the 4 required fields: id, object, created, owned_by
+	// Filter to only include the required OpenAI fields plus the provider
+	// billing annotation, which clients need in order to tell a free model from
+	// a paid one.
 	filteredModels := make([]map[string]any, len(allModels))
 	for i, model := range allModels {
 		filteredModel := map[string]any{
@@ -97,6 +99,11 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 		// Add owned_by field if it exists
 		if ownedBy, exists := model["owned_by"]; exists {
 			filteredModel["owned_by"] = ownedBy
+		}
+
+		// Add the credits annotation if the provider publishes one
+		if credits, exists := model["credits"]; exists && credits != nil {
+			filteredModel["credits"] = credits
 		}
 
 		filteredModels[i] = filteredModel
