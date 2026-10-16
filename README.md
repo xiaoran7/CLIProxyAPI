@@ -153,7 +153,7 @@ Special thanks to the following open-source projects for their architectural ins
 
 - **[router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)**: Foundational proxy architecture and cross-protocol normalization engine.
 - **[Magpie](https://github.com/magpie-project)**: Architectural inspiration for persistent session affinity across restarts, sliding-window TTL, 429 sink scheduling, and zero-knowledge log redaction.
-- **[WorkBuddy](https://github.com/workbuddy)**: Reverse-engineering insights into Tencent CodeBuddy / WorkBuddy dual-realm APIs, metering protocols, WAF cloaking, and check-in workflows.
+- **[WorkBuddy2API-Hub](https://github.com/ardeyouxipianyi/workbuddy2api-hub)**: Reverse-engineering insights into Tencent CodeBuddy / WorkBuddy dual-realm APIs, metering protocols, client identity cloaking, conversation header families, WAF mitigation, and automated check-in workflows. All WorkBuddy protocol reverse-engineering questions, upstream cloaking updates, and anti-detection issues are tracked and aligned with this project.
 
 ---
 

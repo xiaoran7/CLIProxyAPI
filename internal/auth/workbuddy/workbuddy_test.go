@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -33,6 +34,12 @@ func TestDeriveID(t *testing.T) {
 	idOther := DeriveID("machine", "uid456")
 	if id1 == idOther {
 		t.Fatalf("DeriveID with different uid yielded same ID: %q", id1)
+	}
+
+	// DeriveUUID should be a valid UUID shape with hyphens
+	uuidVal := DeriveUUID("machine", "uid123")
+	if len(uuidVal) != 36 || strings.Count(uuidVal, "-") != 4 {
+		t.Fatalf("DeriveUUID shape invalid: %q", uuidVal)
 	}
 }
 
@@ -120,14 +127,44 @@ func TestApplyHeaders(t *testing.T) {
 	if got := req.Header.Get("X-Domain"); got != DomainIntl {
 		t.Errorf("X-Domain = %q, want %q", got, DomainIntl)
 	}
+	if got := req.Header.Get("X-Product"); got != "SaaS" {
+		t.Errorf("X-Product = %q, want SaaS", got)
+	}
+	if got := req.Header.Get("X-IDE-Version"); got != "5.8.4" {
+		t.Errorf("X-IDE-Version = %q, want 5.8.4", got)
+	}
+	if got := req.Header.Get("User-Agent"); got != DefaultUserAgentIntl {
+		t.Errorf("User-Agent = %q, want %q", got, DefaultUserAgentIntl)
+	}
+	if got := req.Header.Get("X-Agent-Intent"); got != "craft" {
+		t.Errorf("X-Agent-Intent = %q, want craft", got)
+	}
+	if got := req.Header.Get("X-Private-Data"); got != "true" {
+		t.Errorf("X-Private-Data = %q, want true", got)
+	}
+	// Verify conversation header family (critical for upstream channel validation)
+	convID := req.Header.Get("X-Conversation-ID")
+	if len(convID) != 36 || strings.Count(convID, "-") != 4 {
+		t.Errorf("X-Conversation-ID shape invalid: %q", convID)
+	}
+	convReqID := req.Header.Get("X-Conversation-Request-ID")
+	rootReqID := req.Header.Get("X-Root-Request-ID")
+	if len(convReqID) != 32 || convReqID != rootReqID {
+		t.Errorf("X-Conversation-Request-ID (%q) != X-Root-Request-ID (%q)", convReqID, rootReqID)
+	}
+	msgID := req.Header.Get("X-Conversation-Message-ID")
+	reqID := req.Header.Get("X-Request-ID")
+	if len(msgID) != 32 || msgID != reqID {
+		t.Errorf("X-Conversation-Message-ID (%q) != X-Request-ID (%q)", msgID, reqID)
+	}
+	if req.Header.Get("X-Trace-ID") == "" || req.Header.Get("traceparent") == "" {
+		t.Error("Distributed tracing headers missing")
+	}
 	if got := req.Header.Get("X-Machine-ID"); got != DeriveID("machine", "u-42") {
 		t.Errorf("X-Machine-ID = %q, want %q", got, DeriveID("machine", "u-42"))
 	}
 	if got := req.Header.Get("X-Session-ID"); got != DeriveID("session", "u-42") {
 		t.Errorf("X-Session-ID = %q, want %q", got, DeriveID("session", "u-42"))
-	}
-	if req.Header.Get("X-Request-ID") == "" {
-		t.Error("X-Request-ID is empty")
 	}
 }
 

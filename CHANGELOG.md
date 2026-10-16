@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **WorkBuddy Client Identity Cloaking & Channel Validation Alignment (`workbuddy.go`, `workbuddy_test.go`, `README.md`, `README_CN.md`, `AGENTS.md`)**:
+  - **Upstream Channel Validation Resolution (Code 11-128)**: Injected the full conversation header family (`X-Conversation-ID`, `X-Conversation-Request-ID`, `X-Root-Request-ID`, `X-Conversation-Message-ID`, `X-Request-ID`), resolving upstream HTTP 400 interception (`conversation id missing` / displayTips "这次调用没通过渠道校验，可能不是官方客户端发出的").
+  - **Desktop 5.8.4 Outbound Identity & Distributed Tracing Alignment**: Aligned outbound request headers with the latest desktop 5.8.4 traffic captures, setting `X-Product: SaaS`, international `X-IDE-Version: 5.8.4` (China realm `5.5.6`), `User-Agent: WorkBuddy/5.8.4 workbuddy-ai/5.8.4 CLI/2.161.0`, `X-Agent-Intent: craft`, `X-Agent-Purpose: conversation`, `X-Agent-Type: main`, `X-Private-Data: true`, along with W3C / B3 distributed trace headers (`X-Trace-ID`, `traceparent`, `b3`, `X-B3-*`).
+  - **Community Upstream Acknowledgement & Single Source of Truth**: Added `https://github.com/ardeyouxipianyi/workbuddy2api-hub` to `README.md` and `README_CN.md` acknowledgements and enshrined it in `AGENTS.md` and project memory as the authoritative reference for any future WorkBuddy protocol reverse-engineering and anti-detection updates.
+
 ### Added
 - **WorkBuddy / CodeBuddy Quota Meter & Expiration Tracking Alignment (`quota.go`, `plugin_quota.go`, `workbuddy_test.go`, `management.html`)**:
   - **Billing Meter Architecture Alignment**: Upgraded WorkBuddy / CodeBuddy quota querying to directly consume Tencent's billing meter endpoints (`POST /billing/meter/get-user-resource-summary`, `/get-enterprise-user-usage`, `/get-user-resource-paid-packages`, `/get-user-resource-free-packages`), aligning with Magpie's production reverse-engineered capacity structure.

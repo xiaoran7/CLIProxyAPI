@@ -30,11 +30,11 @@ func TestWorkBuddyExecutorPrepareRequest(t *testing.T) {
 	req.Header.Set("x-anthropic-billing-header", "must-strip")
 
 	auth := &cliproxyauth.Auth{
-		ID:    "user-101",
+		ID: "user-101",
 		Metadata: map[string]any{
 			"access_token": "tok-101",
-				"realm":   "intl",
-			"user_id": "u-101",
+			"realm":        "intl",
+			"user_id":      "u-101",
 		},
 	}
 
@@ -54,6 +54,12 @@ func TestWorkBuddyExecutorPrepareRequest(t *testing.T) {
 	}
 	if req.Header.Get("X-IDE-Name") != "WorkBuddy" {
 		t.Errorf("X-IDE-Name = %q, want WorkBuddy", req.Header.Get("X-IDE-Name"))
+	}
+	if req.Header.Get("X-Product") != "SaaS" {
+		t.Errorf("X-Product = %q, want SaaS", req.Header.Get("X-Product"))
+	}
+	if req.Header.Get("X-Conversation-ID") == "" {
+		t.Error("X-Conversation-ID was not populated")
 	}
 }
 
@@ -96,14 +102,14 @@ func TestWorkBuddyExecutorExecuteNonStream(t *testing.T) {
 
 	exec := NewWorkBuddyExecutor(&config.Config{})
 	auth := &cliproxyauth.Auth{
-		ID:    "user-101",
+		ID: "user-101",
 		Attributes: map[string]string{
 			"base_url": server.URL,
 			"realm":    "intl",
 		},
 		Metadata: map[string]any{
 			"access_token": "tok-stream",
-				"realm": "intl",
+			"realm":        "intl",
 		},
 	}
 
@@ -146,7 +152,7 @@ func TestWorkBuddyExecutorExecuteStream(t *testing.T) {
 
 	exec := NewWorkBuddyExecutor(&config.Config{})
 	auth := &cliproxyauth.Auth{
-		ID:    "user-101",
+		ID: "user-101",
 		Attributes: map[string]string{
 			"base_url": server.URL,
 		},

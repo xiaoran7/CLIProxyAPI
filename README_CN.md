@@ -153,7 +153,7 @@ services:
 
 - **[router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)**：上游核心代理框架与跨模型协议转换基石；
 - **[Magpie](https://github.com/magpie-project)**：持久化会话亲和、滑动窗口 TTL、429 冷沉淀池及零知识审计脱敏机制的设计启发；
-- **[WorkBuddy](https://github.com/workbuddy)**：腾讯 Copilot/CodeBuddy 双域逆向分析、计量协议、WAF 指令特征及签到工作流的深度探索。
+- **[WorkBuddy2API-Hub](https://github.com/ardeyouxipianyi/workbuddy2api-hub)**：腾讯 Copilot/CodeBuddy 双域逆向分析、计量协议、客户端出站身份伪装、会话头族链路、WAF 规则与自动签到工作流的深度探索；后续所有 WorkBuddy 协议变更、防封伪装与逆向问题均以该项目为标准参考源。
 
 ---
 

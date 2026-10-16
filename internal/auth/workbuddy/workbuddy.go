@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"golang.org/x/sync/singleflight"
 )
@@ -39,14 +41,24 @@ const (
 	// TokenRefreshPath is the token refresh endpoint path.
 	TokenRefreshPath = "/v2/plugin/auth/token/refresh"
 
-	// DefaultUserAgent is the client User-Agent matching the desktop app.
-	DefaultUserAgent = "WorkBuddy/5.5.2 WorkBuddy AI/5.5.2 CLI/5.5.2"
+	// DefaultUserAgentIntl is the client User-Agent matching the international desktop app (5.8.4 capture).
+	DefaultUserAgentIntl = "WorkBuddy/5.8.4 workbuddy-ai/5.8.4 CLI/2.161.0"
+	// DefaultUserAgentCN is the client User-Agent matching mainland China desktop app.
+	DefaultUserAgentCN = "WorkBuddy/5.5.6 WorkBuddy/5.5.6 CLI/2.137.1"
+	// DefaultUserAgent matches the default international desktop app.
+	DefaultUserAgent = DefaultUserAgentIntl
+
+	// DefaultIDEVersionIntl is the international desktop client version.
+	DefaultIDEVersionIntl = "5.8.4"
+	// DefaultIDEVersionCN is the mainland China desktop client version.
+	DefaultIDEVersionCN = "5.5.6"
+
 	// DefaultIDEName is the X-IDE-Name header value.
 	DefaultIDEName = "WorkBuddy"
 	// DefaultIDEType is the X-IDE-Type header value.
 	DefaultIDEType = "WorkBuddy"
-	// DefaultProduct is the X-Product header value.
-	DefaultProduct = "WorkBuddy"
+	// DefaultProduct is the X-Product header value ("SaaS" per desktop 5.8.4 capture).
+	DefaultProduct = "SaaS"
 )
 
 var refreshGroup singleflight.Group
@@ -63,6 +75,30 @@ type TokenData struct {
 func DeriveID(salt, uid string) string {
 	sum := md5.Sum([]byte(salt + ":" + uid))
 	return hex.EncodeToString(sum[:])
+}
+
+// DeriveUUID computes MD5(salt + ":" + uid) formatted as a deterministic UUIDv4-like string,
+// matching the hardware/session UUID format used by the desktop client.
+func DeriveUUID(salt, uid string) string {
+	sum := md5.Sum([]byte(salt + ":" + uid))
+	h := hex.EncodeToString(sum[:])
+	h = h[:12] + "4" + h[13:16] + "a" + h[17:]
+	return fmt.Sprintf("%s-%s-%s-%s-%s", h[0:8], h[8:12], h[12:16], h[16:20], h[20:32])
+}
+
+func newHexID(byteLen int) string {
+	b := make([]byte, byteLen)
+	if _, err := rand.Read(b); err != nil {
+		return hex.EncodeToString([]byte(fmt.Sprintf("%016x", time.Now().UnixNano())))[:byteLen*2]
+	}
+	return hex.EncodeToString(b)
+}
+
+func newUUIDv7OrV4() string {
+	if u, err := uuid.NewV7(); err == nil {
+		return u.String()
+	}
+	return uuid.New().String()
 }
 
 // ResolveRealm determines whether the auth belongs to intl or cn.
@@ -151,22 +187,54 @@ func ApplyHeaders(req *http.Request, auth *cliproxyauth.Auth, token string) {
 
 	uid := ResolveUserID(auth)
 
-	machineID := DeriveID("machine", uid)
-	sessionID := DeriveID("session", uid)
-	requestID := DeriveID("req", uid) + "-" + fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
+	ua := DefaultUserAgentIntl
+	ideVer := DefaultIDEVersionIntl
+	if realm == RealmCN {
+		ua = DefaultUserAgentCN
+		ideVer = DefaultIDEVersionCN
+	}
+
+	convID := newUUIDv7OrV4()
+	convReqID := newHexID(16) // 32 hex chars
+	msgID := newHexID(16)     // 32 hex chars
+	traceID := newHexID(16)   // 32 hex chars
+	spanID := newHexID(8)     // 16 hex chars
 
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-	req.Header.Set("User-Agent", DefaultUserAgent)
+	req.Header.Set("User-Agent", ua)
 	req.Header.Set("X-IDE-Name", DefaultIDEName)
 	req.Header.Set("X-IDE-Type", DefaultIDEType)
+	req.Header.Set("X-IDE-Version", ideVer)
 	req.Header.Set("X-Product", DefaultProduct)
 	req.Header.Set("X-Domain", domain)
+	req.Header.Set("X-Agent-Intent", "craft")
+	req.Header.Set("X-Agent-Purpose", "conversation")
+	req.Header.Set("X-Agent-Type", "main")
+	req.Header.Set("X-Private-Data", "true")
+
+	// Conversation header family: required by upstream WAF / channel validation to avoid 400 / 11-128
+	req.Header.Set("X-Conversation-ID", convID)
+	req.Header.Set("X-Conversation-Request-ID", convReqID)
+	req.Header.Set("X-Root-Request-ID", convReqID)
+	req.Header.Set("X-Conversation-Message-ID", msgID)
+	req.Header.Set("X-Request-ID", msgID)
+
+	// Distributed tracing headers (matching desktop 5.8.4 capture)
+	req.Header.Set("X-Trace-ID", traceID)
+	req.Header.Set("traceparent", fmt.Sprintf("00-%s-%s-01", traceID, spanID))
+	req.Header.Set("b3", fmt.Sprintf("%s-%s-1", traceID, spanID))
+	req.Header.Set("X-B3-TraceId", traceID)
+	req.Header.Set("X-B3-SpanId", spanID)
+	req.Header.Set("X-B3-Sampled", "1")
+
+	// Machine / session fingerprint headers
+	machineID := DeriveID("machine", uid)
+	sessionID := DeriveID("session", uid)
 	req.Header.Set("X-Machine-ID", machineID)
 	req.Header.Set("X-Session-ID", sessionID)
-	req.Header.Set("X-Request-ID", requestID)
 }
 
 // ApplyCatalogHeaders applies the headers the desktop client sends when reading
@@ -200,10 +268,15 @@ func RefreshToken(ctx context.Context, httpClient *http.Client, realm, refreshTo
 			return nil, fmt.Errorf("workbuddy: create refresh request failed: %w", errReq)
 		}
 
+		ua := DefaultUserAgentIntl
+		if realm == RealmCN {
+			ua = DefaultUserAgentCN
+		}
+
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json, text/plain, */*")
 		req.Header.Set("X-Requested-With", "XMLHttpRequest")
-		req.Header.Set("User-Agent", DefaultUserAgent)
+		req.Header.Set("User-Agent", ua)
 		req.Header.Set("Origin", baseURL)
 		req.Header.Set("Referer", baseURL+"/")
 		req.Header.Set("X-Refresh-Token", refreshToken)
