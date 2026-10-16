@@ -37,6 +37,7 @@ func TestCodexReplaySignatureForTarget(t *testing.T) {
 		{"native meta on muse target", "muse-spark-1.3", metaSig, metaSig, true},
 		{"routed meta on muse target", "meta/muse-wonder", routedSig, routedSig, true},
 		{"gpt on gpt target", "gpt-5.4", gptSig, gptSig, true},
+		{"routed gpt on openrouter gpt target", "openrouter/openai/gpt-5.6-luna-pro", gptSig + "." + strings.Repeat("Ab3", 27)[:79], gptSig + "." + strings.Repeat("Ab3", 27)[:79], true},
 		{"gpt cache prefix normalized", "gpt-5.4", "gpt#" + gptSig, gptSig, true},
 		{"meta sig on gpt target rejected", "gpt-5.4", metaSig, "", false},
 		{"routed meta on gpt target rejected", "gpt-5.4", routedSig, "", false},

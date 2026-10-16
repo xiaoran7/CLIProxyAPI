@@ -63,7 +63,7 @@ const (
 )
 
 func sanitizeOpenAIResponsesReasoningEncryptedContent(ctx context.Context, provider string, body []byte) []byte {
-	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, false, metaSignatureForeign)
+	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, false, metaSignatureForeign, signature.SignatureProviderUnknown)
 }
 
 func sanitizeOpenAIResponsesReasoningEncryptedContentWithCompat(ctx context.Context, provider string, body []byte, isCompat bool) []byte {
@@ -94,15 +94,16 @@ func resolveResponsesSignatureTargetModel(baseModel string, req cliproxyexecutor
 }
 
 func sanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel(ctx context.Context, provider string, body []byte, isCompat bool, targetModel string) []byte {
+	targetProvider := signature.SignatureProviderFromModelName(targetModel)
 	metaPolicy := metaSignatureForeign
-	if signature.SignatureProviderFromModelName(targetModel) == signature.SignatureProviderMeta {
+	if targetProvider == signature.SignatureProviderMeta {
 		metaPolicy = metaSignatureAllowRouted
 	}
-	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, isCompat, isCompat, metaPolicy)
+	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, isCompat, isCompat, metaPolicy, targetProvider)
 }
 
 func sanitizeOpenAIResponsesReasoningEncryptedContentKeepForeign(ctx context.Context, provider string, body []byte) []byte {
-	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, true, metaSignatureForeign)
+	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, true, metaSignatureForeign, signature.SignatureProviderUnknown)
 }
 
 // sanitizeOpenAIResponsesReasoningEncryptedContentForMeta is the Meta-target
@@ -114,7 +115,7 @@ func sanitizeOpenAIResponsesReasoningEncryptedContentKeepForeign(ctx context.Con
 // Meta envelope revision will be stripped until the inspector learns it
 // (fail-closed).
 func sanitizeOpenAIResponsesReasoningEncryptedContentForMeta(ctx context.Context, provider string, body []byte) []byte {
-	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, true, metaSignatureNativeOnly)
+	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, true, metaSignatureNativeOnly, signature.SignatureProviderMeta)
 }
 
 // sanitizeOpenAIResponsesReasoningEncryptedContentForMetaBaseURL gates Meta
@@ -126,7 +127,7 @@ func sanitizeOpenAIResponsesReasoningEncryptedContentForMetaBaseURL(ctx context.
 	if isNativeMetaUpstreamURL(baseURL) {
 		return sanitizeOpenAIResponsesReasoningEncryptedContentForMeta(ctx, provider, body)
 	}
-	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, true, metaSignatureAllowRouted)
+	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, true, metaSignatureAllowRouted, signature.SignatureProviderMeta)
 }
 
 func isNativeMetaUpstreamURL(rawURL string) bool {
@@ -142,7 +143,7 @@ func isNativeMetaUpstreamURL(rawURL string) bool {
 	return host == "" || host == "api.meta.ai" || strings.HasSuffix(host, ".meta.ai")
 }
 
-func sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx context.Context, provider string, body []byte, isCompat bool, keepForeign bool, metaPolicy metaSignaturePolicy) []byte {
+func sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx context.Context, provider string, body []byte, isCompat bool, keepForeign bool, metaPolicy metaSignaturePolicy, targetProvider signature.SignatureProvider) []byte {
 	inputResult := util.GetGJSONBytesNoCopy(body, "input")
 	if !inputResult.Exists() || !inputResult.IsArray() {
 		return body
@@ -271,13 +272,22 @@ func sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx context.Con
 			} else if _, err := signature.InspectGPTReasoningSignature(rawSignature); err != nil {
 				// Valid GPT signatures never reach this branch: the GPT-first gate
 				// above preserves them on non-Meta targets (inherited behavior).
-				// keepForeign additionally preserves unknown-format blobs a
-				// third-party Responses target may natively own. Classification
-				// is skipped entirely when no exemption applies, so strict
-				// targets pay no detection cost.
+				// When the target model belongs to another known family (such as
+				// Grok or Gemini served through a Responses router like OpenRouter),
+				// preserve signatures that match that target family. keepForeign
+				// additionally preserves unknown-format blobs a third-party
+				// Responses target may natively own.
 				keep := false
-				if rawSignature != "" && keepForeign {
-					keep = signature.DetectSignatureProvider(rawSignature) == signature.SignatureProviderUnknown
+				if rawSignature != "" {
+					switch targetProvider {
+					case signature.SignatureProviderGrok:
+						keep = signature.IsValidGrokEncryptedContent(rawSignature)
+					case signature.SignatureProviderGemini, signature.SignatureProviderClaude, signature.SignatureProviderKimi, signature.SignatureProviderSWE:
+						_, keep = signature.CompatibleSignatureForProvider(targetProvider, rawSignature)
+					}
+					if !keep && keepForeign {
+						keep = signature.DetectSignatureProvider(rawSignature) == signature.SignatureProviderUnknown
+					}
 				}
 				if !keep {
 					reason = err.Error()
