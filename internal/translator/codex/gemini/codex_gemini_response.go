@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"strings"
 	"time"
 
@@ -22,16 +23,22 @@ var (
 
 // ConvertCodexResponseToGeminiParams holds parameters for response conversion.
 type ConvertCodexResponseToGeminiParams struct {
-	Model              string
-	CreatedAt          int64
-	ResponseID         string
-	LastStorageOutput  []byte
+	Model      string
+	CreatedAt  int64
+	ResponseID string
+	// StorageOutputs queues completed function-call chunks in stream order
+	// until the next non-storage event flushes them. A queue (not a single
+	// slot) so consecutive function calls can never overwrite each other.
+	StorageOutputs     [][]byte
 	HasOutputTextDelta bool
 	LastImageHashByID  map[string][32]byte
 	// PendingThoughtSignature holds a completed reasoning item's
 	// encrypted_content until the next visible part can carry it as a
 	// Gemini thoughtSignature, mirroring native Gemini part placement.
 	PendingThoughtSignature string
+	// SeenReasoningSignatures deduplicates repeated reasoning done events
+	// by item ID + signature hash within one response stream.
+	SeenReasoningSignatures map[[32]byte]bool
 }
 
 // ConvertCodexResponseToGemini converts Codex streaming response format to Gemini format.
@@ -53,7 +60,6 @@ func ConvertCodexResponseToGemini(_ context.Context, modelName string, originalR
 			Model:              modelName,
 			CreatedAt:          0,
 			ResponseID:         "",
-			LastStorageOutput:  nil,
 			HasOutputTextDelta: false,
 			LastImageHashByID:  make(map[string][32]byte),
 		}
@@ -69,6 +75,25 @@ func ConvertCodexResponseToGemini(_ context.Context, modelName string, originalR
 	typeStr := typeResult.String()
 
 	params := (*param).(*ConvertCodexResponseToGeminiParams)
+
+	// flushStorageOutputs drains queued function-call chunks ahead of any
+	// extra chunks, preserving stream order on every return path.
+	flushStorageOutputs := func(extra ...[]byte) [][]byte {
+		outputs := make([][]byte, 0, len(params.StorageOutputs)+len(extra))
+		for _, stored := range params.StorageOutputs {
+			outputs = append(outputs, append([]byte(nil), stored...))
+		}
+		params.StorageOutputs = nil
+		return append(outputs, extra...)
+	}
+	attachPendingThoughtSignature := func(part []byte) []byte {
+		if params.PendingThoughtSignature == "" {
+			return part
+		}
+		part = setGeminiThoughtSignature(part, params.PendingThoughtSignature)
+		params.PendingThoughtSignature = ""
+		return part
+	}
 
 	// Base Gemini response template
 	template := []byte(`{"candidates":[{"content":{"role":"model","parts":[]}}],"usageMetadata":{"trafficType":"PROVISIONED_THROUGHPUT"},"modelVersion":"gemini-2.5-pro","createTime":"2025-08-15T02:52:03.884209Z","responseId":"06CeaPH7NaCU48APvNXDyA4"}`)
@@ -105,8 +130,9 @@ func ConvertCodexResponseToGemini(_ context.Context, modelName string, originalR
 		part := []byte(`{"inlineData":{"data":"","mimeType":""}}`)
 		part, _ = sjson.SetBytes(part, "inlineData.data", b64)
 		part, _ = sjson.SetBytes(part, "inlineData.mimeType", mimeType)
+		part = attachPendingThoughtSignature(part)
 		template = translatorcommon.SetRawArrayItems(template, "candidates.0.content.parts", [][]byte{part})
-		return [][]byte{template}
+		return flushStorageOutputs(template)
 	}
 
 	// Handle function call completion
@@ -118,14 +144,21 @@ func ConvertCodexResponseToGemini(_ context.Context, modelName string, originalR
 			if signature == "" {
 				return [][]byte{}
 			}
+			seenKey := sha256.Sum256([]byte(itemResult.Get("id").String() + "\x00" + signature))
+			if params.SeenReasoningSignatures == nil {
+				params.SeenReasoningSignatures = make(map[[32]byte]bool)
+			}
+			if params.SeenReasoningSignatures[seenKey] {
+				return [][]byte{}
+			}
+			params.SeenReasoningSignatures[seenKey] = true
 			if params.PendingThoughtSignature != "" {
 				// A previous reasoning step never got a visible carrier part;
 				// flush it as an empty thought part so no signature is lost.
-				part := []byte(`{"thought":true,"text":"","thoughtSignature":""}`)
-				part, _ = sjson.SetBytes(part, "thoughtSignature", params.PendingThoughtSignature)
+				part := setGeminiThoughtSignature([]byte(`{"thought":true,"text":""}`), params.PendingThoughtSignature)
 				params.PendingThoughtSignature = signature
 				template = translatorcommon.SetRawArrayItems(template, "candidates.0.content.parts", [][]byte{part})
-				return [][]byte{template}
+				return flushStorageOutputs(template)
 			}
 			params.PendingThoughtSignature = signature
 			return [][]byte{}
@@ -153,8 +186,9 @@ func ConvertCodexResponseToGemini(_ context.Context, modelName string, originalR
 			part := []byte(`{"inlineData":{"data":"","mimeType":""}}`)
 			part, _ = sjson.SetBytes(part, "inlineData.data", b64)
 			part, _ = sjson.SetBytes(part, "inlineData.mimeType", mimeType)
+			part = attachPendingThoughtSignature(part)
 			template = translatorcommon.SetRawArrayItems(template, "candidates.0.content.parts", [][]byte{part})
-			return [][]byte{template}
+			return flushStorageOutputs(template)
 		}
 		if itemType == "function_call" {
 			// Create function call part
@@ -178,15 +212,12 @@ func ConvertCodexResponseToGemini(_ context.Context, modelName string, originalR
 				}
 			}
 			functionCall = setGeminiFunctionCallID(functionCall, itemResult)
-			if params.PendingThoughtSignature != "" {
-				functionCall, _ = sjson.SetBytes(functionCall, "thoughtSignature", params.PendingThoughtSignature)
-				params.PendingThoughtSignature = ""
-			}
+			functionCall = attachPendingThoughtSignature(functionCall)
 
 			template = translatorcommon.SetRawArrayItems(template, "candidates.0.content.parts", [][]byte{functionCall})
 			template, _ = sjson.SetBytes(template, "candidates.0.finishReason", "STOP")
 
-			params.LastStorageOutput = append([]byte(nil), template...)
+			params.StorageOutputs = append(params.StorageOutputs, append([]byte(nil), template...))
 
 			// Use this return to storage message
 			return [][]byte{}
@@ -194,6 +225,12 @@ func ConvertCodexResponseToGemini(_ context.Context, modelName string, originalR
 	}
 
 	if typeStr == "response.created" { // Handle response creation - set model and response ID
+		// A new response must not inherit per-response streaming state if the
+		// caller reuses params across responses.
+		params.StorageOutputs = nil
+		params.PendingThoughtSignature = ""
+		params.SeenReasoningSignatures = nil
+		params.HasOutputTextDelta = false
 		template, _ = sjson.SetBytes(template, "modelVersion", rootResult.Get("response.model").String())
 		template, _ = sjson.SetBytes(template, "responseId", rootResult.Get("response.id").String())
 		params.ResponseID = rootResult.Get("response.id").String()
@@ -205,9 +242,10 @@ func ConvertCodexResponseToGemini(_ context.Context, modelName string, originalR
 		params.HasOutputTextDelta = true
 		part := []byte(`{"text":""}`)
 		part, _ = sjson.SetBytes(part, "text", rootResult.Get("delta").String())
-		if params.PendingThoughtSignature != "" {
-			part, _ = sjson.SetBytes(part, "thoughtSignature", params.PendingThoughtSignature)
-			params.PendingThoughtSignature = ""
+		if rootResult.Get("delta").String() != "" {
+			// An empty text part may be discarded by clients; never spend the
+			// only signature copy on one.
+			part = attachPendingThoughtSignature(part)
 		}
 		template = translatorcommon.SetRawArrayItems(template, "candidates.0.content.parts", [][]byte{part})
 	} else if typeStr == "response.output_item.done" { // Fallback: emit final message text when no delta chunks were received
@@ -230,23 +268,19 @@ func ConvertCodexResponseToGemini(_ context.Context, modelName string, originalR
 			}
 			part := []byte(`{"text":""}`)
 			part, _ = sjson.SetBytes(part, "text", text)
-			if params.PendingThoughtSignature != "" {
-				part, _ = sjson.SetBytes(part, "thoughtSignature", params.PendingThoughtSignature)
-				params.PendingThoughtSignature = ""
-			}
+			part = attachPendingThoughtSignature(part)
 			template, _ = sjson.SetRawBytes(template, "candidates.0.content.parts.-1", part)
 			wroteText = true
 			return true
 		})
 		if wroteText {
 			params.HasOutputTextDelta = true
-			return [][]byte{template}
+			return flushStorageOutputs(template)
 		}
 		return [][]byte{}
 	} else if typeStr == "response.completed" || typeStr == "response.incomplete" { // Handle response completion with usage metadata
 		if params.PendingThoughtSignature != "" {
-			part := []byte(`{"thought":true,"text":"","thoughtSignature":""}`)
-			part, _ = sjson.SetBytes(part, "thoughtSignature", params.PendingThoughtSignature)
+			part := setGeminiThoughtSignature([]byte(`{"thought":true,"text":""}`), params.PendingThoughtSignature)
 			params.PendingThoughtSignature = ""
 			template = translatorcommon.SetRawArrayItems(template, "candidates.0.content.parts", [][]byte{part})
 		}
@@ -261,12 +295,7 @@ func ConvertCodexResponseToGemini(_ context.Context, modelName string, originalR
 		return [][]byte{}
 	}
 
-	if len(params.LastStorageOutput) > 0 {
-		stored := append([]byte(nil), params.LastStorageOutput...)
-		params.LastStorageOutput = nil
-		return [][]byte{stored, template}
-	}
-	return [][]byte{template}
+	return flushStorageOutputs(template)
 }
 
 // ConvertCodexResponseToGeminiNonStream converts a non-streaming Codex response to a non-streaming Gemini response.
@@ -376,13 +405,12 @@ func ConvertCodexResponseToGeminiNonStream(_ context.Context, modelName string, 
 						part := []byte(`{"text":"","thought":true}`)
 						part, _ = sjson.SetBytes(part, "text", thoughtText)
 						if i == 0 && signature != "" {
-							part, _ = sjson.SetBytes(part, "thoughtSignature", signature)
+							part = setGeminiThoughtSignature(part, signature)
 						}
 						parts = append(parts, part)
 					}
 					if len(thoughtTexts) == 0 && signature != "" {
-						part := []byte(`{"text":"","thought":true,"thoughtSignature":""}`)
-						part, _ = sjson.SetBytes(part, "thoughtSignature", signature)
+						part := setGeminiThoughtSignature([]byte(`{"text":"","thought":true}`), signature)
 						parts = append(parts, part)
 					}
 
@@ -482,6 +510,32 @@ func buildReverseMapFromGeminiOriginal(original []byte) map[string]string {
 		}
 	}
 	return rev
+}
+
+// geminiCodexThoughtSignatureCarrierMagic marks a CPA carrier payload inside
+// a Gemini thoughtSignature bytes field. The Gemini JSON wire form of a bytes
+// field is standard padded base64, while Responses signatures are opaque
+// strings that may use the base64url alphabet without padding; writing such a
+// string verbatim makes official SDK []byte decoding fail. The carrier therefore
+// stores magic+rawSignature as the byte payload and relies on standard base64
+// JSON encoding, which every Gemini client decodes and echoes losslessly.
+const geminiCodexThoughtSignatureCarrierMagic = "cpa-codex-gemini-carrier-v1:"
+
+func encodeGeminiCodexThoughtSignature(rawSignature string) string {
+	rawSignature = strings.TrimSpace(rawSignature)
+	if rawSignature == "" {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString([]byte(geminiCodexThoughtSignatureCarrierMagic + rawSignature))
+}
+
+func setGeminiThoughtSignature(part []byte, rawSignature string) []byte {
+	encoded := encodeGeminiCodexThoughtSignature(rawSignature)
+	if encoded == "" {
+		return part
+	}
+	part, _ = sjson.SetBytes(part, "thoughtSignature", encoded)
+	return part
 }
 
 func setGeminiFunctionCallID(functionCall []byte, item gjson.Result) []byte {

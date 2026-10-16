@@ -1,6 +1,7 @@
 package gemini
 
 import (
+	"encoding/base64"
 	"fmt"
 	"testing"
 
@@ -162,6 +163,51 @@ func TestConvertGeminiRequestToCodex_DropsMetaThoughtSignatureForNonMetaTargets(
 				if item.Get("type").String() == "reasoning" {
 					t.Fatalf("Meta signature leaked to %s target. Output: %s", modelName, string(out))
 				}
+			}
+		})
+	}
+}
+
+func testGeminiGPTThoughtSignature() string {
+	decoded := make([]byte, 89)
+	decoded[0] = 0x80
+	for i := 9; i < len(decoded); i++ {
+		decoded[i] = byte(i)
+	}
+	return base64.RawURLEncoding.EncodeToString(decoded)
+}
+
+func TestConvertGeminiRequestToCodex_NormalizesPrefixedAndCarrierSignatures(t *testing.T) {
+	gptSignature := testGeminiGPTThoughtSignature()
+	metaSignature := testGeminiMetaThoughtSignature()
+	cases := []struct {
+		name      string
+		model     string
+		echoed    string
+		want      string
+		wantFound bool
+	}{
+		{"gpt cache prefixed", "gpt-5.1-codex", "gpt#" + gptSignature, gptSignature, true},
+		{"carrier wrapped gpt prefixed", "gpt-5.1-codex", encodeGeminiCodexThoughtSignature("gpt#" + gptSignature), gptSignature, true},
+		{"carrier wrapped meta", "muse-spark-1.3", encodeGeminiCodexThoughtSignature(metaSignature), metaSignature, true},
+		{"carrier wrapped meta to gpt target", "gpt-5.1-codex", encodeGeminiCodexThoughtSignature(metaSignature), "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := []byte(`{"contents":[{"role":"model","parts":[{"thought":true,"text":"internal reasoning","thoughtSignature":""},{"text":"visible answer"}]},{"role":"user","parts":[{"text":"continue"}]}]}`)
+			payload, _ = sjson.SetBytes(payload, "contents.0.parts.0.thoughtSignature", tc.echoed)
+			out, _ := ConvertGeminiRequestToCodex(tc.model, payload, false)
+			found := ""
+			for _, item := range gjson.GetBytes(out, "input").Array() {
+				if item.Get("type").String() == "reasoning" {
+					found = item.Get("encrypted_content").String()
+				}
+			}
+			if tc.wantFound && found != tc.want {
+				t.Fatalf("encrypted_content = %q, want normalized signature; output=%s", found, string(out))
+			}
+			if !tc.wantFound && found != "" {
+				t.Fatalf("foreign signature leaked as reasoning item; output=%s", string(out))
 			}
 		})
 	}

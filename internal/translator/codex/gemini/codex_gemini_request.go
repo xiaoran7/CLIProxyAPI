@@ -6,6 +6,7 @@
 package gemini
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -150,18 +151,20 @@ func ConvertGeminiRequestToCodex(modelName string, inputRawJSON []byte, _ bool) 
 				// through the Gemini ingress. Unmatched signatures fall through to
 				// the existing hidden-thought drop below.
 				if role == "assistant" {
-					if rawSignature := geminiPartThoughtSignature(p); rawSignature != "" && !emittedThoughtSignatures[rawSignature] && geminiThoughtSignatureMatchesCodexTarget(modelName, rawSignature) {
-						reasoningItem := []byte(`{"type":"reasoning","encrypted_content":"","summary":[]}`)
-						reasoningItem, _ = sjson.SetBytes(reasoningItem, "encrypted_content", rawSignature)
-						if translatorcommon.IsGeminiThoughtPart(p) {
-							if thoughtText := strings.TrimSpace(p.Get("text").String()); thoughtText != "" {
-								summaryPart := []byte(`{"type":"summary_text","text":""}`)
-								summaryPart, _ = sjson.SetBytes(summaryPart, "text", thoughtText)
-								reasoningItem, _ = sjson.SetRawBytes(reasoningItem, "summary", translatorcommon.JoinRawArray([][]byte{summaryPart}))
+					if rawSignature := geminiPartThoughtSignature(p); rawSignature != "" {
+						if normalizedSignature, ok := normalizedGeminiThoughtSignatureForCodexTarget(modelName, rawSignature); ok && !emittedThoughtSignatures[normalizedSignature] {
+							reasoningItem := []byte(`{"type":"reasoning","encrypted_content":"","summary":[]}`)
+							reasoningItem, _ = sjson.SetBytes(reasoningItem, "encrypted_content", normalizedSignature)
+							if translatorcommon.IsGeminiThoughtPart(p) {
+								if thoughtText := strings.TrimSpace(p.Get("text").String()); thoughtText != "" {
+									summaryPart := []byte(`{"type":"summary_text","text":""}`)
+									summaryPart, _ = sjson.SetBytes(summaryPart, "text", thoughtText)
+									reasoningItem, _ = sjson.SetRawBytes(reasoningItem, "summary", translatorcommon.JoinRawArray([][]byte{summaryPart}))
+								}
 							}
+							inputItems = append(inputItems, reasoningItem)
+							emittedThoughtSignatures[normalizedSignature] = true
 						}
-						inputItems = append(inputItems, reasoningItem)
-						emittedThoughtSignatures[rawSignature] = true
 					}
 				}
 
@@ -378,26 +381,52 @@ func geminiPartThoughtSignature(part gjson.Result) string {
 	return strings.TrimSpace(part.Get("thought_signature").String())
 }
 
-// geminiThoughtSignatureMatchesCodexTarget reports whether a client-echoed
-// thought signature may be restored as reasoning encrypted_content for the
-// Codex-format upstream serving modelName. Positively detected families must
-// match the target family exactly (an unmapped target defaults to the Codex
-// GPT family, mirroring this translator's purpose). Grok has no detectable
-// envelope, so it falls back to its shape inspector keyed on the target.
-func geminiThoughtSignatureMatchesCodexTarget(modelName, rawSignature string) bool {
+// decodeGeminiCodexThoughtSignature unwraps the carrier written by
+// encodeGeminiCodexThoughtSignature. Values without the carrier magic are
+// returned unchanged, preserving legacy raw-signature echoes.
+func decodeGeminiCodexThoughtSignature(value string) string {
+	value = strings.TrimSpace(value)
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil || !strings.HasPrefix(string(decoded), geminiCodexThoughtSignatureCarrierMagic) {
+		return value
+	}
+	return strings.TrimSpace(strings.TrimPrefix(string(decoded), geminiCodexThoughtSignatureCarrierMagic))
+}
+
+// normalizedGeminiThoughtSignatureForCodexTarget unwraps and normalizes a
+// client-echoed thought signature for the Codex-format upstream serving
+// modelName, returning the exact value that may be written as reasoning
+// encrypted_content. Positively detected families must match the target
+// family exactly (an unmapped target defaults to the Codex GPT family,
+// mirroring this translator's purpose) and go through the shared
+// compatibility normalization, so cache-prefixed values such as "gpt#..."
+// are stripped to their native payload instead of being forwarded verbatim.
+// Grok has no detectable envelope, so it falls back to its shape inspector
+// keyed on the target.
+func normalizedGeminiThoughtSignatureForCodexTarget(modelName, rawSignature string) (string, bool) {
+	rawSignature = decodeGeminiCodexThoughtSignature(rawSignature)
+	if rawSignature == "" {
+		return "", false
+	}
 	target := sigcompat.SignatureProviderFromModelName(thinking.ParseSuffix(modelName).ModelName)
 	detected := sigcompat.DetectSignatureProvider(rawSignature)
 	if detected != sigcompat.SignatureProviderUnknown {
-		if target == sigcompat.SignatureProviderUnknown {
-			return detected == sigcompat.SignatureProviderGPT
+		effectiveTarget := target
+		if effectiveTarget == sigcompat.SignatureProviderUnknown {
+			effectiveTarget = sigcompat.SignatureProviderGPT
 		}
-		return detected == target
+		if detected != effectiveTarget {
+			return "", false
+		}
+		normalized, ok := sigcompat.CompatibleSignatureForProvider(effectiveTarget, rawSignature)
+		return normalized, ok && normalized != ""
 	}
 	if target == sigcompat.SignatureProviderGrok {
-		_, err := sigcompat.InspectGrokEncryptedContent(rawSignature)
-		return err == nil
+		if _, err := sigcompat.InspectGrokEncryptedContent(rawSignature); err == nil {
+			return rawSignature, true
+		}
 	}
-	return false
+	return "", false
 }
 
 func setCodexToolChoiceFromGeminiToolConfig(out []byte, functionCallingConfig gjson.Result) []byte {

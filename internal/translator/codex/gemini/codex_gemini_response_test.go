@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/tidwall/gjson"
@@ -167,8 +168,19 @@ func TestConvertCodexResponseToGemini_ReasoningThoughtSignature(t *testing.T) {
 		if !part.Get("thought").Bool() || part.Get("text").String() != "thinking summary" {
 			t.Fatalf("part.0 = %s, want thought summary part; payload=%s", part.Raw, out)
 		}
-		if got := part.Get("thoughtSignature").String(); got != signature {
-			t.Fatalf("thoughtSignature = %q, want Meta signature; payload=%s", got, out)
+		if got := part.Get("thoughtSignature").String(); got != encodeGeminiCodexThoughtSignature(signature) {
+			t.Fatalf("thoughtSignature is not the carrier-encoded Meta signature; payload=%s", out)
+		}
+		// The Gemini wire form must survive an official-SDK-style []byte
+		// JSON decode (standard base64), and unwrap back to the raw signature.
+		var sdkPart struct {
+			ThoughtSignature []byte `json:"thoughtSignature"`
+		}
+		if err := json.Unmarshal([]byte(part.Raw), &sdkPart); err != nil {
+			t.Fatalf("SDK []byte decode of thoughtSignature failed: %v", err)
+		}
+		if got := decodeGeminiCodexThoughtSignature(part.Get("thoughtSignature").String()); got != signature {
+			t.Fatalf("carrier round-trip = %q, want raw Meta signature", got)
 		}
 		if got := gjson.GetBytes(out, "candidates.0.content.parts.1.text").String(); got != "answer" {
 			t.Fatalf("part.1 text = %q, want answer; payload=%s", got, out)
@@ -179,7 +191,7 @@ func TestConvertCodexResponseToGemini_ReasoningThoughtSignature(t *testing.T) {
 		raw := []byte(`{"type":"response.completed","response":{"id":"resp_1","model":"muse-spark-1.3","created_at":1,"usage":{"input_tokens":1,"output_tokens":2},"output":[{"type":"reasoning","encrypted_content":"` + signature + `","summary":[]},{"type":"message","content":[{"type":"output_text","text":"answer"}]}]}}`)
 		out := ConvertCodexResponseToGeminiNonStream(ctx, "muse-spark-1.3", nil, nil, raw, nil)
 		part := gjson.GetBytes(out, "candidates.0.content.parts.0")
-		if !part.Get("thought").Bool() || part.Get("thoughtSignature").String() != signature {
+		if !part.Get("thought").Bool() || part.Get("thoughtSignature").String() != encodeGeminiCodexThoughtSignature(signature) {
 			t.Fatalf("part.0 = %s, want empty thought carrier with signature; payload=%s", part.Raw, out)
 		}
 	})
@@ -195,10 +207,46 @@ func TestConvertCodexResponseToGemini_ReasoningThoughtSignature(t *testing.T) {
 			t.Fatalf("text delta emitted %d chunks, want 1", len(out))
 		}
 		part := gjson.GetBytes(out[0], "candidates.0.content.parts.0")
-		if part.Get("text").String() != "answer" || part.Get("thoughtSignature").String() != signature {
+		if part.Get("text").String() != "answer" || part.Get("thoughtSignature").String() != encodeGeminiCodexThoughtSignature(signature) {
 			t.Fatalf("text part = %s, want answer with Meta thoughtSignature", part.Raw)
 		}
 	})
+}
+
+func TestConvertCodexResponseToGemini_StreamMultipleFunctionCallsKeepSignatureAndOrder(t *testing.T) {
+	ctx := context.Background()
+	signature := testGeminiMetaThoughtSignature()
+	var param any
+	var outputs [][]byte
+	events := [][]byte{
+		[]byte(`data: {"type":"response.output_item.done","item":{"type":"reasoning","encrypted_content":"` + signature + `","summary":[]}}`),
+		[]byte(`data: {"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_a","name":"alpha","arguments":"{}"}}`),
+		[]byte(`data: {"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_b","name":"beta","arguments":"{}"}}`),
+		[]byte(`data: {"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}`),
+	}
+	for _, event := range events {
+		outputs = append(outputs, ConvertCodexResponseToGemini(ctx, "muse-spark-1.3", nil, nil, event, &param)...)
+	}
+	var names []string
+	signatureOnAlpha := false
+	for _, chunk := range outputs {
+		for _, part := range gjson.GetBytes(chunk, "candidates.0.content.parts").Array() {
+			name := part.Get("functionCall.name").String()
+			if name == "" {
+				continue
+			}
+			names = append(names, name)
+			if name == "alpha" && decodeGeminiCodexThoughtSignature(part.Get("thoughtSignature").String()) == signature {
+				signatureOnAlpha = true
+			}
+		}
+	}
+	if len(names) != 2 || names[0] != "alpha" || names[1] != "beta" {
+		t.Fatalf("function calls = %v, want [alpha beta] in order; outputs=%q", names, outputs)
+	}
+	if !signatureOnAlpha {
+		t.Fatalf("first function call lost the pending Meta thoughtSignature; outputs=%q", outputs)
+	}
 }
 
 func TestConvertCodexResponseToGeminiNonStreamPreservesFunctionCallID(t *testing.T) {

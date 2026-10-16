@@ -63,11 +63,24 @@ func InspectMetaReasoningSignature(rawSignature string) (*MetaReasoningSignature
 	if !strings.HasPrefix(sig, "Q-PaDg") {
 		return nil, fmt.Errorf("invalid Meta reasoning signature: expected Q-PaDg prefix")
 	}
-	if index, r, ok := firstInvalidMetaReasoningSignatureChar(sig); ok {
-		return nil, fmt.Errorf("invalid Meta reasoning signature: contains non-base64url character U+%04X at byte %d", r, index)
-	}
+	// Reject by encoded length before scanning or allocating a decoded copy:
+	// only bucket-sized candidates ever reach the decoder.
 	if len(sig)%4 == 1 {
 		return nil, fmt.Errorf("invalid Meta reasoning signature: base64url length %d cannot decode", len(sig))
+	}
+	decodedLen := len(sig) / 4 * 3
+	switch len(sig) % 4 {
+	case 2:
+		decodedLen++
+	case 3:
+		decodedLen += 2
+	}
+	payloadLen := decodedLen - metaReasoningSignatureOverheadLen
+	if payloadLen < metaReasoningSignatureMinPayload || payloadLen&(payloadLen-1) != 0 {
+		return nil, fmt.Errorf("invalid Meta reasoning signature: payload length %d is not a power-of-two bucket", payloadLen)
+	}
+	if index, r, ok := firstInvalidMetaReasoningSignatureChar(sig); ok {
+		return nil, fmt.Errorf("invalid Meta reasoning signature: contains non-base64url character U+%04X at byte %d", r, index)
 	}
 	// Strict decoding rejects non-canonical trailing bits, so no re-encode
 	// comparison is needed to prove canonical form.
@@ -75,15 +88,8 @@ func InspectMetaReasoningSignature(rawSignature string) (*MetaReasoningSignature
 	if err != nil {
 		return nil, fmt.Errorf("invalid Meta reasoning signature: base64url decode failed")
 	}
-	if len(decoded) < metaReasoningSignatureOverheadLen+metaReasoningSignatureMinPayload {
-		return nil, fmt.Errorf("invalid Meta reasoning signature: decoded payload too short")
-	}
 	if !bytes.Equal(decoded[:len(metaReasoningSignatureHeader)], metaReasoningSignatureHeader) {
 		return nil, fmt.Errorf("invalid Meta reasoning signature: unexpected envelope header %x", decoded[:len(metaReasoningSignatureHeader)])
-	}
-	payloadLen := len(decoded) - metaReasoningSignatureOverheadLen
-	if payloadLen&(payloadLen-1) != 0 {
-		return nil, fmt.Errorf("invalid Meta reasoning signature: payload length %d is not a power-of-two bucket", payloadLen)
 	}
 	exponent := 0
 	for p := payloadLen; p > metaReasoningSignatureMinPayload; p >>= 1 {

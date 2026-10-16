@@ -149,6 +149,18 @@ func TestMetaSignatureCompatibility_OtherTargets(t *testing.T) {
 	}
 }
 
+func TestSignatureProviderFromModelName_NamespacedTailWins(t *testing.T) {
+	for model, want := range map[string]SignatureProvider{
+		"openai-compatible/muse-spark-1.3":       SignatureProviderMeta,
+		"muse-proxy/gpt-5.4":                     SignatureProviderGPT,
+		"openrouter/anthropic/claude-sonnet-4-6": SignatureProviderClaude,
+	} {
+		if got := SignatureProviderFromModelName(model); got != want {
+			t.Errorf("SignatureProviderFromModelName(%q) = %q, want %q", model, got, want)
+		}
+	}
+}
+
 func TestMetaCachePrefixUnsupported(t *testing.T) {
 	// No producer emits provider-prefixed Meta signatures, so unlike GPT or
 	// Claude there is deliberately no cache-prefix alias for Meta yet.

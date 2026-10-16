@@ -63,6 +63,28 @@ type SignatureCompatibilityDecision struct {
 // whose signed history can be safely replayed for that model.
 func SignatureProviderFromModelName(modelName string) SignatureProvider {
 	lower := strings.ToLower(strings.TrimSpace(modelName))
+	if lower == "" {
+		return SignatureProviderUnknown
+	}
+	// A namespaced ID's canonical model is its last path segment, so a
+	// vendor/router prefix such as "openai-compatible/" must not outrank the
+	// actual model family ("openai-compatible/muse-spark-1.3" is Meta, not
+	// GPT). Only when the last segment names no family does the full string
+	// get the legacy substring treatment.
+	candidate := lower
+	if idx := strings.LastIndexAny(lower, "/:"); idx >= 0 && idx < len(lower)-1 {
+		candidate = lower[idx+1:]
+	}
+	if provider := signatureProviderFromModelNameValue(candidate); provider != SignatureProviderUnknown {
+		return provider
+	}
+	if candidate != lower {
+		return signatureProviderFromModelNameValue(lower)
+	}
+	return SignatureProviderUnknown
+}
+
+func signatureProviderFromModelNameValue(lower string) SignatureProvider {
 	switch {
 	case strings.Contains(lower, "claude"):
 		return SignatureProviderClaude

@@ -182,7 +182,7 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool, 
 					ok = true
 				}
 				if !ok && codexClaudeTargetAcceptsMetaSignature(modelName) && sigcompat.IsValidMetaReasoningSignature(rawSignature) {
-					signature = rawSignature
+					signature = strings.TrimSpace(rawSignature)
 					ok = true
 				}
 				if !ok {
