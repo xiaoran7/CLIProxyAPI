@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **WorkBuddy Outage & Activity Compensation Suite Integration (`checkin.go`, `checkin_test.go`, `workbuddy_checkin.go`, `workbuddy_checkin_test.go`, `server_management_v8.go`)**:
+  - **On-Demand Official Outage Compensation Claim (`POST /billing/meter/claim-compensation`)**: Added `ClaimCompensation` and `ClaimCompensationAll` in `internal/auth/workbuddy` to claim official activity gifts (such as the 500 DeepSeek outage credits into package `TCACA_code_007_nzdH5h4Nl0`), handling successful grant (`claimed`), already-claimed deduplication (`done`), and expired/inactive activity windows (`inactive`).
+  - **Strictly Decoupled from Daily Scheduled Ticker**: The compensation claiming pipeline is designed strictly as an on-demand management utility and is excluded from recurring daily check-in tickers and startup loops, eliminating useless background traffic for one-off promotions.
+  - **Management Endpoints & Deduplication**: Added `GET/POST /v8/management/workbuddy/compensation` and extended `POST /v8/management/workbuddy/checkin?action=compensation` to support manual on-demand querying and one-click bulk claims for single or all managed WorkBuddy accounts, persisting results in `workbuddy_checkins.json` (`compensations` payload).
+  - **Comprehensive Unit Testing**: Added unit tests covering successful claims, duplicate-claim handling, inactive campaign windows, unauthorized tokens, and persistence deduplication in both the core engine and HTTP handlers.
+
 ### Fixed
 - **WorkBuddy Client Identity Cloaking & Channel Validation Alignment (`workbuddy.go`, `workbuddy_test.go`, `README.md`, `README_CN.md`, `AGENTS.md`)**:
   - **Upstream Channel Validation Resolution (Code 11-128)**: Injected the full conversation header family (`X-Conversation-ID`, `X-Conversation-Request-ID`, `X-Root-Request-ID`, `X-Conversation-Message-ID`, `X-Request-ID`), resolving upstream HTTP 400 interception (`conversation id missing` / displayTips "这次调用没通过渠道校验，可能不是官方客户端发出的").

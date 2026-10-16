@@ -30,6 +30,15 @@ const (
 	CheckinFailed     = "failed"     // Network or temporary failure
 )
 
+// Compensation outcome statuses and endpoint path.
+const (
+	CompensationPath     = "/billing/meter/claim-compensation"
+	CompensationClaimed  = "claimed"  // 500-credit compensation claimed successfully
+	CompensationDone     = "done"     // Already claimed previously (per-account limit 1)
+	CompensationInactive = "inactive" // Compensation activity inactive or expired
+	CompensationFailed   = "failed"   // Network, token or server failure
+)
+
 // WorkBuddy check-in specific API error codes.
 const (
 	wbCheckinAlready    = 1001 // Already checked in today
@@ -53,6 +62,17 @@ type CheckinResult struct {
 	Outcome string    `json:"outcome"`
 	Credit  float64   `json:"credit,omitempty"`
 	Streak  int       `json:"streak,omitempty"`
+	Message string    `json:"message,omitempty"`
+	Realm   string    `json:"realm,omitempty"`
+	At      time.Time `json:"at"`
+}
+
+// CompensationResult holds the outcome of an activity compensation claim attempt.
+type CompensationResult struct {
+	AuthID  string    `json:"auth_id,omitempty"`
+	User    string    `json:"user,omitempty"`
+	Outcome string    `json:"outcome"`
+	Credit  float64   `json:"credit,omitempty"`
 	Message string    `json:"message,omitempty"`
 	Realm   string    `json:"realm,omitempty"`
 	At      time.Time `json:"at"`
@@ -262,16 +282,113 @@ func handleUnauthorizedCheckin(ctx context.Context, client *http.Client, baseURL
 	return result, errors.New("workbuddy checkin: 401 unauthorized")
 }
 
+// ClaimCompensation claims official outage/activity compensation (e.g. 500 DeepSeek outage credits) for a single account.
+func ClaimCompensation(ctx context.Context, client *http.Client, auth *cliproxyauth.Auth) (*CompensationResult, error) {
+	if auth == nil {
+		return nil, errors.New("workbuddy claim compensation: auth is nil")
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
+
+	result := &CompensationResult{
+		AuthID: auth.ID,
+		User:   extractNickname(auth),
+		At:     time.Now().UTC(),
+	}
+
+	realm := ResolveRealm(auth)
+	result.Realm = realm
+
+	token := extractAccessToken(auth)
+	if token == "" {
+		result.Outcome = CompensationFailed
+		result.Message = "missing access token"
+		return result, errors.New("workbuddy claim compensation: missing access token")
+	}
+
+	baseURL := ResolveBaseURL(realm)
+	if auth.Attributes != nil {
+		if bu := strings.TrimSpace(auth.Attributes["base_url"]); bu != "" {
+			baseURL = strings.TrimRight(bu, "/")
+		}
+	}
+
+	claimURL := baseURL + CompensationPath
+	req, errReq := http.NewRequestWithContext(ctx, http.MethodPost, claimURL, bytes.NewReader([]byte("{}")))
+	if errReq != nil {
+		result.Outcome = CompensationFailed
+		result.Message = errReq.Error()
+		return result, errReq
+	}
+	ApplyHeaders(req, auth, token)
+
+	resp, errDo := client.Do(req)
+	if errDo != nil {
+		result.Outcome = CompensationFailed
+		result.Message = errDo.Error()
+		return result, errDo
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, errRead := io.ReadAll(resp.Body)
+	if errRead != nil {
+		result.Outcome = CompensationFailed
+		result.Message = errRead.Error()
+		return result, errRead
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		result.Outcome = CompensationFailed
+		result.Message = "authentication failed (401 Unauthorized)"
+		return result, errors.New("workbuddy claim compensation: 401 unauthorized")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		result.Outcome = CompensationFailed
+		result.Message = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(body))
+		return result, fmt.Errorf("workbuddy claim compensation HTTP error: %s", result.Message)
+	}
+
+	code := gjson.GetBytes(body, "code").Int()
+	msg := gjson.GetBytes(body, "msg").String()
+
+	switch {
+	case code == 0:
+		result.Outcome = CompensationClaimed
+		result.Credit = 500.0 // Official activity package TCACA_code_007_nzdH5h4Nl0 grants 500 credits
+		if msg == "" || msg == "OK" {
+			result.Message = "补偿领取成功，已入账500算力"
+		} else {
+			result.Message = msg
+		}
+		return result, nil
+	case strings.Contains(msg, "已领取"):
+		result.Outcome = CompensationDone
+		result.Message = msg
+		return result, nil
+	case strings.Contains(msg, "未开启") || strings.Contains(msg, "已过期"):
+		result.Outcome = CompensationInactive
+		result.Message = msg
+		return result, nil
+	default:
+		result.Outcome = CompensationFailed
+		result.Message = msg
+		return result, fmt.Errorf("workbuddy claim compensation error code %d: %s", code, msg)
+	}
+}
+
 // CheckinEngine manages scheduled background daily check-ins for all WorkBuddy accounts.
 type CheckinEngine struct {
-	mu         sync.RWMutex
-	storePath  string
-	records    map[string]CheckinResult // key: authID
-	authGetter func() []*cliproxyauth.Auth
-	client     *http.Client
-	stopCh     chan struct{}
-	running    bool
-	enabled    bool
+	mu            sync.RWMutex
+	storePath     string
+	records       map[string]CheckinResult      // key: authID
+	compensations map[string]CompensationResult // key: authID
+	authGetter    func() []*cliproxyauth.Auth
+	client        *http.Client
+	stopCh        chan struct{}
+	running       bool
+	enabled       bool
 }
 
 // NewCheckinEngine initializes a new checkin engine with persistence.
@@ -281,12 +398,13 @@ func NewCheckinEngine(storeDir string, authGetter func() []*cliproxyauth.Auth) *
 	}
 	storePath := filepath.Join(storeDir, "workbuddy_checkins.json")
 	engine := &CheckinEngine{
-		storePath:  storePath,
-		records:    make(map[string]CheckinResult),
-		authGetter: authGetter,
-		client:     &http.Client{Timeout: 30 * time.Second},
-		stopCh:     make(chan struct{}),
-		enabled:    true,
+		storePath:     storePath,
+		records:       make(map[string]CheckinResult),
+		compensations: make(map[string]CompensationResult),
+		authGetter:    authGetter,
+		client:        &http.Client{Timeout: 30 * time.Second},
+		stopCh:        make(chan struct{}),
+		enabled:       true,
 	}
 	engine.loadRecords()
 	return engine
@@ -421,11 +539,56 @@ func (e *CheckinEngine) RunCheckinAll(ctx context.Context) map[string]CheckinRes
 	return results
 }
 
+// ClaimCompensationAll executes official activity compensation claims for all eligible WorkBuddy accounts.
+func (e *CheckinEngine) ClaimCompensationAll(ctx context.Context) map[string]CompensationResult {
+	if e.authGetter == nil {
+		return nil
+	}
+
+	auths := e.authGetter()
+	results := make(map[string]CompensationResult)
+
+	for _, a := range auths {
+		if a == nil {
+			continue
+		}
+		provider := strings.ToLower(strings.TrimSpace(a.Provider))
+		authKind := strings.ToLower(strings.TrimSpace(a.Attributes["auth_kind"]))
+		isWorkbuddy := provider == "workbuddy" || provider == "workbuddy-cn" || authKind == "workbuddy"
+		if !isWorkbuddy {
+			continue
+		}
+
+		e.mu.RLock()
+		existing, ok := e.compensations[a.ID]
+		e.mu.RUnlock()
+
+		if ok && (existing.Outcome == CompensationClaimed || existing.Outcome == CompensationDone) {
+			results[a.ID] = existing
+			continue
+		}
+
+		res, err := ClaimCompensation(ctx, e.client, a)
+		if err != nil {
+			log.WithError(err).Warnf("workbuddy claim compensation failed for account %s (%s)", a.ID, extractNickname(a))
+		}
+		if res != nil {
+			results[a.ID] = *res
+			e.mu.Lock()
+			e.compensations[a.ID] = *res
+			e.saveRecordsLocked()
+			e.mu.Unlock()
+		}
+	}
+
+	return results
+}
+
 // isInternalCheckinKey checks if the key belongs to an internal persistence file or envelope key rather than a user account.
 func isInternalCheckinKey(key string) bool {
 	lower := strings.ToLower(strings.TrimSpace(key))
 	base := filepath.Base(lower)
-	if lower == "enabled" || lower == "records" || base == "enabled" || base == "records" {
+	if lower == "enabled" || lower == "records" || lower == "compensations" || base == "enabled" || base == "records" || base == "compensations" {
 		return true
 	}
 	return strings.HasSuffix(base, "checkins.json") || base == "session_affinity.json" || strings.HasSuffix(lower, "checkins.json") || lower == "session_affinity.json"
@@ -467,9 +630,46 @@ func (e *CheckinEngine) RecordCheckin(authID string, res CheckinResult) {
 	e.saveRecordsLocked()
 }
 
+// GetCompensationStatus returns the compensation claim status for an authID.
+func (e *CheckinEngine) GetCompensationStatus(authID string) (CompensationResult, bool) {
+	if isInternalCheckinKey(authID) {
+		return CompensationResult{}, false
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	res, ok := e.compensations[authID]
+	return res, ok
+}
+
+// GetAllCompensations returns all recorded compensation claims.
+func (e *CheckinEngine) GetAllCompensations() map[string]CompensationResult {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	out := make(map[string]CompensationResult, len(e.compensations))
+	for k, v := range e.compensations {
+		if isInternalCheckinKey(k) {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// RecordCompensation stores a compensation claim result into the engine memory and disk store.
+func (e *CheckinEngine) RecordCompensation(authID string, res CompensationResult) {
+	if e == nil || isInternalCheckinKey(authID) {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.compensations[authID] = res
+	e.saveRecordsLocked()
+}
+
 type checkinStorePayload struct {
-	Enabled *bool                    `json:"enabled,omitempty"`
-	Records map[string]CheckinResult `json:"records"`
+	Enabled       *bool                         `json:"enabled,omitempty"`
+	Records       map[string]CheckinResult      `json:"records,omitempty"`
+	Compensations map[string]CompensationResult `json:"compensations,omitempty"`
 }
 
 func (e *CheckinEngine) loadRecords() {
@@ -481,9 +681,12 @@ func (e *CheckinEngine) loadRecords() {
 		return
 	}
 	var payload checkinStorePayload
-	if errUnmarshal := json.Unmarshal(data, &payload); errUnmarshal == nil && (payload.Enabled != nil || payload.Records != nil) {
+	if errUnmarshal := json.Unmarshal(data, &payload); errUnmarshal == nil && (payload.Enabled != nil || payload.Records != nil || payload.Compensations != nil) {
 		if payload.Records != nil {
 			e.records = payload.Records
+		}
+		if payload.Compensations != nil {
+			e.compensations = payload.Compensations
 		}
 		if payload.Enabled != nil {
 			e.enabled = *payload.Enabled
@@ -495,10 +698,19 @@ func (e *CheckinEngine) loadRecords() {
 	if e.records == nil {
 		e.records = make(map[string]CheckinResult)
 	}
+	if e.compensations == nil {
+		e.compensations = make(map[string]CompensationResult)
+	}
 	var dirty bool
 	for k := range e.records {
 		if isInternalCheckinKey(k) {
 			delete(e.records, k)
+			dirty = true
+		}
+	}
+	for k := range e.compensations {
+		if isInternalCheckinKey(k) {
+			delete(e.compensations, k)
 			dirty = true
 		}
 	}
@@ -515,8 +727,9 @@ func (e *CheckinEngine) saveRecordsLocked() {
 	_ = os.MkdirAll(dir, 0o755)
 
 	payload := checkinStorePayload{
-		Enabled: &e.enabled,
-		Records: e.records,
+		Enabled:       &e.enabled,
+		Records:       e.records,
+		Compensations: e.compensations,
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
