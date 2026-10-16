@@ -294,6 +294,7 @@ func TestWorkBuddy_ClaimCompensation_AlreadyDone(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == CompensationPath {
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest) // Upstream returns HTTP 400 with code 10001
 			_, _ = w.Write([]byte(`{"code":10001,"msg":"每人限领一次，您已领取过无法重复领取","requestId":"req-test-456"}`))
 			return
 		}
@@ -326,6 +327,7 @@ func TestWorkBuddy_ClaimCompensation_Inactive(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == CompensationPath {
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest) // Upstream returns HTTP 400 for inactive/expired activity
 			_, _ = w.Write([]byte(`{"code":10001,"msg":"补偿领取活动未开启或已过期","requestId":"req-test-789"}`))
 			return
 		}

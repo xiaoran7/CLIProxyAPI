@@ -303,8 +303,9 @@ func (h *Handler) listWorkBuddyQuotas(c *gin.Context) {
 		Multipliers *accountRateRange `json:"multipliers,omitempty"`
 		// FreeModels and PaidModels list the free / paid model IDs so a client
 		// can explain the multiplier range without a second request.
-		FreeModels []string `json:"free_models,omitempty"`
-		PaidModels []string `json:"paid_models,omitempty"`
+		FreeModels []string           `json:"free_models,omitempty"`
+		PaidModels []string           `json:"paid_models,omitempty"`
+		ModelRates map[string]float64 `json:"model_rates,omitempty"`
 	}
 
 	var targets []*coreauth.Auth
@@ -363,12 +364,15 @@ func (h *Handler) listWorkBuddyQuotas(c *gin.Context) {
 					Max:       credits.MaxMultiplier,
 				}
 				aq.FreeTier = credits.FreeCount > 0
+				aq.ModelRates = make(map[string]float64)
 				for id, rate := range registry.WorkBuddyCreditsModelRates(realm) {
 					if rate.Free {
 						aq.FreeModels = append(aq.FreeModels, id)
+						aq.ModelRates[id] = 0.0
 						continue
 					}
 					aq.PaidModels = append(aq.PaidModels, id)
+					aq.ModelRates[id] = rate.Multiplier
 				}
 				sort.Strings(aq.FreeModels)
 				sort.Strings(aq.PaidModels)

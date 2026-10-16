@@ -344,17 +344,11 @@ func ClaimCompensation(ctx context.Context, client *http.Client, auth *cliproxya
 		return result, errors.New("workbuddy claim compensation: 401 unauthorized")
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		result.Outcome = CompensationFailed
-		result.Message = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(body))
-		return result, fmt.Errorf("workbuddy claim compensation HTTP error: %s", result.Message)
-	}
-
 	code := gjson.GetBytes(body, "code").Int()
 	msg := gjson.GetBytes(body, "msg").String()
 
 	switch {
-	case code == 0:
+	case resp.StatusCode == http.StatusOK && code == 0:
 		result.Outcome = CompensationClaimed
 		result.Credit = 500.0 // Official activity package TCACA_code_007_nzdH5h4Nl0 grants 500 credits
 		if msg == "" || msg == "OK" {
@@ -363,7 +357,7 @@ func ClaimCompensation(ctx context.Context, client *http.Client, auth *cliproxya
 			result.Message = msg
 		}
 		return result, nil
-	case strings.Contains(msg, "已领取"):
+	case strings.Contains(msg, "已领取") || strings.Contains(msg, "重复领取"):
 		result.Outcome = CompensationDone
 		result.Message = msg
 		return result, nil
@@ -371,6 +365,10 @@ func ClaimCompensation(ctx context.Context, client *http.Client, auth *cliproxya
 		result.Outcome = CompensationInactive
 		result.Message = msg
 		return result, nil
+	case resp.StatusCode != http.StatusOK:
+		result.Outcome = CompensationFailed
+		result.Message = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(body))
+		return result, fmt.Errorf("workbuddy claim compensation HTTP error: %s", result.Message)
 	default:
 		result.Outcome = CompensationFailed
 		result.Message = msg
