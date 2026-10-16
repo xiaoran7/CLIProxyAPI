@@ -62,9 +62,9 @@ func ResetRateLimitSinks() {
 }
 
 // ApplySinkOrdering sorts a slice of available auth candidates so that:
-// 1. Un-sunk credentials (seq == 0) remain in front in their existing order.
-// 2. Sunk credentials (seq > 0) are moved to the back, sorted by their sink sequence
-//    (the one sunk earlier comes ahead of those sunk later, forming a round-robin cycle).
+//  1. Un-sunk credentials (seq == 0) remain in front in their existing order.
+//  2. Sunk credentials (seq > 0) are moved to the back, sorted by their sink sequence
+//     (the one sunk earlier comes ahead of those sunk later, forming a round-robin cycle).
 func ApplySinkOrdering(auths []*Auth) []*Auth {
 	if len(auths) <= 1 {
 		return auths

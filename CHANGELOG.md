@@ -87,6 +87,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Regression Coverage**: Added unit tests in `workbuddy_cloaking_test.go` verifying system prompt prepending, preservation of custom system messages, and empty-array fallback handling.
 
 ### Merged
+- **Sync with Upstream (`router-for-me/CLIProxyAPI:main` up to v8.0.31)**:
+  - Merged 3 upstream commits bringing pluginhost improvements, optimistic concurrency control for management APIs, and response translation performance optimizations:
+    - **Plugin Host & Shadow Copies (`shadow.go`, `shadow_windows.go`, `shadow_unix.go`, `loader_windows.go`, `loader_unix.go`)**:
+      - Added content-addressed shadow copies for dynamic library loading to resolve platform-specific dynamic library file locks during in-flight plugin updates and unloads (#6672).
+      - Added `thinking.CollapseConfigurationUpdates`, `thinking.StripConfigurationUpdates`, and `thinking.HasThinkingSuffix` to properly degrade or preserve reasoning effort in Sign in with ChatGPT (SIWC) Codex requests when configuration updates are stripped.
+    - **Management Optimistic Concurrency Control (`config_v8.go`, `server_middleware.go`, `provider.go`)**:
+      - Implemented SHA-256 ETag generation on `/v8/config` reads and enforced RFC 9110 `If-Match` validation on mutating requests to prevent stale config overwrites (returning HTTP 412 Precondition Failed upon mismatch) (#6666).
+      - Exposed `ETag` in CORS response headers (`corsExposedResponseHeaders`) and masked sensitive `value` query parameters in request logging to prevent credential leakage.
+    - **Claude to OpenAI Responses Streaming Translation (`claude_openai-responses_response.go`)**:
+      - Pinned and cached validated request JSON once per stream (`st.RequestJSON`) instead of re-picking and re-validating the full body on every chunk, drastically reducing allocation and CPU overhead on long chat streams (#6665).
+    - **Fork Preservation**: Verified seamless integration with all fork-specific features: WorkBuddy suite (outbound cloaking, channel validation, credit multipliers, check-in engine, quota meter & expiration dates), OpenCode cloaking & fingerprinting, Pace & Smart routing, selective gzip compression, and session affinity.
+
 - **Sync with Upstream (`router-for-me/CLIProxyAPI:main` up to v8.0.30)**:
   - Merged 13 upstream commits bringing model updates, concurrency protection, and security enhancements:
     - **Models**: Added `gemini-4-argon` model configuration with native web search and thinking capabilities in `models.json` (#6645).

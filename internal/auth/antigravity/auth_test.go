@@ -186,4 +186,3 @@ func TestRefreshToken(t *testing.T) {
 		t.Fatalf("expected expires in 3600, got %d", resp.ExpiresIn)
 	}
 }
-
