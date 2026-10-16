@@ -10050,3 +10050,179 @@ func TestClaudeExecutor_ChatCompletionsDefaultMaxTokensAndPayloadDefaultRule(t *
 		}
 	})
 }
+
+// preservedThinkingTestSignature is a syntactically valid Claude thinking
+// signature sample that survives signature sanitization, so executor-level
+// tests can exercise replayed-history handling without a real upstream.
+const preservedThinkingTestSignature = "CAISqwIKiAEIEBgCKkBHRlRBsNiptQUWfPoOhuQKwi5LnncZVO9bB5jqOs76D7uBtgktML0zqJtNmLHXHHcgD6lk4MQu4QBXzFd1lbC3Mg5jbGF1ZGUtZmFibGUtNTgBQgh0aGlua2luZ1okZDk3NDM5NzUtNGJiMC00OTM2LTllMjgtZDViMGQyMWJkYzQ4EgxCGh+XVFFFeySAjtAaDL/A1LltGu6MMJ+eXSIwsN0oBpDrqLv22UBfkMnTotnIbkvkOyb9xZHgigG6OZVHaI3gThm+maLKmgO5PrFLKlDFYp+YZksy/wKwszJlnLTPzAK+NUlfzagOE1ymtZTXhAYK260XyFYmg/te/C231+Fr/hoX+EJoUBnrn0gD7hqMISOT+TaFEuOXYsN517GfaxgB"
+
+func preservedThinkingReplayPayload(model string) []byte {
+	return []byte(`{
+		"model": "` + model + `",
+		"thinking": {"type": "adaptive"},
+		"messages": [
+			{"role":"user","content":[{"type":"text","text":"hi"}]},
+			{"role":"assistant","content":[
+				{"type":"thinking","thinking":"earlier reasoning","signature":"` + preservedThinkingTestSignature + `"},
+				{"type":"text","text":"Answer"}
+			]},
+			{"role":"user","content":[{"type":"text","text":"continue"}]}
+		]
+	}`)
+}
+
+func runClaudeExecutorCapture(t *testing.T, cfg *config.Config, cloakMode string, stream bool, model string, payload []byte) ([]byte, http.Header) {
+	t.Helper()
+	var seenBody []byte
+	var seenHeaders http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		seenBody = bytes.Clone(body)
+		seenHeaders = r.Header.Clone()
+		if stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("data: {\"type\":\"message_stop\"}\n\n"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"msg_1","type":"message","model":"ok","role":"assistant","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	defer server.Close()
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+	attrs := map[string]string{"api_key": "key-preserved-thinking", "base_url": server.URL}
+	if cloakMode != "" {
+		attrs["cloak_mode"] = cloakMode
+	}
+	executor := NewClaudeExecutor(cfg)
+	auth := &cliproxyauth.Auth{Attributes: attrs}
+	req := cliproxyexecutor.Request{Model: model, Payload: payload}
+	opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FormatClaude}
+	if stream {
+		result, errStream := executor.ExecuteStream(context.Background(), auth, req, opts)
+		if errStream != nil {
+			t.Fatalf("ExecuteStream() error = %v", errStream)
+		}
+		for chunk := range result.Chunks {
+			if chunk.Err != nil {
+				t.Fatalf("unexpected stream chunk error: %v", chunk.Err)
+			}
+		}
+	} else {
+		if _, errExecute := executor.Execute(context.Background(), auth, req, opts); errExecute != nil {
+			t.Fatalf("Execute() error = %v", errExecute)
+		}
+	}
+	if len(seenBody) == 0 {
+		t.Fatal("expected request body to be captured")
+	}
+	return seenBody, seenHeaders
+}
+
+func TestClaudeExecutor_PreservedThinkingReplayInjectsDropBlock(t *testing.T) {
+	for _, model := range []string{"claude-haiku-5-5", "claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1"} {
+		t.Run(model, func(t *testing.T) {
+			seenBody, seenHeaders := runClaudeExecutorCapture(t, nil, "", false, model, preservedThinkingReplayPayload(model))
+			if got := gjson.GetBytes(seenBody, "thinking.block_binding.prefix_mismatch_behavior").String(); got != "drop_block" {
+				t.Fatalf("thinking.block_binding.prefix_mismatch_behavior = %q, want drop_block; body=%s", got, seenBody)
+			}
+			if betas := seenHeaders.Get("Anthropic-Beta"); !strings.Contains(betas, claudeThinkingBindingBeta) {
+				t.Fatalf("Anthropic-Beta = %q, want %s", betas, claudeThinkingBindingBeta)
+			}
+			if !strings.Contains(string(seenBody), preservedThinkingTestSignature) {
+				t.Fatalf("replayed thinking signature must survive injection: %s", seenBody)
+			}
+		})
+	}
+}
+
+func TestClaudeExecutor_PreservedThinkingReplayInjectsDropBlockOnStream(t *testing.T) {
+	seenBody, seenHeaders := runClaudeExecutorCapture(t, nil, "", true, "claude-haiku-5-5", preservedThinkingReplayPayload("claude-haiku-5-5"))
+	if got := gjson.GetBytes(seenBody, "thinking.block_binding.prefix_mismatch_behavior").String(); got != "drop_block" {
+		t.Fatalf("stream thinking.block_binding.prefix_mismatch_behavior = %q, want drop_block; body=%s", got, seenBody)
+	}
+	if betas := seenHeaders.Get("Anthropic-Beta"); !strings.Contains(betas, claudeThinkingBindingBeta) {
+		t.Fatalf("stream Anthropic-Beta = %q, want %s", betas, claudeThinkingBindingBeta)
+	}
+}
+
+func TestClaudeExecutor_PreservedThinkingInjectionSkipsNonPreservedModel(t *testing.T) {
+	seenBody, _ := runClaudeExecutorCapture(t, nil, "", false, "claude-opus-5", preservedThinkingReplayPayload("claude-opus-5"))
+	if gjson.GetBytes(seenBody, "thinking.block_binding").Exists() {
+		t.Fatalf("non-preserved-thinking model must not gain block_binding: %s", seenBody)
+	}
+}
+
+func TestClaudeExecutor_PreservedThinkingInjectionRequiresSignedBlock(t *testing.T) {
+	payload := []byte(`{"model":"claude-haiku-5-5","thinking":{"type":"adaptive"},"messages":[{"role":"user","content":"hi"}]}`)
+	seenBody, _ := runClaudeExecutorCapture(t, nil, "", false, "claude-haiku-5-5", payload)
+	if gjson.GetBytes(seenBody, "thinking.block_binding").Exists() {
+		t.Fatalf("request without replayed signed thinking must not gain block_binding: %s", seenBody)
+	}
+}
+
+func TestClaudeExecutor_PreservedThinkingInjectionRequiresThinkingType(t *testing.T) {
+	payload := []byte(`{"model":"claude-haiku-5-5","messages":[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"thinking","thinking":"earlier","signature":"` + preservedThinkingTestSignature + `"}]},{"role":"user","content":"continue"}]}`)
+	seenBody, _ := runClaudeExecutorCapture(t, nil, "", false, "claude-haiku-5-5", payload)
+	if gjson.GetBytes(seenBody, "thinking.block_binding").Exists() {
+		t.Fatalf("thinking.block_binding must never be synthesized without a caller thinking config: %s", seenBody)
+	}
+}
+
+func TestClaudeExecutor_PreservedThinkingInjectionKeepsCallerError(t *testing.T) {
+	payload := []byte(`{"model":"claude-haiku-5-5","thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}},"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"thinking","thinking":"earlier","signature":"` + preservedThinkingTestSignature + `"}]},{"role":"user","content":"continue"}]}`)
+	seenBody, _ := runClaudeExecutorCapture(t, nil, "", false, "claude-haiku-5-5", payload)
+	if got := gjson.GetBytes(seenBody, "thinking.block_binding.prefix_mismatch_behavior").String(); got != "error" {
+		t.Fatalf("caller prefix_mismatch_behavior = %q, want error preserved; body=%s", got, seenBody)
+	}
+}
+
+func TestClaudeExecutor_PayloadOverrideWinsOverPreservedThinkingInjection(t *testing.T) {
+	cfg := &config.Config{Payload: config.PayloadConfig{
+		Override: []config.PayloadRule{{
+			Models: []config.PayloadModelRule{{Name: "claude-haiku-5-5"}},
+			Params: map[string]any{"thinking.block_binding.prefix_mismatch_behavior": "error"},
+		}},
+	}}
+	seenBody, _ := runClaudeExecutorCapture(t, cfg, "", false, "claude-haiku-5-5", preservedThinkingReplayPayload("claude-haiku-5-5"))
+	if got := gjson.GetBytes(seenBody, "thinking.block_binding.prefix_mismatch_behavior").String(); got != "error" {
+		t.Fatalf("payload override must be the final barrier, got %q; body=%s", got, seenBody)
+	}
+}
+
+func TestClaudeExecutor_PreservedThinkingInjectionSkipsDisabledHaikuThinking(t *testing.T) {
+	payload := []byte(`{"model":"claude-haiku-5-5","thinking":{"type":"disabled"},"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"thinking","thinking":"earlier","signature":"` + preservedThinkingTestSignature + `"}]},{"role":"user","content":"continue"}]}`)
+	seenBody, _ := runClaudeExecutorCapture(t, nil, "", false, "claude-haiku-5-5", payload)
+	if gjson.GetBytes(seenBody, "thinking.block_binding").Exists() {
+		t.Fatalf("block_binding with disabled thinking is rejected upstream on haiku-5-5: %s", seenBody)
+	}
+}
+
+func TestClaudeExecutor_PreservedThinkingInjectionSkipsBetweenToolsSonnetThinking(t *testing.T) {
+	payload := []byte(`{"model":"claude-sonnet-5-5","thinking":{"type":"between_tools"},"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"thinking","thinking":"earlier","signature":"` + preservedThinkingTestSignature + `"}]},{"role":"user","content":"continue"}]}`)
+	seenBody, _ := runClaudeExecutorCapture(t, nil, "", false, "claude-sonnet-5-5", payload)
+	if gjson.GetBytes(seenBody, "thinking.block_binding").Exists() {
+		t.Fatalf("block_binding with between_tools thinking is rejected upstream on sonnet-5-5: %s", seenBody)
+	}
+}
+
+func TestClaudeExecutor_PreservedThinkingInjectionSkipsMythosModel(t *testing.T) {
+	seenBody, _ := runClaudeExecutorCapture(t, nil, "", false, "claude-mythos-5-1", preservedThinkingReplayPayload("claude-mythos-5-1"))
+	if gjson.GetBytes(seenBody, "thinking.block_binding").Exists() {
+		t.Fatalf("mythos-5-1 does not run the prefix check and must not gain block_binding: %s", seenBody)
+	}
+}
+
+func TestClaudeExecutor_PayloadFilterRemovesPreservedThinkingInjection(t *testing.T) {
+	cfg := &config.Config{Payload: config.PayloadConfig{
+		Filter: []config.PayloadFilterRule{{
+			Models: []config.PayloadModelRule{{Name: "claude-haiku-5-5"}},
+			Params: []string{"thinking.block_binding"},
+		}},
+	}}
+	seenBody, _ := runClaudeExecutorCapture(t, cfg, "", false, "claude-haiku-5-5", preservedThinkingReplayPayload("claude-haiku-5-5"))
+	if gjson.GetBytes(seenBody, "thinking.block_binding").Exists() {
+		t.Fatalf("payload filter must remove injected block_binding: %s", seenBody)
+	}
+}
