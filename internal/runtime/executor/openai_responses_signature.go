@@ -48,8 +48,19 @@ func promoteOpenAIResponsesReasoningTextToSummary(itemRaw string, content gjson.
 	return sjson.SetRaw(itemRaw, "summary", b.String())
 }
 
+type metaSignaturePolicy int
+
+const (
+	// metaSignatureForeign: target is not Meta; a recognized Meta envelope is foreign.
+	metaSignatureForeign metaSignaturePolicy = iota
+	// metaSignatureNativeOnly: native Meta upstream (api.meta.ai); only unsuffixed envelopes replay.
+	metaSignatureNativeOnly
+	// metaSignatureAllowRouted: Meta-family model served by a router (e.g. OpenRouter meta/muse-*); native or router-suffixed envelopes replay verbatim.
+	metaSignatureAllowRouted
+)
+
 func sanitizeOpenAIResponsesReasoningEncryptedContent(ctx context.Context, provider string, body []byte) []byte {
-	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, false, false)
+	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, false, metaSignatureForeign)
 }
 
 func sanitizeOpenAIResponsesReasoningEncryptedContentWithCompat(ctx context.Context, provider string, body []byte, isCompat bool) []byte {
@@ -58,32 +69,39 @@ func sanitizeOpenAIResponsesReasoningEncryptedContentWithCompat(ctx context.Cont
 
 // sanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel is the
 // compat variant that knows its target model: a positively recognized Meta
-// Muse envelope is preserved only when the compat upstream actually serves
-// a Meta-family model (native Meta credentials route to the Meta executor,
-// but a cascaded or third-party compat endpoint can serve muse-* models
-// through the Codex executor), and then under the same native-only rule as
-// the Meta executor. For any other compat target the recognized Meta
-// envelope is known-foreign and stripped like other providers'.
+// Muse envelope is preserved whenever the upstream actually serves a
+// Meta-family model, whether or not the route is flagged compat (native
+// OpenAI never serves muse-* models, but a router key such as an OpenRouter
+// codex endpoint can serve meta/muse-* through the Codex executor without
+// isCompat). Router-suffixed envelopes replay verbatim there; the native
+// Meta executor keeps its own stricter native-only gate. For any other
+// target the recognized Meta envelope is known-foreign and stripped like
+// other providers'.
 func sanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel(ctx context.Context, provider string, body []byte, isCompat bool, targetModel string) []byte {
-	keepMeta := isCompat && signature.SignatureProviderFromModelName(targetModel) == signature.SignatureProviderMeta
-	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, isCompat, isCompat, keepMeta)
+	metaPolicy := metaSignatureForeign
+	if signature.SignatureProviderFromModelName(targetModel) == signature.SignatureProviderMeta {
+		metaPolicy = metaSignatureAllowRouted
+	}
+	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, isCompat, isCompat, metaPolicy)
 }
 
 func sanitizeOpenAIResponsesReasoningEncryptedContentKeepForeign(ctx context.Context, provider string, body []byte) []byte {
-	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, true, false)
+	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, true, metaSignatureForeign)
 }
 
 // sanitizeOpenAIResponsesReasoningEncryptedContentForMeta is the Meta-target
 // variant and is deliberately native-only: only positively recognized Meta
-// Muse envelopes may replay to Meta. GPT, other known-provider, and
-// unknown-format values are all stripped, so a wrong signature can never
-// reach the Meta upstream through this path. A future Meta envelope revision
-// will be stripped until the inspector learns it (fail-closed).
+// Muse envelopes without a router suffix may replay to api.meta.ai, whose
+// suffix acceptance is unverified. GPT, other known-provider,
+// unknown-format, and router-suffixed values are all stripped, so a wrong
+// signature can never reach the Meta upstream through this path. A future
+// Meta envelope revision will be stripped until the inspector learns it
+// (fail-closed).
 func sanitizeOpenAIResponsesReasoningEncryptedContentForMeta(ctx context.Context, provider string, body []byte) []byte {
-	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, true, true)
+	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, true, metaSignatureNativeOnly)
 }
 
-func sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx context.Context, provider string, body []byte, isCompat bool, keepForeign bool, keepMeta bool) []byte {
+func sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx context.Context, provider string, body []byte, isCompat bool, keepForeign bool, metaPolicy metaSignaturePolicy) []byte {
 	inputResult := util.GetGJSONBytesNoCopy(body, "input")
 	if !inputResult.Exists() || !inputResult.IsArray() {
 		return body
@@ -198,12 +216,16 @@ func sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx context.Con
 			rawSignature := encryptedContent.String()
 			if rawSignature != strings.TrimSpace(rawSignature) {
 				reason = "encrypted_content has leading or trailing whitespace"
-			} else if keepMeta {
-				// Meta targets are native-only and never reach the GPT-first gate:
-				// a GPT, foreign-provider, or unknown-format blob must not replay
-				// to Meta. Only a positively recognized Meta envelope survives.
-				if _, err := signature.InspectMetaReasoningSignature(rawSignature); err != nil {
+			} else if metaPolicy != metaSignatureForeign {
+				// Meta targets never reach the GPT-first gate: a GPT,
+				// foreign-provider, or unknown-format blob must not replay to
+				// Meta. Only a positively recognized Meta envelope survives,
+				// and the native Meta upstream additionally refuses the
+				// router suffix a router such as OpenRouter appends.
+				if info, err := signature.InspectMetaReasoningSignature(rawSignature); err != nil {
 					reason = err.Error()
+				} else if metaPolicy == metaSignatureNativeOnly && info.RouterSuffix != "" {
+					reason = "router-suffixed Meta reasoning signature is not accepted by the native Meta upstream"
 				}
 			} else if _, err := signature.InspectGPTReasoningSignature(rawSignature); err != nil {
 				// Valid GPT signatures never reach this branch: the GPT-first gate

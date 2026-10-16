@@ -753,6 +753,29 @@ func TestConvertClaudeRequestToCodex_IgnoresMetaSignatureForNonMetaTargets(t *te
 	}
 }
 
+func TestConvertClaudeRequestToCodex_AssistantRoutedMetaSignatureToReasoningItem(t *testing.T) {
+	// OpenRouter serves Meta Muse models and appends a dot-delimited
+	// alphanumeric suffix to the native envelope; the full value must replay
+	// verbatim.
+	signature := testMetaClaudeSignature() + "." + strings.Repeat("Ab3", 23)[:67]
+	payload := []byte(`{"model":"meta/muse-wonder","messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"summary","signature":""},{"type":"text","text":"answer"}]},{"role":"user","content":"next"}]}`)
+	payload, _ = sjson.SetBytes(payload, "messages.0.content.0.signature", signature)
+
+	out, _ := ConvertClaudeRequestToCodex("meta/muse-wonder", payload, false)
+	reasoning := gjson.GetBytes(out, "input.0")
+	if reasoning.Get("type").String() != "reasoning" {
+		t.Fatalf("input.0 type = %q, want reasoning; output=%s", reasoning.Get("type").String(), out)
+	}
+	if got := reasoning.Get("encrypted_content").String(); got != signature {
+		t.Fatalf("encrypted_content = %q, want routed Meta signature verbatim", got)
+	}
+
+	out, _ = ConvertClaudeRequestToCodex("gpt-5.4", payload, false)
+	if got := countRequestInputItemsByType(out, "reasoning"); got != 0 {
+		t.Fatalf("got %d reasoning items for non-Meta target, want 0; output=%s", got, out)
+	}
+}
+
 func TestConvertClaudeRequestToCodex_IgnoresGrokSignatureForNonGrokTargets(t *testing.T) {
 	signature := "HmlYdr2aCAqCYP/m9mr8PS6KOsdMs72FGDigmydR+Jsmuv8KX97yWPlbOwmXJgWn0CbHaCacdQD3+n5EvpgLfPNmafS3kdICBjRuDf4bzHy7uBiUhNVhqPtp/ee1y9q4imPE4LYgD1VZ4J+bp9mTeqA1+nC9Oue58CiNEMV9SVaGenCD+aBnVuSTzQhD32Y+68i6HLJW0Dx6ifaRfb8hxYtA/sPM+/FTvAMW11nRho5a2BBSkpnzfqqAz/e/vGJ77/bygpXM823QA9wL9i0X"
 	payload := []byte(`{"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"summary","signature":""},{"type":"text","text":"answer"}]},{"role":"user","content":"next"}]}`)

@@ -23,8 +23,10 @@ const (
 	// SignatureProviderSWE represents Cognition's SWE model family emitting sealed.v1 envelopes.
 	SignatureProviderSWE SignatureProvider = "swe"
 	// SignatureProviderMeta is identified by the observed Meta Muse envelope:
-	// a fixed five-byte header plus a power-of-two padded payload length. See
-	// meta_validation.go for the capture basis and its limits.
+	// a fixed five-byte header plus a power-of-two padded payload length,
+	// optionally followed by a router-appended (e.g. OpenRouter) dot suffix
+	// that replays verbatim. See meta_validation.go for the capture basis and
+	// its limits.
 	SignatureProviderMeta SignatureProvider = "meta"
 )
 

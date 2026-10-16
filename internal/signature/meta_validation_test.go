@@ -26,6 +26,12 @@ func testMetaReasoningSignatureBytes(payloadLen int, mutate func([]byte)) []byte
 	return decoded
 }
 
+// testMetaRouterSuffix builds a synthetic router suffix in the observed
+// OpenRouter shape: a single run of 67 alphanumeric characters.
+func testMetaRouterSuffix() string {
+	return strings.Repeat("Ab3", 23)[:67]
+}
+
 func TestInspectMetaReasoningSignature_ValidBuckets(t *testing.T) {
 	for _, tc := range []struct {
 		payload  int
@@ -82,6 +88,72 @@ func TestInspectMetaReasoningSignature_RejectsMalformed(t *testing.T) {
 		"embedded whitespace": valid[:100] + " " + valid[100:],
 		"length mod4 is 1":    valid[:len(valid)-1],
 		"non-canonical bits":  nonCanonical,
+	}
+	for name, sig := range cases {
+		if _, err := InspectMetaReasoningSignature(sig); err == nil {
+			t.Errorf("%s: InspectMetaReasoningSignature unexpectedly succeeded", name)
+		}
+		if got := DetectSignatureProvider(sig); got == SignatureProviderMeta {
+			t.Errorf("%s: DetectSignatureProvider = %q, must not claim Meta", name, got)
+		}
+	}
+}
+
+func TestInspectMetaReasoningSignature_RouterSuffixed(t *testing.T) {
+	native := testMetaReasoningSignature(2048)
+	suffix := testMetaRouterSuffix()
+	routed := native + "." + suffix
+
+	info, err := InspectMetaReasoningSignature(routed)
+	if err != nil {
+		t.Fatalf("InspectMetaReasoningSignature(routed) error = %v", err)
+	}
+	if info.RouterSuffix != suffix {
+		t.Fatalf("RouterSuffix = %q, want %q", info.RouterSuffix, suffix)
+	}
+	nativeInfo, err := InspectMetaReasoningSignature(native)
+	if err != nil {
+		t.Fatalf("InspectMetaReasoningSignature(native) error = %v", err)
+	}
+	if nativeInfo.RouterSuffix != "" {
+		t.Fatalf("native RouterSuffix = %q, want empty", nativeInfo.RouterSuffix)
+	}
+	if info.DecodedLen != nativeInfo.DecodedLen || info.PayloadLen != nativeInfo.PayloadLen || info.BucketExponent != nativeInfo.BucketExponent {
+		t.Fatalf("routed info = %+v, want same envelope fields as native %+v", info, nativeInfo)
+	}
+	if got := DetectSignatureProvider(routed); got != SignatureProviderMeta {
+		t.Fatalf("DetectSignatureProvider(routed) = %q, want %q", got, SignatureProviderMeta)
+	}
+	if got, ok := CompatibleSignatureForProvider(SignatureProviderMeta, routed); !ok || got != routed {
+		t.Fatalf("CompatibleSignatureForProvider(Meta, routed) = (%q..., %v), want verbatim routed value", got[:16], ok)
+	}
+
+	// The routed form is still a foreign envelope to non-Meta targets.
+	decision := DecideSignatureCompatibility(SignatureProviderGPT, routed, SignatureBlockKindUnknown)
+	if decision.Compatible || decision.DetectedProvider != SignatureProviderMeta || decision.Action != SignatureActionDropBlock {
+		t.Fatalf("GPT target decision for routed = %+v, want detected Meta + drop_block", decision)
+	}
+}
+
+func TestInspectMetaReasoningSignature_RejectsMalformedRouterSuffix(t *testing.T) {
+	native := testMetaReasoningSignature(1024)
+	suffix := testMetaRouterSuffix()
+	encode := func(payloadLen int, mutate func([]byte)) string {
+		return base64.RawURLEncoding.EncodeToString(testMetaReasoningSignatureBytes(payloadLen, mutate))
+	}
+	cases := map[string]string{
+		"trailing dot":           native + ".",
+		"oversized suffix":       native + "." + strings.Repeat("a", maxMetaRouterSuffixLen+1),
+		"suffix with dash":       native + "." + suffix[:60] + "-" + suffix[61:],
+		"suffix with underscore": native + "." + suffix[:60] + "_" + suffix[61:],
+		"suffix with padding":    native + "." + suffix[:60] + "=" + suffix[61:],
+		"suffix with plus":       native + "." + suffix[:60] + "+" + suffix[61:],
+		"suffix with slash":      native + "." + suffix[:60] + "/" + suffix[61:],
+		"suffix with space":      native + "." + suffix[:60] + " " + suffix[61:],
+		"second dot":             native + "." + suffix[:60] + "." + suffix[61:],
+		"bad native header":      encode(1024, func(b []byte) { b[2] ^= 0xff }) + "." + suffix,
+		"non-bucket native":      encode(1025, nil) + "." + suffix,
+		"suffix only":            "." + suffix,
 	}
 	for name, sig := range cases {
 		if _, err := InspectMetaReasoningSignature(sig); err == nil {

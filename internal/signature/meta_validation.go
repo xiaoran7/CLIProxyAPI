@@ -16,6 +16,10 @@ const MaxMetaReasoningSignatureLen = 32 * 1024 * 1024
 const (
 	metaReasoningSignatureOverheadLen = 45
 	metaReasoningSignatureMinPayload  = 1024
+	// maxMetaRouterSuffixLen bounds the dot-delimited suffix a router such as
+	// OpenRouter appends after the native envelope. Observed values are well
+	// under this bound.
+	maxMetaRouterSuffixLen = 128
 )
 
 // metaReasoningSignatureHeader is the fixed five-byte prefix observed on every
@@ -37,6 +41,10 @@ type MetaReasoningSignatureInfo struct {
 	// is the power-of-two padded region, not a proven plaintext length.
 	PayloadLen     int
 	BucketExponent int
+	// RouterSuffix is the dot-delimited suffix a router such as OpenRouter
+	// appends after the native envelope; empty for native values. Replay must
+	// forward the full value verbatim; never strip the suffix.
+	RouterSuffix string
 }
 
 func IsValidMetaReasoningSignature(rawSignature string) bool {
@@ -47,7 +55,11 @@ func IsValidMetaReasoningSignature(rawSignature string) bool {
 // InspectMetaReasoningSignature validates the outer envelope shape observed
 // for Meta Muse reasoning encrypted_content: canonical unpadded base64url,
 // the fixed five-byte header above, and a decoded length of exactly
-// 45 + 1024*2^k bytes. This is only a transport-shape check; it does not
+// 45 + 1024*2^k bytes. A router such as OpenRouter may serve the same model
+// family and append one "." plus a short alphanumeric routing suffix to the
+// native value; that suffix is validated here and reported via
+// MetaReasoningSignatureInfo.RouterSuffix, and the full value must be
+// replayed verbatim. This is only a transport-shape check; it does not
 // prove decryptability or upstream replay acceptance.
 func InspectMetaReasoningSignature(rawSignature string) (*MetaReasoningSignatureInfo, error) {
 	sig := strings.TrimSpace(rawSignature)
@@ -57,6 +69,33 @@ func InspectMetaReasoningSignature(rawSignature string) (*MetaReasoningSignature
 	if len(sig) > MaxMetaReasoningSignatureLen {
 		return nil, fmt.Errorf("Meta reasoning signature exceeds maximum length (%d bytes)", MaxMetaReasoningSignatureLen)
 	}
+	// Reject other providers' signatures before scanning for a router suffix.
+	if !strings.HasPrefix(sig, "Q-PaDg") {
+		return nil, fmt.Errorf("invalid Meta reasoning signature: expected Q-PaDg prefix")
+	}
+	native := sig
+	routerSuffix := ""
+	if head, tail, ok := strings.Cut(sig, "."); ok {
+		// The native alphabet never contains '.', so the first dot is an
+		// unambiguous boundary. The suffix is restricted to the observed
+		// router form: a single run of alphanumeric characters.
+		if !isValidMetaRouterSuffix(tail) {
+			return nil, fmt.Errorf("invalid Meta reasoning signature: router suffix must be 1-%d alphanumeric characters", maxMetaRouterSuffixLen)
+		}
+		native = head
+		routerSuffix = tail
+	}
+	info, err := inspectNativeMetaReasoningSignature(native)
+	if err != nil {
+		return nil, err
+	}
+	info.RouterSuffix = routerSuffix
+	return info, nil
+}
+
+// inspectNativeMetaReasoningSignature validates the native (unsuffixed)
+// envelope shape described on InspectMetaReasoningSignature.
+func inspectNativeMetaReasoningSignature(sig string) (*MetaReasoningSignatureInfo, error) {
 	// The literal prefix is the cheapest discriminator: every observed value
 	// starts with "Q-PaDg", and probing this validator is on the hot path for
 	// signatures of every provider.
@@ -115,4 +154,21 @@ func firstInvalidMetaReasoningSignatureChar(sig string) (int, rune, bool) {
 		}
 	}
 	return 0, 0, false
+}
+
+// metaRouterSuffixCharSet is the alphanumeric-only alphabet observed on
+// router-appended suffixes; base64url's '-'/'_' and any second '.' are all
+// rejected so the suffix can never be mistaken for more envelope payload.
+var metaRouterSuffixCharSet = base64AlphabetSet("")
+
+func isValidMetaRouterSuffix(suffix string) bool {
+	if len(suffix) == 0 || len(suffix) > maxMetaRouterSuffixLen {
+		return false
+	}
+	for index := 0; index < len(suffix); index++ {
+		if !metaRouterSuffixCharSet[suffix[index]] {
+			return false
+		}
+	}
+	return true
 }

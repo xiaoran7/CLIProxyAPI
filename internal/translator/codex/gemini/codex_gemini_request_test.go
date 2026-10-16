@@ -3,6 +3,7 @@ package gemini
 import (
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/tidwall/gjson"
@@ -180,6 +181,8 @@ func testGeminiGPTThoughtSignature() string {
 func TestConvertGeminiRequestToCodex_NormalizesPrefixedAndCarrierSignatures(t *testing.T) {
 	gptSignature := testGeminiGPTThoughtSignature()
 	metaSignature := testGeminiMetaThoughtSignature()
+	// OpenRouter-appended suffix shape: one '.' plus 67 alphanumeric chars.
+	routedMetaSignature := metaSignature + "." + strings.Repeat("Ab3", 23)[:67]
 	cases := []struct {
 		name      string
 		model     string
@@ -191,6 +194,8 @@ func TestConvertGeminiRequestToCodex_NormalizesPrefixedAndCarrierSignatures(t *t
 		{"carrier wrapped gpt prefixed", "gpt-5.1-codex", encodeGeminiCodexThoughtSignature("gpt#" + gptSignature), gptSignature, true},
 		{"carrier wrapped meta", "muse-spark-1.3", encodeGeminiCodexThoughtSignature(metaSignature), metaSignature, true},
 		{"carrier wrapped meta to gpt target", "gpt-5.1-codex", encodeGeminiCodexThoughtSignature(metaSignature), "", false},
+		{"carrier wrapped routed meta", "meta/muse-wonder", encodeGeminiCodexThoughtSignature(routedMetaSignature), routedMetaSignature, true},
+		{"carrier wrapped routed meta to gpt target", "gpt-5.1-codex", encodeGeminiCodexThoughtSignature(routedMetaSignature), "", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
