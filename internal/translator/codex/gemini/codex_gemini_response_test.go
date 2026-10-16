@@ -3,6 +3,7 @@ package gemini
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/tidwall/gjson"
@@ -246,6 +247,88 @@ func TestConvertCodexResponseToGemini_StreamMultipleFunctionCallsKeepSignatureAn
 	}
 	if !signatureOnAlpha {
 		t.Fatalf("first function call lost the pending Meta thoughtSignature; outputs=%q", outputs)
+	}
+}
+
+func TestConvertCodexResponseToGeminiNonStream_MultiSummaryRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	signature := testGeminiMetaThoughtSignature()
+	raw := []byte(`{"type":"response.completed","response":{"id":"resp_multi","model":"muse-spark-1.3","created_at":1,"usage":{"input_tokens":1,"output_tokens":2},"output":[{"type":"reasoning","encrypted_content":"` + signature + `","summary":[{"type":"summary_text","text":"step A"},{"type":"summary_text","text":"step B"}]},{"type":"message","content":[{"type":"output_text","text":"final answer"}]}]}}`)
+	geminiOut := ConvertCodexResponseToGeminiNonStream(ctx, "muse-spark-1.3", nil, nil, raw, nil)
+
+	partsRaw := gjson.GetBytes(geminiOut, "candidates.0.content.parts").Raw
+	reqPayload := []byte(`{"model":"muse-spark-1.3","contents":[{"role":"user","parts":[{"text":"hi"}]},{"role":"model","parts":` + partsRaw + `},{"role":"user","parts":[{"text":"next"}]}]}`)
+	codexIn, _ := ConvertGeminiRequestToCodex("deployment-alias", reqPayload, false)
+
+	reasoning := gjson.GetBytes(codexIn, "input.1")
+	if reasoning.Get("type").String() != "reasoning" || reasoning.Get("encrypted_content").String() != signature {
+		t.Fatalf("round-trip reasoning item = %s, want Meta signature", reasoning.Raw)
+	}
+	summaries := reasoning.Get("summary").Array()
+	if len(summaries) != 2 || summaries[0].Get("text").String() != "step A" || summaries[1].Get("text").String() != "step B" {
+		t.Fatalf("round-trip summaries = %s, want [step A, step B]", reasoning.Get("summary").Raw)
+	}
+
+	// Streaming done-only reasoning item without prior deltas must still emit
+	// its summary thought parts and attach the signature to the next text delta.
+	var streamParam any
+	doneOnly := []byte(`data: {"type":"response.output_item.done","item":{"id":"rs_done_only","type":"reasoning","encrypted_content":"` + signature + `","summary":[{"type":"summary_text","text":"done-only thought"}]}}`)
+	doneChunks := ConvertCodexResponseToGemini(ctx, "muse-spark-1.3", nil, nil, doneOnly, &streamParam)
+	if len(doneChunks) != 1 || !gjson.GetBytes(doneChunks[0], "candidates.0.content.parts.0.thought").Bool() || gjson.GetBytes(doneChunks[0], "candidates.0.content.parts.0.text").String() != "done-only thought" {
+		t.Fatalf("done-only reasoning chunks = %q, want thought summary chunk", doneChunks)
+	}
+	textChunks := ConvertCodexResponseToGemini(ctx, "muse-spark-1.3", nil, nil, []byte(`data: {"type":"response.output_text.delta","delta":"visible"}`), &streamParam)
+	if len(textChunks) != 1 || decodeGeminiCodexThoughtSignature(gjson.GetBytes(textChunks[0], "candidates.0.content.parts.0.thoughtSignature").String()) != signature {
+		t.Fatalf("text chunk after done-only reasoning = %q, want carrier signature", textChunks)
+	}
+
+	// Two consecutive streamed reasoning items must flush the first item's
+	// signature before the second item's thought deltas so each reasoning item
+	// keeps its own summary on replay.
+	sig2 := signature + "." + strings.Repeat("Zy9", 21)[:62]
+	var consecutiveParam any
+	var streamedParts []string
+	for _, ev := range [][]byte{
+		[]byte(`data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","delta":"first summary"}`),
+		[]byte(`data: {"type":"response.output_item.done","item":{"id":"rs_1","type":"reasoning","encrypted_content":"` + signature + `","summary":[{"type":"summary_text","text":"first summary"}]}}`),
+		[]byte(`data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_2","delta":"second summary"}`),
+		[]byte(`data: {"type":"response.output_item.done","item":{"id":"rs_2","type":"reasoning","encrypted_content":"` + sig2 + `","summary":[{"type":"summary_text","text":"second summary"}]}}`),
+		[]byte(`data: {"type":"response.output_text.delta","delta":"answer"}`),
+	} {
+		for _, chunk := range ConvertCodexResponseToGemini(ctx, "muse-spark-1.3", nil, nil, ev, &consecutiveParam) {
+			for _, p := range gjson.GetBytes(chunk, "candidates.0.content.parts").Array() {
+				streamedParts = append(streamedParts, p.Raw)
+			}
+		}
+	}
+	replayReq := []byte(`{"model":"muse-spark-1.3","contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[` + strings.Join(streamedParts, ",") + `]},{"role":"user","parts":[{"text":"next"}]}]}`)
+	replayCodex, _ := ConvertGeminiRequestToCodex("muse-spark-1.3", replayReq, false)
+	if gjson.GetBytes(replayCodex, "input.1.summary.0.text").String() != "first summary" || gjson.GetBytes(replayCodex, "input.2.summary.0.text").String() != "second summary" {
+		t.Fatalf("replayed consecutive reasoning items = %s, want separate summaries", replayCodex)
+	}
+
+	// Whitespace-only and space-padded thought chunks must round-trip without
+	// trimming inter-word spaces.
+	var wsParam any
+	var wsParts []string
+	for _, ev := range [][]byte{
+		[]byte(`data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_ws","delta":"Hello"}`),
+		[]byte(`data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_ws","delta":" "}`),
+		[]byte(`data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_ws","delta":"world"}`),
+		[]byte(`data: {"type":"response.output_item.done","item":{"id":"rs_ws","type":"reasoning","encrypted_content":"` + signature + `","summary":[]}}`),
+		[]byte(`data: {"type":"response.output_text.delta","delta":"ok"}`),
+	} {
+		for _, chunk := range ConvertCodexResponseToGemini(ctx, "muse-spark-1.3", nil, nil, ev, &wsParam) {
+			for _, p := range gjson.GetBytes(chunk, "candidates.0.content.parts").Array() {
+				wsParts = append(wsParts, p.Raw)
+			}
+		}
+	}
+	wsReplayReq := []byte(`{"model":"muse-spark-1.3","contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[` + strings.Join(wsParts, ",") + `]},{"role":"user","parts":[{"text":"next"}]}]}`)
+	wsReplayCodex, _ := ConvertGeminiRequestToCodex("muse-spark-1.3", wsReplayReq, false)
+	wsSummaries := gjson.GetBytes(wsReplayCodex, "input.1.summary").Array()
+	if len(wsSummaries) != 3 || wsSummaries[0].Get("text").String()+wsSummaries[1].Get("text").String()+wsSummaries[2].Get("text").String() != "Hello world" {
+		t.Fatalf("whitespace thought chunks round-trip = %s, want ['Hello',' ','world']", gjson.GetBytes(wsReplayCodex, "input.1.summary").Raw)
 	}
 }
 

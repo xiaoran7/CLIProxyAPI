@@ -71,6 +71,7 @@ func ConvertGeminiRequestToCodex(modelName string, inputRawJSON []byte, _ bool) 
 	var pendingCallIDs []string
 	callCounter := 0
 	emittedThoughtSignatures := map[string]bool{}
+	signatureTargetModel := translatorcommon.ResolveCodexReplayTargetModel(modelName, inputRawJSON)
 
 	getGeminiCallID := func(value gjson.Result) string {
 		if callID := strings.TrimSpace(value.Get("id").String()); callID != "" {
@@ -140,6 +141,7 @@ func ConvertGeminiRequestToCodex(modelName string, inputRawJSON []byte, _ bool) 
 				continue
 			}
 			parr := parts.Array()
+			var pendingThoughtSummaryParts [][]byte
 			for j := 0; j < len(parr); j++ {
 				p := parr[j]
 
@@ -151,19 +153,34 @@ func ConvertGeminiRequestToCodex(modelName string, inputRawJSON []byte, _ bool) 
 				// the existing hidden-thought drop below.
 				if role == "assistant" {
 					if rawSignature := geminiPartThoughtSignature(p); rawSignature != "" {
-						if normalizedSignature, ok := normalizedGeminiThoughtSignatureForCodexTarget(modelName, rawSignature); ok && !emittedThoughtSignatures[normalizedSignature] {
+						if normalizedSignature, ok := normalizedGeminiThoughtSignatureForCodexTarget(signatureTargetModel, rawSignature); ok && !emittedThoughtSignatures[normalizedSignature] {
 							reasoningItem := []byte(`{"type":"reasoning","encrypted_content":"","summary":[]}`)
 							reasoningItem, _ = sjson.SetBytes(reasoningItem, "encrypted_content", normalizedSignature)
+							summaryParts := pendingThoughtSummaryParts
+							pendingThoughtSummaryParts = nil
 							if translatorcommon.IsGeminiThoughtPart(p) {
-								if thoughtText := strings.TrimSpace(p.Get("text").String()); thoughtText != "" {
+								if thoughtText := p.Get("text").String(); thoughtText != "" {
 									summaryPart := []byte(`{"type":"summary_text","text":""}`)
 									summaryPart, _ = sjson.SetBytes(summaryPart, "text", thoughtText)
-									reasoningItem, _ = sjson.SetRawBytes(reasoningItem, "summary", translatorcommon.JoinRawArray([][]byte{summaryPart}))
+									summaryParts = append(summaryParts, summaryPart)
 								}
+							}
+							if len(summaryParts) > 0 {
+								reasoningItem, _ = sjson.SetRawBytes(reasoningItem, "summary", translatorcommon.JoinRawArray(summaryParts))
 							}
 							inputItems = append(inputItems, reasoningItem)
 							emittedThoughtSignatures[normalizedSignature] = true
+						} else {
+							pendingThoughtSummaryParts = nil
 						}
+					} else if translatorcommon.IsGeminiThoughtPart(p) {
+						if thoughtText := p.Get("text").String(); thoughtText != "" {
+							summaryPart := []byte(`{"type":"summary_text","text":""}`)
+							summaryPart, _ = sjson.SetBytes(summaryPart, "text", thoughtText)
+							pendingThoughtSummaryParts = append(pendingThoughtSummaryParts, summaryPart)
+						}
+					} else {
+						pendingThoughtSummaryParts = nil
 					}
 				}
 

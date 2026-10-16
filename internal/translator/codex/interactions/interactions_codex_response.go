@@ -14,20 +14,21 @@ import (
 )
 
 type codexToInteractionsStreamState struct {
-	Started           bool
-	Completed         bool
-	Done              bool
-	ActiveStepOpen    bool
-	ActiveStepType    string
-	ActiveStepIndex   int
-	StepIndex         int
-	ID                string
-	Model             string
-	CreatedAt         int64
-	HasOutputText     bool
-	HasThoughtSummary bool
-	FunctionCallName  string
-	FunctionCallID    string
+	Started              bool
+	Completed            bool
+	Done                 bool
+	ActiveStepOpen       bool
+	ActiveStepType       string
+	ActiveStepIndex      int
+	StepIndex            int
+	ID                   string
+	Model                string
+	CreatedAt            int64
+	HasOutputText        bool
+	HasThoughtSummary    bool
+	StreamedSummaryItems map[string]bool
+	FunctionCallName     string
+	FunctionCallID       string
 	// SeenReasoningSignatures dedupes repeated reasoning output_item.done
 	// events so one signature is emitted as a thought_signature delta once.
 	SeenReasoningSignatures map[[32]byte]bool
@@ -238,6 +239,12 @@ func codexReasoningDeltaToInteractions(st *codexToInteractionsStreamState, root 
 	delta := []byte(`{"index":0,"delta":{"content":{"text":"","type":"text"},"type":"thought_summary"},"event_type":"step.delta"}`)
 	delta, _ = sjson.SetBytes(delta, "index", st.ActiveStepIndex)
 	delta, _ = sjson.SetBytes(delta, "delta.content.text", root.Get("delta").String())
+	if itemID := strings.TrimSpace(root.Get("item_id").String()); itemID != "" {
+		if st.StreamedSummaryItems == nil {
+			st.StreamedSummaryItems = make(map[string]bool)
+		}
+		st.StreamedSummaryItems[itemID] = true
+	}
 	st.HasThoughtSummary = true
 	return append(out, translatorcommon.SSEEventData("step.delta", delta))
 }
@@ -319,6 +326,9 @@ func appendCodexInteractionsStepStop(out [][]byte, st *codexToInteractionsStream
 	stepStop := []byte(`{"index":0,"event_type":"step.stop"}`)
 	stepStop, _ = sjson.SetBytes(stepStop, "index", st.ActiveStepIndex)
 	out = append(out, translatorcommon.SSEEventData("step.stop", stepStop))
+	if st.ActiveStepType == "thought" {
+		st.HasThoughtSummary = false
+	}
 	st.ActiveStepOpen = false
 	st.ActiveStepType = ""
 	return out
@@ -434,13 +444,17 @@ func appendCodexReasoningItemToInteractionsStream(out [][]byte, st *codexToInter
 		}
 		st.SeenReasoningSignatures[key] = true
 	}
-	if text != "" && !st.HasThoughtSummary {
+	itemID := strings.TrimSpace(item.Get("id").String())
+	hadStreamedSummary := st.HasThoughtSummary
+	if itemID != "" && len(st.StreamedSummaryItems) > 0 {
+		hadStreamedSummary = st.StreamedSummaryItems[itemID]
+	}
+	if text != "" && !hadStreamedSummary {
 		out = ensureCodexInteractionsStep(out, st, "thought", item)
 		delta := []byte(`{"index":0,"delta":{"content":{"text":"","type":"text"},"type":"thought_summary"},"event_type":"step.delta"}`)
 		delta, _ = sjson.SetBytes(delta, "index", st.ActiveStepIndex)
 		delta, _ = sjson.SetBytes(delta, "delta.content.text", text)
 		out = append(out, translatorcommon.SSEEventData("step.delta", delta))
-		st.HasThoughtSummary = true
 	}
 	if sig != "" {
 		out = ensureCodexInteractionsStep(out, st, "thought", item)
@@ -449,6 +463,10 @@ func appendCodexReasoningItemToInteractionsStream(out [][]byte, st *codexToInter
 		signatureDelta, _ = sjson.SetBytes(signatureDelta, "delta.signature", sig)
 		out = append(out, translatorcommon.SSEEventData("step.delta", signatureDelta))
 	}
+	// Completing a reasoning item resets the current item's summary flag so a
+	// subsequent done-only reasoning item is not suppressed by an earlier
+	// item's streamed deltas.
+	st.HasThoughtSummary = false
 	return out
 }
 

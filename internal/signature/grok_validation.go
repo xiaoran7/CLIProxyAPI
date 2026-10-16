@@ -113,6 +113,9 @@ func InspectGrokEncryptedContent(raw string) (*GrokEncryptedContentInfo, error) 
 	if err != nil {
 		return nil, err
 	}
+	if strings.HasPrefix(string(decoded), "cpa-codex-gemini-carrier-v1:") {
+		return nil, fmt.Errorf("invalid Grok encrypted_content: carries Gemini Codex thoughtSignature carrier")
+	}
 	if len(decoded) < MinGrokEncryptedContentDecodedLen {
 		return nil, fmt.Errorf("invalid Grok encrypted_content: decoded payload too short (%d bytes)", len(decoded))
 	}

@@ -280,6 +280,27 @@ func TestConvertCodexResponseToInteractionsStream_ReasoningSignature(t *testing.
 	if names != want {
 		t.Fatalf("events = %s, want %s", names, want)
 	}
+
+	// A second done-only reasoning item after a streamed-delta reasoning item must still emit its summary.
+	var param2 any
+	var events2 [][]byte
+	for _, chunk := range [][]byte{
+		[]byte(`data: {"type":"response.created","response":{"id":"resp_2","model":"codex-test"}}`),
+		[]byte(`data: {"type":"response.reasoning_summary_text.delta","delta":"first summary"}`),
+		[]byte(`data: {"type":"response.output_item.done","item":{"id":"rs_a","type":"reasoning","summary":[{"type":"summary_text","text":"first summary"}],"encrypted_content":"` + metaSig + `"}}`),
+		[]byte(`data: {"type":"response.output_item.done","item":{"id":"rs_b","type":"reasoning","summary":[{"type":"summary_text","text":"second summary only in done"}]}}`),
+	} {
+		events2 = append(events2, ConvertCodexResponseToInteractions(context.Background(), "codex-test", nil, nil, chunk, &param2)...)
+	}
+	var summaries2 []string
+	for _, delta := range findCodexInteractionsEventPayloads(events2, "step.delta") {
+		if delta.Get("delta.type").String() == "thought_summary" {
+			summaries2 = append(summaries2, delta.Get("delta.content.text").String())
+		}
+	}
+	if len(summaries2) != 2 || summaries2[0] != "first summary" || summaries2[1] != "second summary only in done" {
+		t.Fatalf("consecutive reasoning summaries = %v, want [first summary, second summary only in done]", summaries2)
+	}
 }
 
 func TestConvertInteractionsRequestToCodex_RestoresThoughtSignature(t *testing.T) {

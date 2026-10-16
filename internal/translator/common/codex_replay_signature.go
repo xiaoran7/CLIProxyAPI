@@ -5,7 +5,27 @@ import (
 
 	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
+	"github.com/tidwall/gjson"
 )
+
+// ResolveCodexReplayTargetModel returns the model name to use for reasoning
+// signature family checks, falling back to the client-supplied "model" field in
+// rawPayload when modelName is an unmapped upstream deployment alias for a
+// Responses-native model family (Meta Muse, Grok, or GPT).
+func ResolveCodexReplayTargetModel(modelName string, rawPayload []byte) string {
+	if sigcompat.SignatureProviderFromModelName(thinking.ParseSuffix(modelName).ModelName) != sigcompat.SignatureProviderUnknown {
+		return modelName
+	}
+	if len(rawPayload) > 0 {
+		if rawModel := strings.TrimSpace(gjson.GetBytes(rawPayload, "model").String()); rawModel != "" {
+			switch sigcompat.SignatureProviderFromModelName(thinking.ParseSuffix(rawModel).ModelName) {
+			case sigcompat.SignatureProviderMeta, sigcompat.SignatureProviderGrok, sigcompat.SignatureProviderGPT:
+				return rawModel
+			}
+		}
+	}
+	return modelName
+}
 
 // CodexReplaySignatureForTarget returns the exact value that may be written as a
 // Responses reasoning encrypted_content for the Codex-format upstream serving

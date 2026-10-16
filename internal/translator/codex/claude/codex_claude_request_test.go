@@ -782,6 +782,13 @@ func TestConvertClaudeRequestToCodex_AssistantRoutedMetaSignatureToReasoningItem
 	if got := countRequestInputItemsByType(out, "reasoning"); got != 0 {
 		t.Fatalf("got %d reasoning items for GPT signature on Meta target, want 0; output=%s", got, out)
 	}
+
+	// When modelName is an unmapped upstream deployment alias, the client-requested
+	// Meta Muse model in the payload preserves Meta signatures.
+	aliasOut, _ := ConvertClaudeRequestToCodex("deployment-123", payload, false)
+	if got := countRequestInputItemsByType(aliasOut, "reasoning"); got != 1 {
+		t.Fatalf("got %d reasoning items for aliased Meta target, want 1; output=%s", got, aliasOut)
+	}
 }
 
 func TestConvertClaudeRequestToCodex_IgnoresGrokSignatureForNonGrokTargets(t *testing.T) {

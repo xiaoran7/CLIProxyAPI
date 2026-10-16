@@ -39,6 +39,11 @@ type ConvertCodexResponseToGeminiParams struct {
 	// SeenReasoningSignatures deduplicates repeated reasoning done events
 	// by item ID + signature hash within one response stream.
 	SeenReasoningSignatures map[[32]byte]bool
+	// HasReasoningDelta and StreamedReasoningItems record whether reasoning
+	// deltas were already emitted for the current or keyed reasoning item so
+	// done-only reasoning summaries can fall back cleanly.
+	HasReasoningDelta      bool
+	StreamedReasoningItems map[string]bool
 }
 
 // ConvertCodexResponseToGemini converts Codex streaming response format to Gemini format.
@@ -141,26 +146,49 @@ func ConvertCodexResponseToGemini(_ context.Context, modelName string, originalR
 		itemType := itemResult.Get("type").String()
 		if itemType == "reasoning" {
 			signature := strings.TrimSpace(itemResult.Get("encrypted_content").String())
-			if signature == "" {
+			itemID := strings.TrimSpace(itemResult.Get("id").String())
+			hadStreamedReasoning := params.HasReasoningDelta
+			if itemID != "" && len(params.StreamedReasoningItems) > 0 {
+				hadStreamedReasoning = params.StreamedReasoningItems[itemID]
+			}
+			params.HasReasoningDelta = false
+			var thoughtTexts []string
+			if !hadStreamedReasoning {
+				thoughtTexts = extractCodexGeminiReasoningTexts(itemResult)
+			}
+			if signature == "" && len(thoughtTexts) == 0 {
 				return [][]byte{}
 			}
-			seenKey := sha256.Sum256([]byte(itemResult.Get("id").String() + "\x00" + signature))
-			if params.SeenReasoningSignatures == nil {
-				params.SeenReasoningSignatures = make(map[[32]byte]bool)
+			if signature != "" {
+				seenKey := sha256.Sum256([]byte(itemID + "\x00" + signature))
+				if params.SeenReasoningSignatures == nil {
+					params.SeenReasoningSignatures = make(map[[32]byte]bool)
+				}
+				if params.SeenReasoningSignatures[seenKey] {
+					return [][]byte{}
+				}
+				params.SeenReasoningSignatures[seenKey] = true
 			}
-			if params.SeenReasoningSignatures[seenKey] {
-				return [][]byte{}
-			}
-			params.SeenReasoningSignatures[seenKey] = true
-			if params.PendingThoughtSignature != "" {
+			var emittedParts [][]byte
+			if params.PendingThoughtSignature != "" && signature != "" {
 				// A previous reasoning step never got a visible carrier part;
 				// flush it as an empty thought part so no signature is lost.
 				part := setGeminiThoughtSignature([]byte(`{"thought":true,"text":""}`), params.PendingThoughtSignature)
+				params.PendingThoughtSignature = ""
+				emittedParts = append(emittedParts, part)
+			}
+			for _, thoughtText := range thoughtTexts {
+				part := []byte(`{"thought":true,"text":""}`)
+				part, _ = sjson.SetBytes(part, "text", thoughtText)
+				emittedParts = append(emittedParts, part)
+			}
+			if signature != "" {
 				params.PendingThoughtSignature = signature
-				template = translatorcommon.SetRawArrayItems(template, "candidates.0.content.parts", [][]byte{part})
+			}
+			if len(emittedParts) > 0 {
+				template = translatorcommon.SetRawArrayItems(template, "candidates.0.content.parts", emittedParts)
 				return flushStorageOutputs(template)
 			}
-			params.PendingThoughtSignature = signature
 			return [][]byte{}
 		}
 		if itemType == "image_generation_call" {
@@ -230,14 +258,39 @@ func ConvertCodexResponseToGemini(_ context.Context, modelName string, originalR
 		params.StorageOutputs = nil
 		params.PendingThoughtSignature = ""
 		params.SeenReasoningSignatures = nil
+		params.HasReasoningDelta = false
+		params.StreamedReasoningItems = nil
 		params.HasOutputTextDelta = false
 		template, _ = sjson.SetBytes(template, "modelVersion", rootResult.Get("response.model").String())
 		template, _ = sjson.SetBytes(template, "responseId", rootResult.Get("response.id").String())
 		params.ResponseID = rootResult.Get("response.id").String()
-	} else if typeStr == "response.reasoning_summary_text.delta" { // Handle reasoning/thinking content delta
+	} else if typeStr == "response.output_item.added" && rootResult.Get("item.type").String() == "reasoning" {
+		params.HasReasoningDelta = false
+		if params.PendingThoughtSignature != "" {
+			part := setGeminiThoughtSignature([]byte(`{"thought":true,"text":""}`), params.PendingThoughtSignature)
+			params.PendingThoughtSignature = ""
+			template = translatorcommon.SetRawArrayItems(template, "candidates.0.content.parts", [][]byte{part})
+			return flushStorageOutputs(template)
+		}
+		return [][]byte{}
+	} else if typeStr == "response.reasoning_summary_text.delta" || typeStr == "response.reasoning_text.delta" { // Handle reasoning/thinking content delta
+		params.HasReasoningDelta = true
+		if itemID := strings.TrimSpace(rootResult.Get("item_id").String()); itemID != "" {
+			if params.StreamedReasoningItems == nil {
+				params.StreamedReasoningItems = make(map[string]bool)
+			}
+			params.StreamedReasoningItems[itemID] = true
+		}
+		var emittedParts [][]byte
+		if params.PendingThoughtSignature != "" {
+			carrier := setGeminiThoughtSignature([]byte(`{"thought":true,"text":""}`), params.PendingThoughtSignature)
+			params.PendingThoughtSignature = ""
+			emittedParts = append(emittedParts, carrier)
+		}
 		part := []byte(`{"thought":true,"text":""}`)
 		part, _ = sjson.SetBytes(part, "text", rootResult.Get("delta").String())
-		template = translatorcommon.SetRawArrayItems(template, "candidates.0.content.parts", [][]byte{part})
+		emittedParts = append(emittedParts, part)
+		template = translatorcommon.SetRawArrayItems(template, "candidates.0.content.parts", emittedParts)
 	} else if typeStr == "response.output_text.delta" { // Handle regular text content delta
 		params.HasOutputTextDelta = true
 		part := []byte(`{"text":""}`)
@@ -382,29 +435,11 @@ func ConvertCodexResponseToGeminiNonStream(_ context.Context, modelName string, 
 					// With no summary text, emit an empty thought carrier part;
 					// dropping the signature here would silently break replay.
 					signature := strings.TrimSpace(value.Get("encrypted_content").String())
-					var thoughtTexts []string
-					if summary := value.Get("summary"); summary.IsArray() {
-						for _, entry := range summary.Array() {
-							if text := entry.Get("text").String(); text != "" {
-								thoughtTexts = append(thoughtTexts, text)
-							}
-						}
-					}
-					if content := value.Get("content"); content.IsArray() {
-						for _, entry := range content.Array() {
-							if entry.Get("type").String() == "reasoning_text" {
-								if text := entry.Get("text").String(); text != "" {
-									thoughtTexts = append(thoughtTexts, text)
-								}
-							}
-						}
-					} else if content.Type == gjson.String && content.String() != "" {
-						thoughtTexts = append(thoughtTexts, content.String())
-					}
+					thoughtTexts := extractCodexGeminiReasoningTexts(value)
 					for i, thoughtText := range thoughtTexts {
 						part := []byte(`{"text":"","thought":true}`)
 						part, _ = sjson.SetBytes(part, "text", thoughtText)
-						if i == 0 && signature != "" {
+						if i == len(thoughtTexts)-1 && signature != "" {
 							part = setGeminiThoughtSignature(part, signature)
 						}
 						parts = append(parts, part)
@@ -519,6 +554,29 @@ func buildReverseMapFromGeminiOriginal(original []byte) map[string]string {
 // string verbatim makes official SDK []byte decoding fail. The carrier therefore
 // stores magic+rawSignature as the byte payload and relies on standard base64
 // JSON encoding, which every Gemini client decodes and echoes losslessly.
+func extractCodexGeminiReasoningTexts(value gjson.Result) []string {
+	var thoughtTexts []string
+	if summary := value.Get("summary"); summary.IsArray() {
+		for _, entry := range summary.Array() {
+			if text := entry.Get("text").String(); text != "" {
+				thoughtTexts = append(thoughtTexts, text)
+			}
+		}
+	}
+	if content := value.Get("content"); content.IsArray() {
+		for _, entry := range content.Array() {
+			if entry.Get("type").String() == "reasoning_text" {
+				if text := entry.Get("text").String(); text != "" {
+					thoughtTexts = append(thoughtTexts, text)
+				}
+			}
+		}
+	} else if content.Type == gjson.String && content.String() != "" {
+		thoughtTexts = append(thoughtTexts, content.String())
+	}
+	return thoughtTexts
+}
+
 const geminiCodexThoughtSignatureCarrierMagic = "cpa-codex-gemini-carrier-v1:"
 
 func encodeGeminiCodexThoughtSignature(rawSignature string) string {

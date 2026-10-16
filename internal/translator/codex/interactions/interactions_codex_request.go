@@ -20,15 +20,16 @@ func ConvertInteractionsRequestToCodex(modelName string, inputRawJSON []byte, st
 // because its only attachment has no Codex equivalent.
 func convertInteractionsRequestToCodex(modelName string, inputRawJSON []byte, stream bool) ([]byte, error) {
 	root := gjson.ParseBytes(inputRawJSON)
-	out := []byte(`{"model":"","instructions":"","input":[]}`)
+	out := []byte(`{"model":"","instructions":"","store":false,"input":[]}`)
 	out, _ = sjson.SetBytes(out, "model", modelName)
 	if stream || root.Get("stream").Bool() {
 		out, _ = sjson.SetBytes(out, "stream", true)
 	}
 	out = copyInteractionsSystemToCodex(out, root)
 	out = copyInteractionsGenerationConfigToCodex(out, root)
+	signatureTargetModel := translatorcommon.ResolveCodexReplayTargetModel(modelName, inputRawJSON)
 	inputItems := translatorcommon.NewRawArrayItems(root.Get("input.#").Int())
-	errInput := appendInteractionsInputToCodex(&inputItems, root.Get("input"), modelName)
+	errInput := appendInteractionsInputToCodex(&inputItems, root.Get("input"), signatureTargetModel)
 	out = translatorcommon.SetRawArrayItems(out, "input", inputItems)
 	out = copyInteractionsToolsToCodex(out, root)
 	out = copyInteractionsCodexTopLevel(out, root)
@@ -200,19 +201,20 @@ func appendInteractionsInputToCodex(items *[][]byte, input gjson.Result, modelNa
 		return nil
 	}
 	var run translatorcommon.UserRun
+	emittedSignatures := make(map[string]bool)
 	if input.IsArray() {
 		input.ForEach(func(_, step gjson.Result) bool {
-			appendInteractionsStepToCodex(items, step, "user", &run, modelName)
+			appendInteractionsStepToCodex(items, step, "user", &run, modelName, emittedSignatures)
 			return true
 		})
 	} else if steps := input.Get("steps"); steps.Exists() && steps.IsArray() {
 		defaultRole := interactionsCodexStepRole(input, "user")
 		steps.ForEach(func(_, step gjson.Result) bool {
-			appendInteractionsStepToCodex(items, step, defaultRole, &run, modelName)
+			appendInteractionsStepToCodex(items, step, defaultRole, &run, modelName, emittedSignatures)
 			return true
 		})
 	} else {
-		appendInteractionsStepToCodex(items, input, "user", &run, modelName)
+		appendInteractionsStepToCodex(items, input, "user", &run, modelName, emittedSignatures)
 	}
 	run.End()
 	return run.Err()
@@ -228,7 +230,7 @@ func interactionsCodexUserRun(run *translatorcommon.UserRun, role string) *trans
 	return nil
 }
 
-func appendInteractionsStepToCodex(items *[][]byte, step gjson.Result, defaultRole string, run *translatorcommon.UserRun, modelName string) {
+func appendInteractionsStepToCodex(items *[][]byte, step gjson.Result, defaultRole string, run *translatorcommon.UserRun, modelName string, emittedSignatures map[string]bool) {
 	if step.Type == gjson.String {
 		appendInteractionsRoleTextToCodex(items, defaultRole, step.String(), run)
 		return
@@ -236,7 +238,7 @@ func appendInteractionsStepToCodex(items *[][]byte, step gjson.Result, defaultRo
 	if steps := step.Get("steps"); steps.Exists() && steps.IsArray() {
 		role := interactionsCodexStepRole(step, defaultRole)
 		steps.ForEach(func(_, nested gjson.Result) bool {
-			appendInteractionsStepToCodex(items, nested, role, run, modelName)
+			appendInteractionsStepToCodex(items, nested, role, run, modelName, emittedSignatures)
 			return true
 		})
 		return
@@ -255,7 +257,7 @@ func appendInteractionsStepToCodex(items *[][]byte, step gjson.Result, defaultRo
 		appendInteractionsContentToCodexItem(items, step.Get("content"), "assistant", run)
 	case "thought", "reasoning":
 		run.End()
-		appendInteractionsThoughtToCodex(items, step, modelName)
+		appendInteractionsThoughtToCodex(items, step, modelName, emittedSignatures)
 	case "user_input", "message", "":
 		role := interactionsCodexStepRole(step, defaultRole)
 		if content := step.Get("content"); content.Exists() {
@@ -459,13 +461,14 @@ func ensureInteractionsCodexEncryptedContentInclude(out []byte) []byte {
 // a reasoning item without accepted encrypted_content carries no replayable
 // state, and the legacy text fallback shape is rejected by both the native
 // Meta upstream (missing summary) and routers (content expected array).
-func appendInteractionsThoughtToCodex(items *[][]byte, step gjson.Result, modelName string) {
+func appendInteractionsThoughtToCodex(items *[][]byte, step gjson.Result, modelName string, emittedSignatures map[string]bool) {
 	text := interactionsCodexContentText(step.Get("content"))
 	if text == "" {
 		text = step.Get("text").String()
 	}
 	if raw := interactionsThoughtStepSignature(step); raw != "" {
-		if normalized, ok := translatorcommon.CodexReplaySignatureForTarget(modelName, raw); ok && !interactionsCodexSignatureAlreadyEmitted(*items, normalized) {
+		if normalized, ok := translatorcommon.CodexReplaySignatureForTarget(modelName, raw); ok && !emittedSignatures[normalized] {
+			emittedSignatures[normalized] = true
 			item := []byte(`{"type":"reasoning","encrypted_content":"","summary":[]}`)
 			item, _ = sjson.SetBytes(item, "encrypted_content", normalized)
 			if text != "" {
@@ -487,19 +490,6 @@ func interactionsThoughtStepSignature(step gjson.Result) string {
 		}
 	}
 	return ""
-}
-
-// interactionsCodexSignatureAlreadyEmitted reports whether an identical
-// normalized signature was already written as encrypted_content in this
-// request, so a repeated echo is only replayed once.
-func interactionsCodexSignatureAlreadyEmitted(items [][]byte, normalized string) bool {
-	for _, raw := range items {
-		item := gjson.ParseBytes(raw)
-		if item.Get("type").String() == "reasoning" && item.Get("encrypted_content").String() == normalized {
-			return true
-		}
-	}
-	return false
 }
 
 func appendInteractionsTextToCodex(items *[][]byte, role, text string) {
