@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -81,32 +82,104 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 	// Get all available models
 	allModels := h.Models()
 
-	// Filter to only include the required OpenAI fields plus the provider
-	// billing annotation, which clients need in order to tell a free model from
-	// a paid one.
-	filteredModels := make([]map[string]any, len(allModels))
-	for i, model := range allModels {
+	// Filter to include the required OpenAI fields plus the provider billing annotation.
+	// Also emit multiplier-suffixed variants (e.g. "glm-5.3-flash:0.06x") so clients
+	// like ccswitch, NextChat, Cherry Studio display and select the rate directly.
+	filteredModels := make([]map[string]any, 0, len(allModels)*2)
+	seenIDs := make(map[string]bool)
+
+	for _, model := range allModels {
+		modelID, _ := model["id"].(string)
+		if modelID == "" || seenIDs[modelID] {
+			continue
+		}
+		seenIDs[modelID] = true
+
 		filteredModel := map[string]any{
-			"id":     model["id"],
+			"id":     modelID,
 			"object": model["object"],
 		}
 
-		// Add created field if it exists
 		if created, exists := model["created"]; exists {
 			filteredModel["created"] = created
 		}
-
-		// Add owned_by field if it exists
 		if ownedBy, exists := model["owned_by"]; exists {
 			filteredModel["owned_by"] = ownedBy
 		}
 
-		// Add the credits annotation if the provider publishes one
+		var creditsMap map[string]any
 		if credits, exists := model["credits"]; exists && credits != nil {
-			filteredModel["credits"] = credits
+			if cm, ok := credits.(map[string]any); ok {
+				creditsMap = cm
+			}
 		}
 
-		filteredModels[i] = filteredModel
+		// Fallback: If model doesn't have credits, resolve from WorkBuddy credit catalog
+		if creditsMap == nil {
+			if rate := registry.ResolveWorkBuddyModelCreditRate(modelID); rate != nil {
+				creditsMap = map[string]any{
+					"multiplier": rate.Multiplier,
+					"free":       rate.Free,
+					"source":     rate.Source,
+				}
+				if rate.PromotionID != "" {
+					creditsMap["promotion_id"] = rate.PromotionID
+				}
+				if rate.PromotionNote != "" {
+					creditsMap["promotion_note"] = rate.PromotionNote
+				}
+			}
+		}
+
+		// Ensure -free aliases are always marked with 0 multiplier
+		if strings.HasSuffix(strings.ToLower(modelID), "-free") && creditsMap != nil {
+			creditsMap["multiplier"] = 0.0
+			creditsMap["free"] = true
+		}
+
+		if creditsMap != nil {
+			filteredModel["credits"] = creditsMap
+		}
+
+		if dn, exists := model["display_name"]; exists && dn != nil {
+			filteredModel["display_name"] = dn
+			filteredModel["name"] = dn
+		}
+
+		filteredModels = append(filteredModels, filteredModel)
+
+		// Also emit the multiplier-suffixed model ID (e.g. "glm-5.3-flash:0.06x")
+		if creditsMap != nil {
+			var effectiveStr string
+			if rate := registry.ResolveWorkBuddyModelCreditRate(modelID); rate != nil && rate.Effective != "" {
+				effectiveStr = rate.Effective
+			} else if mult, ok := creditsMap["multiplier"].(float64); ok {
+				if mult < 1e-9 {
+					effectiveStr = "0x"
+				} else {
+					effectiveStr = fmt.Sprintf("%.2fx", mult)
+				}
+			}
+
+			if effectiveStr != "" {
+				suffixedID := fmt.Sprintf("%s:%s", modelID, effectiveStr)
+				if !seenIDs[suffixedID] {
+					seenIDs[suffixedID] = true
+					suffixedModel := map[string]any{
+						"id":           suffixedID,
+						"object":       model["object"],
+						"owned_by":     model["owned_by"],
+						"credits":      creditsMap,
+						"display_name": fmt.Sprintf("%s (%s)", modelID, effectiveStr),
+						"name":         fmt.Sprintf("%s (%s)", modelID, effectiveStr),
+					}
+					if created, exists := model["created"]; exists {
+						suffixedModel["created"] = created
+					}
+					filteredModels = append(filteredModels, suffixedModel)
+				}
+			}
+		}
 	}
 
 	h.WriteModelListResponse(c, h.HandlerType(), gin.H{

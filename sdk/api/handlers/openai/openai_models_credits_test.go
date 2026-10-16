@@ -88,6 +88,43 @@ func TestOpenAIModelsOmitsCreditsWhenUnrated(t *testing.T) {
 	}
 }
 
+// Models with known multipliers must also emit suffixed variants for client display.
+func TestOpenAIModelsEmitsMultiplierSuffixedModels(t *testing.T) {
+	const modelID = "openai-models-mult-test"
+	clientID := "openai-models-mult-test-client"
+
+	modelRegistry := registry.GetGlobalRegistry()
+	modelRegistry.RegisterClient(clientID, "workbuddy", []*registry.ModelInfo{
+		{
+			ID:      modelID,
+			OwnedBy: "zhipu",
+			Credits: &registry.ModelCredits{
+				Multiplier: 0.06,
+				Source:     "workbuddy",
+			},
+		},
+	})
+	t.Cleanup(func() {
+		modelRegistry.UnregisterClient(clientID)
+	})
+
+	got := getModelsResponse(t)
+	// Original model must exist
+	if _, ok := findModel(t, got, modelID); !ok {
+		t.Fatalf("original model %q missing from /v1/models", modelID)
+	}
+
+	// Multiplier suffixed model must also exist for clients like ccswitch
+	suffixedID := modelID + ":0.06x"
+	entry, ok := findModel(t, got, suffixedID)
+	if !ok {
+		t.Fatalf("suffixed model %q missing from /v1/models", suffixedID)
+	}
+	if name, _ := entry["name"].(string); name == "" {
+		t.Fatalf("suffixed model %q missing name attribute", suffixedID)
+	}
+}
+
 func getModelsResponse(t *testing.T) map[string]any {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

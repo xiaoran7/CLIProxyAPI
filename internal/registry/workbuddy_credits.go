@@ -195,22 +195,36 @@ func ApplyWorkBuddyCredits(models []*ModelInfo, realm string) []*ModelInfo {
 		return models
 	}
 	catalog := resolveWorkBuddyCredits(workbuddyCreditsRealmKey(realm))
-	if len(catalog) == 0 {
-		return models
-	}
 	for _, m := range models {
 		if m == nil {
 			continue
 		}
-		entry, ok := catalog[workbuddyCreditsLookupKey(m.ID)]
-		if !ok || entry == nil || strings.TrimSpace(entry.Source) == "" {
+		if strings.HasSuffix(strings.ToLower(m.ID), "-free") {
+			m.Credits = &ModelCredits{
+				Multiplier: 0.0,
+				Source:     "alias",
+			}
 			continue
 		}
-		m.Credits = &ModelCredits{
-			Multiplier:    entry.Effective,
-			Source:        entry.Source,
-			PromotionID:   entry.PromotionID,
-			PromotionNote: entry.PromotionNote,
+		if len(catalog) > 0 {
+			entry, ok := catalog[workbuddyCreditsLookupKey(m.ID)]
+			if ok && entry != nil && strings.TrimSpace(entry.Source) != "" {
+				m.Credits = &ModelCredits{
+					Multiplier:    entry.Effective,
+					Source:        entry.Source,
+					PromotionID:   entry.PromotionID,
+					PromotionNote: entry.PromotionNote,
+				}
+				continue
+			}
+		}
+		if rate := LookupWorkBuddyModelCredits(m.ID, realm); rate != nil {
+			m.Credits = &ModelCredits{
+				Multiplier:    rate.Multiplier,
+				Source:        rate.Source,
+				PromotionID:   rate.PromotionID,
+				PromotionNote: rate.PromotionNote,
+			}
 		}
 	}
 	return models

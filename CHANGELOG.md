@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **OpenAI `/v1/models` Multiplier Suffix Emission for Client Discovery (`openai_handlers.go`, `openai_models_credits_test.go`, `workbuddy_credits.go`)**:
+  - Emitted multiplier-suffixed model IDs (e.g. `glm-5.3-flash:0.06x`, `hy3:0x`, `deepseek-v4-pro:0.15x`, `claude-opus-5-5:3.33x`) in `/v1/models` so downstream clients (such as ccswitch, NextChat, Cherry Studio, etc.) can discover, display, and select models directly with their credit multipliers.
+  - Included `display_name` and `name` attributes formatted with credit multipliers (`<model> (<rate>)`) for compatibility with clients displaying model names instead of raw IDs.
+  - Enforced zero multiplier (`0.0` / `0x`) for all `-free` model aliases and provided fallback catalog rates for unrated models.
+
 - **Downstream Model Multiplier Suffix & Strict Catalog Enforcement (`handlers_multiplier.go`, `handlers_multiplier_test.go`, `handlers_routing.go`, `handlers_execution.go`, `handlers_stream.go`, `workbuddy_credits.go`)**:
   - **Downstream Multiplier Suffix Support (`:<rate>x` / `:<rate>`)**: Supported passing model multiplier suffixes in downstream API requests (e.g. `glm-5.3-flash:0.06x`, `glm-5.3-flash:0.06`, `hy3:0x`, `deepseek-v4-pro:0.15x`, `claude-opus-5-5:3.33x`).
   - **Thinking Suffix Interoperability**: Fully interoperable with thinking / reasoning suffixes in either order (e.g. `glm-5.3-flash(16384):0.06x` or `glm-5.3-flash:0.06x(16384)`), properly normalizing to clean models for backend provider routing.
