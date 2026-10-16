@@ -39,6 +39,7 @@ func TestWrapStreamResultSSEKeepAlivePumping(t *testing.T) {
 		OAuthModelAliasResult{},
 		true,
 		cliproxyexecutor.Options{},
+		0,
 	)
 
 	var chunks []cliproxyexecutor.StreamChunk

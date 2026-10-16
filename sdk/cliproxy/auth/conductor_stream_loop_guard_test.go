@@ -33,6 +33,7 @@ func TestWrapStreamResultLoopGuardTrips(t *testing.T) {
 		OAuthModelAliasResult{},
 		true,
 		cliproxyexecutor.Options{},
+		0,
 	)
 
 	var lastChunk cliproxyexecutor.StreamChunk

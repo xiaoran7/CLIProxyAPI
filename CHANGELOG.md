@@ -81,6 +81,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Regression Coverage**: Added unit tests in `workbuddy_cloaking_test.go` verifying system prompt prepending, preservation of custom system messages, and empty-array fallback handling.
 
 ### Merged
+- **Sync with Upstream (`router-for-me/CLIProxyAPI:main` up to v8.0.30)**:
+  - Merged 13 upstream commits bringing model updates, concurrency protection, and security enhancements:
+    - **Models**: Added `gemini-4-argon` model configuration with native web search and thinking capabilities in `models.json` (#6645).
+    - **Auth Conductor & Cooldown Protection**: Introduced manager-local monotonic execution sequence stamps (`ExecutionSeq`) and dispatch watermarks (`cooldownRecordedSeq`) to protect active model and credential cooldowns from being erased by stale in-flight execution successes under high concurrency (#6643).
+    - **Config & File Watcher Security**:
+      - Added `PrepareConfigFileForUpload` and `ComputeSourceHash` to hash plaintext management secrets with bcrypt and clean legacy layouts before remote storage seeding (ObjectStore, PostgresStore, server bootstrap) (#6628).
+      - Added `SourceHash` tracking and serialized config reloads under mutex lock to guard management saves against stale file snapshots and reloads (#6631).
+    - **Claude Headers & Request IDs**: Added operator overrides for Claude header defaults (`anthropic-beta-strip`, `anthropic-beta-append`, `inject-diagnostics`, and `client-request-id` supporting `on`, `off`, `passthrough`) (#5093).
+    - **Vertex / Gemini**:
+      - Honored full `/publishers/` prefix in API-key base-url, preventing duplicated `/v1` segments and 404s when pointing at specific project/location endpoints (#6658).
+      - Dropped trailing thought-only model turns in Gemini Vertex requests to prevent upstream validation errors (#6630).
+      - Stripped unsupported `discriminator` keyword from JSON schemas for Gemini and Antigravity while preserving legitimate properties (#6639).
+    - **Protocols & Executors**:
+      - Dropped unsupported web_search options (`external_web_access`, `search_context_size`) that the xAI Responses API rejects (#6642).
+      - Mapped incomplete OpenAI Responses tool status to Claude `tool_result` with `is_error: true` (#6640).
+    - **Fork Preservation**: Adapted management `PatchGlobalExcludedModels` / `DeleteGlobalExcludedModels` to upstream's new `targetOf` closure signatures, and updated stream tests to pass `executionSeq`. Fully preserved all fork-specific innovations: WorkBuddy suite (credit multipliers, check-in engine, quota meter & expiration dates), OpenCode cloaking & fingerprinting, Pace & Smart routing, selective gzip compression, and session affinity.
+
 - **Sync with Upstream (`router-for-me/CLIProxyAPI:main` up to v8.0.29)**:
   - Merged 12 upstream commits bringing model updates and architectural stability enhancements:
     - **Models**: Added `gemini-3.8` variants and `muse-wonder-full-1.0` variants with updated context limits in model registry.
