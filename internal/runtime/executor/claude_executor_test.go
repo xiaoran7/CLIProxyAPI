@@ -4160,6 +4160,119 @@ func TestInjectClaudeCodeCurrentDateIsIdempotentAndAlignsFirstUserCache(t *testi
 	assertEphemeralUserTextBlock(t, content[1], "hello", "")
 }
 
+func TestClaudeCallerCurrentDateSeedsOnlyFirstAnchor(t *testing.T) {
+	helps.ResetClaudeDiagnosticsForTest()
+	t.Cleanup(helps.ResetClaudeDiagnosticsForTest)
+
+	days7 := 7
+	cfg := &config.Config{Claude: config.ClaudeConfig{SessionDatePinDays: &days7}}
+	auth := &cliproxyauth.Auth{ID: "caller-date-cred"}
+	callerPayload := func(date string) []byte {
+		return []byte(`{"messages":[{"role":"user","content":[` +
+			buildTextBlock(claudeCodeCurrentDateReminder(date), nil) + `,` +
+			`{"type":"text","text":"hello"}]}]}`)
+	}
+
+	claudeCodeCurrentTimeFunc = func(cfg *config.Config, auth *cliproxyauth.Auth) time.Time {
+		return time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
+	}
+	t.Cleanup(func() { claudeCodeCurrentTimeFunc = nil })
+
+	keyA, _, _ := helps.BeginClaudeDiagnostics("id:caller-date-cred", "caller-date-session")
+	if got := resolveClaudeSessionPinnedDate(cfg, auth, callerPayload("2026-08-01"), keyA, "caller-date-session"); got != "2026-08-01" {
+		t.Fatalf("first anchor = %q, want caller date 2026-08-01", got)
+	}
+	keyB, _, _ := helps.BeginClaudeDiagnostics("id:other-cred", "caller-date-session")
+	if got := resolveClaudeSessionPinnedDate(cfg, auth, callerPayload("2026-08-02"), keyB, "caller-date-session"); got != "2026-08-01" {
+		t.Fatalf("later caller date = %q, want established anchor 2026-08-01", got)
+	}
+
+	// The resolver refreshes the sliding retention on every hit: shrink the
+	// pin expiry to ~now+1s, resolve once, and prove the expiry grew back to
+	// the full retention. Without the refresh the timestamp stays shrunk.
+	nearExpiry := time.Second
+	helps.ExpireClaudeDiagnosticsForTest(true, &nearExpiry)
+	before := helps.ClaudeSessionDatePinExpiryForTest("caller-date-session")
+	if before.IsZero() || time.Until(before) > 2*time.Second {
+		t.Fatalf("pin expiry before refresh = %v, want ~now+1s", before)
+	}
+	keyC, _, _ := helps.BeginClaudeDiagnostics("id:caller-date-cred", "caller-date-session")
+	if got := resolveClaudeSessionPinnedDate(cfg, auth, callerPayload("2026-08-02"), keyC, "caller-date-session"); got != "2026-08-01" {
+		t.Fatalf("post-continuity-expiry anchor = %q, want refreshed 2026-08-01", got)
+	}
+	after := helps.ClaudeSessionDatePinExpiryForTest("caller-date-session")
+	if time.Until(after) < 6*24*time.Hour {
+		t.Fatalf("pin expiry after refresh = %v, want ~now+7d (sliding retention was not refreshed)", after)
+	}
+}
+
+func TestInjectClaudeCodeCurrentDateStripsCallerReminderFromStringContent(t *testing.T) {
+	payload := []byte(`{"messages":[{"role":"user","content":""}]}`)
+	payload, _ = sjson.SetBytes(payload, "messages.0.content", claudeCodeCurrentDateReminder("2026-08-01")+"hello")
+
+	if got := claudeCallerCurrentDateReminderDate(payload); got != "2026-08-01" {
+		t.Fatalf("string caller date = %q, want 2026-08-01", got)
+	}
+	// Default injection keeps caller text verbatim (duplicate reminders),
+	// matching the pre-retention behavior byte for byte.
+	legacy := injectClaudeCodeCurrentDate(payload, "2026-08-01")
+	if got := strings.Count(string(legacy), "Today's date is"); got != 2 {
+		t.Fatalf("legacy payload has %d date reminders, want 2: %s", got, legacy)
+	}
+	// Pre-stripping the caller reminder lets one injection leave a single
+	// canonical reminder plus the untouched user text.
+	stripped := injectClaudeCodeCurrentDate(stripFirstUserClaudeCodeCurrentDateReminder(payload), "2026-08-01")
+	if got := strings.Count(string(stripped), "Today's date is"); got != 1 {
+		t.Fatalf("stripped payload has %d date reminders, want 1: %s", got, stripped)
+	}
+	if got := gjson.GetBytes(stripped, "messages.0.content.1.text").String(); got != "hello" {
+		t.Fatalf("user text after strip = %q, want hello: %s", got, stripped)
+	}
+	// A caller reminder without the trailing blank lines is still stripped.
+	noTrailer := []byte(`{"messages":[{"role":"user","content":""}]}`)
+	noTrailer, _ = sjson.SetBytes(noTrailer, "messages.0.content", strings.TrimRight(claudeCodeCurrentDateReminder("2026-08-01"), "\n")+"hello")
+	strippedNoTrailer := injectClaudeCodeCurrentDate(stripFirstUserClaudeCodeCurrentDateReminder(noTrailer), "2026-08-01")
+	if got := strings.Count(string(strippedNoTrailer), "Today's date is"); got != 1 {
+		t.Fatalf("no-trailer payload has %d date reminders, want 1: %s", got, strippedNoTrailer)
+	}
+	if got := gjson.GetBytes(strippedNoTrailer, "messages.0.content.1.text").String(); got != "hello" {
+		t.Fatalf("user text after no-trailer strip = %q, want hello: %s", got, strippedNoTrailer)
+	}
+}
+
+func TestApplyCloakingStringCallerReminderPreservesUserText(t *testing.T) {
+	helps.ResetClaudeDiagnosticsForTest()
+	t.Cleanup(helps.ResetClaudeDiagnosticsForTest)
+
+	days7 := 7
+	cfg := &config.Config{Claude: config.ClaudeConfig{SessionDatePinDays: &days7}}
+	auth := &cliproxyauth.Auth{ID: "apply-cloaking-string-reminder", Metadata: map[string]any{"cloak_mode": "always"}}
+	ctx := helps.WithClaudeSessionID(context.Background(), "apply-cloaking-string-session")
+
+	payload := []byte(`{"model":"claude-opus-5","messages":[{"role":"user","content":""}]}`)
+	payload, _ = sjson.SetBytes(payload, "messages.0.content", claudeCodeCurrentDateReminder("2026-08-01")+"hello")
+
+	out, didCloak, errCloaking := applyCloaking(ctx, cfg, auth, payload, "sk-ant-oat-test", false, false)
+	if errCloaking != nil {
+		t.Fatalf("applyCloaking() error = %v", errCloaking)
+	}
+	if !didCloak {
+		t.Fatal("applyCloaking() cloaked = false, want true")
+	}
+	if got := strings.Count(string(out), "Today's date is"); got != 1 {
+		t.Fatalf("cloaked payload has %d date reminders, want 1: %s", got, out)
+	}
+	foundHello := false
+	for _, block := range gjson.GetBytes(out, "messages.0.content").Array() {
+		if block.Get("text").String() == "hello" {
+			foundHello = true
+		}
+	}
+	if !foundHello {
+		t.Fatalf("user text 'hello' lost in cloaked payload: %s", out)
+	}
+}
+
 func TestInjectClaudeCodeCurrentDateMovesExistingCopyToFirstBlock(t *testing.T) {
 	fixed := time.Date(2026, time.August, 1, 9, 0, 0, 0, time.FixedZone("UTC+8", 8*60*60))
 	dateBlock := buildTextBlock(claudeCodeCurrentDateReminder(claudeCodeLocalDate(fixed)), nil)
