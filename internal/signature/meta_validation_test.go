@@ -189,7 +189,7 @@ func TestMetaSignatureCompatibility(t *testing.T) {
 }
 
 func TestSignatureProviderFromModelName_Meta(t *testing.T) {
-	for _, model := range []string{"muse-wonder-full-1.0-contributor", "muse-spark-1.3", "Muse-Wonder-1.0", "meta/muse-spark-1.2"} {
+	for _, model := range []string{"muse-wonder-full-1.0-contributor", "muse-spark-1.3", "Muse-Wonder-1.0", "meta/muse-spark-1.2", "meta/muse", "muse", "meta-muse-spark", "muse_spark_1_3"} {
 		if got := SignatureProviderFromModelName(model); got != SignatureProviderMeta {
 			t.Errorf("SignatureProviderFromModelName(%q) = %q, want %q", model, got, SignatureProviderMeta)
 		}

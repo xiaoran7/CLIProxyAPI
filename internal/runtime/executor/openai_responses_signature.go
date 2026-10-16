@@ -3,11 +3,14 @@ package executor
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -77,6 +80,19 @@ func sanitizeOpenAIResponsesReasoningEncryptedContentWithCompat(ctx context.Cont
 // Meta executor keeps its own stricter native-only gate. For any other
 // target the recognized Meta envelope is known-foreign and stripped like
 // other providers'.
+// resolveResponsesSignatureTargetModel returns the canonical model name to use
+// for reasoning signature target checks, falling back to the client-requested
+// model when an upstream alias mapping hides the Meta Muse family name.
+func resolveResponsesSignatureTargetModel(baseModel string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) string {
+	if signature.SignatureProviderFromModelName(baseModel) != signature.SignatureProviderUnknown {
+		return baseModel
+	}
+	if requested := thinking.ParseSuffix(helps.PayloadRequestedModel(opts, req.Model)).ModelName; signature.SignatureProviderFromModelName(requested) != signature.SignatureProviderUnknown {
+		return requested
+	}
+	return baseModel
+}
+
 func sanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel(ctx context.Context, provider string, body []byte, isCompat bool, targetModel string) []byte {
 	metaPolicy := metaSignatureForeign
 	if signature.SignatureProviderFromModelName(targetModel) == signature.SignatureProviderMeta {
@@ -99,6 +115,31 @@ func sanitizeOpenAIResponsesReasoningEncryptedContentKeepForeign(ctx context.Con
 // (fail-closed).
 func sanitizeOpenAIResponsesReasoningEncryptedContentForMeta(ctx context.Context, provider string, body []byte) []byte {
 	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, true, metaSignatureNativeOnly)
+}
+
+// sanitizeOpenAIResponsesReasoningEncryptedContentForMetaBaseURL gates Meta
+// reasoning signatures by whether baseURL is the native Meta upstream
+// (api.meta.ai, which accepts only unsuffixed envelopes) or a third-party
+// Responses provider configured under meta-api-key (which may emit and consume
+// router-suffixed Meta Muse envelopes verbatim).
+func sanitizeOpenAIResponsesReasoningEncryptedContentForMetaBaseURL(ctx context.Context, provider string, body []byte, baseURL string) []byte {
+	if isNativeMetaUpstreamURL(baseURL) {
+		return sanitizeOpenAIResponsesReasoningEncryptedContentForMeta(ctx, provider, body)
+	}
+	return sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx, provider, body, false, true, metaSignatureAllowRouted)
+}
+
+func isNativeMetaUpstreamURL(rawURL string) bool {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return true
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return true
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	return host == "" || host == "api.meta.ai" || strings.HasSuffix(host, ".meta.ai")
 }
 
 func sanitizeOpenAIResponsesReasoningEncryptedContentWithOptions(ctx context.Context, provider string, body []byte, isCompat bool, keepForeign bool, metaPolicy metaSignaturePolicy) []byte {

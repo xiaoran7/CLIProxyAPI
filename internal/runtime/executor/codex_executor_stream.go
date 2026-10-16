@@ -83,7 +83,7 @@ func (e *CodexExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 	} else {
 		body = applyCodexSIWCRequestBodyRules(body, hasExplicitInstructions, cliproxyexecutor.Options{KeepTopLevelEffort: thinking.HasThinkingSuffix(req.Model)})
 	}
-	body = sanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel(ctx, "codex executor", body, isCompat, baseModel)
+	body = sanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel(ctx, "codex executor", body, isCompat, resolveResponsesSignatureTargetModel(baseModel, req, opts))
 	body = normalizeCodexParallelToolCalls(body, opts.Headers)
 	body = helps.NormalizeCodexToolSchemas(body)
 	body, optimizeMultiAgentV2 := helps.OptimizeCodexMultiAgentV2RequestForAuth(ctx, opts.Headers, body, e.cfg, auth, isCompat)

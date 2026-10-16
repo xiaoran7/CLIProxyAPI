@@ -75,7 +75,7 @@ func (e *CodexWebsocketsExecutor) Execute(ctx context.Context, auth *cliproxyaut
 			body = ensureImageGenerationTool(body, baseModel, auth, opts.Headers)
 		}
 	}
-	body = sanitizeOpenAIResponsesReasoningEncryptedContentWithCompat(ctx, "codex websockets executor", body, isCompat)
+	body = sanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel(ctx, "codex websockets executor", body, isCompat, resolveResponsesSignatureTargetModel(baseModel, req, opts))
 	body = normalizeCodexWebsocketParallelToolCalls(body, opts.Headers)
 	body = helps.NormalizeCodexToolSchemas(body)
 	multiAgentV2Conflict := helps.HasCodexMultiAgentV2NamespaceConflict(body)

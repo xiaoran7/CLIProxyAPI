@@ -232,9 +232,10 @@ func TestConvertCodexResponseToInteractionsStream_ReasoningSignature(t *testing.
 	var events [][]byte
 	for _, chunk := range [][]byte{
 		[]byte(`data: {"type":"response.created","response":{"id":"resp_1","model":"codex-test"}}`),
-		[]byte(`data: {"type":"response.output_item.done","item":{"id":"rs_1","type":"reasoning","summary":[],"encrypted_content":"` + metaSig + `"}}`),
-		// A duplicated done event for the same item must not re-emit the signature.
-		[]byte(`data: {"type":"response.output_item.done","item":{"id":"rs_1","type":"reasoning","summary":[],"encrypted_content":"` + metaSig + `"}}`),
+		[]byte(`data: {"type":"response.reasoning_summary_text.delta","delta":"streamed thinking"}`),
+		[]byte(`data: {"type":"response.output_item.done","item":{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"streamed thinking"}],"encrypted_content":"` + metaSig + `"}}`),
+		// A duplicated done event for the same item must not re-emit the signature or summary.
+		[]byte(`data: {"type":"response.output_item.done","item":{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"streamed thinking"}],"encrypted_content":"` + metaSig + `"}}`),
 		[]byte(`data: {"type":"response.output_item.done","item":{"type":"message","content":[{"type":"output_text","text":"answer"}]}}`),
 	} {
 		events = append(events, ConvertCodexResponseToInteractions(context.Background(), "codex-test", nil, nil, chunk, &param)...)
@@ -264,9 +265,18 @@ func TestConvertCodexResponseToInteractionsStream_ReasoningSignature(t *testing.
 	if signatureDeltas != 1 {
 		t.Fatalf("thought_signature delta count = %d, want 1 (duplicate suppressed)", signatureDeltas)
 	}
+	summaryDeltas := 0
+	for _, delta := range findCodexInteractionsEventPayloads(events, "step.delta") {
+		if delta.Get("delta.type").String() == "thought_summary" {
+			summaryDeltas++
+		}
+	}
+	if summaryDeltas != 1 {
+		t.Fatalf("thought_summary delta count = %d, want 1 (output_item.done must not duplicate streamed summary)", summaryDeltas)
+	}
 
 	names := strings.Join(codexInteractionsEventNames(events), ",")
-	want := "interaction.created,interaction.status_update,step.start,step.delta,step.stop,step.start,step.delta,step.stop"
+	want := "interaction.created,interaction.status_update,step.start,step.delta,step.delta,step.stop,step.start,step.delta,step.stop"
 	if names != want {
 		t.Fatalf("events = %s, want %s", names, want)
 	}

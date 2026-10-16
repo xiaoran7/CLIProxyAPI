@@ -143,7 +143,7 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
 		if updated, errDelete := sjson.DeleteBytes(translated, "stream"); errDelete == nil {
 			translated = updated
 		}
-		translated = sanitizeOpenAIResponsesReasoningEncryptedContent(ctx, "openai compat executor", translated)
+		translated = sanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel(ctx, "openai compat executor", translated, true, resolveResponsesSignatureTargetModel(baseModel, req, opts))
 	}
 	reporter.SetTranslatedReasoningEffort(translated, to.String())
 

@@ -803,7 +803,7 @@ func (e *CodexWebsocketsExecutor) prepareCodexWebsocketStream(ctx context.Contex
 			body = ensureImageGenerationTool(body, baseModel, auth, opts.Headers)
 		}
 	}
-	body = sanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel(ctx, "codex websockets executor", body, isCompat, baseModel)
+	body = sanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel(ctx, "codex websockets executor", body, isCompat, resolveResponsesSignatureTargetModel(baseModel, req, opts))
 	body = normalizeCodexWebsocketParallelToolCalls(body, opts.Headers)
 	body = helps.NormalizeCodexToolSchemas(body)
 	multiAgentV2Conflict := helps.HasCodexMultiAgentV2NamespaceConflict(body)

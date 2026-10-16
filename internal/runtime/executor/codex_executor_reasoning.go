@@ -199,7 +199,8 @@ func codexInputHasValidReasoningEncryptedContent(body []byte) bool {
 		if encryptedContent.Type != gjson.String {
 			continue
 		}
-		if _, err := signature.InspectGPTReasoningSignature(encryptedContent.String()); err == nil {
+		rawSig := encryptedContent.String()
+		if signature.IsValidGPTReasoningSignature(rawSig) || signature.IsValidMetaReasoningSignature(rawSig) {
 			return true
 		}
 	}

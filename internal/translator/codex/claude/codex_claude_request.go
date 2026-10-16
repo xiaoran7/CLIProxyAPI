@@ -175,27 +175,17 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool, 
 				}
 
 				rawSignature := part.Get("signature").String()
-				signature, ok := sigcompat.CompatibleSignatureForProvider(sigcompat.SignatureProviderGPT, rawSignature)
+				signature, ok := translatorcommon.CodexReplaySignatureForTarget(modelName, rawSignature)
 				if !ok && preserveEmptyThinkingBlocks && part.Get("signature").Type == gjson.String && strings.TrimSpace(rawSignature) != "" &&
 					sigcompat.DetectSignatureProviderForBlock(rawSignature, sigcompat.SignatureBlockKindClaudeThinking) == sigcompat.SignatureProviderUnknown {
 					signature = rawSignature
-					ok = true
-				}
-				if !ok && codexClaudeTargetAcceptsMetaSignature(modelName) && sigcompat.IsValidMetaReasoningSignature(rawSignature) {
-					signature = strings.TrimSpace(rawSignature)
 					ok = true
 				}
 				if !ok {
 					if preserveEmptyThinkingBlocks && strings.TrimSpace(rawSignature) == "" {
 						signature = rawSignature
 					} else {
-						if !codexClaudeTargetAcceptsGrokSignature(modelName) {
-							return
-						}
-						if _, err := sigcompat.InspectGrokEncryptedContent(rawSignature); err != nil {
-							return
-						}
-						signature = rawSignature
+						return
 					}
 				}
 
@@ -466,21 +456,6 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool, 
 	template = translatorcommon.SetRawArrayItems(template, "input", inputItems)
 
 	return template, drops.Err()
-}
-
-// codexClaudeTargetAcceptsMetaSignature reports whether the target model is
-// a Meta Muse model, in which case a positively recognized native Meta
-// envelope carried in a Claude thinking signature must survive translation
-// into a Responses reasoning item so it can replay to Meta. For every other
-// target the same blob is foreign and dropped by the caller.
-func codexClaudeTargetAcceptsMetaSignature(modelName string) bool {
-	baseModel := thinking.ParseSuffix(modelName).ModelName
-	return sigcompat.SignatureProviderFromModelName(baseModel) == sigcompat.SignatureProviderMeta
-}
-
-func codexClaudeTargetAcceptsGrokSignature(modelName string) bool {
-	baseModel := strings.ToLower(strings.TrimSpace(thinking.ParseSuffix(modelName).ModelName))
-	return strings.Contains(baseModel, "grok")
 }
 
 func normalizeCodexServiceTier(result gjson.Result) string {

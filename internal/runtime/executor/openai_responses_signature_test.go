@@ -391,6 +391,19 @@ func TestSanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel_RoutedM
 	// Namespaced router model IDs resolve to their Meta tail segment.
 	got := sanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel(context.Background(), "test", buildBody(), false, "openrouter/meta/muse-wonder")
 	assertRoutedTarget(t, got)
+
+	// Third-party Meta executor baseURL (non-api.meta.ai) preserves routed Meta
+	// envelopes while native api.meta.ai strips the router suffix.
+	routedMetaURL := sanitizeOpenAIResponsesReasoningEncryptedContentForMetaBaseURL(context.Background(), "test", buildBody(), "https://openrouter.ai/api/v1")
+	assertRoutedTarget(t, routedMetaURL)
+
+	nativeMetaURL := sanitizeOpenAIResponsesReasoningEncryptedContentForMetaBaseURL(context.Background(), "test", buildBody(), "https://api.meta.ai/api/v1")
+	if gotSig := gjson.GetBytes(nativeMetaURL, "input.0.encrypted_content").String(); gotSig != native {
+		t.Fatalf("native Meta URL should preserve native envelope; body=%s", nativeMetaURL)
+	}
+	if gjson.GetBytes(nativeMetaURL, "input.1.encrypted_content").Exists() {
+		t.Fatalf("native Meta URL should strip router-suffixed envelope; body=%s", nativeMetaURL)
+	}
 }
 
 func TestSanitizeOpenAIResponsesReasoningEncryptedContentWithCompatModel_StripsMetaForNonMetaTargets(t *testing.T) {

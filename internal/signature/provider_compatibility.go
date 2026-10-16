@@ -106,13 +106,36 @@ func signatureProviderFromModelNameValue(lower string) SignatureProvider {
 		return SignatureProviderKimi
 	case strings.Contains(lower, "grok"):
 		return SignatureProviderGrok
-	case strings.HasPrefix(lower, "muse-") || strings.Contains(lower, "/muse-"):
+	case isMetaMuseModelName(lower):
 		return SignatureProviderMeta
 	case strings.Contains(lower, "swe-"):
 		return SignatureProviderSWE
 	default:
 		return SignatureProviderUnknown
 	}
+}
+
+// isMetaMuseModelName reports whether lower names a Meta Muse model on a
+// native or third-party provider ("muse", "muse-*", "muse_*", "meta-muse-*")
+// without matching unrelated substrings such as "museum" or "amuse".
+func isMetaMuseModelName(lower string) bool {
+	if lower == "muse" ||
+		strings.HasPrefix(lower, "muse-") ||
+		strings.HasPrefix(lower, "muse_") ||
+		strings.HasSuffix(lower, "/muse") ||
+		strings.Contains(lower, "/muse-") ||
+		strings.Contains(lower, "/muse_") {
+		return true
+	}
+	for _, prefix := range []string{"meta-", "meta_"} {
+		if idx := strings.Index(lower, prefix+"muse"); idx >= 0 {
+			rest := lower[idx+len(prefix+"muse"):]
+			if rest == "" || rest[0] == '-' || rest[0] == '_' || rest[0] == '.' || rest[0] == ':' {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // selfDescribingSignatureFirstChars are the base64 first characters that a

@@ -31,7 +31,7 @@ type metaPreparedRequest struct {
 	body            []byte
 }
 
-func (e *MetaExecutor) prepareResponsesRequest(ctx context.Context, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, stream bool) (*metaPreparedRequest, error) {
+func (e *MetaExecutor) prepareResponsesRequest(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, stream bool) (*metaPreparedRequest, error) {
 	baseModel := thinking.ParseSuffix(req.Model).ModelName
 	from := opts.SourceFormat
 	responseFormat := cliproxyexecutor.ResponseFormatOrSource(opts)
@@ -71,7 +71,8 @@ func (e *MetaExecutor) prepareResponsesRequest(ctx context.Context, req cliproxy
 		return nil, errNormalizePatch
 	}
 	body = normalizeCodexInstructions(body)
-	body = sanitizeOpenAIResponsesReasoningEncryptedContentForMeta(ctx, "meta executor", body)
+	baseURL, _ := metaCreds(auth)
+	body = sanitizeOpenAIResponsesReasoningEncryptedContentForMetaBaseURL(ctx, "meta executor", body, baseURL)
 	body = helps.SanitizeMetaWebSearchTools(body)
 	body = helps.NormalizeCodexToolIntegerTypes(body, opts.Headers)
 
@@ -98,7 +99,7 @@ func (e *MetaExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req
 		return resp, errAuth
 	}
 
-	prepared, errPrepare := e.prepareResponsesRequest(ctx, req, opts, true)
+	prepared, errPrepare := e.prepareResponsesRequest(ctx, enriched, req, opts, true)
 	if errPrepare != nil {
 		return resp, errPrepare
 	}
@@ -259,10 +260,11 @@ func (e *MetaExecutor) translateMetaCompleted(ctx context.Context, req cliproxye
 }
 
 func (e *MetaExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
-	if _, errAuth := e.ensureAuth(ctx, auth); errAuth != nil {
+	enriched, errAuth := e.ensureAuth(ctx, auth)
+	if errAuth != nil {
 		return cliproxyexecutor.Response{}, errAuth
 	}
-	prepared, errPrepare := e.prepareResponsesRequest(ctx, req, opts, false)
+	prepared, errPrepare := e.prepareResponsesRequest(ctx, enriched, req, opts, false)
 	if errPrepare != nil {
 		return cliproxyexecutor.Response{}, errPrepare
 	}

@@ -774,6 +774,14 @@ func TestConvertClaudeRequestToCodex_AssistantRoutedMetaSignatureToReasoningItem
 	if got := countRequestInputItemsByType(out, "reasoning"); got != 0 {
 		t.Fatalf("got %d reasoning items for non-Meta target, want 0; output=%s", got, out)
 	}
+
+	// A foreign GPT signature must not be replayed when the target is a Meta Muse model.
+	gptPayload := []byte(`{"model":"muse-spark-1.3","messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"summary","signature":""},{"type":"text","text":"answer"}]},{"role":"user","content":"next"}]}`)
+	gptPayload, _ = sjson.SetBytes(gptPayload, "messages.0.content.0.signature", validCodexReasoningSignature())
+	out, _ = ConvertClaudeRequestToCodex("muse-spark-1.3", gptPayload, false)
+	if got := countRequestInputItemsByType(out, "reasoning"); got != 0 {
+		t.Fatalf("got %d reasoning items for GPT signature on Meta target, want 0; output=%s", got, out)
+	}
 }
 
 func TestConvertClaudeRequestToCodex_IgnoresGrokSignatureForNonGrokTargets(t *testing.T) {
