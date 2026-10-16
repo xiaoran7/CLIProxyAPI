@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
@@ -396,37 +395,11 @@ func decodeGeminiCodexThoughtSignature(value string) string {
 // normalizedGeminiThoughtSignatureForCodexTarget unwraps and normalizes a
 // client-echoed thought signature for the Codex-format upstream serving
 // modelName, returning the exact value that may be written as reasoning
-// encrypted_content. Positively detected families must match the target
-// family exactly (an unmapped target defaults to the Codex GPT family,
-// mirroring this translator's purpose) and go through the shared
-// compatibility normalization, so cache-prefixed values such as "gpt#..."
-// are stripped to their native payload instead of being forwarded verbatim.
-// Grok has no detectable envelope, so it falls back to its shape inspector
-// keyed on the target.
+// encrypted_content. The carrier magic written by
+// encodeGeminiCodexThoughtSignature is stripped first; the family match and
+// normalization rules live in translatorcommon.CodexReplaySignatureForTarget.
 func normalizedGeminiThoughtSignatureForCodexTarget(modelName, rawSignature string) (string, bool) {
-	rawSignature = decodeGeminiCodexThoughtSignature(rawSignature)
-	if rawSignature == "" {
-		return "", false
-	}
-	target := sigcompat.SignatureProviderFromModelName(thinking.ParseSuffix(modelName).ModelName)
-	detected := sigcompat.DetectSignatureProvider(rawSignature)
-	if detected != sigcompat.SignatureProviderUnknown {
-		effectiveTarget := target
-		if effectiveTarget == sigcompat.SignatureProviderUnknown {
-			effectiveTarget = sigcompat.SignatureProviderGPT
-		}
-		if detected != effectiveTarget {
-			return "", false
-		}
-		normalized, ok := sigcompat.CompatibleSignatureForProvider(effectiveTarget, rawSignature)
-		return normalized, ok && normalized != ""
-	}
-	if target == sigcompat.SignatureProviderGrok {
-		if _, err := sigcompat.InspectGrokEncryptedContent(rawSignature); err == nil {
-			return rawSignature, true
-		}
-	}
-	return "", false
+	return translatorcommon.CodexReplaySignatureForTarget(modelName, decodeGeminiCodexThoughtSignature(rawSignature))
 }
 
 func setCodexToolChoiceFromGeminiToolConfig(out []byte, functionCallingConfig gjson.Result) []byte {
