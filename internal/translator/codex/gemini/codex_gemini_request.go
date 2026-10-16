@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/thinking"
 	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
@@ -69,6 +70,7 @@ func ConvertGeminiRequestToCodex(modelName string, inputRawJSON []byte, _ bool) 
 	// consume them in order when functionResponses arrive.
 	var pendingCallIDs []string
 	callCounter := 0
+	emittedThoughtSignatures := map[string]bool{}
 
 	getGeminiCallID := func(value gjson.Result) string {
 		if callID := strings.TrimSpace(value.Get("id").String()); callID != "" {
@@ -140,6 +142,29 @@ func ConvertGeminiRequestToCodex(modelName string, inputRawJSON []byte, _ bool) 
 			parr := parts.Array()
 			for j := 0; j < len(parr); j++ {
 				p := parr[j]
+
+				// A thoughtSignature is replayable reasoning state, not visible
+				// content. Restore it as a reasoning item only when its detected
+				// family matches this request's target model family, so a Muse
+				// (or GPT/Grok) signature can never be replayed to a wrong upstream
+				// through the Gemini ingress. Unmatched signatures fall through to
+				// the existing hidden-thought drop below.
+				if role == "assistant" {
+					if rawSignature := geminiPartThoughtSignature(p); rawSignature != "" && !emittedThoughtSignatures[rawSignature] && geminiThoughtSignatureMatchesCodexTarget(modelName, rawSignature) {
+						reasoningItem := []byte(`{"type":"reasoning","encrypted_content":"","summary":[]}`)
+						reasoningItem, _ = sjson.SetBytes(reasoningItem, "encrypted_content", rawSignature)
+						if translatorcommon.IsGeminiThoughtPart(p) {
+							if thoughtText := strings.TrimSpace(p.Get("text").String()); thoughtText != "" {
+								summaryPart := []byte(`{"type":"summary_text","text":""}`)
+								summaryPart, _ = sjson.SetBytes(summaryPart, "text", thoughtText)
+								reasoningItem, _ = sjson.SetRawBytes(reasoningItem, "summary", translatorcommon.JoinRawArray([][]byte{summaryPart}))
+							}
+						}
+						inputItems = append(inputItems, reasoningItem)
+						emittedThoughtSignatures[rawSignature] = true
+					}
+				}
+
 				if translatorcommon.IsGeminiThoughtPart(p) {
 					continue
 				}
@@ -342,6 +367,37 @@ func ConvertGeminiRequestToCodex(modelName string, inputRawJSON []byte, _ bool) 
 	}
 
 	return out, nil
+}
+
+// geminiPartThoughtSignature extracts a part's thought signature under either
+// the camelCase or snake_case field spelling.
+func geminiPartThoughtSignature(part gjson.Result) string {
+	if signature := strings.TrimSpace(part.Get("thoughtSignature").String()); signature != "" {
+		return signature
+	}
+	return strings.TrimSpace(part.Get("thought_signature").String())
+}
+
+// geminiThoughtSignatureMatchesCodexTarget reports whether a client-echoed
+// thought signature may be restored as reasoning encrypted_content for the
+// Codex-format upstream serving modelName. Positively detected families must
+// match the target family exactly (an unmapped target defaults to the Codex
+// GPT family, mirroring this translator's purpose). Grok has no detectable
+// envelope, so it falls back to its shape inspector keyed on the target.
+func geminiThoughtSignatureMatchesCodexTarget(modelName, rawSignature string) bool {
+	target := sigcompat.SignatureProviderFromModelName(thinking.ParseSuffix(modelName).ModelName)
+	detected := sigcompat.DetectSignatureProvider(rawSignature)
+	if detected != sigcompat.SignatureProviderUnknown {
+		if target == sigcompat.SignatureProviderUnknown {
+			return detected == sigcompat.SignatureProviderGPT
+		}
+		return detected == target
+	}
+	if target == sigcompat.SignatureProviderGrok {
+		_, err := sigcompat.InspectGrokEncryptedContent(rawSignature)
+		return err == nil
+	}
+	return false
 }
 
 func setCodexToolChoiceFromGeminiToolConfig(out []byte, functionCallingConfig gjson.Result) []byte {
