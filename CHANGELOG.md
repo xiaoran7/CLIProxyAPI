@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Downstream Model Multiplier Suffix & Strict Catalog Enforcement (`handlers_multiplier.go`, `handlers_multiplier_test.go`, `handlers_routing.go`, `handlers_execution.go`, `handlers_stream.go`, `workbuddy_credits.go`)**:
+  - **Downstream Multiplier Suffix Support (`:<rate>x` / `:<rate>`)**: Supported passing model multiplier suffixes in downstream API requests (e.g. `glm-5.3-flash:0.06x`, `glm-5.3-flash:0.06`, `hy3:0x`, `deepseek-v4-pro:0.15x`, `claude-opus-5-5:3.33x`).
+  - **Thinking Suffix Interoperability**: Fully interoperable with thinking / reasoning suffixes in either order (e.g. `glm-5.3-flash(16384):0.06x` or `glm-5.3-flash:0.06x(16384)`), properly normalizing to clean models for backend provider routing.
+  - **Strict Multiplier Mismatch Interception (HTTP 400)**: Validates client-supplied multiplier against official WorkBuddy credit catalog rates. Rejects mismatched multipliers immediately with HTTP 400 Bad Request (`code: model_multiplier_mismatch`, message detailing requested vs expected multiplier).
+  - **Static Catalog Fallback (`staticWorkBuddyDefaultCredits`)**: Configured reliable fallback catalog for core models (`hy3` 0x, `glm-5.3-flash` 0.06x, `deepseek-v4-pro` 0.15x, `claude-opus-5-5` 3.33x, etc.) and automatic 0x resolution for `-free` aliases when dynamic catalog is cold.
+
+### Changed
+- **WorkBuddy Management Suite Manual Refresh (`management.html`)**:
+  - Disabled automatic background polling and requests on opening the WorkBuddy suite drawer and switching tabs (`/workbuddy/checkin`, `/workbuddy/compensation`, `/plugins/workbuddy/quota`), enforcing explicit user-triggered manual refreshes only.
+  - Combined check-in record and compensation status retrieval into a single "刷新状态" manual button click.
+
+### Added
 - **WorkBuddy Outage & Activity Compensation Suite Integration (`checkin.go`, `checkin_test.go`, `workbuddy_checkin.go`, `workbuddy_checkin_test.go`, `server_management_v8.go`, `plugin_quota.go`, `management.html`)**:
   - **On-Demand Official Outage Compensation Claim (`POST /billing/meter/claim-compensation`)**: Added `ClaimCompensation` and `ClaimCompensationAll` in `internal/auth/workbuddy` to claim official activity gifts (such as the 500 DeepSeek outage credits into package `TCACA_code_007_nzdH5h4Nl0`), handling successful grant (`claimed`), already-claimed deduplication (`done`), and expired/inactive activity windows (`inactive`). Handled upstream HTTP 400 JSON payloads (`code: 10001`) gracefully for already-claimed and inactive states.
   - **Model Multiplier Breakdown & UI Visualization**: Exposed `model_rates` in `listWorkBuddyQuotas` (`plugin_quota.go`) and updated the management dashboard (`management.html`) with interactive per-model credit rates sorted ascending, free models tagging (0x), and expand/collapse details.

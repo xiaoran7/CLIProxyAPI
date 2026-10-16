@@ -163,6 +163,12 @@ func (h *BaseAPIHandler) providersForExecution(modelName, originalRequestedModel
 }
 
 func (h *BaseAPIHandler) getRequestDetailsWithOptions(modelName string, allowImageModel, allowSpeechModel bool) (providers []string, normalizedModel string, err *interfaces.ErrorMessage) {
+	cleanModel, multErr := ExtractAndValidateModelMultiplier(modelName)
+	if multErr != nil {
+		return nil, "", multErr
+	}
+	modelName = cleanModel
+
 	resolvedModelName := modelName
 	initialSuffix := thinking.ParseSuffix(modelName)
 	if initialSuffix.ModelName == "auto" {

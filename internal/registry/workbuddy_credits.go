@@ -56,6 +56,24 @@ func (e *workbuddyCreditsEntry) Free() bool {
 
 const workbuddyCreditsEpsilon = 1e-9
 
+// staticWorkBuddyDefaultCredits provides authoritative fallback credit multipliers for
+// WorkBuddy / CodeBuddy models when live /v3/config catalogue data is unavailable.
+var staticWorkBuddyDefaultCredits = map[string]float64{
+	"hy3":                 0.0,
+	"deepseek-v4.1-flash": 0.0,
+	"glm-5.3-flash":       0.06,
+	"deepseek-v4-pro":     0.15,
+	"glm-5.3":             0.15,
+	"kimi-k3":             0.15,
+	"minimax-m3":          0.15,
+	"hy4-preview-f":       1.62,
+	"gpt-6-astra":         3.33,
+	"gpt-5.6-sol":         2.0,
+	"claude-fable-5-1":    3.0,
+	"claude-opus-5-5":     3.33,
+	"claude-sonnet-5-5":   1.0,
+}
+
 // workbuddyCreditsZone is the fixed Beijing offset (UTC+8) that WorkBuddy
 // promotions are scheduled in.
 var workbuddyCreditsZone = time.FixedZone("CST", 8*60*60)
@@ -284,9 +302,21 @@ func GetWorkBuddyCreditsSummary(realm string) WorkBuddyCreditsSummary {
 // LookupWorkBuddyModelCredits resolves the credit rate of a model that may be
 // unknown to the static registry.
 //
-// It first checks the static catalogue, so a registered model always reports the
-// rate it publishes, and otherwise falls back to the realm's raw rate table.
+// It first checks the static catalogue, then the realm's rate table, and finally
+// falls back to authoritative default rates if available.
 func LookupWorkBuddyModelCredits(modelID, realm string) *WorkBuddyCreditsRate {
+	cleanID := strings.ToLower(strings.TrimSpace(modelID))
+	cleanID = strings.TrimPrefix(cleanID, "workbuddy/")
+	if strings.HasSuffix(cleanID, "-free") {
+		return &WorkBuddyCreditsRate{
+			Multiplier: 0.0,
+			Free:       true,
+			Source:     "alias",
+			Effective:  "0x",
+			Base:       "0x",
+		}
+	}
+
 	key := workbuddyCreditsRealmKey(realm)
 	if m := LookupWorkBuddyModel(modelID, key); m != nil && m.Credits != nil {
 		rate := &WorkBuddyCreditsRate{
@@ -301,7 +331,35 @@ func LookupWorkBuddyModelCredits(modelID, realm string) *WorkBuddyCreditsRate {
 		}
 		return rate
 	}
-	return GetWorkBuddyModelCredits(modelID, key)
+	if rate := GetWorkBuddyModelCredits(modelID, key); rate != nil {
+		return rate
+	}
+
+	cleanKey := workbuddyCreditsLookupKey(modelID)
+	if defRate, ok := staticWorkBuddyDefaultCredits[cleanKey]; ok {
+		rate := &WorkBuddyCreditsRate{
+			Multiplier: defRate,
+			Free:       defRate < workbuddyCreditsEpsilon,
+			Source:     "default",
+			Effective:  formatWorkBuddyMultiplier(defRate),
+			Base:       formatWorkBuddyMultiplier(defRate),
+		}
+		return rate
+	}
+
+	return nil
+}
+
+// ResolveWorkBuddyModelCreditRate finds the credit rate for modelID, checking CN first then Intl.
+func ResolveWorkBuddyModelCreditRate(modelID string) *WorkBuddyCreditsRate {
+	modelID = strings.TrimPrefix(strings.TrimSpace(modelID), "workbuddy/")
+	if rate := LookupWorkBuddyModelCredits(modelID, "cn"); rate != nil {
+		return rate
+	}
+	if rate := LookupWorkBuddyModelCredits(modelID, "intl"); rate != nil {
+		return rate
+	}
+	return nil
 }
 
 // warmWorkBuddyCredits fetches the realm catalogue if the cache is cold or

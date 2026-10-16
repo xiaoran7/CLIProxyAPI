@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
@@ -283,6 +286,17 @@ func (h *BaseAPIHandler) executeStreamWithAuthManager(ctx context.Context, handl
 
 func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context, entryProtocol, exitProtocol, modelName string, rawJSON []byte, alt string, allowImageModel bool, execOptions modelExecutionOptions) (<-chan []byte, http.Header, <-chan *interfaces.ErrorMessage) {
 	originalRequestedModel := modelName
+	cleanModel, multErr := ExtractAndValidateModelMultiplier(modelName)
+	if multErr != nil {
+		errChan := make(chan *interfaces.ErrorMessage, 1)
+		errChan <- multErr
+		close(errChan)
+		return nil, nil, errChan
+	}
+	modelName = cleanModel
+	if len(rawJSON) > 0 && gjson.GetBytes(rawJSON, "model").Exists() {
+		rawJSON, _ = sjson.SetBytes(rawJSON, "model", cleanModel)
+	}
 	// Speech-only models are reachable solely through the speech entry protocol.
 	execOptions.AllowSpeechModel = isModelExecutionSpeechProtocol(entryProtocol)
 	routeDecision, preparedRoute := preparedModelRouteFromContext(ctx, execOptions.SkipRouterPluginID)
