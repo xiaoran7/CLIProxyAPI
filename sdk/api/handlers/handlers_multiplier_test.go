@@ -83,6 +83,40 @@ func TestParseModelMultiplier(t *testing.T) {
 			wantBase:    "llama3:latest",
 			wantHasMult: false,
 		},
+		{
+			name:        "workbuddy namespace prefix with multiplier",
+			input:       "workbuddy/claude-opus-5-5:3.33x",
+			wantClean:   "claude-opus-5-5",
+			wantBase:    "claude-opus-5-5",
+			wantMult:    3.33,
+			wantHasMult: true,
+			wantRawMult: "3.33x",
+		},
+		{
+			name:        "workbuddy-cn namespace prefix with free multiplier",
+			input:       "workbuddy-cn/hy3:0x",
+			wantClean:   "hy3",
+			wantBase:    "hy3",
+			wantMult:    0.0,
+			wantHasMult: true,
+			wantRawMult: "0x",
+		},
+		{
+			name:        "workbuddy namespace prefix without multiplier",
+			input:       "workbuddy/claude-opus-5-5",
+			wantClean:   "claude-opus-5-5",
+			wantBase:    "claude-opus-5-5",
+			wantHasMult: false,
+		},
+		{
+			name:        "workbuddy namespace prefix with multiplier and thinking suffix",
+			input:       "workbuddy/claude-opus-5-5:3.33x(16384)",
+			wantClean:   "claude-opus-5-5(16384)",
+			wantBase:    "claude-opus-5-5",
+			wantMult:    3.33,
+			wantHasMult: true,
+			wantRawMult: "3.33x",
+		},
 	}
 
 	for _, tc := range tests {
@@ -156,6 +190,30 @@ func TestExtractAndValidateModelMultiplier(t *testing.T) {
 			modelName: "glm-5.3-flash",
 			wantClean: "glm-5.3-flash",
 			expectErr: false,
+		},
+		{
+			name:      "workbuddy namespace prefix with correct multiplier",
+			modelName: "workbuddy/claude-opus-5-5:3.33x",
+			wantClean: "claude-opus-5-5",
+			expectErr: false,
+		},
+		{
+			name:      "workbuddy-cn namespace prefix with free multiplier",
+			modelName: "workbuddy-cn/hy3:0x",
+			wantClean: "hy3",
+			expectErr: false,
+		},
+		{
+			name:      "workbuddy namespace prefix without multiplier",
+			modelName: "workbuddy/claude-opus-5-5",
+			wantClean: "claude-opus-5-5",
+			expectErr: false,
+		},
+		{
+			name:          "workbuddy namespace prefix with wrong multiplier rejected",
+			modelName:     "workbuddy/claude-opus-5-5:1.0x",
+			expectErr:     true,
+			wantErrStatus: http.StatusBadRequest,
 		},
 		{
 			name:          "wrong multiplier is rejected with 400 Bad Request",

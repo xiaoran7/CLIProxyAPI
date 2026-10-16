@@ -137,8 +137,11 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 			creditsMap["free"] = true
 		}
 
+		var wbProvider string
 		if creditsMap != nil {
 			filteredModel["credits"] = creditsMap
+			_, wbProvider = registry.DetectWorkBuddyModelRealm(modelID)
+			filteredModel["owned_by"] = wbProvider
 		}
 
 		if dn, exists := model["display_name"]; exists && dn != nil {
@@ -148,7 +151,10 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 
 		filteredModels = append(filteredModels, filteredModel)
 
-		// Also emit the multiplier-suffixed model ID (e.g. "glm-5.3-flash:0.06x")
+		// Also emit the multiplier-suffixed and provider-namespaced model IDs
+		// (e.g. "workbuddy/claude-opus-5-5:3.33x", "claude-opus-5-5:3.33x", "workbuddy-cn/hy3:0x")
+		// so downstream clients like ccswitch, NextChat, Cherry Studio display the correct provider
+		// instead of incorrectly classifying Claude models as Anthropic.
 		if creditsMap != nil {
 			var effectiveStr string
 			if rate := registry.ResolveWorkBuddyModelCreditRate(modelID); rate != nil && rate.Effective != "" {
@@ -162,13 +168,50 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 			}
 
 			if effectiveStr != "" {
+				// 1. Prefixed with multiplier: "workbuddy/claude-opus-5-5:3.33x"
+				prefixedSuffixedID := fmt.Sprintf("%s/%s:%s", wbProvider, modelID, effectiveStr)
+				if !seenIDs[prefixedSuffixedID] {
+					seenIDs[prefixedSuffixedID] = true
+					suffixedModel := map[string]any{
+						"id":           prefixedSuffixedID,
+						"object":       model["object"],
+						"owned_by":     wbProvider,
+						"credits":      creditsMap,
+						"display_name": fmt.Sprintf("%s/%s (%s)", wbProvider, modelID, effectiveStr),
+						"name":         fmt.Sprintf("%s/%s (%s)", wbProvider, modelID, effectiveStr),
+					}
+					if created, exists := model["created"]; exists {
+						suffixedModel["created"] = created
+					}
+					filteredModels = append(filteredModels, suffixedModel)
+				}
+
+				// 2. Prefixed base: "workbuddy/claude-opus-5-5"
+				prefixedBaseID := fmt.Sprintf("%s/%s", wbProvider, modelID)
+				if !seenIDs[prefixedBaseID] {
+					seenIDs[prefixedBaseID] = true
+					prefixedModel := map[string]any{
+						"id":           prefixedBaseID,
+						"object":       model["object"],
+						"owned_by":     wbProvider,
+						"credits":      creditsMap,
+						"display_name": fmt.Sprintf("%s/%s", wbProvider, modelID),
+						"name":         fmt.Sprintf("%s/%s", wbProvider, modelID),
+					}
+					if created, exists := model["created"]; exists {
+						prefixedModel["created"] = created
+					}
+					filteredModels = append(filteredModels, prefixedModel)
+				}
+
+				// 3. Unprefixed with multiplier: "claude-opus-5-5:3.33x"
 				suffixedID := fmt.Sprintf("%s:%s", modelID, effectiveStr)
 				if !seenIDs[suffixedID] {
 					seenIDs[suffixedID] = true
 					suffixedModel := map[string]any{
 						"id":           suffixedID,
 						"object":       model["object"],
-						"owned_by":     model["owned_by"],
+						"owned_by":     wbProvider,
 						"credits":      creditsMap,
 						"display_name": fmt.Sprintf("%s (%s)", modelID, effectiveStr),
 						"name":         fmt.Sprintf("%s (%s)", modelID, effectiveStr),

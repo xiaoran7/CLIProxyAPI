@@ -313,14 +313,47 @@ func GetWorkBuddyCreditsSummary(realm string) WorkBuddyCreditsSummary {
 	return summary
 }
 
+// TrimWorkBuddyPrefixes removes any known WorkBuddy or CodeBuddy provider prefixes from a model ID.
+func TrimWorkBuddyPrefixes(modelID string) string {
+	clean := strings.TrimSpace(modelID)
+	lower := strings.ToLower(clean)
+	prefixes := []string{
+		"workbuddy-intl/",
+		"workbuddy-cn/",
+		"workbuddy/",
+		"codebuddy/",
+		"wb-cn/",
+		"wb/",
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(lower, p) {
+			return clean[len(p):]
+		}
+	}
+	return clean
+}
+
+// DetectWorkBuddyModelRealm identifies whether a model belongs to the domestic (CN) CodeBuddy realm or international (Intl) WorkBuddy realm.
+func DetectWorkBuddyModelRealm(modelID string) (realm string, provider string) {
+	trimmed := TrimWorkBuddyPrefixes(modelID)
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "hy") {
+		return "cn", "workbuddy-cn"
+	}
+	rawLower := strings.ToLower(strings.TrimSpace(modelID))
+	if strings.HasPrefix(rawLower, "workbuddy-cn/") || strings.HasPrefix(rawLower, "codebuddy/") || strings.HasPrefix(rawLower, "wb-cn/") {
+		return "cn", "workbuddy-cn"
+	}
+	return "intl", "workbuddy"
+}
+
 // LookupWorkBuddyModelCredits resolves the credit rate of a model that may be
 // unknown to the static registry.
 //
 // It first checks the static catalogue, then the realm's rate table, and finally
 // falls back to authoritative default rates if available.
 func LookupWorkBuddyModelCredits(modelID, realm string) *WorkBuddyCreditsRate {
-	cleanID := strings.ToLower(strings.TrimSpace(modelID))
-	cleanID = strings.TrimPrefix(cleanID, "workbuddy/")
+	cleanID := strings.ToLower(TrimWorkBuddyPrefixes(modelID))
 	if strings.HasSuffix(cleanID, "-free") {
 		return &WorkBuddyCreditsRate{
 			Multiplier: 0.0,
@@ -332,7 +365,7 @@ func LookupWorkBuddyModelCredits(modelID, realm string) *WorkBuddyCreditsRate {
 	}
 
 	key := workbuddyCreditsRealmKey(realm)
-	if m := LookupWorkBuddyModel(modelID, key); m != nil && m.Credits != nil {
+	if m := LookupWorkBuddyModel(cleanID, key); m != nil && m.Credits != nil {
 		rate := &WorkBuddyCreditsRate{
 			Multiplier:    m.Credits.Multiplier,
 			Free:          m.Credits.Multiplier < workbuddyCreditsEpsilon,
@@ -345,11 +378,11 @@ func LookupWorkBuddyModelCredits(modelID, realm string) *WorkBuddyCreditsRate {
 		}
 		return rate
 	}
-	if rate := GetWorkBuddyModelCredits(modelID, key); rate != nil {
+	if rate := GetWorkBuddyModelCredits(cleanID, key); rate != nil {
 		return rate
 	}
 
-	cleanKey := workbuddyCreditsLookupKey(modelID)
+	cleanKey := workbuddyCreditsLookupKey(cleanID)
 	if defRate, ok := staticWorkBuddyDefaultCredits[cleanKey]; ok {
 		rate := &WorkBuddyCreditsRate{
 			Multiplier: defRate,
@@ -366,12 +399,22 @@ func LookupWorkBuddyModelCredits(modelID, realm string) *WorkBuddyCreditsRate {
 
 // ResolveWorkBuddyModelCreditRate finds the credit rate for modelID, checking CN first then Intl.
 func ResolveWorkBuddyModelCreditRate(modelID string) *WorkBuddyCreditsRate {
-	modelID = strings.TrimPrefix(strings.TrimSpace(modelID), "workbuddy/")
-	if rate := LookupWorkBuddyModelCredits(modelID, "cn"); rate != nil {
-		return rate
-	}
-	if rate := LookupWorkBuddyModelCredits(modelID, "intl"); rate != nil {
-		return rate
+	clean := TrimWorkBuddyPrefixes(modelID)
+	realm, _ := DetectWorkBuddyModelRealm(modelID)
+	if realm == "cn" {
+		if rate := LookupWorkBuddyModelCredits(clean, "cn"); rate != nil {
+			return rate
+		}
+		if rate := LookupWorkBuddyModelCredits(clean, "intl"); rate != nil {
+			return rate
+		}
+	} else {
+		if rate := LookupWorkBuddyModelCredits(clean, "intl"); rate != nil {
+			return rate
+		}
+		if rate := LookupWorkBuddyModelCredits(clean, "cn"); rate != nil {
+			return rate
+		}
 	}
 	return nil
 }

@@ -163,11 +163,11 @@ func (h *BaseAPIHandler) providersForExecution(modelName, originalRequestedModel
 }
 
 func (h *BaseAPIHandler) getRequestDetailsWithOptions(modelName string, allowImageModel, allowSpeechModel bool) (providers []string, normalizedModel string, err *interfaces.ErrorMessage) {
-	cleanModel, multErr := ExtractAndValidateModelMultiplier(modelName)
+	multDetails, multErr := ExtractAndValidateModelMultiplierDetails(modelName)
 	if multErr != nil {
 		return nil, "", multErr
 	}
-	modelName = cleanModel
+	modelName = multDetails.CleanModel
 
 	resolvedModelName := modelName
 	initialSuffix := thinking.ParseSuffix(modelName)
@@ -204,14 +204,21 @@ func (h *BaseAPIHandler) getRequestDetailsWithOptions(modelName string, allowIma
 		return []string{"home"}, resolvedModelName, nil
 	}
 
-	providers = util.GetProviderName(baseModel)
-	// Fallback: if baseModel has no provider but differs from resolvedModelName,
-	// try using the full model name. This handles edge cases where custom models
-	// may be registered with their full suffixed name (e.g., "my-model(8192)").
-	// Evaluated in Story 11.8: This fallback is intentionally preserved to support
-	// custom model registrations that include thinking suffixes.
-	if len(providers) == 0 && baseModel != resolvedModelName {
-		providers = util.GetProviderName(resolvedModelName)
+	if multDetails.TargetProvider != "" {
+		// Strict security constraint: when the downstream explicitly requests a provider
+		// namespace prefix (e.g. "workbuddy/claude-opus-5-5:3.33x"), route strictly to that
+		// provider to prevent egress leakage to third-party or official providers.
+		providers = []string{multDetails.TargetProvider}
+	} else {
+		providers = util.GetProviderName(baseModel)
+		// Fallback: if baseModel has no provider but differs from resolvedModelName,
+		// try using the full model name. This handles edge cases where custom models
+		// may be registered with their full suffixed name (e.g., "my-model(8192)").
+		// Evaluated in Story 11.8: This fallback is intentionally preserved to support
+		// custom model registrations that include thinking suffixes.
+		if len(providers) == 0 && baseModel != resolvedModelName {
+			providers = util.GetProviderName(resolvedModelName)
+		}
 	}
 
 	if len(providers) == 0 {

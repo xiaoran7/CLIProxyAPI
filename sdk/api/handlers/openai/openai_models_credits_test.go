@@ -123,6 +123,22 @@ func TestOpenAIModelsEmitsMultiplierSuffixedModels(t *testing.T) {
 	if name, _ := entry["name"].(string); name == "" {
 		t.Fatalf("suffixed model %q missing name attribute", suffixedID)
 	}
+
+	// Provider namespaced suffixed model must also exist to prevent ccswitch from classifying as Anthropic
+	prefixedSuffixedID := "workbuddy/" + modelID + ":0.06x"
+	prefixedEntry, ok := findModel(t, got, prefixedSuffixedID)
+	if !ok {
+		t.Fatalf("prefixed suffixed model %q missing from /v1/models", prefixedSuffixedID)
+	}
+	if ownedBy, _ := prefixedEntry["owned_by"].(string); ownedBy != "workbuddy" {
+		t.Fatalf("owned_by = %q, want workbuddy", ownedBy)
+	}
+
+	// Plain prefixed model must also exist
+	prefixedBaseID := "workbuddy/" + modelID
+	if _, ok := findModel(t, got, prefixedBaseID); !ok {
+		t.Fatalf("prefixed base model %q missing from /v1/models", prefixedBaseID)
+	}
 }
 
 func getModelsResponse(t *testing.T) map[string]any {

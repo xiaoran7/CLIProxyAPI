@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **WorkBuddy Dual-Realm Provider Namespace & Multiplier Discovery (`openai_handlers.go`, `handlers_multiplier.go`, `handlers_routing.go`, `workbuddy_credits.go`)**:
+  - **Downstream Provider Namespace Discovery (`workbuddy/` & `workbuddy-cn/`)**: Emitted namespaced model variants (e.g. `workbuddy/claude-opus-5-5:3.33x`, `workbuddy-cn/hy3:0x`) with explicit `owned_by: "workbuddy"` / `"workbuddy-cn"` in `/v1/models`. This completely solves third-party client classification bugs (such as ccswitch) that erroneously force `claude-*` models into Anthropic based on raw model name matching.
+  - **Downstream Egress Security Isolation**: Strictly binds upstream provider execution to `workbuddy` when a downstream request carries `workbuddy/` or `workbuddy-cn/` prefixes, preventing unintended egress leakage or fallback to official Anthropic/OpenAI accounts.
+  - **Clean Upstream Sanitization**: Automatically strips namespace prefixes and multiplier suffixes before routing to Tencent backend upstreams while fully preserving inner or outer thinking suffixes (e.g. `workbuddy/claude-opus-5-5:3.33x(16384)` -> `claude-opus-5-5(16384)`).
+
 - **OpenAI `/v1/models` Multiplier Suffix Emission for Client Discovery (`openai_handlers.go`, `openai_models_credits_test.go`, `workbuddy_credits.go`)**:
   - Emitted multiplier-suffixed model IDs (e.g. `glm-5.3-flash:0.06x`, `hy3:0x`, `deepseek-v4-pro:0.15x`, `claude-opus-5-5:3.33x`) in `/v1/models` so downstream clients (such as ccswitch, NextChat, Cherry Studio, etc.) can discover, display, and select models directly with their credit multipliers.
   - Included `display_name` and `name` attributes formatted with credit multipliers (`<model> (<rate>)`) for compatibility with clients displaying model names instead of raw IDs.
