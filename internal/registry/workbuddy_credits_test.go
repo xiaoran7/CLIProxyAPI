@@ -219,9 +219,18 @@ func TestApplyWorkBuddyCreditsOverlaysStaticModels(t *testing.T) {
 		t.Fatalf("deepseek-v4.1-flash-free credits = %+v", free)
 	}
 
-	// A model the catalogue does not know keeps its rate unknown.
-	if m := byID["gpt-6-astra"]; m != nil && m.Credits != nil {
-		t.Errorf("gpt-6-astra unexpectedly got credits: %+v", m.Credits)
+	// A model not in the online catalogue falls back to default rates.
+	if m := byID["gpt-6-astra"]; m != nil {
+		if m.Credits == nil || m.Credits.Source != "default" || m.Credits.Multiplier != 3.33 {
+			t.Errorf("gpt-6-astra expected default credits, got: %+v", m.Credits)
+		}
+	}
+
+	// A completely unknown model keeps its rate unknown.
+	unknownModel := &ModelInfo{ID: "unknown-future-model"}
+	ApplyWorkBuddyCredits([]*ModelInfo{unknownModel}, "intl")
+	if unknownModel.Credits != nil {
+		t.Errorf("unknown-future-model unexpectedly got credits: %+v", unknownModel.Credits)
 	}
 }
 
@@ -242,8 +251,8 @@ func TestApplyWorkBuddyCreditsEmptyCatalogKeepsModels(t *testing.T) {
 		t.Fatalf("empty catalogue changed model count: %d -> %d", before, len(models))
 	}
 	for _, m := range models {
-		if m.Credits != nil {
-			t.Errorf("%s got credits from an empty catalogue: %+v", m.ID, m.Credits)
+		if m.Credits != nil && m.Credits.Source != "default" && m.Credits.Source != "alias" {
+			t.Errorf("%s got unexpected credits from an empty catalogue: %+v", m.ID, m.Credits)
 		}
 	}
 	if summary := GetWorkBuddyCreditsSummary("cn"); summary.HasRates {
@@ -258,8 +267,8 @@ func TestApplyWorkBuddyCreditsNilGetterLeavesModelsUntouched(t *testing.T) {
 	models := GetWorkBuddyModels("intl")
 	ApplyWorkBuddyCredits(models, "intl")
 	for _, m := range models {
-		if m.Credits != nil {
-			t.Fatalf("%s got credits with no fetcher: %+v", m.ID, m.Credits)
+		if m.Credits != nil && m.Credits.Source != "default" && m.Credits.Source != "alias" {
+			t.Fatalf("%s got unexpected credits with no fetcher: %+v", m.ID, m.Credits)
 		}
 	}
 }
