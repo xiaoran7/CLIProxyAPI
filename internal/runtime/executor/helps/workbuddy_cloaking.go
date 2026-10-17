@@ -28,6 +28,8 @@ func StripWorkBuddyForbiddenHeaders(req *http.Request) {
 	req.Header.Del("x-zcode-agent")
 	req.Header.Del("x-zcode-session-type")
 	req.Header.Del("x-zcode-trace-id")
+	req.Header.Del("x-machine-id")
+	req.Header.Del("x-session-id")
 }
 
 // EnsureWorkBuddySystemPrompt ensures that the first message in the payload is a system prompt,

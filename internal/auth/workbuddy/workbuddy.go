@@ -185,8 +185,6 @@ func ApplyHeaders(req *http.Request, auth *cliproxyauth.Auth, token string) {
 	realm := ResolveRealm(auth)
 	domain := ResolveDomain(realm)
 
-	uid := ResolveUserID(auth)
-
 	ua := DefaultUserAgentIntl
 	ideVer := DefaultIDEVersionIntl
 	if realm == RealmCN {
@@ -230,11 +228,10 @@ func ApplyHeaders(req *http.Request, auth *cliproxyauth.Auth, token string) {
 	req.Header.Set("X-B3-SpanId", spanID)
 	req.Header.Set("X-B3-Sampled", "1")
 
-	// Machine / session fingerprint headers
-	machineID := DeriveID("machine", uid)
-	sessionID := DeriveID("session", uid)
-	req.Header.Set("X-Machine-ID", machineID)
-	req.Header.Set("X-Session-ID", sessionID)
+	// Note: Desktop 5.8.4 capture and workbuddy2api-hub (Commit 49f19e52) prove that
+	// official WorkBuddy chat completion requests do NOT send X-Machine-ID or X-Session-ID.
+	// Sending fixed or derived machine/session hashes is treated as an unauthorized gateway signature,
+	// triggering WAF channel verification rejection with code 11128 ("request illegal").
 }
 
 // ApplyCatalogHeaders applies the headers the desktop client sends when reading

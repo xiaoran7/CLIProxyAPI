@@ -14,6 +14,8 @@ func TestStripWorkBuddyForbiddenHeaders(t *testing.T) {
 	req.Header.Set("anthropic-version", "2023-06-01")
 	req.Header.Set("x-client", "codex")
 	req.Header.Set("x-app-name", "zcode")
+	req.Header.Set("X-Machine-ID", "custom-machine")
+	req.Header.Set("X-Session-ID", "custom-session")
 	req.Header.Set("Authorization", "Bearer valid")
 
 	StripWorkBuddyForbiddenHeaders(req)
@@ -29,6 +31,12 @@ func TestStripWorkBuddyForbiddenHeaders(t *testing.T) {
 	}
 	if req.Header.Get("x-app-name") != "" {
 		t.Error("x-app-name was not stripped")
+	}
+	if req.Header.Get("X-Machine-ID") != "" {
+		t.Error("X-Machine-ID was not stripped")
+	}
+	if req.Header.Get("X-Session-ID") != "" {
+		t.Error("X-Session-ID was not stripped")
 	}
 	if req.Header.Get("Authorization") != "Bearer valid" {
 		t.Error("Authorization header was unexpectedly stripped")

@@ -49,8 +49,11 @@ func TestWorkBuddyExecutorPrepareRequest(t *testing.T) {
 	if req.Header.Get("x-anthropic-billing-header") != "" {
 		t.Error("x-anthropic-billing-header was not stripped")
 	}
-	if req.Header.Get("X-Machine-ID") == "" {
-		t.Error("X-Machine-ID was not populated")
+	if req.Header.Get("X-Machine-ID") != "" {
+		t.Errorf("X-Machine-ID must not be sent on chat completions, got %q", req.Header.Get("X-Machine-ID"))
+	}
+	if req.Header.Get("X-Session-ID") != "" {
+		t.Errorf("X-Session-ID must not be sent on chat completions, got %q", req.Header.Get("X-Session-ID"))
 	}
 	if req.Header.Get("X-IDE-Name") != "WorkBuddy" {
 		t.Errorf("X-IDE-Name = %q, want WorkBuddy", req.Header.Get("X-IDE-Name"))
@@ -71,8 +74,8 @@ func TestWorkBuddyExecutorExecuteNonStream(t *testing.T) {
 		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
 			t.Errorf("missing or invalid Authorization header: %s", r.Header.Get("Authorization"))
 		}
-		if r.Header.Get("X-Machine-ID") == "" {
-			t.Error("missing X-Machine-ID")
+		if r.Header.Get("X-Machine-ID") != "" {
+			t.Error("X-Machine-ID must not be sent to upstream chat endpoint")
 		}
 
 		w.Header().Set("Content-Type", "application/json")

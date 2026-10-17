@@ -160,11 +160,12 @@ func TestApplyHeaders(t *testing.T) {
 	if req.Header.Get("X-Trace-ID") == "" || req.Header.Get("traceparent") == "" {
 		t.Error("Distributed tracing headers missing")
 	}
-	if got := req.Header.Get("X-Machine-ID"); got != DeriveID("machine", "u-42") {
-		t.Errorf("X-Machine-ID = %q, want %q", got, DeriveID("machine", "u-42"))
+	// Machine-ID and Session-ID must not be sent on chat completions (triggers upstream 11128)
+	if got := req.Header.Get("X-Machine-ID"); got != "" {
+		t.Errorf("X-Machine-ID must not be sent on chat completions, got %q", got)
 	}
-	if got := req.Header.Get("X-Session-ID"); got != DeriveID("session", "u-42") {
-		t.Errorf("X-Session-ID = %q, want %q", got, DeriveID("session", "u-42"))
+	if got := req.Header.Get("X-Session-ID"); got != "" {
+		t.Errorf("X-Session-ID must not be sent on chat completions, got %q", got)
 	}
 }
 

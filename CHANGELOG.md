@@ -38,6 +38,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 - **WorkBuddy Management Suite Manual Refresh (`management.html`)**:
   - Disabled automatic background polling and requests on opening the WorkBuddy suite drawer and switching tabs (`/workbuddy/checkin`, `/workbuddy/compensation`, `/plugins/workbuddy/quota`), enforcing explicit user-triggered manual refreshes only.
+
+### Fixed
+- **WorkBuddy Upstream 5.8.4 Channel Verification & WAF 11128 Anti-Detection Alignment (`workbuddy.go`, `workbuddy_cloaking.go`, `workbuddy_test.go`, `workbuddy_executor_test.go`)**:
+  - **Gateway Fingerprint Removal (`X-Machine-ID` / `X-Session-ID`)**: Aligned with official desktop 5.8.4 capture and authoritative upstream findings (`ardeyouxipianyi/workbuddy2api-hub` Commit `49f19e52`). Tencent WorkBuddy 5.8.4 tightened channel verification on `/v2/chat/completions` and flags static or derived machine/session hashes as an unauthorized gateway signature, rejecting calls with HTTP 400 and `code: 11128` ("request illegal" / "这次调用没通过渠道校验，可能不是官方客户端发出的").
+  - Removed `X-Machine-ID` and `X-Session-ID` header injection from `ApplyHeaders` and actively stripped them in `StripWorkBuddyForbiddenHeaders`.
+  - Verified live upstream requests across domestic and international production accounts, restoring 100% success rate with HTTP 200.
   - Combined check-in record and compensation status retrieval into a single "刷新状态" manual button click.
 
 ### Added
