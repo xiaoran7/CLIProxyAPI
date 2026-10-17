@@ -610,7 +610,7 @@ func (s *Service) completeModelRegistrationForAuthWithCache(ctx context.Context,
 		if latest, ok := s.latestAuthForModelRegistration(auth.ID); ok && latest != nil {
 			targetAuth = latest
 			if latest.Disabled {
-				accepted := s.unregisterModelsForAuthFenced(latest, newModelRegistrationFence(latest))
+				accepted := s.unregisterModelsForAuthFenced(latest, newModelRegistrationFence(latest, s.currentConfig()))
 				log.WithFields(log.Fields{"auth_id": latest.ID, "provider": latest.Provider, "superseded": !accepted}).Debugf("model registration reconciliation attempted for disabled auth %s", latest.ID)
 			} else {
 				accepted := s.registerModelsForAuthWithCache(ctx, targetAuth, compatCache)
