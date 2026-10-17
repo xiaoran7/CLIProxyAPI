@@ -118,7 +118,9 @@ func (e *WorkBuddyExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth
 	}
 	originalPayload := originalPayloadSource
 	isCompat := helps.APIKeyModelIsCompat(req)
-	originalTranslated, translated, updatesChanged, err := helps.TranslateRequestPairWithAPIKeyModelCompatibilityAndUpdateIntent(ctx, opts.Headers, e.cfg, from, to, baseModel, originalPayload, req.Payload, opts.Stream, isCompat)
+	// Upstream WorkBuddy backend only supports stream=true (rejects non-stream with 11101).
+	// Always translate with stream=true and aggregate the SSE stream into a non-streaming response.
+	originalTranslated, translated, updatesChanged, err := helps.TranslateRequestPairWithAPIKeyModelCompatibilityAndUpdateIntent(ctx, opts.Headers, e.cfg, from, to, baseModel, originalPayload, req.Payload, true, isCompat)
 	if err != nil {
 		return resp, err
 	}
@@ -134,6 +136,9 @@ func (e *WorkBuddyExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth
 	if err != nil {
 		return resp, fmt.Errorf("workbuddy executor: backfill reasoning content error: %w", err)
 	}
+
+	translated = helps.SetBoolIfDifferent(translated, "stream_options.include_usage", true)
+	reporter.SetTranslatedReasoningEffort(translated, to.String())
 
 	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
 	requestPath := helps.PayloadRequestPath(opts)
@@ -156,6 +161,8 @@ func (e *WorkBuddyExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth
 	if errPrep := e.PrepareRequest(httpReq, auth); errPrep != nil {
 		return resp, errPrep
 	}
+	httpReq.Header.Set("Accept", "text/event-stream")
+	httpReq.Header.Set("Cache-Control", "no-cache")
 
 	var authID, authLabel, authType, authValue string
 	if auth != nil {
@@ -200,15 +207,26 @@ func (e *WorkBuddyExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth
 		return resp, err
 	}
 	helps.AppendAPIResponseChunk(ctx, e.cfg, data)
-	reporter.ObserveResponseModel(data)
 
-	out := data
+	// Upstream responds with SSE text/event-stream; aggregate it into a standard OpenAI non-streaming JSON.
+	aggregated := data
+	if bytes.Contains(data, []byte("data:")) {
+		agg, errAgg := helps.AggregateWorkBuddyStream(data, baseModel)
+		if errAgg != nil {
+			helps.RecordAPIResponseError(ctx, e.cfg, errAgg)
+			return resp, fmt.Errorf("workbuddy executor: aggregate stream failed: %w", errAgg)
+		}
+		aggregated = agg
+	}
+	reporter.ObserveResponseModel(aggregated)
+
+	out := aggregated
 	if responseFormat != sdktranslator.FormatOpenAI {
 		var param any
-		out = sdktranslator.TranslateNonStream(ctx, sdktranslator.FormatOpenAI, responseFormat, req.Model, originalPayload, translated, data, &param)
+		out = sdktranslator.TranslateNonStream(ctx, sdktranslator.FormatOpenAI, responseFormat, req.Model, originalPayload, translated, aggregated, &param)
 	}
 
-	if usage := helps.ParseOpenAIUsage(data); usage.TotalTokens > 0 || usage.InputTokens > 0 {
+	if usage := helps.ParseOpenAIUsage(aggregated); usage.TotalTokens > 0 || usage.InputTokens > 0 {
 		reporter.Publish(ctx, usage)
 	}
 

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **WorkBuddy Non-Stream SSE Aggregation & 11101 Bypass (`workbuddy_executor.go`, `workbuddy_stream_aggregator.go`)**:
+  - **11101 "Non-stream chat request is currently not supported" Fix**: Tencent WorkBuddy backend (both international `workbuddy.ai` and domestic `copilot.tencent.com`) strictly requires `stream: true` on chat completions and rejects non-streaming calls with code 11101.
+  - **Transparent Stream Aggregation**: Implemented `AggregateWorkBuddyStream` in `helps` to transparently force `stream: true` upstream on non-streaming calls (`Execute`), buffer SSE events, and aggregate content, reasoning content, tool calls, and usage statistics into a single valid OpenAI-compatible `chat.completion` response.
+  - **Downstream Format Preservation**: Correctly translates aggregated responses to Anthropic or other non-OpenAI formats via `TranslateNonStream` when requested by downstream clients.
+
 ### Added
 - **Agent-Nexus Multi-Agent Coordination & Boundary Governance (`AGENTS.md`, `.gitignore`)**:
   - Integrated Agent-Nexus coordination framework and long-term memory governance discipline in `AGENTS.md`, defining onboarding intent declaration, exclusive resource locking (`tests`, `dev-server`, `build`), and cross-worktree collision prevention.

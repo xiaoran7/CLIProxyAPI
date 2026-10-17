@@ -78,28 +78,17 @@ func TestWorkBuddyExecutorExecuteNonStream(t *testing.T) {
 			t.Error("X-Machine-ID must not be sent to upstream chat endpoint")
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"id": "chatcmpl-123",
-			"object": "chat.completion",
-			"created": 1791611341,
-			"model": "deepseek-v4.1-flash",
-			"choices": [
-				{
-					"index": 0,
-					"message": {
-						"role": "assistant",
-						"content": "Hello from WorkBuddy"
-					},
-					"finish_reason": "stop"
-				}
-			],
-			"usage": {
-				"prompt_tokens": 10,
-				"completion_tokens": 5,
-				"total_tokens": 15
-			}
-		}`))
+		// Verify that upstream request is always translated to stream: true
+		if r.Header.Get("Accept") != "text/event-stream" {
+			t.Errorf("Accept = %q, want text/event-stream", r.Header.Get("Accept"))
+		}
+
+		// Return SSE chunks as upstream WorkBuddy does
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-123\",\"model\":\"deepseek-v4.1-flash\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello from \"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-123\",\"model\":\"deepseek-v4.1-flash\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"WorkBuddy\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-123\",\"model\":\"deepseek-v4.1-flash\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
 	}))
 	defer server.Close()
 
