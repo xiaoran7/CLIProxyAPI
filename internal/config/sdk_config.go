@@ -102,7 +102,7 @@ type SDKConfig struct {
 
 	// ModelVariantMode controls which model ID variants are emitted in /v1/models.
 	// Supported modes:
-	//   - "compact" (default, or true): emits clean namespaced IDs (e.g. "workbuddy-cn/hy4-preview-f") for models with a provider prefix, and bare IDs for others. Redundant multiplier and bare variants are suppressed.
+	//   - "compact" (default, or true): emits exactly one entry per model with provider namespace and multiplier suffix where applicable (e.g. "workbuddy-cn/hy4-preview-f:1.62x"). Redundant bare and duplicate variants are suppressed.
 	//   - "raw": emits only the bare unprefixed model ID (e.g. "hy4-preview-f") without multiplier or provider namespace.
 	//   - "all" (or false): emits all variants (bare, with multiplier, namespaced, namespaced with multiplier).
 	ModelVariantMode ModelVariantMode `yaml:"model-variant-mode,omitempty" json:"model-variant-mode,omitempty"`

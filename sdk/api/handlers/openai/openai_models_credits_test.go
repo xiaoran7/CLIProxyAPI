@@ -38,7 +38,7 @@ func TestOpenAIModelsExposesCreditsAnnotation(t *testing.T) {
 	})
 
 	got := getModelsResponse(t)
-	targetID := "workbuddy/" + modelID
+	targetID := "workbuddy/" + modelID + ":0.06x"
 	entry, ok := findModel(t, got, targetID)
 	if !ok {
 		t.Fatalf("model %q missing from /v1/models", targetID)
@@ -143,9 +143,9 @@ func TestOpenAIModelsEmitsMultiplierSuffixedModels(t *testing.T) {
 }
 
 // TestOpenAIModelsVariantModes verifies that model variant modes correctly filter or emit variants:
-//   - "compact" (default): filters out redundant bare duplicates and multiplier suffixes (:0x, :1.62x),
-//     keeping only clean namespaced IDs (e.g. "workbuddy-cn/hy4-preview-f") for models with a known
-//     provider prefix, and bare IDs for standard models.
+//   - "compact" (default): emits exactly one entry per model with provider namespace and multiplier
+//     suffix where applicable (e.g. "workbuddy-cn/hy4-preview-f:1.62x"). Redundant bare IDs and un-suffixed
+//     variants are suppressed.
 //   - "raw": emits only bare unprefixed model IDs without provider namespaces or multipliers.
 //   - "all": emits all variants (bare, multiplier-annotated, and namespaced).
 func TestOpenAIModelsVariantModes(t *testing.T) {
@@ -172,10 +172,10 @@ func TestOpenAIModelsVariantModes(t *testing.T) {
 			ModelVariantMode: config.ModelVariantModeCompact,
 		})
 
-		// Clean namespaced ID must exist
-		const expectedCleanID = "workbuddy-cn/hy4-preview-f"
-		if _, ok := findModel(t, got, expectedCleanID); !ok {
-			t.Fatalf("compact mode: expected clean ID %q in /v1/models, not found", expectedCleanID)
+		// Compact mode under Scheme A emits exactly one entry: namespaced with multiplier suffix
+		const expectedSuffixedID = "workbuddy-cn/hy4-preview-f:1.62x"
+		if _, ok := findModel(t, got, expectedSuffixedID); !ok {
+			t.Fatalf("compact mode: expected suffixed ID %q in /v1/models, not found", expectedSuffixedID)
 		}
 
 		// Redundant bare ID must NOT exist
@@ -183,12 +183,13 @@ func TestOpenAIModelsVariantModes(t *testing.T) {
 			t.Fatalf("compact mode: redundant bare ID %q should be filtered out", modelID)
 		}
 
-		// Multiplier-annotated variants must NOT exist
-		if _, ok := findModel(t, got, "workbuddy-cn/hy4-preview-f:1.62x"); ok {
-			t.Fatalf("compact mode: suffixed variant workbuddy-cn/hy4-preview-f:1.62x should be filtered out")
+		// Un-suffixed namespaced duplicate must NOT exist
+		const unSuffixedID = "workbuddy-cn/hy4-preview-f"
+		if _, ok := findModel(t, got, unSuffixedID); ok {
+			t.Fatalf("compact mode: un-suffixed ID %q should be replaced by %q", unSuffixedID, expectedSuffixedID)
 		}
 		if _, ok := findModel(t, got, "hy4-preview-f:1.62x"); ok {
-			t.Fatalf("compact mode: suffixed variant hy4-preview-f:1.62x should be filtered out")
+			t.Fatalf("compact mode: unprefixed suffixed variant hy4-preview-f:1.62x should be filtered out")
 		}
 	})
 

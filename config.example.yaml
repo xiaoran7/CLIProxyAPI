@@ -20,9 +20,9 @@ models:
   codex-catalog: ""
   devin-catalog: ""
   # Controls how model variants are emitted in /v1/models:
-  #   - "compact" (default): filters out redundant bare duplicates and multiplier suffixes (:0x, :1.62x),
-  #     keeping only clean namespaced IDs (e.g. "workbuddy-cn/hy4-preview-f") for models with a known
-  #     provider prefix, and bare IDs for standard models.
+  #   - "compact" (default): emits exactly one clean entry per model with provider namespace
+  #     and multiplier suffix where applicable (e.g. "workbuddy-cn/hy4-preview-f:1.62x"),
+  #     suppressing redundant duplicate bare IDs and un-suffixed variants.
   #   - "raw": emits only bare unprefixed model IDs (e.g. "hy4-preview-f") without provider prefixes or multipliers.
   #   - "all": emits all variants (bare, multiplier-annotated, and namespaced variants).
   variant-mode: "compact"

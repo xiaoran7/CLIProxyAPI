@@ -169,13 +169,39 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 			filteredModels = append(filteredModels, filteredModel)
 
 		case config.ModelVariantModeCompact:
-			// "compact" (default): Emit only the clean namespaced ID (e.g. "workbuddy-cn/hy4-preview-f")
-			// for models with a provider prefix, and bare IDs for other models.
+			// "compact" (default): Emit exactly one clean entry per model.
+			// When a model has an effective credit rate (multiplier), format with provider namespace
+			// and rate suffix (e.g. "workbuddy-cn/hy4-preview-f:1.62x", "workbuddy/exo-free:0x").
+			// For models without credit rates, emit provider-prefixed (e.g. "workbuddy/model") or bare ID.
+			var effectiveStr string
+			if creditsMap != nil {
+				if rate := registry.ResolveWorkBuddyModelCreditRate(modelID); rate != nil && rate.Effective != "" {
+					effectiveStr = rate.Effective
+				} else if mult, ok := creditsMap["multiplier"].(float64); ok {
+					if mult < 1e-9 {
+						effectiveStr = "0x"
+					} else {
+						effectiveStr = fmt.Sprintf("%.2fx", mult)
+					}
+				}
+			}
+
 			targetID := cleanBaseModel
 			targetOwnedBy, _ := model["owned_by"].(string)
+			displayName := cleanBaseModel
+
 			if wbProvider != "" {
-				targetID = fmt.Sprintf("%s/%s", wbProvider, cleanBaseModel)
 				targetOwnedBy = wbProvider
+				if effectiveStr != "" {
+					targetID = fmt.Sprintf("%s/%s:%s", wbProvider, cleanBaseModel, effectiveStr)
+					displayName = fmt.Sprintf("%s/%s (%s)", wbProvider, cleanBaseModel, effectiveStr)
+				} else {
+					targetID = fmt.Sprintf("%s/%s", wbProvider, cleanBaseModel)
+					displayName = fmt.Sprintf("%s/%s", wbProvider, cleanBaseModel)
+				}
+			} else if effectiveStr != "" {
+				targetID = fmt.Sprintf("%s:%s", cleanBaseModel, effectiveStr)
+				displayName = fmt.Sprintf("%s (%s)", cleanBaseModel, effectiveStr)
 			}
 
 			if seenIDs[targetID] {
@@ -186,8 +212,8 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 			compactModel := map[string]any{
 				"id":           targetID,
 				"object":       model["object"],
-				"display_name": targetID,
-				"name":         targetID,
+				"display_name": displayName,
+				"name":         displayName,
 			}
 			if created, exists := model["created"]; exists {
 				compactModel["created"] = created
