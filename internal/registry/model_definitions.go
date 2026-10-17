@@ -567,6 +567,7 @@ func GetMetaModels() []*ModelInfo {
 // LookupStaticModelInfo searches all static model definitions for a model by ID.
 // Returns nil if no matching model is found.
 func LookupStaticModelInfo(modelID string) *ModelInfo {
+	modelID = strings.TrimSpace(modelID)
 	if modelID == "" {
 		return nil
 	}
@@ -588,11 +589,59 @@ func LookupStaticModelInfo(modelID string) *ModelInfo {
 	}
 	for _, models := range allModels {
 		for _, m := range models {
-			if m != nil && m.ID == modelID {
+			if m != nil && (m.ID == modelID || strings.EqualFold(m.ID, modelID)) {
 				return cloneModelInfo(m)
 			}
 		}
 	}
 
 	return nil
+}
+
+type staticCatalogProvider struct {
+	provider string
+	models   []*ModelInfo
+}
+
+// LookupStaticModelProviders returns all provider identifiers that define the model in static catalogs.
+func LookupStaticModelProviders(modelID string) []string {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return nil
+	}
+
+	data := getModels()
+	catalogs := []staticCatalogProvider{
+		{provider: "opencode", models: GetOpenCodeModels()},
+		{provider: "workbuddy", models: GetAllWorkBuddyModels()},
+		{provider: "antigravity", models: data.Antigravity},
+		{provider: "claude", models: data.Claude},
+		{provider: "gemini", models: data.Gemini},
+		{provider: "codex", models: data.CodexPro},
+		{provider: "kimi", models: data.Kimi},
+		{provider: "xai", models: data.XAI},
+		{provider: "devin", models: GetDevinModels()},
+		{provider: "meta", models: GetMetaModels()},
+		{provider: "vertex", models: data.Vertex},
+		{provider: "aistudio", models: data.AIStudio},
+	}
+
+	var providers []string
+	seen := make(map[string]struct{})
+	for _, entry := range catalogs {
+		for _, m := range entry.models {
+			if m == nil {
+				continue
+			}
+			cleanID := strings.TrimPrefix(m.ID, entry.provider+"/")
+			if strings.EqualFold(m.ID, modelID) || strings.EqualFold(cleanID, modelID) || (m.Name != "" && strings.EqualFold(m.Name, modelID)) {
+				if _, ok := seen[entry.provider]; !ok {
+					seen[entry.provider] = struct{}{}
+					providers = append(providers, entry.provider)
+				}
+				break
+			}
+		}
+	}
+	return providers
 }

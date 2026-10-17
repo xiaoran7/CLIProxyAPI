@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Model Provider Static Resolution Fallback & Namespace Routing (`provider.go`, `model_definitions.go`, `handlers_multiplier.go`)**:
+  - **400 `model_not_found` Fallback Resolution**: When `GetGlobalRegistry().GetModelProviders(model)` has no active dynamically registered clients (e.g. before credentials register or for catalog entries like `step-5-preview-free` and `gemini-3.8-flash-high`), `GetProviderName` now falls back to `LookupStaticModelProviders` across all static catalogs (`opencode`, `antigravity`, `workbuddy`, `claude`, `gemini`, `codex`, `kimi`, `xai`, `devin`, `meta`, `vertex`, `aistudio`), resolving providers reliably instead of throwing HTTP 400 "unknown provider for model".
+  - **Expanded Namespace Prefixes**: Extended `splitProviderPrefix` to recognize `opencode/`, `opencode-zen/`, `zen/`, and `antigravity/` (`ag/`) prefixes alongside existing WorkBuddy prefixes for strict target provider pinning.
 - **WorkBuddy Non-Stream SSE Aggregation & 11101 Bypass (`workbuddy_executor.go`, `workbuddy_stream_aggregator.go`)**:
   - **11101 "Non-stream chat request is currently not supported" Fix**: Tencent WorkBuddy backend (both international `workbuddy.ai` and domestic `copilot.tencent.com`) strictly requires `stream: true` on chat completions and rejects non-streaming calls with code 11101.
   - **Transparent Stream Aggregation**: Implemented `AggregateWorkBuddyStream` in `helps` to transparently force `stream: true` upstream on non-streaming calls (`Execute`), buffer SSE events, and aggregate content, reasoning content, tool calls, and usage statistics into a single valid OpenAI-compatible `chat.completion` response.

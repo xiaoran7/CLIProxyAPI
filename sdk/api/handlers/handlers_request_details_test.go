@@ -102,6 +102,20 @@ func TestGetRequestDetails_PreservesSuffix(t *testing.T) {
 			wantModel:     "claude-sonnet-4-5(auto)",
 			wantErr:       false,
 		},
+		{
+			name:          "static opencode model resolved without dynamic registration",
+			inputModel:    "step-5-preview-free",
+			wantProviders: []string{"opencode"},
+			wantModel:     "step-5-preview-free",
+			wantErr:       false,
+		},
+		{
+			name:          "static antigravity model resolved without dynamic registration",
+			inputModel:    "gemini-3.8-flash-high",
+			wantProviders: []string{"antigravity"},
+			wantModel:     "gemini-3.8-flash-high",
+			wantErr:       false,
+		},
 	}
 
 	for _, tt := range tests {

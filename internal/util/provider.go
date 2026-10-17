@@ -75,6 +75,16 @@ func GetProviderName(modelName string) []string {
 		return providers
 	}
 
+	// Fall back to static catalog definitions when dynamic registry has no active clients for this model.
+	for _, provider := range registry.LookupStaticModelProviders(modelName) {
+		appendProvider(provider)
+	}
+	if len(providers) == 0 && strings.ToLower(modelName) != modelName {
+		for _, provider := range registry.LookupStaticModelProviders(strings.ToLower(modelName)) {
+			appendProvider(provider)
+		}
+	}
+
 	return providers
 }
 

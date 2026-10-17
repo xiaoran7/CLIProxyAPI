@@ -37,3 +37,42 @@ func TestMaskSensitiveQueryMasksValue(t *testing.T) {
 		}
 	})
 }
+
+func TestGetProviderName_StaticFallback(t *testing.T) {
+	testCases := []struct {
+		model        string
+		wantProvider string
+	}{
+		{
+			model:        "step-5-preview-free",
+			wantProvider: "opencode",
+		},
+		{
+			model:        "gemini-3.8-flash-high",
+			wantProvider: "antigravity",
+		},
+		{
+			model:        "cat-jam-free",
+			wantProvider: "opencode",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.model, func(t *testing.T) {
+			providers := util.GetProviderName(tc.model)
+			if len(providers) == 0 {
+				t.Fatalf("GetProviderName(%q) returned empty providers, want at least %q", tc.model, tc.wantProvider)
+			}
+			found := false
+			for _, p := range providers {
+				if p == tc.wantProvider {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("GetProviderName(%q) = %v, want to include %q", tc.model, providers, tc.wantProvider)
+			}
+		})
+	}
+}

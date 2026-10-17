@@ -117,6 +117,20 @@ func TestParseModelMultiplier(t *testing.T) {
 			wantHasMult: true,
 			wantRawMult: "3.33x",
 		},
+		{
+			name:        "opencode namespace prefix without multiplier",
+			input:       "opencode/step-5-preview-free",
+			wantClean:   "step-5-preview-free",
+			wantBase:    "step-5-preview-free",
+			wantHasMult: false,
+		},
+		{
+			name:        "antigravity namespace prefix without multiplier",
+			input:       "antigravity/gemini-3.8-flash-high",
+			wantClean:   "gemini-3.8-flash-high",
+			wantBase:    "gemini-3.8-flash-high",
+			wantHasMult: false,
+		},
 	}
 
 	for _, tc := range tests {
