@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Agent-Nexus Multi-Agent Coordination & Boundary Governance (`AGENTS.md`, `.gitignore`)**:
+  - Integrated Agent-Nexus coordination framework and long-term memory governance discipline in `AGENTS.md`, defining onboarding intent declaration, exclusive resource locking (`tests`, `dev-server`, `build`), and cross-worktree collision prevention.
+  - Hardened host-isolation boundary in `.gitignore` by explicitly ignoring `.mcp.json` and `.nexus` runtime directories to prevent host-specific coordination metadata from polluting remote git history.
+  - Enabled lossless dual-MCP coexistence in `.mcp.json` supporting both AOCI whole-repo cognition and Agent-Nexus dynamic multi-agent concurrency guard.
 - **OpenCode Zen Free Tier Anti-Risk Cloaking & Catalog Expansion (`opencode_cloaking.go`, `openai_compat_executor.go`, `opencode_models.go`, `config.example.yaml`)**:
   - **Free Tier Cloud WAF Endpoint Alignment**: OpenCode 1.19.0+ rejects legacy `/zen/v1` calls with `403 FreeTierError` for free models. Implemented transparent URL rewriting in `normalizeOpenCodeEndpoint` and `PrepareRequest` redirecting `https://opencode.ai/zen/v1` to `https://opencode.ai/inference/v1`.
   - **Tool Parameter Declaration Hardening**: OpenCode cloud inspects function tool declarations and blocks required tools (`bash`, `read`) if declared with empty properties (`{}`) as dummy tool injection. Enhanced `makeOpenCodeStubTool` and caller tool normalization to inject valid parameter schemas (`command: string` for `bash`, `filePath: string` for `read`) with `additionalProperties: false`.
