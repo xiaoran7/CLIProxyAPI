@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Antigravity Quota Display & Hub UA Alignment (`management.html`)**:
+  - **Gemini Quota Group Restoration & Hub UA 2.23.0**: Backported upstream v1.26.5 patch bumping Antigravity User-Agent to `antigravity/hub/2.23.0 darwin/arm64` and prioritizing the stable production endpoint (`cloudcode-pa.googleapis.com`). This resolves Google Cloud Code's gate on clients below 1.2.0, completely restoring missing Gemini quota groups (Gemini Flash, Gemini Pro, and Gemini Argon).
+  - **Remaining Suffix Normalization & Localization**: Automatically strips upstream `Remaining` label suffixes (e.g. `Five Hour Limit Remaining` -> `five_hour_limit`), restoring proper Chinese translation for 5-hour and weekly limits.
+  - **Exhausted Window Consistency Guard**: Added status interlocking so 5-hour limits are not erroneously displayed as "额度可用" when the parent weekly limit is already exhausted (0%).
+  - **WorkBuddy Suite Isolation & Zero Regression**: Preserved all WorkBuddy Suite customizations, compensation claiming, check-in toggles, and model multiplier breakdown in the management panel.
 - **WorkBuddy Suite Auto-Mount Fetching & Account Display (`management.html`)**:
   - Restored automatic check-in record and quota initialization (`useEffect`) upon mounting the WorkBuddy Suite drawer and switching to the quota tab, resolving the issue where accounts were not loaded (`暂无已纳管的 WorkBuddy 凭证记录` / `正在拉取...` stuck forever).
 - **Model Provider Static Resolution Fallback & Namespace Routing (`provider.go`, `model_definitions.go`, `handlers_multiplier.go`)**:
