@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **WorkBuddy Suite Auto-Mount Fetching & Account Display (`management.html`)**:
+  - Restored automatic check-in record and quota initialization (`useEffect`) upon mounting the WorkBuddy Suite drawer and switching to the quota tab, resolving the issue where accounts were not loaded (`暂无已纳管的 WorkBuddy 凭证记录` / `正在拉取...` stuck forever).
 - **Model Provider Static Resolution Fallback & Namespace Routing (`provider.go`, `model_definitions.go`, `handlers_multiplier.go`)**:
   - **400 `model_not_found` Fallback Resolution**: When `GetGlobalRegistry().GetModelProviders(model)` has no active dynamically registered clients (e.g. before credentials register or for catalog entries like `step-5-preview-free` and `gemini-3.8-flash-high`), `GetProviderName` now falls back to `LookupStaticModelProviders` across all static catalogs (`opencode`, `antigravity`, `workbuddy`, `claude`, `gemini`, `codex`, `kimi`, `xai`, `devin`, `meta`, `vertex`, `aistudio`), resolving providers reliably instead of throwing HTTP 400 "unknown provider for model".
   - **Expanded Namespace Prefixes**: Extended `splitProviderPrefix` to recognize `opencode/`, `opencode-zen/`, `zen/`, and `antigravity/` (`ag/`) prefixes alongside existing WorkBuddy prefixes for strict target provider pinning.
