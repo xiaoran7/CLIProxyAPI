@@ -16,10 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Downstream Format Preservation**: Correctly translates aggregated responses to Anthropic or other non-OpenAI formats via `TranslateNonStream` when requested by downstream clients.
 
 ### Added
-- **Agent-Nexus Multi-Agent Coordination & Boundary Governance (`AGENTS.md`, `.gitignore`)**:
-  - Integrated Agent-Nexus coordination framework and long-term memory governance discipline in `AGENTS.md`, defining onboarding intent declaration, exclusive resource locking (`tests`, `dev-server`, `build`), and cross-worktree collision prevention.
-  - Hardened host-isolation boundary in `.gitignore` by explicitly ignoring `.mcp.json` and `.nexus` runtime directories to prevent host-specific coordination metadata from polluting remote git history.
-  - Enabled lossless dual-MCP coexistence in `.mcp.json` supporting both AOCI whole-repo cognition and Agent-Nexus dynamic multi-agent concurrency guard.
+- **Zero-Burden Multi-Agent Coordination Infrastructure Governance (`AGENTS.md`, `.gitignore`)**:
+  - Restored pristine zero-burden repository baseline by removing local `<!-- NEXUS-COORDINATION-START -->` rules from `AGENTS.md` and scrubbing `.nexus` directory rules from `.gitignore`.
+  - Shifted all Agent-Nexus concurrency collision prevention and git lifecycle unlock responsibilities entirely to the host-level global PreToolUse Hook and daemon, leaving the business codebase 100% clean and unburdened.
 - **OpenCode Zen Free Tier Anti-Risk Cloaking & Catalog Expansion (`opencode_cloaking.go`, `openai_compat_executor.go`, `opencode_models.go`, `config.example.yaml`)**:
   - **Free Tier Cloud WAF Endpoint Alignment**: OpenCode 1.19.0+ rejects legacy `/zen/v1` calls with `403 FreeTierError` for free models. Implemented transparent URL rewriting in `normalizeOpenCodeEndpoint` and `PrepareRequest` redirecting `https://opencode.ai/zen/v1` to `https://opencode.ai/inference/v1`.
   - **Tool Parameter Declaration Hardening**: OpenCode cloud inspects function tool declarations and blocks required tools (`bash`, `read`) if declared with empty properties (`{}`) as dummy tool injection. Enhanced `makeOpenCodeStubTool` and caller tool normalization to inject valid parameter schemas (`command: string` for `bash`, `filePath: string` for `read`) with `additionalProperties: false`.

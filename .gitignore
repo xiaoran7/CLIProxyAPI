@@ -70,15 +70,12 @@ docker-compose.override.yml
 .llm-wiki
 
 # ==============================================================================
-# AI Tooling & Local Coordination (纯本地辅助，严禁提交远端)
+# AI Tooling & Local Cognition (纯本地辅助，严禁提交远端)
 # ==============================================================================
-# Agent-Nexus 本地配置与状态
-.mcp.json
-.nexus
-
 # AOCI 全量本地认知资产与索引
 aoci.*
 .aoci/
+.mcp.json
 .mcp.json.backup.*
 AGENTS.md.backup.*
 
