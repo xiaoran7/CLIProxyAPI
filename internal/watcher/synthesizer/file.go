@@ -154,6 +154,7 @@ func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([
 				ApplyAuthExcludedModelsMeta(auth, cfg, perAccountExcluded, "oauth")
 				coreauth.ApplyCustomHeadersFromMetadata(auth)
 				applyFingerprintProfileAttribute(auth, metadata)
+				auth.BindFileSnapshot(fullPath, data)
 			}
 			return auths, nil
 		}
@@ -265,6 +266,7 @@ func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([
 			}
 		}
 	}
+	a.BindFileSnapshot(fullPath, data)
 	return []*coreauth.Auth{a}, nil
 }
 

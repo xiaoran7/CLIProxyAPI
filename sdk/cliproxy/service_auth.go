@@ -446,9 +446,21 @@ func (s *Service) prepareCoreAuthForModelRegistration(ctx context.Context, auth 
 			}
 		}
 		op = "update"
-		_, err = s.coreManager.Update(ctx, auth)
+		var updated *coreauth.Auth
+		updated, err = s.coreManager.Update(ctx, auth)
+		if err == nil && updated != nil {
+			if updated.Generation == existing.Generation {
+				log.Debugf("skipping stale auth update for %s: incoming snapshot did not advance generation (gen=%d)", auth.ID, existing.Generation)
+				return updated
+			}
+			auth = updated
+		}
 	} else {
-		_, err = s.coreManager.Register(ctx, auth)
+		var registered *coreauth.Auth
+		registered, err = s.coreManager.Register(ctx, auth)
+		if err == nil && registered != nil {
+			auth = registered
+		}
 	}
 	if err != nil {
 		log.Errorf("failed to %s auth %s: %v", op, auth.ID, err)
