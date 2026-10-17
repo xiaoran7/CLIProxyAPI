@@ -52,7 +52,14 @@ var v8SharedPaths = []configPath{
 	{"oauth.providers.xai.inject-x-search", "upstream.xai.inject-x-search"},
 }
 
-var v8Aliases = append(append([]configPath(nil), v8ClientPaths...), v8SharedPaths...)
+var v8ModelVariantAliases = []configPath{
+	{"models.filter-variants", "models.variant-mode"},
+	{"models.model-variant-mode", "models.variant-mode"},
+	{"filter-model-variants", "models.variant-mode"},
+	{"models-variant-mode", "models.variant-mode"},
+}
+
+var v8Aliases = append(append(append([]configPath(nil), v8ClientPaths...), v8SharedPaths...), v8ModelVariantAliases...)
 
 var v8SharedStructPaths = []configPath{
 	{"oauth.providers.claude.header-defaults", "upstream.claude.header-defaults"},
@@ -85,6 +92,7 @@ func buildV8Paths() []configPath {
 		{"auth-dir", "oauth.auth-dir"}, {"auth-auto-refresh-workers", "oauth.auth-auto-refresh-workers"},
 		{"oauth-model-alias", "oauth.model-alias"}, {"oauth-excluded-models", "oauth.excluded-models"},
 		{"global-excluded-models", "models.global-excluded-models"},
+		{"model-variant-mode", "models.variant-mode"},
 		{"oauth-request-scoped-errors", "oauth.request-scoped-errors"}, {"oauth-settings", "oauth.settings"}, {"ws-auth", "oauth.providers.aistudio.ws-auth"},
 		{"codex.disable-codex-cloaking", "upstream.codex.disable-codex-cloaking"},
 		{"codex.stream-bootstrap-buffering", "upstream.codex.stream-bootstrap-buffering"},

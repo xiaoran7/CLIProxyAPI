@@ -518,6 +518,14 @@ func NormalizeExcludedModels(models []string) []string {
 	return out
 }
 
+// SanitizeModelVariantMode normalizes the model variant emission mode to compact, raw, or all.
+func (cfg *Config) SanitizeModelVariantMode() {
+	if cfg == nil {
+		return
+	}
+	cfg.ModelVariantMode = NormalizeModelVariantMode(string(cfg.ModelVariantMode))
+}
+
 // NormalizeOAuthExcludedModels cleans provider -> excluded models mappings by normalizing provider keys
 // and applying model exclusion normalization to each entry.
 func NormalizeOAuthExcludedModels(entries map[string][]string) map[string][]string {

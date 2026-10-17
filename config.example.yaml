@@ -19,6 +19,13 @@ models:
   catalog: ""
   codex-catalog: ""
   devin-catalog: ""
+  # Controls how model variants are emitted in /v1/models:
+  #   - "compact" (default): filters out redundant bare duplicates and multiplier suffixes (:0x, :1.62x),
+  #     keeping only clean namespaced IDs (e.g. "workbuddy-cn/hy4-preview-f") for models with a known
+  #     provider prefix, and bare IDs for standard models.
+  #   - "raw": emits only bare unprefixed model IDs (e.g. "hy4-preview-f") without provider prefixes or multipliers.
+  #   - "all": emits all variants (bare, multiplier-annotated, and namespaced variants).
+  variant-mode: "compact"
 
 # Global model exclusions applied across all providers at the CPA exit.
 # Supports exact model IDs and wildcard patterns (e.g. "*-free", "deepseek-v4.1-flash-free").

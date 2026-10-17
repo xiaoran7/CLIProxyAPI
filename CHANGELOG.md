@@ -18,6 +18,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Downstream Format Preservation**: Correctly translates aggregated responses to Anthropic or other non-OpenAI formats via `TranslateNonStream` when requested by downstream clients.
 
 ### Added
+- **Model Variant Filtering & Clean Provider Catalog (`models.variant-mode` / `/v1/models`)**:
+  - **Redundant Variant Suppression (`openai_handlers.go`, `config_v8.go`, `sdk_config.go`)**: Added `models.variant-mode` configuration (supporting `"compact"`, `"raw"`, `"all"`, or boolean `filter-variants: true/false`). Defaults to `"compact"`, filtering out duplicate bare models and multiplier-annotated suffixes (`:0x`, `:1.62x`) to expose clean, namespaced model IDs (e.g. `workbuddy-cn/hy4-preview-f` for models with known provider realms, and clean bare IDs for standard models).
+  - **Downstream Client Compatibility**: Downstream catalog clients (such as CCSwitch, Cherry Studio, NextChat) now receive a clean single-entry list per model instead of cluttered combinations, while maintaining strict provider namespace routing and billing credits annotations.
 - **Zero-Burden Multi-Agent Coordination Infrastructure Governance (`AGENTS.md`, `.gitignore`)**:
   - Restored pristine zero-burden repository baseline by removing local `<!-- NEXUS-COORDINATION-START -->` rules from `AGENTS.md` and scrubbing `.nexus` directory rules from `.gitignore`.
   - Shifted all Agent-Nexus concurrency collision prevention and git lifecycle unlock responsibilities entirely to the host-level global PreToolUse Hook and daemon, leaving the business codebase 100% clean and unburdened.

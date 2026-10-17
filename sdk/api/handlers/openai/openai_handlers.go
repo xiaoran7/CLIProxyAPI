@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	codexmodels "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/models"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	. "github.com/router-for-me/CLIProxyAPI/v8/internal/constant"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
@@ -82,29 +83,25 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 	// Get all available models
 	allModels := h.Models()
 
+	variantMode := config.ModelVariantModeCompact
+	if cfg := h.CurrentConfig(); cfg != nil && cfg.ModelVariantMode != "" {
+		variantMode = config.NormalizeModelVariantMode(string(cfg.ModelVariantMode))
+	}
+
 	// Filter to include the required OpenAI fields plus the provider billing annotation.
-	// Also emit multiplier-suffixed variants (e.g. "glm-5.3-flash:0.06x") so clients
-	// like ccswitch, NextChat, Cherry Studio display and select the rate directly.
+	// Mode determines how variants are emitted:
+	//   - "compact" (default): filters redundant multiplier and bare variants, keeping only clean
+	//     namespaced IDs (e.g. "workbuddy-cn/hy4-preview-f") for models with a provider prefix,
+	//     and bare IDs for other models.
+	//   - "raw": emits only the bare unprefixed model ID without multiplier or provider namespace.
+	//   - "all": emits all variants (bare, with multiplier, namespaced, namespaced with multiplier).
 	filteredModels := make([]map[string]any, 0, len(allModels)*2)
 	seenIDs := make(map[string]bool)
 
 	for _, model := range allModels {
 		modelID, _ := model["id"].(string)
-		if modelID == "" || seenIDs[modelID] {
+		if modelID == "" {
 			continue
-		}
-		seenIDs[modelID] = true
-
-		filteredModel := map[string]any{
-			"id":     modelID,
-			"object": model["object"],
-		}
-
-		if created, exists := model["created"]; exists {
-			filteredModel["created"] = created
-		}
-		if ownedBy, exists := model["owned_by"]; exists {
-			filteredModel["owned_by"] = ownedBy
 		}
 
 		var creditsMap map[string]any
@@ -139,87 +136,161 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 
 		var wbProvider string
 		if creditsMap != nil {
-			filteredModel["credits"] = creditsMap
 			_, wbProvider = registry.DetectWorkBuddyModelRealm(modelID)
-			filteredModel["owned_by"] = wbProvider
 		}
 
-		if dn, exists := model["display_name"]; exists && dn != nil {
-			filteredModel["display_name"] = dn
-			filteredModel["name"] = dn
-		}
+		cleanBaseModel := registry.TrimWorkBuddyPrefixes(modelID)
 
-		filteredModels = append(filteredModels, filteredModel)
+		switch variantMode {
+		case config.ModelVariantModeRaw:
+			if seenIDs[cleanBaseModel] {
+				continue
+			}
+			seenIDs[cleanBaseModel] = true
 
-		// Also emit the multiplier-suffixed and provider-namespaced model IDs
-		// (e.g. "workbuddy/claude-opus-5-5:3.33x", "claude-opus-5-5:3.33x", "workbuddy-cn/hy3:0x")
-		// so downstream clients like ccswitch, NextChat, Cherry Studio display the correct provider
-		// instead of incorrectly classifying Claude models as Anthropic.
-		if creditsMap != nil {
-			var effectiveStr string
-			if rate := registry.ResolveWorkBuddyModelCreditRate(modelID); rate != nil && rate.Effective != "" {
-				effectiveStr = rate.Effective
-			} else if mult, ok := creditsMap["multiplier"].(float64); ok {
-				if mult < 1e-9 {
-					effectiveStr = "0x"
-				} else {
-					effectiveStr = fmt.Sprintf("%.2fx", mult)
-				}
+			filteredModel := map[string]any{
+				"id":     cleanBaseModel,
+				"object": model["object"],
+			}
+			if created, exists := model["created"]; exists {
+				filteredModel["created"] = created
+			}
+			if ownedBy, exists := model["owned_by"]; exists {
+				filteredModel["owned_by"] = ownedBy
+			}
+			if creditsMap != nil {
+				filteredModel["credits"] = creditsMap
+				filteredModel["owned_by"] = wbProvider
+			}
+			if dn, exists := model["display_name"]; exists && dn != nil {
+				filteredModel["display_name"] = dn
+				filteredModel["name"] = dn
+			}
+			filteredModels = append(filteredModels, filteredModel)
+
+		case config.ModelVariantModeCompact:
+			// "compact" (default): Emit only the clean namespaced ID (e.g. "workbuddy-cn/hy4-preview-f")
+			// for models with a provider prefix, and bare IDs for other models.
+			targetID := cleanBaseModel
+			targetOwnedBy, _ := model["owned_by"].(string)
+			if wbProvider != "" {
+				targetID = fmt.Sprintf("%s/%s", wbProvider, cleanBaseModel)
+				targetOwnedBy = wbProvider
 			}
 
-			if effectiveStr != "" {
-				// 1. Prefixed with multiplier: "workbuddy/claude-opus-5-5:3.33x"
-				prefixedSuffixedID := fmt.Sprintf("%s/%s:%s", wbProvider, modelID, effectiveStr)
-				if !seenIDs[prefixedSuffixedID] {
-					seenIDs[prefixedSuffixedID] = true
-					suffixedModel := map[string]any{
-						"id":           prefixedSuffixedID,
-						"object":       model["object"],
-						"owned_by":     wbProvider,
-						"credits":      creditsMap,
-						"display_name": fmt.Sprintf("%s/%s (%s)", wbProvider, modelID, effectiveStr),
-						"name":         fmt.Sprintf("%s/%s (%s)", wbProvider, modelID, effectiveStr),
+			if seenIDs[targetID] {
+				continue
+			}
+			seenIDs[targetID] = true
+
+			compactModel := map[string]any{
+				"id":           targetID,
+				"object":       model["object"],
+				"display_name": targetID,
+				"name":         targetID,
+			}
+			if created, exists := model["created"]; exists {
+				compactModel["created"] = created
+			}
+			if targetOwnedBy != "" {
+				compactModel["owned_by"] = targetOwnedBy
+			}
+			if creditsMap != nil {
+				compactModel["credits"] = creditsMap
+			}
+			filteredModels = append(filteredModels, compactModel)
+
+		case config.ModelVariantModeAll:
+			// "all": Emit all variants (bare, with multiplier, namespaced, namespaced with multiplier)
+			if !seenIDs[modelID] {
+				seenIDs[modelID] = true
+				filteredModel := map[string]any{
+					"id":     modelID,
+					"object": model["object"],
+				}
+				if created, exists := model["created"]; exists {
+					filteredModel["created"] = created
+				}
+				if ownedBy, exists := model["owned_by"]; exists {
+					filteredModel["owned_by"] = ownedBy
+				}
+				if creditsMap != nil {
+					filteredModel["credits"] = creditsMap
+					filteredModel["owned_by"] = wbProvider
+				}
+				if dn, exists := model["display_name"]; exists && dn != nil {
+					filteredModel["display_name"] = dn
+					filteredModel["name"] = dn
+				}
+				filteredModels = append(filteredModels, filteredModel)
+			}
+
+			if creditsMap != nil {
+				var effectiveStr string
+				if rate := registry.ResolveWorkBuddyModelCreditRate(modelID); rate != nil && rate.Effective != "" {
+					effectiveStr = rate.Effective
+				} else if mult, ok := creditsMap["multiplier"].(float64); ok {
+					if mult < 1e-9 {
+						effectiveStr = "0x"
+					} else {
+						effectiveStr = fmt.Sprintf("%.2fx", mult)
 					}
-					if created, exists := model["created"]; exists {
-						suffixedModel["created"] = created
-					}
-					filteredModels = append(filteredModels, suffixedModel)
 				}
 
-				// 2. Prefixed base: "workbuddy/claude-opus-5-5"
-				prefixedBaseID := fmt.Sprintf("%s/%s", wbProvider, modelID)
-				if !seenIDs[prefixedBaseID] {
-					seenIDs[prefixedBaseID] = true
-					prefixedModel := map[string]any{
-						"id":           prefixedBaseID,
-						"object":       model["object"],
-						"owned_by":     wbProvider,
-						"credits":      creditsMap,
-						"display_name": fmt.Sprintf("%s/%s", wbProvider, modelID),
-						"name":         fmt.Sprintf("%s/%s", wbProvider, modelID),
+				if effectiveStr != "" {
+					// 1. Prefixed with multiplier: "workbuddy/claude-opus-5-5:3.33x"
+					prefixedSuffixedID := fmt.Sprintf("%s/%s:%s", wbProvider, cleanBaseModel, effectiveStr)
+					if !seenIDs[prefixedSuffixedID] {
+						seenIDs[prefixedSuffixedID] = true
+						suffixedModel := map[string]any{
+							"id":           prefixedSuffixedID,
+							"object":       model["object"],
+							"owned_by":     wbProvider,
+							"credits":      creditsMap,
+							"display_name": fmt.Sprintf("%s/%s (%s)", wbProvider, cleanBaseModel, effectiveStr),
+							"name":         fmt.Sprintf("%s/%s (%s)", wbProvider, cleanBaseModel, effectiveStr),
+						}
+						if created, exists := model["created"]; exists {
+							suffixedModel["created"] = created
+						}
+						filteredModels = append(filteredModels, suffixedModel)
 					}
-					if created, exists := model["created"]; exists {
-						prefixedModel["created"] = created
-					}
-					filteredModels = append(filteredModels, prefixedModel)
-				}
 
-				// 3. Unprefixed with multiplier: "claude-opus-5-5:3.33x"
-				suffixedID := fmt.Sprintf("%s:%s", modelID, effectiveStr)
-				if !seenIDs[suffixedID] {
-					seenIDs[suffixedID] = true
-					suffixedModel := map[string]any{
-						"id":           suffixedID,
-						"object":       model["object"],
-						"owned_by":     wbProvider,
-						"credits":      creditsMap,
-						"display_name": fmt.Sprintf("%s (%s)", modelID, effectiveStr),
-						"name":         fmt.Sprintf("%s (%s)", modelID, effectiveStr),
+					// 2. Prefixed base: "workbuddy/claude-opus-5-5"
+					prefixedBaseID := fmt.Sprintf("%s/%s", wbProvider, cleanBaseModel)
+					if !seenIDs[prefixedBaseID] {
+						seenIDs[prefixedBaseID] = true
+						prefixedModel := map[string]any{
+							"id":           prefixedBaseID,
+							"object":       model["object"],
+							"owned_by":     wbProvider,
+							"credits":      creditsMap,
+							"display_name": fmt.Sprintf("%s/%s", wbProvider, cleanBaseModel),
+							"name":         fmt.Sprintf("%s/%s", wbProvider, cleanBaseModel),
+						}
+						if created, exists := model["created"]; exists {
+							prefixedModel["created"] = created
+						}
+						filteredModels = append(filteredModels, prefixedModel)
 					}
-					if created, exists := model["created"]; exists {
-						suffixedModel["created"] = created
+
+					// 3. Unprefixed with multiplier: "claude-opus-5-5:3.33x"
+					suffixedID := fmt.Sprintf("%s:%s", cleanBaseModel, effectiveStr)
+					if !seenIDs[suffixedID] {
+						seenIDs[suffixedID] = true
+						suffixedModel := map[string]any{
+							"id":           suffixedID,
+							"object":       model["object"],
+							"owned_by":     wbProvider,
+							"credits":      creditsMap,
+							"display_name": fmt.Sprintf("%s (%s)", cleanBaseModel, effectiveStr),
+							"name":         fmt.Sprintf("%s (%s)", cleanBaseModel, effectiveStr),
+						}
+						if created, exists := model["created"]; exists {
+							suffixedModel["created"] = created
+						}
+						filteredModels = append(filteredModels, suffixedModel)
 					}
-					filteredModels = append(filteredModels, suffixedModel)
 				}
 			}
 		}

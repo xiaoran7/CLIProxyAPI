@@ -6,7 +6,10 @@ package config
 
 import (
 	"math"
+	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // SDKConfig represents the application's configuration, loaded from a YAML file.
@@ -96,6 +99,64 @@ type SDKConfig struct {
 	// NonStreamKeepAliveInterval controls how often blank lines are emitted for non-streaming responses.
 	// <= 0 disables keep-alives. Value is in seconds.
 	NonStreamKeepAliveInterval int `yaml:"nonstream-keepalive-interval,omitempty" json:"nonstream-keepalive-interval,omitempty"`
+
+	// ModelVariantMode controls which model ID variants are emitted in /v1/models.
+	// Supported modes:
+	//   - "compact" (default, or true): emits clean namespaced IDs (e.g. "workbuddy-cn/hy4-preview-f") for models with a provider prefix, and bare IDs for others. Redundant multiplier and bare variants are suppressed.
+	//   - "raw": emits only the bare unprefixed model ID (e.g. "hy4-preview-f") without multiplier or provider namespace.
+	//   - "all" (or false): emits all variants (bare, with multiplier, namespaced, namespaced with multiplier).
+	ModelVariantMode ModelVariantMode `yaml:"model-variant-mode,omitempty" json:"model-variant-mode,omitempty"`
+}
+
+// ModelVariantMode represents the variant emission mode for /v1/models.
+type ModelVariantMode string
+
+const (
+	ModelVariantModeCompact ModelVariantMode = "compact"
+	ModelVariantModeRaw     ModelVariantMode = "raw"
+	ModelVariantModeAll     ModelVariantMode = "all"
+)
+
+// NormalizeModelVariantMode normalizes any variant mode string or boolean representation to a canonical mode.
+func NormalizeModelVariantMode(mode string) ModelVariantMode {
+	trimmed := strings.ToLower(strings.TrimSpace(mode))
+	switch trimmed {
+	case "raw", "unprefixed", "bare":
+		return ModelVariantModeRaw
+	case "all", "expanded", "full", "false":
+		return ModelVariantModeAll
+	case "compact", "prefixed", "clean", "short", "true", "":
+		return ModelVariantModeCompact
+	default:
+		return ModelVariantModeCompact
+	}
+}
+
+// UnmarshalYAML supports parsing both string modes ("compact", "raw", "all") and boolean flags (true -> compact, false -> all).
+func (m *ModelVariantMode) UnmarshalYAML(value *yaml.Node) error {
+	if m == nil {
+		return nil
+	}
+	if value == nil || value.Kind == 0 {
+		*m = ModelVariantModeCompact
+		return nil
+	}
+	var b bool
+	if err := value.Decode(&b); err == nil {
+		if b {
+			*m = ModelVariantModeCompact
+		} else {
+			*m = ModelVariantModeAll
+		}
+		return nil
+	}
+	var s string
+	if err := value.Decode(&s); err == nil {
+		*m = NormalizeModelVariantMode(s)
+		return nil
+	}
+	*m = ModelVariantModeCompact
+	return nil
 }
 
 // TLSHandshakeTimeout returns the configured upstream TLS handshake bound
