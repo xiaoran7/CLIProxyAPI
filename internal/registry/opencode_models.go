@@ -15,6 +15,48 @@ var openCodeCatalogStore = &openCodeModelsStore{}
 var staticOpenCodeModels = []*ModelInfo{
 	// --- Free Tier Models (1M Context) ---
 	{
+		ID:                  "big-pickle",
+		Object:              "model",
+		Created:             1791611341,
+		OwnedBy:             "opencode",
+		Type:                "opencode",
+		DisplayName:         "Big Pickle",
+		ContextLength:       200000,
+		MaxCompletionTokens: 32000,
+		InputTokenLimit:     160000,
+		OutputTokenLimit:    32000,
+	},
+	{
+		ID:                  "cat-jam-free",
+		Object:              "model",
+		Created:             1791611341,
+		OwnedBy:             "opencode",
+		Type:                "opencode",
+		DisplayName:         "Cat Jam (Free)",
+		ContextLength:       262144,
+		MaxCompletionTokens: 131072,
+		InputTokenLimit:     262144,
+		OutputTokenLimit:    131072,
+		Thinking: &ThinkingSupport{
+			Levels: []string{"low", "medium", "high", "xhigh", "max"},
+		},
+	},
+	{
+		ID:                  "deepseek-v4.1-flash-free",
+		Object:              "model",
+		Created:             1791611341,
+		OwnedBy:             "deepseek",
+		Type:                "opencode",
+		DisplayName:         "DeepSeek V4.1 Flash (Free)",
+		ContextLength:       1048576,
+		MaxCompletionTokens: 64000,
+		InputTokenLimit:     1048576,
+		OutputTokenLimit:    64000,
+		Thinking: &ThinkingSupport{
+			Levels: []string{"low", "medium", "high", "max"},
+		},
+	},
+	{
 		ID:                  "step-5-preview-free",
 		Object:              "model",
 		Created:             1791611341,

@@ -71,12 +71,34 @@ func TestOpenCodeSessionAffinity(t *testing.T) {
 	}
 }
 
+func TestNormalizeOpenCodeEndpoint(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"https://opencode.ai/zen/v1", "https://opencode.ai/inference/v1"},
+		{"https://opencode.ai/zen/v1/chat/completions", "https://opencode.ai/inference/v1/chat/completions"},
+		{"https://opencode.ai/inference/v1", "https://opencode.ai/inference/v1"},
+		{"https://api.openai.com/v1", "https://api.openai.com/v1"},
+	}
+	for _, tc := range cases {
+		actual := normalizeOpenCodeEndpoint(tc.input)
+		if actual != tc.expected {
+			t.Errorf("normalizeOpenCodeEndpoint(%q) = %q, expected %q", tc.input, actual, tc.expected)
+		}
+	}
+}
+
 func TestApplyOpenCodeHeaders(t *testing.T) {
 	req, _ := http.NewRequest("POST", "https://opencode.ai/zen/v1/chat/completions", nil)
 	// Inject headers that should be stripped
 	req.Header.Set("x-client", "cursor")
 	req.Header.Set("x-app-name", "cursor")
 	req.Header.Set("x-zcode-app-version", "1.0.0")
+	req.Header.Set("x-stainless-os", "Windows")
+	req.Header.Set("x-cursor-client-version", "0.45.0")
+	req.Header.Set("x-cline-version", "3.0.0")
+	req.Header.Set("x-continue-session-id", "cont-123")
 
 	// Set session context
 	ctx := util.WithSessionID(context.Background(), "user-sess-abc")
@@ -85,7 +107,15 @@ func TestApplyOpenCodeHeaders(t *testing.T) {
 	applyOpenCodeHeaders(req)
 
 	// Verify forbidden headers are stripped
-	for _, h := range []string{"x-client", "x-app-name", "x-zcode-app-version"} {
+	for _, h := range []string{
+		"x-client",
+		"x-app-name",
+		"x-zcode-app-version",
+		"x-stainless-os",
+		"x-cursor-client-version",
+		"x-cline-version",
+		"x-continue-session-id",
+	} {
 		if req.Header.Get(h) != "" {
 			t.Fatalf("expected header %s to be stripped, got %s", h, req.Header.Get(h))
 		}
@@ -153,6 +183,24 @@ func TestApplyOpenCodePayload(t *testing.T) {
 		t.Fatalf("expected both bash and read in stubs map")
 	}
 
+	// Verify stub tools declare non-empty properties to pass FreeTier tool validation
+	for _, tool := range tools {
+		name := tool.Get("function.name").String()
+		switch name {
+		case "bash":
+			if tool.Get("function.parameters.properties.command.type").String() != "string" {
+				t.Fatalf("expected bash tool to declare command parameter, got %s", tool.Raw)
+			}
+		case "read":
+			if tool.Get("function.parameters.properties.filePath.type").String() != "string" {
+				t.Fatalf("expected read tool to declare filePath parameter, got %s", tool.Raw)
+			}
+		}
+		if tool.Get("function.parameters.additionalProperties").Bool() != false {
+			t.Fatalf("expected additionalProperties false on stub tool %s", name)
+		}
+	}
+
 	// Case 2: Caller provides "Bash" and "Read" with uppercase casing
 	customTools := []byte(`{
 		"model": "big-pickle",
@@ -180,6 +228,30 @@ func TestApplyOpenCodePayload(t *testing.T) {
 	}
 	if infoCustom.back["bash"] != "Bash" || infoCustom.back["read"] != "Read" {
 		t.Fatalf("expected back mapping for Bash and Read, got %v", infoCustom.back)
+	}
+
+	// Case 3: Caller provides bash and read with empty properties -> patched defensively
+	emptyPropsTools := []byte(`{
+		"model": "big-pickle",
+		"messages": [{"role":"user","content":"run"}],
+		"tools": [
+			{"type": "function", "function": {"name": "bash", "parameters": {"type": "object", "properties": {}}}},
+			{"type": "function", "function": {"name": "read", "parameters": {"type": "object", "properties": {}}}}
+		]
+	}`)
+	mutatedEmpty, _, errEmpty := applyOpenCodePayload(emptyPropsTools, false)
+	if errEmpty != nil {
+		t.Fatalf("applyOpenCodePayload empty properties error: %v", errEmpty)
+	}
+	emptyToolsArr := gjson.GetBytes(mutatedEmpty, "tools").Array()
+	if len(emptyToolsArr) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(emptyToolsArr))
+	}
+	if emptyToolsArr[0].Get("function.parameters.properties.command.type").String() != "string" {
+		t.Fatalf("expected bash tool properties to be defensively patched, got %s", emptyToolsArr[0].Raw)
+	}
+	if emptyToolsArr[1].Get("function.parameters.properties.filePath.type").String() != "string" {
+		t.Fatalf("expected read tool properties to be defensively patched, got %s", emptyToolsArr[1].Raw)
 	}
 }
 

@@ -36,6 +36,16 @@ var (
 	// OpenCode mandatory tools required by Zen Free tier.
 	openCodeRequiredTools = []string{"bash", "read"}
 
+	// openCodeToolParams maps core tools to OpenCode's native first parameter.
+	// OpenCode Zen Free tier refuses tools declared with empty properties with 403 FreeTierError.
+	openCodeToolParams = map[string]string{
+		"bash": "command",
+		"read": "filePath",
+		"edit": "filePath",
+		"glob": "pattern",
+		"grep": "pattern",
+	}
+
 	openCodeIDRe = regexp.MustCompile(`^[a-z]{3}_[0-9a-f]{12}[0-9A-Za-z]{14}$`)
 
 	openCodeClock = struct {
@@ -57,6 +67,15 @@ func isOpenCodeTarget(baseURL, provider, compatName string) bool {
 		p == "opencode" ||
 		c == "opencode" ||
 		strings.HasPrefix(p, "openai-compatible-opencode")
+}
+
+// normalizeOpenCodeEndpoint adapts legacy OpenCode Zen endpoints (/zen/v1) to the new inference API (/inference/v1).
+// OpenCode 1.19.0+ answers 403 FreeTierError on /zen/v1 for free models.
+func normalizeOpenCodeEndpoint(rawURL string) string {
+	if strings.Contains(rawURL, "opencode.ai/zen/v1") {
+		return strings.Replace(rawURL, "opencode.ai/zen/v1", "opencode.ai/inference/v1", 1)
+	}
+	return rawURL
 }
 
 // genOpenCodeID generates a timestamp-bound Base62 ID according to OpenCode's reverse-engineered schema.
@@ -144,6 +163,16 @@ func applyOpenCodeHeaders(req *http.Request) {
 	req.Header.Del("x-zcode-session-type")
 	req.Header.Del("x-zcode-trace-id")
 
+	for k := range req.Header {
+		lk := strings.ToLower(k)
+		if strings.HasPrefix(lk, "x-stainless-") ||
+			strings.HasPrefix(lk, "x-cursor-") ||
+			strings.HasPrefix(lk, "x-cline-") ||
+			strings.HasPrefix(lk, "x-continue-") {
+			req.Header.Del(k)
+		}
+	}
+
 	seed := extractOpenCodeSessionSeed(req.Context(), req)
 	sesID := resolveOpenCodeSessionID(seed)
 	msgID := genOpenCodeID("msg", false, time.Now())
@@ -165,13 +194,26 @@ type openCodeToolsInfo struct {
 }
 
 // makeOpenCodeStubTool creates a function tool definition matching OpenCode Zen Free's requirements.
+// Note: OpenCode Zen Free inspects tool definitions and rejects tools with empty properties with 403 FreeTierError.
 func makeOpenCodeStubTool(name string) map[string]any {
+	paramName := openCodeToolParams[strings.ToLower(name)]
+	if paramName == "" {
+		paramName = "input"
+	}
 	return map[string]any{
 		"type": "function",
 		"function": map[string]any{
 			"name":        name,
 			"description": openCodeStubDescription,
-			"parameters":  map[string]any{"type": "object", "properties": map[string]any{}},
+			"parameters": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					paramName: map[string]any{
+						"type": "string",
+					},
+				},
+				"additionalProperties": false,
+			},
 		},
 	}
 }
@@ -220,6 +262,20 @@ func applyOpenCodePayload(payload []byte, forceStream bool) ([]byte, *openCodeTo
 					if tv, ok := existingTools[i].(map[string]any); ok {
 						if fn, ok := tv["function"].(map[string]any); ok {
 							fn["name"] = reqName
+						}
+					}
+				}
+				// Ensure required tools do not carry completely empty properties to prevent FreeTierError
+				if tv, ok := existingTools[i].(map[string]any); ok {
+					if fn, ok := tv["function"].(map[string]any); ok {
+						if params, ok := fn["parameters"].(map[string]any); ok {
+							if props, ok := params["properties"].(map[string]any); ok && len(props) == 0 {
+								pName := openCodeToolParams[reqName]
+								if pName == "" {
+									pName = "input"
+								}
+								props[pName] = map[string]any{"type": "string"}
+							}
 						}
 					}
 				}

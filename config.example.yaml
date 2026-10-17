@@ -873,7 +873,7 @@ upstream:
 #
 #     # OpenCode (Zen) provider (Zero-config models & auto-fingerprinting bypass)
 #     - name: "opencode"
-#       base-url: "https://opencode.ai/zen/v1"
+#       base-url: "https://opencode.ai/inference/v1"
 #       keys:
 #         - api-key: "oc_sk_..."
 #       # models is optional: all OpenCode 1M free tier & Zen models are auto-registered when omitted!

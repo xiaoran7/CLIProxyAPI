@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **OpenCode Zen Free Tier Anti-Risk Cloaking & Catalog Expansion (`opencode_cloaking.go`, `openai_compat_executor.go`, `opencode_models.go`, `config.example.yaml`)**:
+  - **Free Tier Cloud WAF Endpoint Alignment**: OpenCode 1.19.0+ rejects legacy `/zen/v1` calls with `403 FreeTierError` for free models. Implemented transparent URL rewriting in `normalizeOpenCodeEndpoint` and `PrepareRequest` redirecting `https://opencode.ai/zen/v1` to `https://opencode.ai/inference/v1`.
+  - **Tool Parameter Declaration Hardening**: OpenCode cloud inspects function tool declarations and blocks required tools (`bash`, `read`) if declared with empty properties (`{}`) as dummy tool injection. Enhanced `makeOpenCodeStubTool` and caller tool normalization to inject valid parameter schemas (`command: string` for `bash`, `filePath: string` for `read`) with `additionalProperties: false`.
+  - **Client Fingerprint Sanitization**: Stripped client leak headers (`x-stainless-*`, `x-cursor-*`, `x-cline-*`, `x-continue-*`) alongside existing `x-client`, `x-app-name`, and `x-zcode-*` identifiers.
+  - **Free Tier Catalog Expansion**: Registered new flagship free models in static catalog (`big-pickle` 200k, `cat-jam-free` 262k with multi-level thinking, `deepseek-v4.1-flash-free` 1M context with reasoning support).
 - **Upstream v8.0.32 Sync (Claude Schema Normalization, Date Pin Retention, Devin Quota Cooldown, Thinking Block Binding)**:
   - **Claude Thinking Block Binding & Beta Policy (`claude_executor_request.go`, `claude_openai-responses_request.go`, #6692)**: Automatically injects `drop_block` prefix mismatch behavior for preserved-thinking models when replaying signed thinking blocks; appends `thinking-binding-controls` beta header when requests carry `thinking.block_binding`; expands Haiku 5.5 and related model detection to support assistant prefill drops.
   - **Claude Tool Argument Cleaning & Schema Normalization (`translator.go`, `antigravity_claude_response.go`, `gemini_claude_response.go`, #6670)**: Implemented robust schema analysis and argument cleaning for Claude tool calls, restoring exact client-facing tool names and sanitizing placeholders across Antigravity and Gemini translators.

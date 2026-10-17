@@ -135,3 +135,32 @@ data: [DONE]
 		t.Fatalf("expected stream to emit stub note, got: %s", allStream)
 	}
 }
+
+func TestOpenAICompatExecutorOpenCodePrepareRequestEndpointRewrite(t *testing.T) {
+	executor := NewOpenAICompatExecutor("openai-compatibility", &config.Config{})
+	auth := &cliproxyauth.Auth{
+		Provider: "openai-compatibility",
+		Attributes: map[string]string{
+			"base_url":     "https://opencode.ai/zen/v1",
+			"api_key":      "public",
+			"compat_name":  "opencode",
+			"provider_key": "opencode",
+		},
+	}
+
+	req, err := http.NewRequest("POST", "https://opencode.ai/zen/v1/chat/completions", nil)
+	if err != nil {
+		t.Fatalf("NewRequest error: %v", err)
+	}
+
+	if err := executor.PrepareRequest(req, auth); err != nil {
+		t.Fatalf("PrepareRequest error: %v", err)
+	}
+
+	if req.URL.Path != "/inference/v1/chat/completions" {
+		t.Fatalf("expected /inference/v1/chat/completions, got %s", req.URL.Path)
+	}
+	if req.Header.Get("User-Agent") != openCodeUserAgent {
+		t.Fatalf("expected User-Agent %s, got %s", openCodeUserAgent, req.Header.Get("User-Agent"))
+	}
+}

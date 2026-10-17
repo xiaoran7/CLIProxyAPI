@@ -68,6 +68,9 @@ func (e *OpenAICompatExecutor) PrepareRequest(req *http.Request, auth *cliproxya
 	util.ApplyCustomHeadersFromAttrs(req, attrs)
 	if e.isOpenCode(auth) {
 		applyOpenCodeHeaders(req)
+		if req.URL != nil && strings.Contains(req.URL.String(), "opencode.ai/zen/v1") {
+			req.URL.Path = strings.Replace(req.URL.Path, "/zen/v1", "/inference/v1", 1)
+		}
 	}
 	return nil
 }
@@ -161,6 +164,9 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
 	}
 
 	url := strings.TrimSuffix(baseURL, "/") + endpoint
+	if isOC {
+		url = normalizeOpenCodeEndpoint(url)
+	}
 	translated = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", translated, originalTranslated, requestedModel, requestPath, opts.Headers)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(translated))
 	if err != nil {
@@ -413,6 +419,9 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
 	}
 
 	url := strings.TrimSuffix(baseURL, "/") + "/chat/completions"
+	if isOC {
+		url = normalizeOpenCodeEndpoint(url)
+	}
 	translated = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", translated, originalTranslated, requestedModel, requestPath, opts.Headers)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(translated))
 	if err != nil {
