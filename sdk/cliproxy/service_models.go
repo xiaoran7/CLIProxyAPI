@@ -14,23 +14,29 @@ import (
 )
 
 // registerModelsForAuth (re)binds provider models in the global registry using the core auth ID as client identifier.
-func (s *Service) registerModelsForAuth(ctx context.Context, a *coreauth.Auth) {
-	s.registerModelsForAuthWithCache(ctx, a, nil)
+func (s *Service) registerModelsForAuth(ctx context.Context, a *coreauth.Auth) bool {
+	return s.registerModelsForAuthWithCache(ctx, a, nil)
 }
 
-func (s *Service) registerModelsForAuthWithCache(ctx context.Context, a *coreauth.Auth, compatCache *openAICompatibilityRegistrationCache) {
-	s.registerModelsForAuthWithConfigAndCache(ctx, s.currentConfig(), a, compatCache)
+// registerModelsForAuthWithCache reports only whether the publication
+// fence rejected this computation: false means a newer auth state
+// superseded it mid-computation and a completion pass must reconcile the
+// latest auth. True also covers paths that attempt no publication
+// (cancellation, plugin errors, invalid input), so it never by itself
+// proves that models were published.
+func (s *Service) registerModelsForAuthWithCache(ctx context.Context, a *coreauth.Auth, compatCache *openAICompatibilityRegistrationCache) bool {
+	return s.registerModelsForAuthWithConfigAndCache(ctx, s.currentConfig(), a, compatCache)
 }
 
-func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, cfg *config.Config, a *coreauth.Auth, compatCache *openAICompatibilityRegistrationCache) {
+func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, cfg *config.Config, a *coreauth.Auth, compatCache *openAICompatibilityRegistrationCache) bool {
 	if a == nil || a.ID == "" {
-		return
+		return true
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if ctx.Err() != nil {
-		return
+		return true
 	}
 	// Capture the publication fence before any runtime read or model
 	// resolution: a registration superseded while it is being computed must
@@ -40,15 +46,14 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 	if a.Disabled {
 		if s != nil && s.coreManager != nil {
 			if current, ok := s.coreManager.GetByID(a.ID); ok && current != nil && !current.Disabled {
-				return
+				return false
 			}
 		}
-		s.unregisterModelsForAuthFenced(a, fence)
-		return
+		return s.unregisterModelsForAuthFenced(a, fence)
 	}
 	if s != nil && s.coreManager != nil {
 		if current, ok := s.coreManager.GetByID(a.ID); !ok || current == nil || current.Disabled {
-			return
+			return true
 		}
 	}
 	authKind := a.AuthKind()
@@ -73,12 +78,13 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 			excluded = strings.Split(val, ",")
 		}
 	}
-	if s.tryRegisterPluginModelsForAuthWithConfigFenced(ctx, cfg, a, fence, provider, authKind, excluded) {
-		return
+	if handled, published := s.tryRegisterPluginModelsForAuthWithConfigFenced(ctx, cfg, a, fence, provider, authKind, excluded); handled {
+		return published
 	}
 	if ctx.Err() != nil {
-		return
+		return true
 	}
+	published := true
 	var models []*ModelInfo
 	switch provider {
 	case constant.Gemini:
@@ -129,7 +135,7 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 				// is pending, including its quota and suspension projections.
 				s.applyAntigravityModelHints(ctx, a, provider, hints, expectedKey, a.RegistrationEpoch, expectedRegEpoch)
 				s.asyncProbeAntigravityCapabilities(ctx, a, provider)
-				return
+				return true
 			}
 		} else {
 			models = registry.GetAntigravityModels()
@@ -251,13 +257,13 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 				}
 				if len(ms) > 0 {
 					ms = s.appendPluginModels(providerKey, ms)
-					s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(ms, a.Prefix, cfg.ForceModelPrefix))
+					published = s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(ms, a.Prefix, cfg.ForceModelPrefix))
 				} else {
 					ms = s.appendPluginModels(providerKey, nil)
 					if len(ms) > 0 {
-						s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(ms, a.Prefix, cfg.ForceModelPrefix))
+						published = s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(ms, a.Prefix, cfg.ForceModelPrefix))
 					} else {
-						s.unregisterModelsForAuthFenced(a, fence)
+						published = s.unregisterModelsForAuthFenced(a, fence)
 					}
 				}
 				return true
@@ -274,45 +280,45 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 					ms := cached.models
 					if len(ms) > 0 {
 						ms = s.appendPluginModels(providerKey, ms)
-						s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(ms, a.Prefix, cfg.ForceModelPrefix))
+						published = s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(ms, a.Prefix, cfg.ForceModelPrefix))
 					} else {
 						ms = s.appendPluginModels(providerKey, nil)
 						if len(ms) > 0 {
-							s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(ms, a.Prefix, cfg.ForceModelPrefix))
+							published = s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(ms, a.Prefix, cfg.ForceModelPrefix))
 						} else {
-							s.unregisterModelsForAuthFenced(a, fence)
+							published = s.unregisterModelsForAuthFenced(a, fence)
 						}
 					}
-					return
+					return published
 				}
 			}
 			if indexed := configEntryForAuthIndex(a, cfg.OpenAICompatibility); indexed != nil && registerCompat(indexed) {
-				return
+				return published
 			}
 			for i := range cfg.OpenAICompatibility {
 				compat := &cfg.OpenAICompatibility[i]
 				if strings.EqualFold(compat.Name, compatName) && registerCompat(compat) {
-					return
+					return published
 				}
 			}
 			if isCompatAuth {
 				models = s.appendPluginModels(providerKey, nil)
 				if len(models) > 0 {
-					s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(models, a.Prefix, cfg.ForceModelPrefix))
+					published = s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(models, a.Prefix, cfg.ForceModelPrefix))
 				} else {
 					// No matching provider found or models removed entirely; drop any prior registration.
-					s.unregisterModelsForAuthFenced(a, fence)
+					published = s.unregisterModelsForAuthFenced(a, fence)
 				}
-				return
+				return published
 			}
 		}
 	}
 	if ctx.Err() != nil {
-		return
+		return true
 	}
 	models = applyOAuthModelAliasForAuth(cfg, provider, authKind, a.Attributes, models)
 	if ctx.Err() != nil {
-		return
+		return true
 	}
 	key := provider
 	if key == "" {
@@ -321,17 +327,18 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 	models = s.appendPluginModels(key, models)
 	if len(models) > 0 {
 		models = applyOAuthSettingsForAuth(cfg, provider, authKind, models)
-		s.registerResolvedModelsForAuthFenced(a, fence, key, applyModelPrefixes(models, a.Prefix, cfg != nil && cfg.ForceModelPrefix))
+		published = s.registerResolvedModelsForAuthFenced(a, fence, key, applyModelPrefixes(models, a.Prefix, cfg != nil && cfg.ForceModelPrefix))
 		if strings.EqualFold(strings.TrimSpace(a.Provider), "antigravity") {
 			s.asyncProbeAntigravityCapabilities(ctx, a, key)
 		}
-		return
+		return published
 	}
 
-	s.unregisterModelsForAuthFenced(a, fence)
+	published = s.unregisterModelsForAuthFenced(a, fence)
 	if provider == "antigravity" {
 		s.asyncProbeAntigravityCapabilities(ctx, a, key)
 	}
+	return published
 }
 
 // refreshModelRegistrationForAuth re-applies the latest model registration for
