@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **WorkBuddy Credential Account Identity Display Optimization (`management.html`, `auth_files.go`, `filestore.go`)**:
+  - **Account Display Alignment (`workbuddy-cn-<nickname>` / `workbuddy-<nickname>`)**: Upgraded credential card title rendering (`hO`) in `management.html` to display `workbuddy-cn-<nickname>` for domestic accounts and `workbuddy-<nickname>` (or `workbuddy-intl-<nickname>`) for international accounts instead of raw timestamp filenames, with the original filename displayed below as secondary sub-label.
+  - **Backend Metadata Exposure**: Exposed `nickname`, `user_id`, and `realm` fields in management API (`buildAuthFileEntryLocked`), added fallback to `metadata["nickname"]` in `labelFor` (`filestore.go`), and ensured `"label"` persistence in WorkBuddy OAuth callbacks.
+  - **Card Search Enhancement**: Updated `yO` search filter in `management.html` to index `nickname`, `label`, `user_id`, and the resolved card title (`hO(e).primary`), allowing instant filtering and locating of credentials by WeChat/Tencent account nickname.
+
 ### Fixed
 - **Antigravity Quota Display & Hub UA Alignment (`management.html`)**:
   - **Syntax Error & White Screen Hotfix**: Fixed JavaScript syntax and string termination in `management.html` axios error stack tracing patch, preventing white screen on page load.

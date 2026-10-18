@@ -748,6 +748,15 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quota authFileQu
 	if projectID := authProjectID(auth); projectID != "" {
 		entry["project_id"] = projectID
 	}
+	if nickname := authNickname(auth); nickname != "" {
+		entry["nickname"] = nickname
+	}
+	if userID := authUserID(auth); userID != "" {
+		entry["user_id"] = userID
+	}
+	if realm := authRealm(auth); realm != "" {
+		entry["realm"] = realm
+	}
 	if accountType, account := auth.AccountInfo(); accountType != "" || account != "" {
 		if accountType != "" {
 			entry["account_type"] = accountType
@@ -943,6 +952,69 @@ func authProjectID(auth *coreauth.Auth) string {
 	if auth.Attributes != nil {
 		if projectID := strings.TrimSpace(auth.Attributes["project_id"]); projectID != "" {
 			return projectID
+		}
+	}
+	return ""
+}
+
+func authNickname(auth *coreauth.Auth) string {
+	if auth == nil {
+		return ""
+	}
+	if auth.Metadata != nil {
+		if v, ok := auth.Metadata["nickname"].(string); ok {
+			if nickname := strings.TrimSpace(v); nickname != "" {
+				return nickname
+			}
+		}
+	}
+	if auth.Attributes != nil {
+		if nickname := strings.TrimSpace(auth.Attributes["nickname"]); nickname != "" {
+			return nickname
+		}
+	}
+	if auth.Label != "" && strings.Contains(strings.ToLower(auth.Label), "workbuddy") {
+		if idx := strings.LastIndex(auth.Label, "("); idx != -1 && strings.HasSuffix(auth.Label, ")") {
+			candidate := strings.TrimSpace(auth.Label[idx+1 : len(auth.Label)-1])
+			if candidate != "" && !strings.EqualFold(candidate, "cn") && !strings.EqualFold(candidate, "intl") && !strings.EqualFold(candidate, "global") {
+				return candidate
+			}
+		}
+	}
+	return ""
+}
+
+func authUserID(auth *coreauth.Auth) string {
+	if auth == nil {
+		return ""
+	}
+	if auth.Metadata != nil {
+		if v, ok := auth.Metadata["user_id"].(string); ok {
+			if userID := strings.TrimSpace(v); userID != "" {
+				return userID
+			}
+		}
+	}
+	if auth.Attributes != nil {
+		if userID := strings.TrimSpace(auth.Attributes["user_id"]); userID != "" {
+			return userID
+		}
+	}
+	return ""
+}
+
+func authRealm(auth *coreauth.Auth) string {
+	if auth == nil {
+		return ""
+	}
+	if auth.Attributes != nil {
+		if r := strings.TrimSpace(auth.Attributes["realm"]); r != "" {
+			return r
+		}
+	}
+	if auth.Metadata != nil {
+		if r, ok := auth.Metadata["realm"].(string); ok && strings.TrimSpace(r) != "" {
+			return strings.TrimSpace(r)
 		}
 	}
 	return ""

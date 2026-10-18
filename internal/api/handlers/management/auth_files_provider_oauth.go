@@ -1012,6 +1012,7 @@ func (h *Handler) requestWorkBuddyTokenWithRealm(c *gin.Context, realm string) {
 		} else if strings.TrimSpace(bundle.UserID) != "" {
 			userLabel = fmt.Sprintf("%s (%s)", displayName, strings.TrimSpace(bundle.UserID))
 		}
+		metadata["label"] = userLabel
 
 		fileName := fmt.Sprintf("%s-%d.json", filePrefix, time.Now().UnixMilli())
 		record := &coreauth.Auth{
