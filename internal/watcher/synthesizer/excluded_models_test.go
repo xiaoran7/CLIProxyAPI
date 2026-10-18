@@ -121,6 +121,40 @@ func TestSynthesizeAuthFileKeepsCredentialWithInvalidExcludedModels(t *testing.T
 	}
 }
 
+func TestSynthesizeAuthFileKeepsPluginExcludedModelsWithoutFileRules(t *testing.T) {
+	authDir := t.TempDir()
+	ctx := &SynthesisContext{
+		Config:  &config.Config{},
+		AuthDir: authDir,
+		Now:     time.Date(2026, time.October, 10, 12, 0, 0, 0, time.UTC),
+		PluginAuthParser: multiAuthParserFunc(func(context.Context, pluginapi.AuthParseRequest) ([]*coreauth.Auth, bool, error) {
+			return []*coreauth.Auth{{ID: "plugin.json", Provider: "acme", Attributes: map[string]string{
+				"excluded_models": "plugin-model", "excluded_models_hash": "plugin-hash",
+			}}}, true, nil
+		}),
+	}
+	path := filepath.Join(authDir, "plugin.json")
+
+	for _, tc := range []struct {
+		raw      string
+		wantRule string
+	}{
+		// Without file rules, the plugin-provided attributes stay as returned by the parser.
+		{raw: `{"type":"acme"}`, wantRule: "plugin-model"},
+		{raw: `{"type":"acme","excluded_models":[]}`, wantRule: "plugin-model"},
+		// File rules replace the plugin-provided list.
+		{raw: `{"type":"acme","excluded_models":["File-Model"]}`, wantRule: "file-model"},
+	} {
+		auths := mustSynthesizeAuthFile(t, ctx, path, tc.raw)
+		if len(auths) != 1 {
+			t.Fatalf("%s: len(auths) = %d, want 1", tc.raw, len(auths))
+		}
+		if got := auths[0].Attributes["excluded_models"]; got != tc.wantRule {
+			t.Fatalf("%s: excluded_models = %q, want %q", tc.raw, got, tc.wantRule)
+		}
+	}
+}
+
 func TestSynthesizeAuthFileDoesNotPersistGlobalOAuthExclusions(t *testing.T) {
 	authDir := t.TempDir()
 	ctx := &SynthesisContext{

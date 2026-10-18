@@ -53,6 +53,8 @@ func (g *StableIDGenerator) Next(kind string, parts ...string) (string, string) 
 
 // ApplyAuthExcludedModelsMeta stores the credential's own excluded models on an auth entry.
 // It computes a hash of excluded models and sets the auth_kind attribute when authKind is set.
+// Existing excluded_models attributes are never cleared, so callers rebuilding them on an
+// existing auth must drop stale values first.
 // Global oauth-excluded-models are intentionally not merged here: they are resolved at
 // model registration time, and a nonempty credential list overrides them.
 func ApplyAuthExcludedModelsMeta(auth *coreauth.Auth, perKey []string, authKind string) {
@@ -74,8 +76,6 @@ func ApplyAuthExcludedModelsMeta(auth *coreauth.Auth, perKey []string, authKind 
 	if auth.Attributes == nil {
 		auth.Attributes = make(map[string]string)
 	}
-	delete(auth.Attributes, "excluded_models_hash")
-	delete(auth.Attributes, "excluded_models")
 	if hash != "" {
 		auth.Attributes["excluded_models_hash"] = hash
 	}

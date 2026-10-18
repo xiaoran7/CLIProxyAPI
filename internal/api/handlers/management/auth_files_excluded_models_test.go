@@ -157,36 +157,31 @@ func TestUploadAuthFileRejectsInvalidExcludedModels(t *testing.T) {
 	}
 }
 
-func TestPatchAuthFileFieldsAcceptsCommaSeparatedExcludedModels(t *testing.T) {
+func TestPatchAuthFileFieldsRejectsConfigCredential(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, tt := range []struct {
-		name     string
-		fields   string
-		metadata []string
-		want     string
-	}{
-		{"comma string", `"excluded_models":" Local-a , ,local-b "`, []string{"Local-a", "local-b"}, "local-a,local-b"},
-		{"legacy key string", `"excluded-models":"local-a"`, []string{"local-a"}, "local-a"},
-		{"blank string clears", `"excluded_models":"  "`, []string{}, ""},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			h, manager, record := newExcludedModelsPatchTestHandler(t, "oauth")
-			rec := patchExcludedModelsFields(h, tt.fields)
-			if rec.Code != http.StatusOK {
-				t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
-			}
-			updated, ok := manager.GetByID(record.ID)
-			if !ok {
-				t.Fatal("updated auth missing")
-			}
-			// The legacy string form is persisted as a canonical array.
-			if got := updated.Metadata["excluded_models"]; !reflect.DeepEqual(got, tt.metadata) {
-				t.Fatalf("metadata excluded_models = %#v, want %#v", got, tt.metadata)
-			}
-			if got := updated.Attributes["excluded_models"]; got != tt.want {
-				t.Fatalf("excluded_models attribute = %q, want %q", got, tt.want)
-			}
-		})
+	manager := coreauth.NewManager(nil, nil, nil)
+	record := &coreauth.Auth{
+		ID: "credential.json", Provider: "claude",
+		Attributes: map[string]string{"auth_kind": "apikey", "source": "config:claude[token]", "excluded_models": "config-*"},
+	}
+	if _, err := manager.Register(context.Background(), record); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandlerWithoutConfigFilePath(&config.Config{}, manager)
+	before, _ := manager.GetByID(record.ID)
+	h.postAuthPersistHook = func(context.Context, *coreauth.Auth) error {
+		t.Error("post-persist hook called for config credential")
+		return nil
+	}
+
+	// Config credentials are not auth files, so this endpoint must not find them.
+	rec := patchExcludedModelsFields(h, `"excluded_models":[]`)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d: %s, want 404", rec.Code, rec.Body.String())
+	}
+	after, _ := manager.GetByID(record.ID)
+	if !reflect.DeepEqual(after.Attributes, before.Attributes) || !reflect.DeepEqual(after.Metadata, before.Metadata) {
+		t.Fatalf("config credential changed: before=%+v/%+v after=%+v/%+v", before.Attributes, before.Metadata, after.Attributes, after.Metadata)
 	}
 }
 
@@ -199,6 +194,10 @@ func TestPatchAuthFileFieldsRejectsInvalidExcludedModels(t *testing.T) {
 		`"abc":true,"excluded_models":["codex-new",null]`,
 		`"abc":true,"excluded_models":[42,false]`,
 		`"abc":true,"excluded_models":[["codex-new"]]`,
+		`"abc":true,"excluded_models":"codex-new"`,
+		`"abc":true,"excluded_models":" codex-a , codex-b "`,
+		`"abc":true,"excluded-models":"codex-new"`,
+		`"abc":true,"excluded_models":"  "`,
 		`"abc":true,"excluded_models.child":["codex-new"]`,
 		`"abc":true,"excluded-models.0":"codex-new"`,
 	} {

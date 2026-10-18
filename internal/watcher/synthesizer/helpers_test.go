@@ -201,18 +201,19 @@ func TestApplyAuthExcludedModelsMeta_StoresOnlyCredentialRules(t *testing.T) {
 	}
 }
 
-func TestApplyAuthExcludedModelsMeta_EmptyRulesClearStaleAttributes(t *testing.T) {
+func TestApplyAuthExcludedModelsMeta_EmptyRulesKeepExistingAttributes(t *testing.T) {
 	for _, rules := range [][]string{nil, {}, {" ", "\t"}} {
 		auth := &coreauth.Auth{Provider: "codex", Attributes: map[string]string{
-			"auth_kind": "oauth", "excluded_models": "stale", "excluded_models_hash": "stale",
+			"auth_kind": "oauth", "excluded_models": "existing", "excluded_models_hash": "existing",
 		}}
 		ApplyAuthExcludedModelsMeta(auth, rules, "")
 		if got := auth.Attributes["auth_kind"]; got != "oauth" {
 			t.Fatalf("rules=%v: auth_kind = %q, want unchanged oauth", rules, got)
 		}
+		// Callers that rebuild attributes on an existing auth must clear stale values themselves.
 		for _, key := range []string{"excluded_models", "excluded_models_hash"} {
-			if _, exists := auth.Attributes[key]; exists {
-				t.Fatalf("rules=%v: stale %s not cleared", rules, key)
+			if got := auth.Attributes[key]; got != "existing" {
+				t.Fatalf("rules=%v: %s = %q, want existing value kept", rules, key, got)
 			}
 		}
 	}
