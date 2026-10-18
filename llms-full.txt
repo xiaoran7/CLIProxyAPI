@@ -1,0 +1,187 @@
+# CLI Proxy API: Complete Architectural Specification and Reference Manual
+
+## 1. Project Overview & Mission
+
+CLI Proxy API is an enterprise-grade, high-concurrency API gateway and protocol translator written in Go 1.26+. It acts as an intelligent intermediary between developer coding agents (Claude Code CLI, OpenAI Codex CLI, Cursor, Windsurf, Aider, Cline) and heterogeneous LLM backend providers.
+
+### Key Capabilities
+- **Universal Protocol Normalization**: Bridges OpenAI Chat/Responses, Anthropic Messages, Google Gemini, and Codex WebSocket schemas bidirectionally.
+- **Enterprise Multi-Strategy Scheduling**: Round-Robin, Weighted Round-Robin, Fill-First, Smart Quota, and Pace Quota scheduling across multi-account pools.
+- **Cross-Restart Session Affinity**: Persistent affinity tracking (`session_affinity.json`) maximizing prompt-cache hits across CLI restarts.
+- **Resilient Transport Layer**: SSE keepalive heartbeats (`: keep-alive`), reasoning loop detection circuit breakers, singleflight token refreshes, and dynamic 429 rate-limit sink queues.
+- **Domestic Agent Reverse Suites**: Native Tencent WorkBuddy/CodeBuddy dual-realm management with automated Beijing-time check-in, and OpenCode 1M free context model routing.
+- **Zero-Knowledge Privacy**: Comprehensive sanitization stripping tokens, cookies, auth headers, and sensitive prompt bodies from logs.
+
+---
+
+## 2. System Architecture & Request Workflow
+
+```
++-----------------------------------------------------------------------------------+
+|                        Client Applications & Agents                               |
+|   (Claude Code CLI, Codex CLI, Cursor, Windsurf, Aider, Cline, Custom SDKs)      |
++-----------------------------------------------------------------------------------+
+                                         │
+                  HTTP / SSE / WebSocket │ (Anthropic / OpenAI / Codex wire)
+                                         ▼
++-----------------------------------------------------------------------------------+
+|                           CLI Proxy API Gateway Layer                             |
+|  - Rate Limiter & Concurrency Throttling                                          |
+|  - Auth Key Validation & Management RBAC                                          |
+|  - SSE Keepalive Pumper & Reasoning Loop Guard                                    |
++-----------------------------------------------------------------------------------+
+                                         │
+                                         ▼
++-----------------------------------------------------------------------------------+
+|                     Routing & Affinity Coordinator Layer                          |
+|  - Session Affinity Engine (Sliding-window TTL via session_affinity.json)         |
+|  - 429 Rate-Limit Sink Pool (Exponential backoff & cooldown isolation)            |
+|  - Multi-Strategy Dispatcher:                                                      |
+|      * Round-Robin                                                                |
+|      * Weighted Round-Robin                                                       |
+|      * Fill-First (Sequential saturation)                                         |
+|      * Smart Quota (Expiry-first dispatch)                                        |
+|      * Pace Quota (Rate-smoothed window consumption)                              |
++-----------------------------------------------------------------------------------+
+                                         │
+                                         ▼
++-----------------------------------------------------------------------------------+
+|                      Protocol Translation & Thinking Pipeline                     |
+|  - Canonical Thinking Normalizer (ApplyThinking, Suffix Parsing, Budget Allocation)|
+|  - Semantic Payload Barrier (Rule enforcement; immutable post-payload guarantees) |
+|  - Tool Definition & Schema Transformer (Claude Tools <-> OpenAI Functions)       |
++-----------------------------------------------------------------------------------+
+                                         │
+                                         ▼
++-----------------------------------------------------------------------------------+
+|                     Runtime Provider Executors & Reverse Suites                   |
+|  ├── Anthropic Claude (OAuth / API Key / Setup-Token / Thinking Budget)           |
+|  ├── OpenAI / Codex (Responses WS Relay / Stream / Turn Interrupt / o-series)     |
+|  ├── Google Gemini / Antigravity (Vertex / AI Studio / Multi-Account Probes)      |
+|  ├── Tencent WorkBuddy / CodeBuddy (Dual-Realm / CST CheckinEngine / WAF Cloak)   |
+|  ├── OpenCode (Reverse Protocol Headers / Virtual Prompt / 1M Free Context)       |
+|  ├── Kimi / Moonshot (Kimi K3 2.8T Open Flagship / Kimi Code)                     |
+|  ├── xAI Grok (Grok 4.7 / Grok Build OAuth / Fast Video Preview Routing)          |
+|  ├── Meta Muse (Muse Spark 1.3 / Meta Model Login)                                |
+|  └── OpenAI-Compatible Generic (DeepSeek, OpenRouter, SiliconFlow, Local vLLM)    |
++-----------------------------------------------------------------------------------+
+```
+
+---
+
+## 3. Protocol Normalization & Semantic Invariance
+
+### Canonical Thinking Architecture
+Requests specifying reasoning or extended thinking budgets pass through `internal/thinking/`:
+1. Suffix Parser (`suffix.go`): Identifies model reasoning directives (e.g. `claude-sonnet-5-5-thinking-16k` or query parameters). Suffix directives take precedence over payload body values.
+2. Canonical Normalization (`types.go`): Translates provider-specific parameters into a single canonical `ThinkingConfig`.
+3. Central Validation & Conversion (`validate.go`, `convert.go`): Ensures budget limits, minimum token requirements, and compatibility.
+4. Provider Applier (`ProviderApplier`): Re-encodes reasoning directives into the destination provider's wire format (Anthropic `thinking: {type: "enabled", budget_tokens: N}`, OpenAI `reasoning_effort: "high"` or temperature/top_p adjustments).
+
+### Semantic Payload Invariance Rule
+Payload configuration must serve as the final semantic barrier before dispatching requests in every executor. Built-in payload translation, normalization, injection, and cleanup must complete first, followed by evaluating user payload override/filter rules exactly once. No subsequent logic may overwrite configured values or restore filtered fields.
+
+---
+
+## 4. Scheduling Algorithms & Load Balancing
+
+CLI Proxy API supports five distinct load-balancing strategies configured via `routing.strategy`:
+
+1. **Round-Robin (`round_robin`)**:
+   - Uniform circular dispatch across all active, non-cooldown credentials for the target provider and model.
+2. **Weighted Round-Robin (`weighted_round_robin`)**:
+   - Proportional dispatch according to assigned credential weights. Ideal for balancing mixed tiers (e.g. enterprise vs pay-as-you-go).
+3. **Fill-First (`fill_first`)**:
+   - Saturates accounts sequentially up to their concurrency/quota limits before spilling over to the next standby account, minimizing the active credential footprint.
+4. **Smart Quota (`smart_quota`)**:
+   - Dispatches requests preferentially to accounts whose quota refresh window expires soonest. Maximizes quota utilization before periodic expiration wipes unused capacity.
+5. **Pace Quota (`pace_quota`)**:
+   - Dynamically monitors consumption velocity against remaining time in the current quota window, smoothing consumption to prevent mid-cycle rate starvation.
+6. **429 Rate-Limit Sink Pool**:
+   - When an upstream account responds with HTTP 429 Too Many Requests, it is instantly routed into an isolated cooldown sink with exponential backoff and jitter. In-flight requests automatically retry on alternative healthy credentials.
+
+---
+
+## 5. Session Affinity Engine
+
+To maximize prompt caching efficiency in agents like Claude Code and OpenAI Codex, the proxy tracks conversation sessions:
+- **Affinity Key**: Derived from `session_id`, `conversation_id`, user headers, or client IP.
+- **Persistence**: Persisted to `session_affinity.json` across process restarts and crash recoveries.
+- **Sliding-Window TTL**: Active sessions refresh their TTL on each turn, ensuring long conversational contexts stay pinned to the exact upstream credential where prompt-cache prefixes reside.
+- **Graceful Eviction**: If an affinity-bound credential encounters a 429 or quota exhaustion, affinity is automatically re-bound to the next best available credential.
+
+---
+
+## 6. Provider Subsystems & Deep Integrations
+
+### Tencent WorkBuddy / CodeBuddy Dual-Realm
+- **Dual-Realm Isolation**:
+  - Mainland China: `copilot.tencent.com` (auth provider: `workbuddy-cn`).
+  - International: `workbuddy.ai` (auth provider: `workbuddy`).
+- **WAF Cloaking**: Emits authentic IDE client headers (`X-Machine-ID`, `X-Session-ID`, `X-IDE-Name`, `X-Domain`).
+- **CST CheckinEngine**: Scheduled background worker running on Beijing time (UTC+8) to claim daily free allowances, track check-in streaks, and persist state in `workbuddy_checkins.json`.
+- **Model Variant Mode (`models.variant-mode`)**:
+  - `compact`: Returns clean model names without rate duplication while annotating credit multipliers in descriptions.
+  - `raw`: Exposes explicit multiplier suffixes (e.g. `glm-5.3-flash:0.06x`, `deepseek-v4.1-flash:0x`).
+  - `all`: Combines standard and suffixed variants for maximal client compatibility.
+
+### OpenCode 1M Free Context
+- Reverse-engineered protocol support for high-context models (`step-5-preview-free`, `longcat-2.5-preview-free`).
+- Virtual prompt and schema injection to cloak agent tool signatures from anti-bot gates.
+
+### OpenAI Codex WebSocket & Turn Interruption
+- Full bidirectional WebSocket relay (`/v1/responses`) supporting `response.create`, `response.interrupt`, and audio/media streams.
+- Client interrupt propagation instantly cancels the upstream HTTP/WS context, freeing concurrency slots.
+
+---
+
+## 7. Complete API Endpoint Reference
+
+### Inference Gateway Endpoints
+| Method | Path | Compatible Spec | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/v1/chat/completions` | OpenAI | Standard chat completions (streaming & non-streaming) |
+| `POST` | `/v1/messages` | Anthropic Claude | Claude Messages API with thinking blocks |
+| `POST` | `/v1/responses` | OpenAI Codex | Realtime and asynchronous Responses endpoint |
+| `GET`  | `/v1/responses` | OpenAI Codex WS | Full-duplex WebSocket relay for Realtime agents |
+| `GET`  | `/v1/models` | OpenAI / Generic | Dynamic catalog with variant filtering and credits |
+| `POST` | `/v1/embeddings` | OpenAI | Text embedding generation |
+| `POST` | `/v1/videos` | OpenAI / Grok | Video generation and status polling |
+
+### Management & Control Endpoints
+| Method | Path | Auth Required | Description |
+| :--- | :--- | :--- | :--- |
+| `GET`  | `/v8/management/overview` | Admin Key | Cluster status, active credentials, and memory stats |
+| `GET`  | `/v8/management/credentials` | Admin Key | List all registered credentials with live quotas |
+| `POST` | `/v8/management/reload` | Admin Key | Hot-reload configuration and credential directories |
+| `GET`  | `/v8/management/workbuddy/checkin` | Admin Key | Check-in engine state and streak history |
+| `PUT`  | `/v8/management/workbuddy/checkin` | Admin Key | Toggle CheckinEngine state (Pause / Resume) |
+| `GET`  | `/healthz` | None | Liveness and readiness probe |
+
+---
+
+## 8. Common Failure Modes & Troubleshooting FAQ
+
+### Q1: Upstream returns HTTP 429 Too Many Requests
+- **Cause**: Upstream account TPM/RPM limits exceeded.
+- **Resolution**: CLI Proxy API automatically places the affected credential into the cooldown sink pool and retries the request on a healthy credential. Verify multiple accounts are loaded in `config.yaml` or `auths/`.
+
+### Q2: Cloudflare or edge proxy returns HTTP 524 / 504 during model thinking
+- **Cause**: Extended reasoning phases in models like o3 or Claude Sonnet 5.5 cause silent SSE connections exceeding edge gateway read timeouts (typically 60s - 100s).
+- **Resolution**: CLI Proxy API includes a built-in SSE Keepalive Pumper that dispatches compliant `: keep-alive` comment frames every 15 seconds during thinking pauses, maintaining open HTTP transport.
+
+### Q3: Client aborts mid-stream, but upstream continues consuming quota
+- **Cause**: Standard HTTP proxies often fail to propagate downstream context cancellation.
+- **Resolution**: CLI Proxy API binds downstream connection contexts directly to upstream HTTP/WS cancel contexts. An interrupt or TCP disconnect immediately halts upstream token generation.
+
+### Q4: WorkBuddy returns 404 on point check endpoints
+- **Cause**: Tencent periodically updates seasonal activity endpoints or migrates points interfaces.
+- **Resolution**: Built-in intelligent fallback automatically redirects point inquiries to alternative Tencent activity billing meters, extracting balance, daily allowances, and season themes.
+
+---
+
+## 9. Lineage & Upstream Attribution
+
+- **Base Lineage**: Forked from [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI).
+- **WorkBuddy Protocol Reference**: Reverse-engineering and WAF anti-detection patterns aligned with [ardeyouxipianyi/workbuddy2api-hub](https://github.com/ardeyouxipianyi/workbuddy2api-hub).
+- **License**: Released under the MIT License.

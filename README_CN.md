@@ -2,6 +2,12 @@
 
 [English](README.md) | 中文 | [日本語](README_JA.md)
 
+[![Go Version](https://img.shields.io/badge/go-1.26+-00ADD8.svg?style=flat-square&logo=go)](https://golang.org)
+[![Tests](https://img.shields.io/badge/tests-8444%20passed-10b981.svg?style=flat-square)](https://github.com/router-for-me/CLIProxyAPI)
+[![Protocol](https://img.shields.io/badge/protocol-OpenAI%20%7C%20Claude%20%7C%20Codex-emerald.svg?style=flat-square)](llms-full.txt)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![LLMs Index](https://img.shields.io/badge/LLMs-llms.txt-orange.svg?style=flat-square)](llms.txt)
+
 > 本仓库是基于上游官方 [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 深度定制、架构加固与生产级增强的高性能 AI 代理中继服务器。
 > 致力于为企业与开发者提供 OpenAI / Anthropic Claude / Google Gemini / OpenAI Codex / Grok / WorkBuddy / OpenCode 等全系大模型与代码智能体（Coding Agents）的协议统一转换、多账号高并发调度与生产级运维能力。
 

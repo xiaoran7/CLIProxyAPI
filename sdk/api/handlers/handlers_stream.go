@@ -294,8 +294,12 @@ func (h *BaseAPIHandler) executeStreamWithAuthManagerFormats(ctx context.Context
 		return nil, nil, errChan
 	}
 	modelName = cleanModel
-	if len(rawJSON) > 0 && gjson.GetBytes(rawJSON, "model").Exists() {
-		rawJSON, _ = sjson.SetBytes(rawJSON, "model", cleanModel)
+	if len(rawJSON) > 0 {
+		if rawModel := gjson.GetBytes(rawJSON, "model").String(); rawModel != "" {
+			if cleanBodyModel, _ := ExtractAndValidateModelMultiplier(rawModel); cleanBodyModel != rawModel {
+				rawJSON, _ = sjson.SetBytes(rawJSON, "model", cleanBodyModel)
+			}
+		}
 	}
 	// Speech-only models are reachable solely through the speech entry protocol.
 	execOptions.AllowSpeechModel = isModelExecutionSpeechProtocol(entryProtocol)

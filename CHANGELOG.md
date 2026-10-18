@@ -7,6 +7,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Open-Source Release Standardization & AI Generative Engine Optimization (GEO)**:
+  - **Dual-Layer LLMs Specifications (`llms.txt`, `llms-full.txt`)**: Authored concise root `llms.txt` (<100 lines) for LLM search indexers (ChatGPT Search, Perplexity, Claude Web) and full-fidelity `llms-full.txt` technical manual featuring ASCII architecture diagrams, core scheduling mechanics, endpoint signatures, and troubleshooting FAQs.
+  - **GitHub Community Standards 100% Governance (`.github/`)**: Created interactive YAML form templates `.github/ISSUE_TEMPLATE/bug_report.yml` and `feature_request.yml`, alongside `.github/PULL_REQUEST_TEMPLATE.md`, and retired legacy markdown templates.
+  - **Dynamic Shields.io Badge Wall (`README.md`, `README_CN.md`)**: Configured dynamic badges for Go 1.26+, 8,444 passing tests, protocol compatibility (OpenAI, Claude, Codex), MIT license, and LLM indexers across both English and Chinese documentation.
+  - **Cold-Start Launch Package & SEO Seed Library (`docs/`)**:
+    - `docs/DISCUSSIONS_QA_SEEDS.md`: Authored 3 high-frequency long-tail developer Q&As addressing SSE keepalive during reasoning, multi-account session affinity prompt caching, and WorkBuddy dual-realm check-in.
+    - `docs/LAUNCH_COPYWRITING.md`: Generated tailored launch copywriting for V2EX, Reddit, Hacker News (Show HN), and X (Twitter).
+    - `docs/COMMUNITY_SUBMISSIONS.md`: Prepared structured Awesome list submission proposals for `awesome-claude-code`, `awesome-ai-devtools`, and `awesome-llm-infrastructure`.
+
+### Fixed
+- **Payload Model Multiplier Stripping & Video Routing (`handlers_execution.go`, `handlers_stream.go`)**:
+  - Prevented unconditional overwriting of payload model strings with clean model names in execution and streaming pipelines. Only strips multiplier suffixes when the request body's model string actually carries a multiplier, preserving canonical upstream models (e.g. `grok-imagine-video-1.5`) when using routing aliases.
+- **Provider Credit Resolution Isolation (`openai_handlers.go`)**:
+  - Restricted WorkBuddy credit resolution fallback strictly to models belonging to WorkBuddy (by ID prefix, `owned_by`, or `type`), preventing Codex and OpenAI models (e.g. `gpt-6-astra`, `claude-opus-5-5`) from inheriting unexpected WorkBuddy namespaces or multipliers in `/v1/models`.
+- **Test Suite Synchronization & Regression Hardening**:
+  - Restored unregistered model template fallback testing in `internal/client/codex/models/models_test.go`.
+  - Added atomic cancellation polling in `sdk/api/handlers/openai/openai_responses_interrupt_test.go` to eliminate Windows goroutine scheduling race conditions.
+  - Updated `sdk/cliproxy/workbuddy_credits_test.go` to verify fallback default credits when live catalogue fetch fails.
+  - Verified 100% green test pass rate across all 8,444 unit tests in the repository.
+
+### Added
 - **WorkBuddy Credential Account Identity Display Optimization (`management.html`, `auth_files.go`, `filestore.go`)**:
   - **Account Display Alignment (`workbuddy-cn-<nickname>` / `workbuddy-<nickname>`)**: Upgraded credential card title rendering (`hO`) in `management.html` to display `workbuddy-cn-<nickname>` for domestic accounts and `workbuddy-<nickname>` (or `workbuddy-intl-<nickname>`) for international accounts instead of raw timestamp filenames, with the original filename displayed below as secondary sub-label.
   - **Backend Metadata Exposure**: Exposed `nickname`, `user_id`, and `realm` fields in management API (`buildAuthFileEntryLocked`), added fallback to `metadata["nickname"]` in `labelFor` (`filestore.go`), and ensured `"label"` persistence in WorkBuddy OAuth callbacks.

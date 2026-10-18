@@ -32,6 +32,9 @@ auths/*
 # Documentation
 docs/*
 !docs/management-api-v8.md
+!docs/DISCUSSIONS_QA_SEEDS.md
+!docs/LAUNCH_COPYWRITING.md
+!docs/COMMUNITY_SUBMISSIONS.md
 AGENTS.md
 CLAUDE.md
 GEMINI.md

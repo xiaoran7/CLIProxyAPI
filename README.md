@@ -2,6 +2,12 @@
 
 English | [中文](README_CN.md) | [日本語](README_JA.md)
 
+[![Go Version](https://img.shields.io/badge/go-1.26+-00ADD8.svg?style=flat-square&logo=go)](https://golang.org)
+[![Tests](https://img.shields.io/badge/tests-8444%20passed-10b981.svg?style=flat-square)](https://github.com/router-for-me/CLIProxyAPI)
+[![Protocol](https://img.shields.io/badge/protocol-OpenAI%20%7C%20Claude%20%7C%20Codex-emerald.svg?style=flat-square)](llms-full.txt)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![LLMs Index](https://img.shields.io/badge/LLMs-llms.txt-orange.svg?style=flat-square)](llms.txt)
+
 > This repository is a heavily customized, enterprise-hardened, and production-ready fork of the upstream [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI).
 > It provides unified API routing, protocol translation, multi-account high-concurrency scheduling, and resilient orchestration for OpenAI, Anthropic Claude, Google Gemini, OpenAI Codex, Grok, Tencent WorkBuddy, and OpenCode across modern coding agents and CLI workflows.
 

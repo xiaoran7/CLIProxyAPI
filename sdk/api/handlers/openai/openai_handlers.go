@@ -111,19 +111,24 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 			}
 		}
 
-		// Fallback: If model doesn't have credits, resolve from WorkBuddy credit catalog
+		// Fallback: If model doesn't have credits, resolve from WorkBuddy credit catalog only for WorkBuddy models
 		if creditsMap == nil {
-			if rate := registry.ResolveWorkBuddyModelCreditRate(modelID); rate != nil {
-				creditsMap = map[string]any{
-					"multiplier": rate.Multiplier,
-					"free":       rate.Free,
-					"source":     rate.Source,
-				}
-				if rate.PromotionID != "" {
-					creditsMap["promotion_id"] = rate.PromotionID
-				}
-				if rate.PromotionNote != "" {
-					creditsMap["promotion_note"] = rate.PromotionNote
+			ownedBy, _ := model["owned_by"].(string)
+			modelType, _ := model["type"].(string)
+			lowerID := strings.ToLower(modelID)
+			if strings.HasPrefix(lowerID, "workbuddy") || strings.HasPrefix(lowerID, "codebuddy") || strings.HasPrefix(lowerID, "wb-") || strings.HasPrefix(lowerID, "hy") || strings.EqualFold(ownedBy, "workbuddy") || strings.EqualFold(ownedBy, "tencent") || strings.EqualFold(modelType, "workbuddy") {
+				if rate := registry.ResolveWorkBuddyModelCreditRate(modelID); rate != nil {
+					creditsMap = map[string]any{
+						"multiplier": rate.Multiplier,
+						"free":       rate.Free,
+						"source":     rate.Source,
+					}
+					if rate.PromotionID != "" {
+						creditsMap["promotion_id"] = rate.PromotionID
+					}
+					if rate.PromotionNote != "" {
+						creditsMap["promotion_note"] = rate.PromotionNote
+					}
 				}
 			}
 		}

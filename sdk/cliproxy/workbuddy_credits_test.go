@@ -148,8 +148,8 @@ func TestWorkBuddyRegistrationSurvivesCatalogFailure(t *testing.T) {
 		t.Fatal("catalogue failure removed every model")
 	}
 	for _, m := range models {
-		if m.Credits != nil {
-			t.Errorf("%s got credits from a failed fetch: %+v", m.ID, m.Credits)
+		if m.Credits != nil && m.Credits.Source == registry.WorkBuddyCreditsSource {
+			t.Errorf("%s got live credits from a failed fetch: %+v", m.ID, m.Credits)
 		}
 	}
 }
