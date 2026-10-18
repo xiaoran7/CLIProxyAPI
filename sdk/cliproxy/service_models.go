@@ -257,10 +257,10 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 					providerKey = "openai-compatibility"
 				}
 				if len(ms) > 0 {
-					ms = s.appendPluginModels(providerKey, ms)
+					ms = s.appendPluginModels(providerKey, ms, nil)
 					published = s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(ms, a.Prefix, cfg.ForceModelPrefix))
 				} else {
-					ms = s.appendPluginModels(providerKey, nil)
+					ms = s.appendPluginModels(providerKey, nil, nil)
 					if len(ms) > 0 {
 						published = s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(ms, a.Prefix, cfg.ForceModelPrefix))
 					} else {
@@ -280,10 +280,10 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 					}
 					ms := cached.models
 					if len(ms) > 0 {
-						ms = s.appendPluginModels(providerKey, ms)
+						ms = s.appendPluginModels(providerKey, ms, nil)
 						published = s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(ms, a.Prefix, cfg.ForceModelPrefix))
 					} else {
-						ms = s.appendPluginModels(providerKey, nil)
+						ms = s.appendPluginModels(providerKey, nil, nil)
 						if len(ms) > 0 {
 							published = s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(ms, a.Prefix, cfg.ForceModelPrefix))
 						} else {
@@ -303,7 +303,7 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 				}
 			}
 			if isCompatAuth {
-				models = s.appendPluginModels(providerKey, nil)
+				models = s.appendPluginModels(providerKey, nil, nil)
 				if len(models) > 0 {
 					published = s.registerResolvedModelsForAuthFenced(a, fence, providerKey, applyModelPrefixes(models, a.Prefix, cfg.ForceModelPrefix))
 				} else {
@@ -325,7 +325,7 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 	if key == "" {
 		key = strings.ToLower(strings.TrimSpace(a.Provider))
 	}
-	models = s.appendPluginModels(key, models)
+	models = s.appendPluginModels(key, models, excluded)
 	if len(models) > 0 {
 		models = applyOAuthSettingsForAuth(cfg, provider, authKind, models)
 		published = s.registerResolvedModelsForAuthFenced(a, fence, key, applyModelPrefixes(models, a.Prefix, cfg != nil && cfg.ForceModelPrefix))
