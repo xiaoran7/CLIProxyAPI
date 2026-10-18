@@ -794,7 +794,6 @@ func (a *executorAdapter) observeAndTranslateExecutorStream(ctx context.Context,
 	var streamErr error
 	var publishOnce sync.Once
 	var lineBuffer []byte
-	const maxLineBufferSize = 64 * 1024
 
 	publishResult := func() {
 		publishOnce.Do(func() {
@@ -865,10 +864,6 @@ func (a *executorAdapter) observeAndTranslateExecutorStream(ctx context.Context,
 							helps.ObservePluginExecutorStreamUsage(prepared.outputFormat.String(), lineBuffer, &streamUsage)
 							lineBuffer = nil
 						}
-					}
-					if len(lineBuffer) > maxLineBufferSize {
-						helps.ObservePluginExecutorStreamUsage(prepared.outputFormat.String(), lineBuffer, &streamUsage)
-						lineBuffer = nil
 					}
 				}
 
