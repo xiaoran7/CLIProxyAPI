@@ -75,8 +75,77 @@ func TestRegisterModelsForAuth_PluginStaticModelsFollowExclusions(t *testing.T) 
 			if present[pluginStaticGlobalModel] != tc.wantGlobal || present[pluginStaticCredentialModel] != tc.wantCredValue {
 				t.Fatalf("plugin static models = (%t,%t), want (%t,%t); models = %v", present[pluginStaticGlobalModel], present[pluginStaticCredentialModel], tc.wantGlobal, tc.wantCredValue, present)
 			}
+
+			// The public model list must not retain unfiltered plugin-only clients.
+			available := openAIModelIDSet(reg.GetAvailableModels("openai"))
+			_, hasGlobal := available[pluginStaticGlobalModel]
+			_, hasCredential := available[pluginStaticCredentialModel]
+			if hasGlobal != tc.wantGlobal || hasCredential != tc.wantCredValue {
+				t.Fatalf("available plugin models = (%t,%t), want (%t,%t)", hasGlobal, hasCredential, tc.wantGlobal, tc.wantCredValue)
+			}
 		})
 	}
+}
+
+func TestPluginStaticModelAvailabilityFollowsCredentials(t *testing.T) {
+	const provider = "kimi"
+	cfg := &config.Config{OAuthExcludedModels: map[string][]string{provider: {pluginStaticGlobalModel}}}
+	host := newPluginStaticModelHost(t, provider)
+	service := &Service{cfg: cfg, pluginHost: host}
+	reg := GlobalModelRegistry()
+	inherited := &coreauth.Auth{ID: t.Name() + "/inherited", Provider: provider, Status: coreauth.StatusActive, Attributes: map[string]string{"auth_kind": "oauth"}}
+	override := &coreauth.Auth{ID: t.Name() + "/override", Provider: provider, Status: coreauth.StatusActive, Attributes: map[string]string{
+		"auth_kind":       "oauth",
+		"excluded_models": pluginStaticCredentialModel,
+	}}
+	t.Cleanup(func() {
+		reg.UnregisterClient(inherited.ID)
+		reg.UnregisterClient(override.ID)
+	})
+	assertAvailable := func(stage string, wantGlobal, wantCredential bool) {
+		t.Helper()
+		available := openAIModelIDSet(reg.GetAvailableModels("openai"))
+		_, hasGlobal := available[pluginStaticGlobalModel]
+		_, hasCredential := available[pluginStaticCredentialModel]
+		if hasGlobal != wantGlobal || hasCredential != wantCredential {
+			t.Fatalf("%s: available plugin models = (%t,%t), want (%t,%t)", stage, hasGlobal, hasCredential, wantGlobal, wantCredential)
+		}
+	}
+
+	assertAvailable("no credentials", false, false)
+	service.registerModelsForAuth(t.Context(), inherited)
+	assertAvailable("global exclusions", false, true)
+
+	// A credential override may still expose a globally excluded model.
+	service.registerModelsForAuth(t.Context(), override)
+	assertAvailable("different credential exclusions", true, true)
+	override.Attributes["excluded_models"] = "plugin-static-*"
+	service.registerModelsForAuth(t.Context(), override)
+	assertAvailable("last supporting credential excludes model", false, true)
+
+	cfg.OAuthExcludedModels[provider] = []string{"plugin-static-*"}
+	service.registerModelsForAuth(t.Context(), inherited)
+	assertAvailable("all credentials exclude both models", false, false)
+
+	// Re-loading the catalog must not republish models excluded by every auth.
+	host.RegisterModels(t.Context(), registry.GetGlobalRegistry())
+	host.RegisterExecutors(coreauth.NewManager(nil, nil, nil), registry.GetGlobalRegistry())
+	assertAvailable("catalog reload", false, false)
+	if models := host.ModelsForProvider(provider); len(models) != 2 {
+		t.Fatalf("source catalog = %#v, want both models retained", models)
+	}
+
+	override.Attributes["excluded_models"] = pluginStaticCredentialModel
+	service.registerModelsForAuth(t.Context(), override)
+	assertAvailable("credential override after reload", true, false)
+	override.Disabled = true
+	service.registerModelsForAuth(t.Context(), override)
+	assertAvailable("last supporting credential disabled", false, false)
+	override.Disabled = false
+	service.registerModelsForAuth(t.Context(), override)
+	assertAvailable("credential re-enabled", true, false)
+	reg.UnregisterClient(override.ID)
+	assertAvailable("last supporting credential removed", false, false)
 }
 
 func TestRegisterModelsForAuth_PluginStaticExclusionsDoNotMatchNativeAliases(t *testing.T) {
