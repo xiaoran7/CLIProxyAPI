@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -128,7 +129,7 @@ func ResolveRealm(auth *cliproxyauth.Auth) string {
 	}
 	if auth.Attributes != nil {
 		bu := strings.ToLower(auth.Attributes["base_url"])
-		if strings.Contains(bu, "tencent.com") || strings.Contains(bu, "codebuddy.cn") {
+		if strings.Contains(bu, "tencent.com") || strings.Contains(bu, "codebuddy.cn") || strings.Contains(bu, "workbuddy.cn") {
 			return RealmCN
 		}
 	}
@@ -136,8 +137,16 @@ func ResolveRealm(auth *cliproxyauth.Auth) string {
 }
 
 // ResolveBaseURL returns the base server URL for the given realm.
+// For RealmCN, the base URL defaults to BaseURLCN ("https://copilot.tencent.com"),
+// but can be overridden by the WB_CN_CHAT_UPSTREAM environment variable (e.g. "https://www.workbuddy.cn")
+// to prevent TLS handshake resets when proxying from overseas network exits.
 func ResolveBaseURL(realm string) string {
 	if strings.EqualFold(realm, RealmCN) {
+		if override := strings.TrimSpace(os.Getenv("WB_CN_CHAT_UPSTREAM")); override != "" {
+			if strings.HasPrefix(override, "http://") || strings.HasPrefix(override, "https://") {
+				return strings.TrimRight(override, "/")
+			}
+		}
 		return BaseURLCN
 	}
 	return BaseURLIntl

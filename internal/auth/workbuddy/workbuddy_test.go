@@ -83,6 +83,13 @@ func TestResolveRealm(t *testing.T) {
 			want: RealmCN,
 		},
 		{
+			name: "base_url contains workbuddy.cn",
+			auth: &cliproxyauth.Auth{
+				Attributes: map[string]string{"base_url": "https://www.workbuddy.cn"},
+			},
+			want: RealmCN,
+		},
+		{
 			name: "default intl",
 			auth: &cliproxyauth.Auth{
 				Provider: "workbuddy",
@@ -98,6 +105,37 @@ func TestResolveRealm(t *testing.T) {
 				t.Errorf("ResolveRealm() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestResolveBaseURL_CnUpstreamOverride(t *testing.T) {
+	// 1. Unset returns default
+	t.Setenv("WB_CN_CHAT_UPSTREAM", "")
+	if got := ResolveBaseURL(RealmCN); got != BaseURLCN {
+		t.Errorf("ResolveBaseURL(RealmCN) with unset env = %q, want %q", got, BaseURLCN)
+	}
+	if got := ResolveDomain(RealmCN); got != DomainCN {
+		t.Errorf("ResolveDomain(RealmCN) = %q, want %q", got, DomainCN)
+	}
+
+	// 2. Valid override overrides BaseURLCN while X-Domain stays DomainCN
+	t.Setenv("WB_CN_CHAT_UPSTREAM", "https://www.workbuddy.cn/")
+	if got := ResolveBaseURL(RealmCN); got != "https://www.workbuddy.cn" {
+		t.Errorf("ResolveBaseURL(RealmCN) with override = %q, want https://www.workbuddy.cn", got)
+	}
+	if got := ResolveDomain(RealmCN); got != DomainCN {
+		t.Errorf("ResolveDomain(RealmCN) should not change, got %q, want %q", got, DomainCN)
+	}
+
+	// 3. Non-http URL is ignored and falls back to default
+	t.Setenv("WB_CN_CHAT_UPSTREAM", "ftp://www.workbuddy.cn")
+	if got := ResolveBaseURL(RealmCN); got != BaseURLCN {
+		t.Errorf("ResolveBaseURL(RealmCN) with invalid ftp env = %q, want %q", got, BaseURLCN)
+	}
+
+	// 4. International realm remains untouched
+	if got := ResolveBaseURL(RealmIntl); got != BaseURLIntl {
+		t.Errorf("ResolveBaseURL(RealmIntl) = %q, want %q", got, BaseURLIntl)
 	}
 }
 

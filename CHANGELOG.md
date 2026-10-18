@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **WorkBuddy China Realm Overseas Egress Resolution (`WB_CN_CHAT_UPSTREAM`) (`workbuddy.go`, `workbuddy_test.go`)**:
+  - **Overseas TLS Handshake Reset Bypass**: Backported upstream protocol repair (`WB_CN_CHAT_UPSTREAM`, aligning with upstream PR #465 / commit `7280c22f`). Resolves TCP RST / `SSL: UNEXPECTED_EOF_WHILE_READING` handshake drops when overseas network exits (VPS in Tokyo/US or global proxies) connect to `copilot.tencent.com`.
+  - **Dynamic Base URL Override**: `ResolveBaseURL(RealmCN)` now dynamically checks `WB_CN_CHAT_UPSTREAM` (e.g. `https://www.workbuddy.cn`), matching official Tencent desktop/VSCode endpoints while keeping `X-Domain: copilot.tencent.com` intact.
+  - **Automatic `workbuddy.cn` Realm Recognition**: Extended `ResolveRealm` to automatically classify `base_url` values containing `workbuddy.cn` as `RealmCN`.
+
+### Added
 - **Open-Source Release Standardization & AI Generative Engine Optimization (GEO)**:
   - **Dual-Layer LLMs Specifications (`llms.txt`, `llms-full.txt`)**: Authored concise root `llms.txt` (<100 lines) for LLM search indexers (ChatGPT Search, Perplexity, Claude Web) and full-fidelity `llms-full.txt` technical manual featuring ASCII architecture diagrams, core scheduling mechanics, endpoint signatures, and troubleshooting FAQs.
   - **GitHub Community Standards 100% Governance (`.github/`)**: Created interactive YAML form templates `.github/ISSUE_TEMPLATE/bug_report.yml` and `feature_request.yml`, alongside `.github/PULL_REQUEST_TEMPLATE.md`, and retired legacy markdown templates.
