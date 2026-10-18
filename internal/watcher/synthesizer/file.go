@@ -49,7 +49,11 @@ func (s *FileSynthesizer) Synthesize(ctx *SynthesisContext) ([]*coreauth.Auth, e
 		}
 		full := filepath.Join(ctx.AuthDir, name)
 		data, errRead := os.ReadFile(full)
-		if errRead != nil || len(data) == 0 {
+		if errRead != nil {
+			continue
+		}
+		if !json.Valid(data) {
+			ctx.RecordIncompleteFile(full)
 			continue
 		}
 		auths, errSynthesize := synthesizeFileAuths(ctx, full, data)
