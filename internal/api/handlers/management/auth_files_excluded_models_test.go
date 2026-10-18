@@ -111,38 +111,80 @@ func TestUploadAuthFileRejectsInvalidExcludedModels(t *testing.T) {
 	for _, content := range []string{
 		`{"type":"codex","email":"bad@example.test","excluded_models":123}`,
 		`{"type":"gemini-cli","email":"bad@example.test","excluded_models":123}`,
+		`{"type":"codex","email":"bad@example.test","excluded_models":["codex-new",1]}`,
 	} {
-		t.Run(content, func(t *testing.T) {
-			authDir := t.TempDir()
-			manager := coreauth.NewManager(nil, nil, nil)
-			h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: authDir}, manager)
+		for _, form := range []string{"multipart", "raw"} {
+			t.Run(form+"/"+content, func(t *testing.T) {
+				authDir := t.TempDir()
+				manager := coreauth.NewManager(nil, nil, nil)
+				h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: authDir}, manager)
 
-			var body bytes.Buffer
-			writer := multipart.NewWriter(&body)
-			part, errCreate := writer.CreateFormFile("file", "bad.json")
-			if errCreate != nil {
-				t.Fatal(errCreate)
-			}
-			if _, errWrite := part.Write([]byte(content)); errWrite != nil {
-				t.Fatal(errWrite)
-			}
-			if errClose := writer.Close(); errClose != nil {
-				t.Fatal(errClose)
-			}
-			rec := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(rec)
-			c.Request = httptest.NewRequest(http.MethodPost, "/v8/management/credentials", &body)
-			c.Request.Header.Set("Content-Type", writer.FormDataContentType())
-			h.UploadAuthFile(c)
+				rec := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(rec)
+				if form == "multipart" {
+					var body bytes.Buffer
+					writer := multipart.NewWriter(&body)
+					part, errCreate := writer.CreateFormFile("file", "bad.json")
+					if errCreate != nil {
+						t.Fatal(errCreate)
+					}
+					if _, errWrite := part.Write([]byte(content)); errWrite != nil {
+						t.Fatal(errWrite)
+					}
+					if errClose := writer.Close(); errClose != nil {
+						t.Fatal(errClose)
+					}
+					c.Request = httptest.NewRequest(http.MethodPost, "/v8/management/credentials", &body)
+					c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+				} else {
+					c.Request = httptest.NewRequest(http.MethodPost, "/v8/management/credentials?name=bad.json", strings.NewReader(content))
+					c.Request.Header.Set("Content-Type", "application/json")
+				}
+				h.UploadAuthFile(c)
 
-			if rec.Code == http.StatusOK || !strings.Contains(rec.Body.String(), "excluded_models must be a string array") {
-				t.Fatalf("status = %d body = %s, want excluded_models validation error", rec.Code, rec.Body.String())
+				// Invalid client input is a 400, not a server failure.
+				if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "excluded_models") || !strings.Contains(rec.Body.String(), "must be a string") {
+					t.Fatalf("status = %d body = %s, want 400 excluded_models validation error", rec.Code, rec.Body.String())
+				}
+				if entries, errRead := os.ReadDir(authDir); errRead != nil || len(entries) != 0 {
+					t.Fatalf("auth dir entries = %v (err %v), want no file written", entries, errRead)
+				}
+				if auths := manager.List(); len(auths) != 0 {
+					t.Fatalf("registered auths = %d, want none", len(auths))
+				}
+			})
+		}
+	}
+}
+
+func TestPatchAuthFileFieldsAcceptsCommaSeparatedExcludedModels(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tt := range []struct {
+		name     string
+		fields   string
+		metadata []string
+		want     string
+	}{
+		{"comma string", `"excluded_models":" Local-a , ,local-b "`, []string{"Local-a", "local-b"}, "local-a,local-b"},
+		{"legacy key string", `"excluded-models":"local-a"`, []string{"local-a"}, "local-a"},
+		{"blank string clears", `"excluded_models":"  "`, []string{}, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h, manager, record := newExcludedModelsPatchTestHandler(t, "oauth")
+			rec := patchExcludedModelsFields(h, tt.fields)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 			}
-			if entries, errRead := os.ReadDir(authDir); errRead != nil || len(entries) != 0 {
-				t.Fatalf("auth dir entries = %v (err %v), want no file written", entries, errRead)
+			updated, ok := manager.GetByID(record.ID)
+			if !ok {
+				t.Fatal("updated auth missing")
 			}
-			if auths := manager.List(); len(auths) != 0 {
-				t.Fatalf("registered auths = %d, want none", len(auths))
+			// The legacy string form is persisted as a canonical array.
+			if got := updated.Metadata["excluded_models"]; !reflect.DeepEqual(got, tt.metadata) {
+				t.Fatalf("metadata excluded_models = %#v, want %#v", got, tt.metadata)
+			}
+			if got := updated.Attributes["excluded_models"]; got != tt.want {
+				t.Fatalf("excluded_models attribute = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -152,7 +194,7 @@ func TestPatchAuthFileFieldsRejectsInvalidExcludedModels(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, fields := range []string{
 		`"abc":true,"excluded_models":123`,
-		`"abc":true,"excluded-models":"codex-new"`,
+		`"abc":true,"excluded-models":true`,
 		`"abc":true,"excluded_models":{}`,
 		`"abc":true,"excluded_models":["codex-new",null]`,
 		`"abc":true,"excluded_models":[42,false]`,

@@ -1,17 +1,86 @@
 package cliproxy
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/pluginhost"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/watcher/synthesizer"
+	sdkAuth "github.com/router-for-me/CLIProxyAPI/v8/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
+	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
 )
+
+// Without a watcher (Home mode), a registration dropped for obsolete global exclusions
+// must still be replaced by the re-registration that runs when the config is applied.
+func TestModelRegistrationDroppedForGlobalExclusionsIsReplacedWithoutWatcher(t *testing.T) {
+	models := registry.GetClaudeModels()
+	if len(models) < 2 {
+		t.Fatal("need two Claude models to test exclusion changes")
+	}
+	modelA, modelB := models[0].ID, models[1].ID
+	oldCfg := &config.Config{OAuthExcludedModels: map[string][]string{"claude": {modelA}}}
+	newCfg := &config.Config{OAuthExcludedModels: map[string][]string{"claude": {modelB}}}
+	service := &Service{cfg: oldCfg, coreManager: coreauth.NewManager(nil, nil, nil), pluginHost: pluginhost.New()}
+	service.applyPprofConfigContextFn = func(context.Context, *config.Config) bool { return true }
+	t.Cleanup(func() {
+		sdkAuth.RegisterPluginAuthParser(nil)
+		sdktranslator.SetPluginHooks(nil)
+	})
+
+	var reads atomic.Int32
+	oldStarted, oldRelease, oldDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	releaseOld := sync.OnceFunc(func() { close(oldRelease) })
+	auth, errRegister := service.coreManager.Register(t.Context(), &coreauth.Auth{
+		ID: t.Name(), Provider: "claude", Attributes: map[string]string{"auth_kind": "oauth"},
+		// Pause only the first registration after it captured its fence.
+		Runtime: &registrationInterleaveRuntime{onRead: func() {
+			if reads.Add(1) == 1 {
+				close(oldStarted)
+				<-oldRelease
+			}
+		}},
+	})
+	if errRegister != nil {
+		t.Fatal(errRegister)
+	}
+	reg := GlobalModelRegistry()
+	reg.RegisterClient(auth.ID, "claude", models[:2])
+	t.Cleanup(func() { reg.UnregisterClient(auth.ID) })
+	epoch := reg.ClientRegistrationEpoch(auth.ID)
+
+	go func() {
+		defer close(oldDone)
+		service.registerModelsForAuth(t.Context(), auth)
+	}()
+	t.Cleanup(func() { releaseOld(); <-oldDone })
+	<-oldStarted
+
+	// Worst case: the obsolete registration finishes after the commit but before the runtime apply.
+	commit := service.commitConfigUpdate(newCfg)
+	if commit.cfg != newCfg {
+		t.Fatal("config update was rejected")
+	}
+	releaseOld()
+	<-oldDone
+	if got := reg.ClientRegistrationEpoch(auth.ID); got != epoch {
+		t.Fatalf("obsolete registration advanced epoch from %d to %d", epoch, got)
+	}
+
+	if !service.applyConfigRuntime(t.Context(), commit, true) {
+		t.Fatal("config runtime apply failed")
+	}
+	if !reg.ClientSupportsModel(auth.ID, modelA) || reg.ClientSupportsModel(auth.ID, modelB) {
+		t.Fatalf("final models: %s=%t, %s=%t; want new global exclusions", modelA, reg.ClientSupportsModel(auth.ID, modelA), modelB, reg.ClientSupportsModel(auth.ID, modelB))
+	}
+}
 
 func TestModelRegistrationFenceRetainsGlobalExclusionsAfterAuthUpdate(t *testing.T) {
 	for _, withManager := range []bool{false, true} {

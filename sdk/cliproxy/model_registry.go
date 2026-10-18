@@ -124,8 +124,10 @@ func (f modelRegistrationFence) publishIfCurrent(s *Service, authID string, publ
 		if s != nil && !f.disabled && f.authKind != coreauth.AuthKindAPIKey && strings.TrimSpace(f.attributes["excluded_models"]) == "" {
 			s.cfgMu.RLock()
 			defer s.cfgMu.RUnlock()
-			// Match the watcher's normalization so no-op and unrelated reloads
-			// do not discard work without scheduling a replacement registration.
+			// Match the watcher's normalization so no-op and unrelated reloads do not
+			// discard work. A real change always schedules a replacement: the watcher
+			// redispatches affected auths, and applyConfigRuntime re-registers every
+			// auth (which also covers Home mode, where no watcher runs).
 			for _, provider := range [2]string{f.exclusionProvider, f.fallbackExclusionProvider} {
 				if provider == "" {
 					continue

@@ -347,18 +347,15 @@ func (h *Handler) PatchAuthFileFields(c *gin.Context) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "excluded_models does not support nested fields"})
 				return
 			}
-			if value != nil {
-				models, valid := value.([]any)
-				for _, model := range models {
-					if _, okString := model.(string); !okString {
-						valid = false
-						break
-					}
-				}
-				if !valid {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "excluded_models must be a string array or null"})
-					return
-				}
+			// Accept the same shapes as auth-file loading, but reject anything it would ignore.
+			models, errExcluded := synthesizer.ExtractExcludedModelsFromMetadata(map[string]any{"excluded_models": value})
+			if errExcluded != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "excluded_models must be a string array, a comma-separated string, or null"})
+				return
+			}
+			// Persist the legacy comma-separated form as a canonical array.
+			if _, isString := value.(string); isString {
+				value = models
 			}
 		}
 		if targetAuth.Metadata == nil {

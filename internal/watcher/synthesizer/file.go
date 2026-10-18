@@ -87,11 +87,11 @@ func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([
 	if errWeight := coreauth.ValidateAuthWeight(&coreauth.Auth{Metadata: metadata}); errWeight != nil {
 		return nil, fmt.Errorf("invalid weight in %s: %w", filepath.Base(fullPath), errWeight)
 	}
-	// Validate per-account excluded models before any provider or plugin early return,
-	// so callers that persist unrecognized payloads never store invalid rules.
+	// Invalid per-account rules must not drop an existing credential: keep the valid
+	// entries and warn. Write entry points (upload and PATCH) reject them before persisting.
 	perAccountExcluded, errExcluded := ExtractExcludedModelsFromMetadata(metadata)
 	if errExcluded != nil {
-		return nil, fmt.Errorf("auth file %s: %w", fullPath, errExcluded)
+		log.WithError(errExcluded).Warnf("ignoring invalid excluded models in auth file %s", filepath.Base(fullPath))
 	}
 	t, _ := metadata["type"].(string)
 	provider := strings.ToLower(strings.TrimSpace(t))
@@ -337,7 +337,8 @@ func extractOAuthModelAliasesFromMetadata(metadata map[string]any) []config.OAut
 // "excluded_models" is canonical; "excluded-models" remains a legacy alias. The value must be a
 // string array; a single string is also accepted for older hand-written files and is split on
 // commas, because model IDs never contain commas. Any other type, or a non-string array element,
-// is an error.
+// is an error. For non-string elements the valid string entries are still returned with the
+// error, so lenient readers can keep the usable rules while strict writers reject the value.
 func ExtractExcludedModelsFromMetadata(metadata map[string]any) ([]string, error) {
 	if metadata == nil {
 		return nil, nil
@@ -352,6 +353,7 @@ func ExtractExcludedModelsFromMetadata(metadata map[string]any) ([]string, error
 		return nil, nil
 	}
 	var stringSlice []string
+	var errInvalid error
 	switch v := raw.(type) {
 	case string:
 		stringSlice = strings.Split(v, ",")
@@ -362,7 +364,10 @@ func ExtractExcludedModelsFromMetadata(metadata map[string]any) ([]string, error
 		for index, item := range v {
 			s, okString := item.(string)
 			if !okString {
-				return nil, fmt.Errorf("metadata %s[%d] must be a string, got %T", key, index, item)
+				if errInvalid == nil {
+					errInvalid = fmt.Errorf("metadata %s[%d] must be a string, got %T", key, index, item)
+				}
+				continue
 			}
 			stringSlice = append(stringSlice, s)
 		}
@@ -375,5 +380,5 @@ func ExtractExcludedModelsFromMetadata(metadata map[string]any) ([]string, error
 			result = append(result, trimmed)
 		}
 	}
-	return result, nil
+	return result, errInvalid
 }
