@@ -200,11 +200,13 @@ func ApplyWorkBuddyCredits(models []*ModelInfo, realm string) []*ModelInfo {
 			continue
 		}
 		if strings.HasSuffix(strings.ToLower(m.ID), "-free") {
-			m.Credits = &ModelCredits{
-				Multiplier: 0.0,
-				Source:     "alias",
+			if !strings.EqualFold(strings.TrimSpace(realm), "cn") {
+				m.Credits = &ModelCredits{
+					Multiplier: 0.0,
+					Source:     "alias",
+				}
+				continue
 			}
-			continue
 		}
 		if len(catalog) > 0 {
 			entry, ok := catalog[workbuddyCreditsLookupKey(m.ID)]
@@ -262,6 +264,10 @@ func WorkBuddyCreditsModelRates(realm string) map[string]WorkBuddyCreditsRate {
 // GetWorkBuddyModelCredits returns the resolved credit rate for one model in a
 // realm, or nil when the rate is unknown.
 func GetWorkBuddyModelCredits(modelID, realm string) *WorkBuddyCreditsRate {
+	cleanID := strings.ToLower(TrimWorkBuddyPrefixes(modelID))
+	if strings.EqualFold(strings.TrimSpace(realm), "cn") && strings.HasSuffix(cleanID, "-free") {
+		return nil
+	}
 	catalog := resolveWorkBuddyCredits(workbuddyCreditsRealmKey(realm))
 	if len(catalog) == 0 {
 		return nil
@@ -355,6 +361,10 @@ func DetectWorkBuddyModelRealm(modelID string) (realm string, provider string) {
 func LookupWorkBuddyModelCredits(modelID, realm string) *WorkBuddyCreditsRate {
 	cleanID := strings.ToLower(TrimWorkBuddyPrefixes(modelID))
 	if strings.HasSuffix(cleanID, "-free") {
+		// CN realm has no free models / free tier; do not report 0x alias for CN.
+		if strings.EqualFold(strings.TrimSpace(realm), "cn") {
+			return nil
+		}
 		return &WorkBuddyCreditsRate{
 			Multiplier: 0.0,
 			Free:       true,
@@ -404,6 +414,10 @@ func ResolveWorkBuddyModelCreditRate(modelID string) *WorkBuddyCreditsRate {
 	if realm == "cn" {
 		if rate := LookupWorkBuddyModelCredits(clean, "cn"); rate != nil {
 			return rate
+		}
+		// Do not fall back to intl for -free aliases when model belongs to the cn realm.
+		if strings.HasSuffix(strings.ToLower(clean), "-free") {
+			return nil
 		}
 		if rate := LookupWorkBuddyModelCredits(clean, "intl"); rate != nil {
 			return rate
@@ -895,6 +909,10 @@ func recordWorkBuddyModelCredit(item any, out map[string]*workbuddyCreditsEntry)
 func LocalWorkBuddyCreditsRate(modelID string) *WorkBuddyCreditsRate {
 	clean := strings.ToLower(strings.TrimSpace(modelID))
 	if !strings.HasSuffix(clean, "-free") {
+		return nil
+	}
+	realm, _ := DetectWorkBuddyModelRealm(modelID)
+	if realm == "cn" {
 		return nil
 	}
 	return &WorkBuddyCreditsRate{

@@ -201,17 +201,6 @@ var staticWorkBuddyCNModels = []*ModelInfo{
 		OutputTokenLimit:    64000,
 	},
 	{
-		ID:                  "hy4-preview-f-free",
-		Object:              "model",
-		OwnedBy:             "tencent",
-		Type:                "workbuddy",
-		DisplayName:         "Hunyuan 4 Preview F (Free / 1M)",
-		ContextLength:       1048576,
-		MaxCompletionTokens: 64000,
-		InputTokenLimit:     1048576,
-		OutputTokenLimit:    64000,
-	},
-	{
 		ID:                  "hy3",
 		Object:              "model",
 		OwnedBy:             "tencent",
@@ -228,20 +217,6 @@ var staticWorkBuddyCNModels = []*ModelInfo{
 		OwnedBy:             "deepseek",
 		Type:                "workbuddy",
 		DisplayName:         "DeepSeek V4.1 Flash (CodeBuddy)",
-		ContextLength:       1048576,
-		MaxCompletionTokens: 64000,
-		InputTokenLimit:     1048576,
-		OutputTokenLimit:    64000,
-		Thinking: &ThinkingSupport{
-			Levels: []string{"high", "max"},
-		},
-	},
-	{
-		ID:                  "deepseek-v4.1-flash-free",
-		Object:              "model",
-		OwnedBy:             "deepseek",
-		Type:                "workbuddy",
-		DisplayName:         "DeepSeek V4.1 Flash (Free / 1M)",
 		ContextLength:       1048576,
 		MaxCompletionTokens: 64000,
 		InputTokenLimit:     1048576,
@@ -344,11 +319,14 @@ func LookupWorkBuddyModel(modelID, realm string) *ModelInfo {
 	}
 
 	// Second pass: fallback without -free suffix if only base model is registered
-	target := strings.TrimSuffix(clean, "-free")
-	if target != clean {
-		for _, m := range models {
-			if m != nil && strings.ToLower(m.ID) == target {
-				return cloneModelInfo(m)
+	// Note: CN realm has no -free tier/models, so fallback without -free suffix should not apply to CN.
+	if !strings.EqualFold(strings.TrimSpace(realm), "cn") {
+		target := strings.TrimSuffix(clean, "-free")
+		if target != clean {
+			for _, m := range models {
+				if m != nil && strings.ToLower(m.ID) == target {
+					return cloneModelInfo(m)
+				}
 			}
 		}
 	}

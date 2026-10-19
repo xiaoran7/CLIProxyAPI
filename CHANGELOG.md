@@ -34,6 +34,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
     - `docs/COMMUNITY_SUBMISSIONS.md`: Prepared structured Awesome list submission proposals for `awesome-claude-code`, `awesome-ai-devtools`, and `awesome-llm-infrastructure`.
 
 ### Fixed
+- **WorkBuddy CN Realm Free Tier Misclassification (`workbuddy_models.go`, `workbuddy_credits.go`)**:
+  - Removed erroneous `-free` model registrations (`hy4-preview-f-free`, `deepseek-v4.1-flash-free`) from CodeBuddy CN catalog (`staticWorkBuddyCNModels`). The domestic Chinese edition has no zero-credit models or free tier; each call consumes point/package quotas.
+  - Guarded `LookupWorkBuddyModel` and `LookupWorkBuddyModelCredits` against fallback lookups of `-free` variants in the CN realm, ensuring queries for `deepseek-v4.1-flash-free` do not hijack requests to domestic accounts and route cleanly to authentic free providers (e.g. OpenCode Zen).
+  - Ensured credit multiplier calculation and local alias derivation (`ApplyWorkBuddyCredits`, `GetWorkBuddyModelCredits`, `LocalWorkBuddyCreditsRate`, `ResolveWorkBuddyModelCreditRate`) consistently reject `-free` models under the CN realm.
 - **Payload Model Multiplier Stripping & Video Routing (`handlers_execution.go`, `handlers_stream.go`)**:
   - Prevented unconditional overwriting of payload model strings with clean model names in execution and streaming pipelines. Only strips multiplier suffixes when the request body's model string actually carries a multiplier, preserving canonical upstream models (e.g. `grok-imagine-video-1.5`) when using routing aliases.
 - **Provider Credit Resolution Isolation (`openai_handlers.go`)**:

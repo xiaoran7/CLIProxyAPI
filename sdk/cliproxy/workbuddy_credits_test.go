@@ -107,6 +107,9 @@ func TestWorkBuddyCreditsUseRealmSpecificCatalog(t *testing.T) {
 
 	var found bool
 	for _, m := range GlobalModelRegistry().GetModelsForClient(registered.ID) {
+		if m.ID == "deepseek-v4.1-flash-free" || m.ID == "hy4-preview-f-free" {
+			t.Errorf("cn auth unexpectedly registered -free model: %s", m.ID)
+		}
 		if m.ID != "deepseek-v4.1-flash" {
 			continue
 		}

@@ -480,6 +480,41 @@ func TestLocalWorkBuddyCreditsRate(t *testing.T) {
 	if paid := LocalWorkBuddyCreditsRate("glm-5.3"); paid != nil {
 		t.Errorf("non-alias model produced a local rate: %+v", paid)
 	}
+	if cnFree := LocalWorkBuddyCreditsRate("hy4-preview-f-free"); cnFree != nil {
+		t.Errorf("CN model hy4-preview-f-free produced a local rate: %+v", cnFree)
+	}
+	if cnPrefixFree := LocalWorkBuddyCreditsRate("workbuddy-cn/deepseek-v4.1-flash-free"); cnPrefixFree != nil {
+		t.Errorf("workbuddy-cn/deepseek-v4.1-flash-free produced a local rate: %+v", cnPrefixFree)
+	}
+}
+
+func TestWorkBuddyCNRealmRejectsFreeModelCredits(t *testing.T) {
+	// CN realm has no free tier / free models; lookups with -free under CN must return nil.
+	if r := LookupWorkBuddyModelCredits("deepseek-v4.1-flash-free", "cn"); r != nil {
+		t.Errorf("LookupWorkBuddyModelCredits(deepseek-v4.1-flash-free, cn) = %+v, want nil", r)
+	}
+	if r := LookupWorkBuddyModelCredits("hy4-preview-f-free", "cn"); r != nil {
+		t.Errorf("LookupWorkBuddyModelCredits(hy4-preview-f-free, cn) = %+v, want nil", r)
+	}
+
+	// Intl realm should still resolve -free alias as free.
+	rIntl := LookupWorkBuddyModelCredits("deepseek-v4.1-flash-free", "intl")
+	if rIntl == nil || !rIntl.Free || rIntl.Source != "alias" {
+		t.Errorf("LookupWorkBuddyModelCredits(deepseek-v4.1-flash-free, intl) = %+v, want free alias", rIntl)
+	}
+
+	// ResolveWorkBuddyModelCreditRate for explicit CN prefixes must return nil for -free.
+	if r := ResolveWorkBuddyModelCreditRate("workbuddy-cn/deepseek-v4.1-flash-free"); r != nil {
+		t.Errorf("ResolveWorkBuddyModelCreditRate(workbuddy-cn/deepseek-v4.1-flash-free) = %+v, want nil", r)
+	}
+	if r := ResolveWorkBuddyModelCreditRate("hy4-preview-f-free"); r != nil {
+		t.Errorf("ResolveWorkBuddyModelCreditRate(hy4-preview-f-free) = %+v, want nil", r)
+	}
+
+	// GetWorkBuddyModelCredits for -free in CN must return nil.
+	if r := GetWorkBuddyModelCredits("deepseek-v4.1-flash-free", "cn"); r != nil {
+		t.Errorf("GetWorkBuddyModelCredits(deepseek-v4.1-flash-free, cn) = %+v, want nil", r)
+	}
 }
 
 func TestCollectWorkBuddyModelCreditsFromNestedPayload(t *testing.T) {
