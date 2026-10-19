@@ -46,14 +46,7 @@ auths/*
 /auths
 !auths/.gitkeep
 
-# Documentation
-docs/*
-!docs/management-api-v8.md
-!docs/DISCUSSIONS_QA_SEEDS.md
-!docs/LAUNCH_COPYWRITING.md
-!docs/COMMUNITY_SUBMISSIONS.md
-AGENTS.md
-CLAUDE.md
+# Local documentation overrides
 GEMINI.md
 AGENTS.override.md
 
@@ -99,7 +92,9 @@ aoci.*
 .mcp.json.backup.*
 AGENTS.md.backup.*
 
-# 本地 Agent 垫片与私有上下文覆盖
+# Local Agent shims, archives & scratch directories
+_local/
+_scratch/
 AGENT.md
 agent.md
 *.local.md

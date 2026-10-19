@@ -8,161 +8,55 @@ English | [中文](README_CN.md) | [日本語](README_JA.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![LLMs Index](https://img.shields.io/badge/LLMs-llms.txt-orange.svg?style=flat-square)](llms.txt)
 
-> This repository is a heavily customized, enterprise-hardened, and production-ready fork of the upstream [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI).
-> It provides unified API routing, protocol translation, multi-account high-concurrency scheduling, and resilient orchestration for OpenAI, Anthropic Claude, Google Gemini, OpenAI Codex, Grok, Tencent WorkBuddy, and OpenCode across modern coding agents and CLI workflows.
+> Enterprise-hardened fork of [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) providing unified API routing, protocol translation, multi-account quota scheduling, and resilient stream orchestration across OpenAI, Claude, Gemini, Codex, Grok, Tencent WorkBuddy, and OpenCode.
 
----
+```text
+Coding Agents (Claude Code / Codex CLI / Cursor / OpenAI & Anthropic SDKs)
+  -> Gateway Layer (Auth, Body Decompression, SelectiveGzip, 15s SSE Keepalive, LoopGuard)
+  -> Routing & Affinity (SessionCache [session_affinity.json], 429 Sink Pool, 5 Selectors)
+  -> Canonical Pipeline (ApplyThinking -> ThinkingConfig -> Payload Semantic Barrier)
+  -> Provider Executors (Claude, Codex, Gemini/Antigravity, WorkBuddy, OpenCode, Kimi, Grok)
+```
 
-## Core Highlights & Fork Enhancements
+## Core Highlights
 
-Building upon upstream's high-performance proxying and protocol normalization, this fork introduces substantial architectural advancements focusing on **agent connection resilience**, **multi-strategy quota load balancing**, **deeply reverse-engineered providers (WorkBuddy & OpenCode)**, and **out-of-the-box management dashboard integration (CPAMC)**:
-
-### 1. Deep Reverse-Engineering & Native Domestic Agent Suites
-
-- **Tencent WorkBuddy / CodeBuddy Dual-Realm Native Management**:
-  - **Dual-Realm Automatic Resolution**: Native support for Mainland China (`copilot.tencent.com`) and International (`workbuddy.ai`) domains, dedicated endpoint routing, and credential translation.
-  - **Deterministic WAF Fingerprinting**: Built-in deterministic device fingerprint synthesis (`X-Machine-ID`, `X-Session-ID`, `X-IDE-Name`, `X-Domain`) to cloak requests as genuine IDE clients against Tencent WAF blocks.
-  - **Automated Daily Check-in Engine (`CheckinEngine`)**: Background daemon running on Beijing time (CST) to automatically claim daily quota, track consecutive check-in streaks, deduplicate requests, and persist state across restarts (`workbuddy_checkins.json`).
-  - **Dynamic Lifecycle Control**: Toggle background check-in on or off on the fly via the management UI or REST API (`PUT /v8/management/workbuddy/checkin`).
-  - **Intelligent Quota 404 Fallback**: Seamlessly falls back to Tencent activity meter billing endpoints when standard points paths return 404, extracting actual points balance (e.g. 200 points), daily allowances, and active season themes.
-  - **Singleflight Token Refresh**: De-duplicates concurrent refresh token requests to prevent token invalidation under high concurrency.
-  - **Interactive CLI OAuth Login**: One-command interactive QR-code scanning via WeChat or WeCom to effortlessly generate structured credentials.
-
-- **OpenCode Native Protocol & 1M Free-Tier Models Zero-Config Integration**:
-  - **Anti-Detection Schema Cloaking**: Reverse-engineered protocol headers, cloaking caller tool signatures, and injecting virtual system prompts to bypass vendor scrutiny.
-  - **Zero-Config 1M Context Models**: Native out-of-the-box routing for OpenCode 1M-context models (`step-5-preview-free`, `longcat-2.5-preview-free`, `mimo-v2.6-flash-free`, `ling-3.1-flash-free`).
-  - **First-Class Provider Presentation**: Elevated as a top-level provider inside the CPAMC control panel.
-
-### 2. Enterprise-Grade Multi-Strategy Load Balancing & Affinity
-
-- **Five Advanced Scheduling Algorithms**:
-  - **Round-Robin**: Standard stateless uniform distribution.
-  - **Weighted Round-Robin**: Capacity and weight-aware proportional dispatch.
-  - **Fill-First**: Saturates accounts sequentially to preserve standby credentials.
-  - **Smart Quota Routing**: Dispatches requests preferentially to accounts whose quota refresh window expires soonest, maximizing token utilization before resets.
-  - **Pace Quota Routing**: Dynamically paces request rates against remaining window time and consumption speed, eliminating quota starvation early in the cycle.
-- **Cross-Restart Persistent Session Affinity**:
-  - Persists long-running session affinities in `session_affinity.json`, surviving restarts and crashes without cache loss.
-  - Features sliding-window TTL to extend active session bindings, maximizing prompt-cache hit rates for Claude Code and Codex.
-  - Integrated with a **429 Rate-Limit Sink Pool**: throttled credentials automatically sink into a dynamic cooldown queue while requests seamlessly retry on healthy credentials.
-
-### 3. Agent Stream Resilience & High Availability
-
-- **Streaming Loop Guard Circuit Breaker**:
-  - Detects runaway reasoning or repetitive token loops during extended thinking phases, severing stalled connections before they exhaust upstream quotas and client bandwidth.
-- **SSE Keepalive Pumper**:
-  - Pumps compliant SSE comment heartbeats (`: keep-alive`) during prolonged model thinking pauses, preventing edge CDN / WAF / Cloudflare timeouts (HTTP 524 / 504).
-- **Zero-Knowledge Redaction & Privacy**:
-  - Comprehensive log and audit sanitization, ensuring API tokens, authorization headers, cookies, and sensitive prompt bodies are never leaked in application logs.
-
-### 4. Turnkey Management Console (Deeply Customized CPAMC v1.26.2)
-
-- **Fully Embedded Static Serving**: Bundles the complete Web UI directly within the binary and static distribution directory.
-- **Dedicated WorkBuddy Suite Drawer**:
-  - Clean separation between Mainland CN and International accounts.
-  - One-click batch quota refresh showing balance and VIP tier.
-  - Interactive engine status badge with instant Pause / Resume controls.
-  - 100% account visibility without ghost credentials.
-- **Storage File Safety Hardening**:
-  - Enforces strict isolation of internal state files (`workbuddy_checkins.json`, `session_affinity.json`), preventing accidental exposure, download, or deletion via management endpoints.
-  - Full catalog inspection with global exit model exclusions.
-
----
+- **Tencent WorkBuddy / CodeBuddy Dual-Realm Suite**: Native CN (`workbuddy-cn/`, `copilot.tencent.com`, `WB_CN_CHAT_UPSTREAM`) and Intl (`workbuddy/`) routing; Desktop 5.8.4 trace cloaking (`11128` guard); upstream `stream: true` folding (`AggregateWorkBuddyStream`, `11101` fix); live credit multipliers (`:3.33x`); billing meters; and CST `CheckinEngine` (`workbuddy_checkins.json`) with compensation claiming.
+- **OpenCode Zen 1M Free-Tier Protocol**: Rewrites `/zen/v1` to `/inference/v1`, sanitizes `oc_sk_...` keys, injects `1.19.0` headers and valid `bash`/`read` tool schemas with stub filtering, and provides zero-config 1M free models (`glm-5.3-flash-free`, `deepseek-v4.1-flash-free`).
+- **Multi-Strategy Load Balancing & Affinity**: `round-robin`, `weighted-round-robin`, `fill-first`, `smart` (earliest reset window), and `pace` (hourly headroom); persistent session bindings (`session_affinity.json`) and HTTP 429 cooldown sink queues.
+- **Stream Resilience, Redaction & Console**: 15s SSE `: keep-alive` heartbeats, `LoopGuard` breaker, `SelectiveGzipMiddleware`, HMAC-SHA256 zero-knowledge redaction (`{{API_KEY_...}}`), and embedded `/management.html` CPAMC console.
 
 ## Supported Providers
 
-| Provider | Description | Supported Channels & Protocols |
+| Provider | Representative Models | Supported Channels & Protocols |
 | :--- | :--- | :--- |
-| **Anthropic Claude** | Claude Fable 5.1, Claude Opus 5.5, Claude Sonnet 5.5, Claude Haiku 5.5 | OAuth, Setup-Token, API Key, Interactions, Codex protocol mapping |
-| **OpenAI & Codex** | GPT-6 Astra, GPT-6.1 Sol, GPT-6 Luna, o3, o1-preview | Codex OAuth, API Key, Responses, Stream/WS Relay |
-| **Google Gemini** | Gemini 3.8 Flash, Gemini 3.1 Pro Preview, 2.5 Flash / Pro | AI Studio, Vertex AI, Gemini CLI, Antigravity accounts |
-| **Tencent WorkBuddy** | DeepSeek V4.1 Flash (1M), GLM 5.3, Kimi K3, Hy4 Preview | Dual-realm reverse engineering (CN/Intl), OAuth, automated check-in |
-| **OpenCode** | `step-5-preview-free`, `longcat-2.5-preview-free` (1M context) | Native OpenCode reverse protocol, WAF cloaking, zero-config free tier |
-| **Kimi (Moonshot)** | Kimi K3 (2.8T 3T-class open flagship), K2.8 Preview | OAuth, Kimi Code subscription, Open Platform API Key |
-| **xAI Grok** | Grok 4.7, Grok 4.7 Build Fast | Grok Build OAuth, xAI API Key |
-| **Meta Muse** | Muse Spark 1.3, Muse Spark 1.2 | Meta login authentication, Meta Model API Key |
-| **Devin** | SWE-2, GPT-6 Astra, Claude Fable 5.1 | `--devin-login` account reverse routing |
-| **OpenAI Compatible** | Any standard OpenAI / Claude upstream (DeepSeek, OpenRouter, SiliconFlow) | Declarative configuration mapping |
+| **Anthropic Claude** | Claude Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5 | OAuth, Setup-Token, API Key, Interactions, Thinking binding |
+| **OpenAI & Codex** | GPT-6 Astra, GPT-6.1 Sol, GPT-6 Luna, o3 | Codex OAuth (SIWC), API Key, Responses HTTP/WS Relay |
+| **Google Gemini** | Gemini 4 Argon, Gemini 3.8 Flash, 3.1 Pro | AI Studio, Vertex AI, Gemini CLI, Antigravity Hub 2.23.0 |
+| **Tencent WorkBuddy** | DeepSeek V4.1 Flash, GLM 5.3, Kimi K3, Hy4 Preview | Dual-realm (`workbuddy/` & `workbuddy-cn/`), OAuth, CheckinEngine |
+| **OpenCode** | `glm-5.3-flash-free`, `deepseek-v4.1-flash-free` (1M) | `/inference/v1` cloaking, tool stub filtering, zero-config free tier |
+| **Kimi / Grok / Muse / Devin** | Kimi K3, Grok 4.7, Muse Wonder/Spark 1.3, SWE-2 | OAuth, CLI login, and OpenAI-compatible endpoints |
 
----
-
-## Getting Started
-
-### 1. Build from Source
-
-This project requires Go 1.26+ and supports static cross-compilation:
+## Quick Start
 
 ```bash
-# Format code
-gofmt -w .
-
-# Build local binary
-go build -o cli-proxy-api ./cmd/server
-
-# Build static Linux amd64 binary without external dependencies
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o cli-proxy-api-linux ./cmd/server
-```
-
-### 2. Running
-
-CLIProxyAPI auto-loads `config.yaml` (see `config.example.yaml`) and `.env` from the current working directory:
-
-```bash
-# Run server directly
-./cli-proxy-api
-
-# Run with interactive terminal UI
-./cli-proxy-api --tui
-
-# Specify custom config and disable browser auto-opening
+gofmt -w . && go build -o cli-proxy-api ./cmd/server
 ./cli-proxy-api --config ./config.yaml --no-browser
 ```
 
-### 3. Docker Deployment
-
-```yaml
-services:
-  cliproxyapi:
-    image: cliproxyapi:v8.0.28-unified
-    container_name: cliproxyapi
-    restart: unless-stopped
-    ports:
-      - "8315:8317"
-    volumes:
-      - ./config.yaml:/CLIProxyAPI/config.yaml
-      - ./auths:/root/.cli-proxy-api
-      - ./logs:/CLIProxyAPI/logs
-      - ./plugins:/CLIProxyAPI/plugins
-      - ./data:/CLIProxyAPI/data
-      - ./static:/CLIProxyAPI/static
-```
-
----
-
-## Management V8 API Endpoints
-
-| Method | Path | Description |
+| Key / Variable | Default | Description |
 | :--- | :--- | :--- |
-| `GET` | `/v8/management/credentials` | List managed credentials (filters out internal state files) |
-| `GET` | `/v8/management/workbuddy/checkin` | Query check-in dashboard, account records, and engine status |
-| `PUT` | `/v8/management/workbuddy/checkin` | Toggle automated check-in engine state (`{"enabled": bool}`) |
-| `POST` | `/v8/management/workbuddy/checkin` | Trigger immediate check-in for accounts or toggle engine |
-| `GET` | `/v8/management/plugins/workbuddy/quota` | Batch query WorkBuddy points balances and season VIP tiers |
-| `GET` | `/v8/management/config` | View or hot-reload core proxy configuration |
-| `POST` | `/v8/management/routing/cooldown/reset` | Emergency reset for cooldown sinks and quota rate-limits |
+| `routing.strategy` | `round-robin` | Strategy: `round-robin`, `weighted-round-robin`, `fill-first`, `smart`, `pace` |
+| `session-affinity` | `true` | Persist session bindings (`session_affinity.json`) with `session-affinity-ttl` (`1h`) |
+| `models.variant-mode` | `compact` | `/v1/models` mode: `compact` (rate-suffixed IDs only), `raw`, or `all` |
+| `global-excluded-models` | `[]` | Wildcard patterns stripped from outbound `/v1/models` and `/v1beta/models` |
+| `WB_CN_CHAT_UPSTREAM` | `copilot.tencent.com` | CN WorkBuddy chat upstream override (e.g. `https://www.workbuddy.cn`) for overseas hosts |
 
----
+## Documentation
 
-## Acknowledgements
+- **Management V8 API Reference**: [docs/management-api-v8.md](docs/management-api-v8.md) (`/v8/management/config`, `/credentials`, `/workbuddy/checkin`, `/workbuddy/compensation`, `/plugins/workbuddy/quota`, `/models/global-excluded-models`, `/routing/cooldown/reset`)
+- **Go SDK Guides**: [SDK Usage](docs/sdk-usage.md) | [Advanced Executors & Translators](docs/sdk-advanced.md) | [Access & Auth](docs/sdk-access.md)
+- **LLM Context Specs**: [llms.txt](llms.txt) (Compact Index) | [llms-full.txt](llms-full.txt) (Full Architectural Reference)
 
-Special thanks to the following open-source projects for their architectural inspiration, insights, and contributions:
+## Acknowledgements & License
 
-- **[router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)**: Foundational proxy architecture and cross-protocol normalization engine.
-- **[Magpie](https://github.com/magpie-project)**: Architectural inspiration for persistent session affinity across restarts, sliding-window TTL, 429 sink scheduling, and zero-knowledge log redaction.
-- **[WorkBuddy2API-Hub](https://github.com/ardeyouxipianyi/workbuddy2api-hub)**: Reverse-engineering insights into Tencent CodeBuddy / WorkBuddy dual-realm APIs, metering protocols, client identity cloaking, conversation header families, WAF mitigation, and automated check-in workflows. All WorkBuddy protocol reverse-engineering questions, upstream cloaking updates, and anti-detection issues are tracked and aligned with this project.
-
----
-
-## License
-
-This project is open-source under the [MIT License](LICENSE).
+Built on [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) with inspiration from [Magpie](https://github.com/magpie-project) and [WorkBuddy2API-Hub](https://github.com/ardeyouxipianyi/workbuddy2api-hub). Released under the [MIT License](LICENSE).
