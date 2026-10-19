@@ -887,6 +887,7 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 
 	var authSnapshot *Auth
 	cooldownStateChanged := false
+	scheduleUnauthorizedRefresh := false
 	now := time.Now()
 
 	releaseMutation := m.lockAuthMutation(result.AuthID)
@@ -1295,6 +1296,18 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 			auth.Status = StatusError
 			auth.NextRefreshAfter = time.Time{}
 			auth.NextRetryAfter = time.Time{}
+		} else if !result.Success && !shouldSkipCredentialCooldown(result.Error) && (statusCodeFromResult(result.Error) == http.StatusUnauthorized || isUnauthorizedError(result.Error)) && authHasRefreshCredential(auth) {
+			if currentToken := authAccessToken(auth); currentToken != "" {
+				auth.RejectedAccessToken = currentToken
+			}
+			if auth.NextRefreshAfter.IsZero() {
+				if !auth.LastRefreshedAt.IsZero() && now.Sub(auth.LastRefreshedAt) < refreshFailureBackoff {
+					auth.NextRefreshAfter = now.Add(refreshFailureBackoff)
+				} else {
+					auth.NextRefreshAfter = now
+				}
+			}
+			scheduleUnauthorizedRefresh = true
 		}
 
 		auth.Generation++
@@ -1317,14 +1330,15 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 	m.mu.Unlock()
 	releaseMutation()
 	if m.scheduler != nil && authSnapshot != nil {
+		credentialScopedResult := result.CredentialScope || scheduleUnauthorizedRefresh
 		var targetModels []string
-		if !result.CredentialScope && modelKey != "" {
+		if !credentialScopedResult && modelKey != "" {
 			targetModels = append(targetModels, modelKey)
 			if routeKey := canonicalModelKey(result.RouteModel); routeKey != "" && routeKey != modelKey {
 				targetModels = append(targetModels, routeKey)
 			}
 		}
-		m.scheduler.upsertAuthResult(authSnapshot, targetModels, result.CredentialScope)
+		m.scheduler.upsertAuthResult(authSnapshot, targetModels, credentialScopedResult)
 	}
 	if authSnapshot != nil && cooldownStateChanged {
 		m.persistCooldownStates(context.Background())
@@ -1333,6 +1347,8 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 	// quota revalidation can detect early restoration (issue #6690).
 	if authSnapshot != nil {
 		if _, due := devinQuotaRevalidateAt(authSnapshot, now); due {
+			m.queueRefreshReschedule(result.AuthID)
+		} else if scheduleUnauthorizedRefresh {
 			m.queueRefreshReschedule(result.AuthID)
 		}
 	}
