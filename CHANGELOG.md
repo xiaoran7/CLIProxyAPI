@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **OpenCode Free Tier Credential Self-Healing & Catalog Expansion (`opencode_cloaking.go`, `opencode_models.go`)**:
+  - **API Key Sanitization**: Introduced `sanitizeOpenCodeAPIKey` and header-level self-healing in `applyOpenCodeHeaders`. Automatically purges accidental prefixes (such as `"vis "`, `"visitor "`, `"Bearer "`, or stray quotes/whitespace) and extracts valid `oc_sk_...` tokens, preventing upstream `401 Invalid credential` failures caused by clipboard or config formatting glitches.
+  - **Explicit SSE Transport Headers**: Always injects `Accept: text/event-stream` and `Cache-Control: no-cache` on OpenCode requests, ensuring compatibility across streaming and aggregated non-streaming calls.
+  - **Model Catalog Expansion**: Added latest upstream free models (`glm-5.3-flash-free`, `beam-free`, `nemotron-3.5-super-vl-free`, and `minimax-m3.1-flash-free`) with 1M context definitions and thinking support to the static OpenCode registry, restoring zero-config model discovery.
+
 ### Changed
 - **Packaging & Local Artifact Git Governance (`.gitignore`)**:
   - Expanded build and archive exclusions to cover all package bundles (`dist/`, `build/`, `*.zip`, `*.tar.gz`, `*.tgz`, `*.tar`), dynamic libraries (`*.dll`, `*.so`, `*.dylib`), temporary test artifacts (`test-output*`, `test-compile*`), and local Windows execution scripts (`*.bat`, `*.cmd`), ensuring workspace hygiene and preventing local deliverables from polluting repository version control.

@@ -148,11 +148,42 @@ func extractOpenCodeSessionSeed(ctx context.Context, req *http.Request) string {
 	return ""
 }
 
+// sanitizeOpenCodeAPIKey cleans up common formatting anomalies in OpenCode API keys,
+// such as accidental "vis ", "visitor ", leading/trailing spaces, or stray quotes.
+func sanitizeOpenCodeAPIKey(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	// If it contains standard oc_sk_ token, extract cleanly from that marker
+	if idx := strings.Index(raw, "oc_sk_"); idx >= 0 {
+		sub := raw[idx:]
+		if end := strings.IndexAny(sub, " \t\r\n\"'"); end >= 0 {
+			sub = sub[:end]
+		}
+		return strings.TrimSpace(sub)
+	}
+	// Strip repeated or case-insensitive "Bearer " prefix if present
+	lower := strings.ToLower(raw)
+	if strings.HasPrefix(lower, "bearer ") {
+		return sanitizeOpenCodeAPIKey(raw[7:])
+	}
+	return raw
+}
+
 // applyOpenCodeHeaders injects required authentication & fingerprint headers to pass OpenCode cloud inspection.
 // It also strips any headers that would expose non-OpenCode client identity.
 func applyOpenCodeHeaders(req *http.Request) {
 	if req == nil {
 		return
+	}
+	// Sanitize Authorization header if present to avoid 401 Invalid credential from malformed keys
+	if authHdr := req.Header.Get("Authorization"); authHdr != "" {
+		if clean := sanitizeOpenCodeAPIKey(authHdr); clean != "" {
+			req.Header.Set("Authorization", "Bearer "+clean)
+		} else {
+			req.Header.Del("Authorization")
+		}
 	}
 	// Strip foreign client headers that might trigger upstream inspection
 	req.Header.Del("x-client")
@@ -178,6 +209,8 @@ func applyOpenCodeHeaders(req *http.Request) {
 	msgID := genOpenCodeID("msg", false, time.Now())
 
 	req.Header.Set("User-Agent", openCodeUserAgent)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("x-opencode-client", openCodeClientHeader)
 	req.Header.Set("x-opencode-project", openCodeProjectHeader)
 	req.Header.Set("x-opencode-session", sesID)

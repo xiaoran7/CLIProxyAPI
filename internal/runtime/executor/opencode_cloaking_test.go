@@ -334,3 +334,35 @@ data: [DONE]
 		t.Fatalf("expected fallback stub note, got %s", res.Get("choices.0.message.content").String())
 	}
 }
+
+func TestSanitizeOpenCodeAPIKey(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"vis  oc_sk_3d51feaaecaa_O7gQ9Y4aCMCAfwNlsWmdMS6K48pAt76E", "oc_sk_3d51feaaecaa_O7gQ9Y4aCMCAfwNlsWmdMS6K48pAt76E"},
+		{"Bearer vis  oc_sk_3d51feaaecaa_O7gQ9Y4aCMCAfwNlsWmdMS6K48pAt76E", "oc_sk_3d51feaaecaa_O7gQ9Y4aCMCAfwNlsWmdMS6K48pAt76E"},
+		{"Bearer oc_sk_clean_token_123", "oc_sk_clean_token_123"},
+		{"visitor oc_sk_abc_xyz", "oc_sk_abc_xyz"},
+		{"  oc_sk_spaces_test  ", "oc_sk_spaces_test"},
+		{"\"oc_sk_quoted_token\"", "oc_sk_quoted_token"},
+		{"", ""},
+		{"   ", ""},
+	}
+
+	for _, tc := range tests {
+		actual := sanitizeOpenCodeAPIKey(tc.input)
+		if actual != tc.expected {
+			t.Errorf("sanitizeOpenCodeAPIKey(%q) = %q, expected %q", tc.input, actual, tc.expected)
+		}
+	}
+
+	// Also verify applyOpenCodeHeaders automatically self-heals corrupted Authorization header
+	req, _ := http.NewRequest("POST", "https://opencode.ai/inference/v1/chat/completions", nil)
+	req.Header.Set("Authorization", "Bearer vis  oc_sk_3d51feaaecaa_O7gQ9Y4aCMCAfwNlsWmdMS6K48pAt76E")
+	applyOpenCodeHeaders(req)
+	expectedAuth := "Bearer oc_sk_3d51feaaecaa_O7gQ9Y4aCMCAfwNlsWmdMS6K48pAt76E"
+	if req.Header.Get("Authorization") != expectedAuth {
+		t.Fatalf("expected Authorization header to be healed to %q, got %q", expectedAuth, req.Header.Get("Authorization"))
+	}
+}

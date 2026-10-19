@@ -16,6 +16,10 @@ func TestOpenCodeModelsCatalog(t *testing.T) {
 		hasThinking   bool
 		expectedOwner string
 	}{
+		{"glm-5.3-flash-free", 1048576, true, "zhipu"},
+		{"beam-free", 1048576, false, "opencode"},
+		{"nemotron-3.5-super-vl-free", 1048576, false, "nvidia"},
+		{"minimax-m3.1-flash-free", 1048576, false, "minimax"},
 		{"big-pickle", 200000, false, "opencode"},
 		{"cat-jam-free", 262144, true, "opencode"},
 		{"deepseek-v4.1-flash-free", 1048576, true, "deepseek"},
