@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **WorkBuddy Upstream Stream-Only Transport Enforcement (`workbuddy_executor.go`)**:
+  - **Guaranteed `stream: true` Framing**: Upstream Tencent WorkBuddy chat completion endpoints strictly reject non-streaming payloads (`stream != true`) with code `11101 ("Non-stream chat request is currently not supported")`. Enforces `"stream": true` on translated business payloads both before and after user payload configuration rules in `Execute` and `ExecuteStream`, ensuring downstream non-streaming requests cleanly fold SSE events via `AggregateWorkBuddyStream` without violating upstream wire protocol constraints.
 - **OpenCode Free Tier Credential Self-Healing & Catalog Expansion (`opencode_cloaking.go`, `opencode_models.go`)**:
   - **API Key Sanitization**: Introduced `sanitizeOpenCodeAPIKey` and header-level self-healing in `applyOpenCodeHeaders`. Automatically purges accidental prefixes (such as `"vis "`, `"visitor "`, `"Bearer "`, or stray quotes/whitespace) and extracts valid `oc_sk_...` tokens, preventing upstream `401 Invalid credential` failures caused by clipboard or config formatting glitches.
   - **Explicit SSE Transport Headers**: Always injects `Accept: text/event-stream` and `Cache-Control: no-cache` on OpenCode requests, ensuring compatibility across streaming and aggregated non-streaming calls.

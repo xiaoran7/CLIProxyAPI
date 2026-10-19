@@ -137,12 +137,16 @@ func (e *WorkBuddyExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth
 		return resp, fmt.Errorf("workbuddy executor: backfill reasoning content error: %w", err)
 	}
 
+	originalTranslated = helps.SetBoolIfDifferent(originalTranslated, "stream", true)
+	translated = helps.SetBoolIfDifferent(translated, "stream", true)
 	translated = helps.SetBoolIfDifferent(translated, "stream_options.include_usage", true)
 	reporter.SetTranslatedReasoningEffort(translated, to.String())
 
 	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
 	requestPath := helps.PayloadRequestPath(opts)
 	translated = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", translated, originalTranslated, requestedModel, requestPath, opts.Headers)
+	// Upstream WorkBuddy transport framing strictly requires stream=true.
+	translated = helps.SetBoolIfDifferent(translated, "stream", true)
 
 	realm := workbuddyauth.ResolveRealm(auth)
 	baseURL := workbuddyauth.ResolveBaseURL(realm)
@@ -273,12 +277,16 @@ func (e *WorkBuddyExecutor) ExecuteStream(ctx context.Context, auth *cliproxyaut
 		return nil, fmt.Errorf("workbuddy executor: backfill reasoning content error: %w", err)
 	}
 
+	originalTranslated = helps.SetBoolIfDifferent(originalTranslated, "stream", true)
+	translated = helps.SetBoolIfDifferent(translated, "stream", true)
 	translated = helps.SetBoolIfDifferent(translated, "stream_options.include_usage", true)
 	reporter.SetTranslatedReasoningEffort(translated, to.String())
 
 	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
 	requestPath := helps.PayloadRequestPath(opts)
 	translated = helps.ApplyPayloadConfigWithRequest(e.cfg, baseModel, to.String(), from.String(), "", translated, originalTranslated, requestedModel, requestPath, opts.Headers)
+	// Upstream WorkBuddy transport framing strictly requires stream=true.
+	translated = helps.SetBoolIfDifferent(translated, "stream", true)
 
 	realm := workbuddyauth.ResolveRealm(auth)
 	baseURL := workbuddyauth.ResolveBaseURL(realm)

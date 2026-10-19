@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+	"github.com/tidwall/gjson"
 )
 
 func TestWorkBuddyExecutorIdentifierAndFormat(t *testing.T) {
@@ -83,6 +85,14 @@ func TestWorkBuddyExecutorExecuteNonStream(t *testing.T) {
 			t.Errorf("Accept = %q, want text/event-stream", r.Header.Get("Accept"))
 		}
 
+		bodyBytes, errRead := io.ReadAll(r.Body)
+		if errRead != nil {
+			t.Fatalf("failed to read upstream body: %v", errRead)
+		}
+		if !gjson.GetBytes(bodyBytes, "stream").Bool() {
+			t.Errorf("upstream request body stream = false, want true")
+		}
+
 		// Return SSE chunks as upstream WorkBuddy does
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-123\",\"model\":\"deepseek-v4.1-flash\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello from \"}}]}\n\n"))
@@ -107,7 +117,8 @@ func TestWorkBuddyExecutorExecuteNonStream(t *testing.T) {
 
 	reqPayload := []byte(`{
 		"model": "deepseek-v4.1-flash",
-		"messages": [{"role": "user", "content": "hi"}]
+		"messages": [{"role": "user", "content": "hi"}],
+		"stream": false
 	}`)
 
 	resp, err := exec.Execute(context.Background(), auth, cliproxyexecutor.Request{
