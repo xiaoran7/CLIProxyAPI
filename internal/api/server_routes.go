@@ -1167,6 +1167,10 @@ func decodeHomeModels(raw []byte) ([]homeModelEntry, error) {
 	if bySection == nil {
 		return nil, fmt.Errorf("home models payload is not an object")
 	}
+	// The error envelope must never be interpreted as a provider model section.
+	if _, hasError := bySection["error"]; hasError {
+		return nil, fmt.Errorf("home models payload contains an error envelope")
+	}
 
 	indexByID := make(map[string]int)
 	out := make([]homeModelEntry, 0, 256)

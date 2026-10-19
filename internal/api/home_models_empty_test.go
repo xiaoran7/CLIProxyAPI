@@ -21,6 +21,8 @@ func TestDecodeHomeModelsEmptyCatalog(t *testing.T) {
 	for _, raw := range []string{
 		"", "null", "[]", "{bad}", `{"claude":[{}]}`, `{"claude":null}`, `{"error":null}`,
 		`{"error":{"type":"internal_error","message":"unavailable"}}`,
+		`{"error":[]}`, `{"error":[],"claude":[]}`,
+		`{"error":[{"id":"not-a-model"}]}`, `{"error":[],"claude":[{"id":"model-a"}]}`,
 	} {
 		if _, errDecode := decodeHomeModels([]byte(raw)); errDecode == nil {
 			t.Errorf("decodeHomeModels(%q) accepted malformed or error payload", raw)
@@ -96,6 +98,10 @@ func TestHomeModelCatalogErrorsRemainErrors(t *testing.T) {
 		{name: "missing credentials", payload: `{"error":{"type":"no_credentials","message":"Missing API key"}}`, status: http.StatusUnauthorized},
 		{name: "invalid credentials", payload: `{"error":{"type":"invalid_credential","message":"Invalid API key"}}`, status: http.StatusUnauthorized},
 		{name: "policy failure", payload: `{"error":{"type":"internal_error","message":"Model access service error"}}`, status: http.StatusBadGateway},
+		{name: "empty array error", payload: `{"error":[]}`, status: http.StatusBadGateway},
+		{name: "error alongside empty section", payload: `{"error":[],"claude":[]}`, status: http.StatusBadGateway},
+		{name: "error containing model-shaped records", payload: `{"error":[{"id":"not-a-model"}]}`, status: http.StatusBadGateway},
+		{name: "error alongside models", payload: `{"error":[],"claude":[{"id":"model-a"}]}`, status: http.StatusBadGateway},
 		{name: "empty response", payload: "", status: http.StatusBadGateway},
 		{name: "malformed JSON", payload: "{bad}", status: http.StatusBadGateway},
 		{name: "null catalog", payload: "null", status: http.StatusBadGateway},
