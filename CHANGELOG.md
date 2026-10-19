@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Codex SIWC Credential Binding (`codex_siwc_bind.go`, `oauth_siwc.go`)**:
+  - Sign in with ChatGPT (SIWC) credential partition binding for managed Codex OAuth credentials via `POST /v8/management/oauth/siwc/bind` and `POST /v8/management/oauth/callback`.
+  - Non-secret credential summary fields (`siwc_bind_supported`, `use_siwc`, `siwc_bound`, `siwc_expires_at`) in `GET /v8/management/credentials`.
+- **Claude Web Search Result Cache Home KV Integration (`claude_web_search_result_cache.go`)**:
+  - Home KV storage backend with sliding TTL expiration for Claude web search session caches.
+- **Codex Remote Compaction v2 on Kimi & Meta Responses (`kimi_executor.go`, `meta_executor_execute.go`)**:
+  - CPA sealed compaction capsules intercepting `compaction_trigger` items across Kimi and Meta OpenAI Responses execution paths.
 - **WorkBuddy / CodeBuddy Dual-Realm Native Suite (`internal/auth/workbuddy/`, `workbuddy_executor.go`, `management.html`)**:
   - **Dual-Realm & Overseas Egress (`workbuddy.go`)**: Native routing for International (`workbuddy`, `workbuddy.ai`) and Mainland China (`workbuddy-cn`, `copilot.tencent.com`); supports `WB_CN_CHAT_UPSTREAM` (`https://www.workbuddy.cn`) to bypass overseas TLS RST drops while preserving `X-Domain: copilot.tencent.com`.
   - **Per-Model Credit Multipliers & Variant Mode (`workbuddy_credits.go`, `openai_handlers.go`, `handlers_multiplier.go`)**: Fetches live rates from `GET /v3/config` with `preserveModelCredits` protection; supports `models.variant-mode` (`compact` default, `raw`, `all`), emitting `:Nx` suffixes (e.g. `workbuddy/claude-opus-5-5:3.33x`) and rejecting mismatched multipliers with HTTP 400 (`model_multiplier_mismatch`, `TestExtractAndValidateModelMultiplier`, `TestApplyWorkBuddyCreditsOverlaysStaticModels`).
@@ -35,7 +42,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Excluded internal state files (`session_affinity.json`, `*checkins.json`) from credential listings/uploads/deletions (`TestDeleteAuthFile_RejectsInternalStorageFiles`); enabled `X-CPA-SUPPORT-PLUGIN: 1` in `CGO_ENABLED=0` builds; bumped Antigravity Hub UA to `antigravity/hub/2.23.0 darwin/arm64`; fixed `Fp` sequence parser bug and `/v0/management` log fallbacks in `Wy`.
 
 ### Merged
-- **Upstream Synchronization (`router-for-me/CLIProxyAPI:main` through `v8.0.34`)**:
+- **Upstream Synchronization (`router-for-me/CLIProxyAPI:main` through `v8.0.35`)**:
+  - **v8.0.35**: Codex SIWC credential binding flow (`POST /v8/management/oauth/siwc/bind` and `POST /v8/management/oauth/callback`) with legacy callback and symlink rejection (#6786), Claude web search result session cache Home KV backend support (#6780), Codex remote-compaction v2 CPA sealed compaction capsules on Kimi and Meta Responses routes (#6781), and Gemini/Antigravity schema cleaner stripping of `readOnly`/`writeOnly` keywords (#6778).
   - **v8.0.34**: Security access log path escaping, auth file safe `Modify` method with registration epoch validation and locking, credential protection against unindexed deletion during incomplete writes, Codex 96-hour proactive refresh lead with rejected token recovery (#6742), expired Antigravity AI credits negative hint recovery & retry logic, Claude web search result session caching & restoration (`claude_web_search_result_cache.go`), Claude Code identity stripping on uncloaked/never API keys, Vertex OpenAPI partner/open models support (`endpoints/openapi`), Codex web search call history reconciliation with tool declarations, Meta Muse reasoning signatures & cross-provider Responses envelope replay, stream translator preferences caching (OpenAI/Gemini/Claude), and channel-based static & plugin model definitions retrieval.
   - **v8.0.32 – v8.0.33**: Claude rate-limit cooldown narrowing (`claude_ratelimit.go`), stream truncation detection, thinking `between_tools` & `drop_block` binding (#6692), tool argument cleaning (#6670), 7-day session date pin retention (#6682), Devin quota cooldown refresh (#6690), Meta stream disconnect handling (#6688), Antigravity schema sanitization, and mDNS conflict resolution (`zeroconf.go`).
   - **v8.0.25 – v8.0.31**: Content-addressed plugin shadow copies (#6672), `/v8/config` SHA-256 ETag / `If-Match` (#6666), stream request JSON validation (#6665), `gemini-4-argon` & `gemini-3.8` (#6645), monotonic `ExecutionSeq` watermarks (#6643), bcrypt secret hashing (#6628), Codex SIWC OAuth (`siwc_auth.go`), WS reload preservation, `max-request-body-bytes` HTTP 413 guard, and `sdk/httptransport`.
