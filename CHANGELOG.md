@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Upstream v8.0.33 Release Synchronization (`v8.0.33`)**:
+  - **Claude Rate-Limit Cooldown Optimization (`claude_ratelimit.go`)**: Narrows per-minute rate-limit cooldown window when short `Retry-After` header is returned by upstream, preventing excessive account lockout times.
+  - **Upstream Stream Truncation Detection (`claude_executor_stream.go`, `openai_compat_executor.go`)**: Detects unexpected upstream stream termination across executors and proxy handlers, surfacing explicit bad gateway errors rather than masking incomplete frames.
+  - **Claude Thinking Protocol & Adaptive Block Binding (`apply.go`, `provider/claude/apply.go`)**: Supports `between_tools` thinking disable type with adaptive fallbacks, automatic thinking block binding for preserved-thinking models, and Haiku 5.5 / Claude Fable thinking compatibility.
+  - **Antigravity Schema Sanitization Linear Scaling (`antigravity_executor_request.go`)**: Optimizes tool schema cleaning for Antigravity declarations to scale linearly with property declarations.
+  - **OAuth & Excluded Models Priority Preservation (`auth_files_crud.go`, `synthesizer`)**: Restores credential-level model exclusion priority, preserves plugin excluded models during synthesis, and guards against stale file snapshots overwriting persisted auth records.
+  - **Local Discovery & mDNS Conflict Resolution (`zeroconf.go`)**: Robust mDNS host conflict resolution and IP binding fallback for local zero-configuration discovery.
+  - **Gemini Schema Sanitization (`gemini_schema.go`)**: Strips unsupported `contentMediaType` and `contentEncoding` keywords from JSON schemas before forwarding to Gemini endpoints.
+  - **Fork Innovation Preservation**: 100% preserves custom WorkBuddy dual-realm egress resolution (`WB_CN_CHAT_UPSTREAM`), check-in engine & 500 compensation suite, OpenCode cloaking & stream filters (`ocFilter`), Antigravity quota Hub UA alignment, and custom routing namespaces.
+
+### Added
 - **WorkBuddy China Realm Overseas Egress Resolution (`WB_CN_CHAT_UPSTREAM`) (`workbuddy.go`, `workbuddy_test.go`)**:
   - **Overseas TLS Handshake Reset Bypass**: Backported upstream protocol repair (`WB_CN_CHAT_UPSTREAM`, aligning with upstream PR #465 / commit `7280c22f`). Resolves TCP RST / `SSL: UNEXPECTED_EOF_WHILE_READING` handshake drops when overseas network exits (VPS in Tokyo/US or global proxies) connect to `copilot.tencent.com`.
   - **Dynamic Base URL Override**: `ResolveBaseURL(RealmCN)` now dynamically checks `WB_CN_CHAT_UPSTREAM` (e.g. `https://www.workbuddy.cn`), matching official Tencent desktop/VSCode endpoints while keeping `X-Domain: copilot.tencent.com` intact.
