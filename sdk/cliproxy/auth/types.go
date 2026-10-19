@@ -772,6 +772,14 @@ func (a *Auth) AccountInfo() (string, string) {
 					return "oauth", email
 				}
 			}
+			if sa, ok := a.Metadata["service_account"].(map[string]any); ok {
+				if v, okEmail := sa["client_email"].(string); okEmail {
+					email := strings.TrimSpace(v)
+					if email != "" {
+						return "oauth", email
+					}
+				}
+			}
 		}
 		return "oauth", ""
 	case AuthKindAPIKey:

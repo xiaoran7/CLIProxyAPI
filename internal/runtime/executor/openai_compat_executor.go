@@ -90,13 +90,19 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
 	if endpointPath := openAICompatImageEndpointPath(opts); endpointPath != "" {
 		return e.executeImages(ctx, auth, req, opts, endpointPath)
 	}
+	baseURL, apiKey := e.resolveCredentials(auth)
+	compat := e.resolveCompatConfig(auth, req)
+	return e.executeWithCredentials(ctx, auth, req, opts, baseURL, apiKey, compat)
+}
+
+func (e *OpenAICompatExecutor) executeWithCredentials(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, baseURL, apiKey string, compat *config.OpenAICompatibility) (resp cliproxyexecutor.Response, err error) {
+	ctx = helps.EnsureSessionContext(ctx, opts, req.Payload)
 
 	baseModel := thinking.ParseSuffix(req.Model).ModelName
 
 	reporter := helps.NewExecutorUsageReporter(ctx, e, baseModel, auth)
 	defer reporter.TrackFailure(ctx, &err)
 
-	baseURL, apiKey := e.resolveCredentials(auth)
 	if baseURL == "" {
 		err = statusErr{code: http.StatusUnauthorized, msg: "missing provider baseURL"}
 		return
@@ -131,13 +137,13 @@ func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *cliproxyauth.A
 
 	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
 	requestPath := helps.PayloadRequestPath(opts)
-	if helps.ShouldNormalizeOpenAIToolResultsForModel(e.resolveCompatConfig(auth, req), baseModel, requestedModel) {
+	if helps.ShouldNormalizeOpenAIToolResultsForModel(compat, baseModel, requestedModel) {
 		translated = helps.NormalizeOpenAIToolResultsTextOnly(translated)
 	}
 	if opts.Alt != "responses/compact" {
-		useMCT := helps.ShouldUseMaxCompletionTokensForModel(e.resolveCompatConfig(auth, req), baseModel, requestedModel)
+		useMCT := helps.ShouldUseMaxCompletionTokensForModel(compat, baseModel, requestedModel)
 		translated = helps.NormalizeOpenAIMaxTokens(translated, useMCT)
-		translated, err = e.applyPromptCacheKey(ctx, auth, from, baseModel, req, opts, translated)
+		translated, err = e.applyPromptCacheKeyWithCompat(ctx, auth, compat, from, baseModel, req, opts, translated)
 		if err != nil {
 			return resp, err
 		}
@@ -325,13 +331,19 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
 	if endpointPath := openAICompatImageEndpointPath(opts); endpointPath != "" {
 		return e.executeImagesStream(ctx, auth, req, opts, endpointPath)
 	}
+	baseURL, apiKey := e.resolveCredentials(auth)
+	compat := e.resolveCompatConfig(auth, req)
+	return e.executeStreamWithCredentials(ctx, auth, req, opts, baseURL, apiKey, compat)
+}
+
+func (e *OpenAICompatExecutor) executeStreamWithCredentials(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, baseURL, apiKey string, compat *config.OpenAICompatibility) (_ *cliproxyexecutor.StreamResult, err error) {
+	ctx = helps.EnsureSessionContext(ctx, opts, req.Payload)
 
 	baseModel := thinking.ParseSuffix(req.Model).ModelName
 
 	reporter := helps.NewExecutorUsageReporter(ctx, e, baseModel, auth)
 	defer reporter.TrackFailure(ctx, &err)
 
-	baseURL, apiKey := e.resolveCredentials(auth)
 	if baseURL == "" {
 		err = statusErr{code: http.StatusUnauthorized, msg: "missing provider baseURL"}
 		return nil, err
@@ -361,13 +373,13 @@ func (e *OpenAICompatExecutor) ExecuteStream(ctx context.Context, auth *cliproxy
 
 	requestedModel := helps.PayloadRequestedModel(opts, req.Model)
 	requestPath := helps.PayloadRequestPath(opts)
-	if helps.ShouldNormalizeOpenAIToolResultsForModel(e.resolveCompatConfig(auth, req), baseModel, requestedModel) {
+	if helps.ShouldNormalizeOpenAIToolResultsForModel(compat, baseModel, requestedModel) {
 		translated = helps.NormalizeOpenAIToolResultsTextOnly(translated)
 	}
 	if opts.Alt != "responses/compact" {
-		useMCT := helps.ShouldUseMaxCompletionTokensForModel(e.resolveCompatConfig(auth, req), baseModel, requestedModel)
+		useMCT := helps.ShouldUseMaxCompletionTokensForModel(compat, baseModel, requestedModel)
 		translated = helps.NormalizeOpenAIMaxTokens(translated, useMCT)
-		translated, err = e.applyPromptCacheKey(ctx, auth, from, baseModel, req, opts, translated)
+		translated, err = e.applyPromptCacheKeyWithCompat(ctx, auth, compat, from, baseModel, req, opts, translated)
 		if err != nil {
 			return nil, err
 		}
@@ -947,7 +959,10 @@ func rewriteOpenAICompatImagesMultipartPayload(payload []byte, model string, bou
 }
 
 func (e *OpenAICompatExecutor) applyPromptCacheKey(ctx context.Context, auth *cliproxyauth.Auth, from sdktranslator.Format, baseModel string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, translated []byte) ([]byte, error) {
-	compat := e.resolveCompatConfig(auth, req)
+	return e.applyPromptCacheKeyWithCompat(ctx, auth, e.resolveCompatConfig(auth, req), from, baseModel, req, opts, translated)
+}
+
+func (e *OpenAICompatExecutor) applyPromptCacheKeyWithCompat(ctx context.Context, auth *cliproxyauth.Auth, compat *config.OpenAICompatibility, from sdktranslator.Format, baseModel string, req cliproxyexecutor.Request, opts cliproxyexecutor.Options, translated []byte) ([]byte, error) {
 	if compat == nil || !compat.SupportPromptCacheKey {
 		return translated, nil
 	}
