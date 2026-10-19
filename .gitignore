@@ -1,6 +1,23 @@
-# Binaries
+# Binaries & build artifacts
 cli-proxy-api
 *.exe
+*.dll
+*.so
+*.dylib
+test-output*
+test-compile*
+
+# Packaging & archives
+dist/
+build/
+*.zip
+*.tar.gz
+*.tgz
+*.tar
+
+# Local scripts
+*.bat
+*.cmd
 
 # Configuration
 config.yaml

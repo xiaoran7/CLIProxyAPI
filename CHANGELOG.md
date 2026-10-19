@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Packaging & Local Artifact Git Governance (`.gitignore`)**:
+  - Expanded build and archive exclusions to cover all package bundles (`dist/`, `build/`, `*.zip`, `*.tar.gz`, `*.tgz`, `*.tar`), dynamic libraries (`*.dll`, `*.so`, `*.dylib`), temporary test artifacts (`test-output*`, `test-compile*`), and local Windows execution scripts (`*.bat`, `*.cmd`), ensuring workspace hygiene and preventing local deliverables from polluting repository version control.
+
 ### Added
 - **Upstream v8.0.33 Release Synchronization (`v8.0.33`)**:
   - **Claude Rate-Limit Cooldown Optimization (`claude_ratelimit.go`)**: Narrows per-minute rate-limit cooldown window when short `Retry-After` header is returned by upstream, preventing excessive account lockout times.
