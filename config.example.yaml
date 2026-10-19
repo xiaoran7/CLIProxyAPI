@@ -728,7 +728,7 @@ upstream:
 #           cloak:                         # optional: explicitly enable request cloaking for non-Claude-Code clients
 #             mode: "auto"                 # "auto" (default inside this block): cloak only when client is not Claude Code
 #                                          # "always": cloak every unconfirmed client; confirmed native Claude Code still passes through
-#                                          # "never": never apply cloaking
+#                                          # "never" / "uncloak": never apply cloaking; on non-CLI API keys, also strip incoming Claude Code identity/billing attribution
 #             # This "cloak" block applies to this api-keys.claude key entry only. For Claude OAuth
 #             # credentials, set the same options in the auth/token JSON file via "cloak_mode" /
 #             # "cloak_strict_mode" / "cloak_sensitive_words" / "cloak_cache_user_id".
