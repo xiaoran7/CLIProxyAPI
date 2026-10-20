@@ -218,12 +218,10 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 		if provider == "workbuddy-cn" || provider == "copilot-tencent" || (a.Attributes != nil && strings.EqualFold(a.Attributes["realm"], "cn")) {
 			realm = "cn"
 		}
-		models = registry.GetWorkBuddyModels(realm)
-		// The upstream catalogue is authoritative for per-model credit
-		// multipliers, so refresh it with this account's credentials and overlay
-		// whatever it knows onto the static list. A failed or empty fetch leaves
-		// the models untouched with their rates unknown.
+		// Warm credits and dynamic models from the upstream catalogue first,
+		// so the registration includes freshly discovered models and up-to-date rates.
 		s.warmWorkBuddyCreditsForAuth(ctx, a, realm)
+		models = registry.GetWorkBuddyModels(realm)
 		models = registry.ApplyWorkBuddyCredits(models, realm)
 		models = applyExcludedModels(models, excluded)
 	default:

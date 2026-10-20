@@ -97,7 +97,11 @@ func (s *Service) warmWorkBuddyCreditsForAuth(ctx context.Context, a *coreauth.A
 		if s.coreManager == nil {
 			return nil
 		}
-		return authForWorkBuddyCreditsRealm(s.coreManager.List(), target)
+		auth := authForWorkBuddyCreditsRealm(s.coreManager.List(), target)
+		if auth == nil && a != nil && workbuddyAuthIsUsable(a) && strings.EqualFold(workbuddy.ResolveRealm(a), target) && workbuddy.AccessToken(a) != "" {
+			return a
+		}
+		return auth
 	})
 
 	// WarmWorkBuddyCredits is a no-op while the cached catalogue is fresh and

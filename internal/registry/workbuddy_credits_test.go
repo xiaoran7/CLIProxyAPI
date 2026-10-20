@@ -596,3 +596,101 @@ func mustDecodeJSON(t *testing.T, body string) any {
 func contains(haystack, needle string) bool {
 	return strings.Contains(haystack, needle)
 }
+
+func TestParseWorkBuddyConfigModels(t *testing.T) {
+	entries := parseWorkBuddyConfigCredits([]byte(workbuddyTestConfig), workbuddyTestPromotionTime(t))
+	models := parseWorkBuddyConfigModels([]byte(workbuddyTestConfig), "intl", entries)
+	if len(models) == 0 {
+		t.Fatal("parseWorkBuddyConfigModels returned empty list")
+	}
+
+	byID := make(map[string]*ModelInfo)
+	for _, m := range models {
+		byID[m.ID] = m
+	}
+
+	// gpt-5.5 should have owner "openai", display name "GPT-5.5 (WorkBuddy)", credits 3.31
+	gpt55 := byID["gpt-5.5"]
+	if gpt55 == nil {
+		t.Fatal("gpt-5.5 not parsed from data.models")
+	}
+	if gpt55.OwnedBy != "openai" {
+		t.Errorf("gpt-5.5 OwnedBy = %q, want openai", gpt55.OwnedBy)
+	}
+	if gpt55.DisplayName != "GPT-5.5 (WorkBuddy)" {
+		t.Errorf("gpt-5.5 DisplayName = %q, want %q", gpt55.DisplayName, "GPT-5.5 (WorkBuddy)")
+	}
+	if gpt55.Credits == nil || gpt55.Credits.Multiplier != 3.31 {
+		t.Errorf("gpt-5.5 Credits = %+v, want multiplier 3.31", gpt55.Credits)
+	}
+	if gpt55.ContextLength != 1048576 {
+		t.Errorf("gpt-5.5 ContextLength = %d, want 1048576", gpt55.ContextLength)
+	}
+
+	// deepseek-v4.1-flash should have owner "deepseek", thinking support, credits 0
+	ds := byID["deepseek-v4.1-flash"]
+	if ds == nil {
+		t.Fatal("deepseek-v4.1-flash not parsed")
+	}
+	if ds.OwnedBy != "deepseek" {
+		t.Errorf("deepseek OwnedBy = %q, want deepseek", ds.OwnedBy)
+	}
+	if ds.Thinking == nil {
+		t.Error("deepseek should have ThinkingSupport")
+	}
+	if ds.Credits == nil || ds.Credits.Multiplier != 0 {
+		t.Errorf("deepseek Credits = %+v, want multiplier 0", ds.Credits)
+	}
+
+	// Model Promotions alone (like hy3-free-trial) should NOT create a model entry
+	if _, ok := byID["hy3"]; ok {
+		t.Error("hy3 should not be created as a dynamic model because it is only in modelPromotions")
+	}
+}
+
+func TestFetchWorkBuddyCreditsStoresDynamicModelsAndNotifies(t *testing.T) {
+	var notified []string
+	SetModelRefreshCallback(func(changed []string) {
+		notified = append(notified, changed...)
+	})
+	defer SetModelRefreshCallback(nil)
+
+	restore := SetWorkBuddyCreditsFetcherForTest(
+		func(string) ([]byte, bool) { return []byte(workbuddyTestConfig), true },
+		func() time.Time { return workbuddyTestPromotionTime(t) },
+	)
+	defer restore()
+
+	// Initial warm should discover dynamic models and notify refresh
+	WarmWorkBuddyCredits("intl")
+
+	dynamic := GetWorkBuddyDynamicModels("intl")
+	if len(dynamic) == 0 {
+		t.Fatal("WarmWorkBuddyCredits did not populate dynamic models")
+	}
+
+	var foundGPT55 bool
+	for _, m := range dynamic {
+		if m.ID == "gpt-5.5" {
+			foundGPT55 = true
+			if m.Credits == nil || m.Credits.Multiplier != 3.31 {
+				t.Errorf("dynamic gpt-5.5 credits = %+v, want 3.31", m.Credits)
+			}
+		}
+	}
+	if !foundGPT55 {
+		t.Error("gpt-5.5 not found in dynamic models after WarmWorkBuddyCredits")
+	}
+
+	// Verify notification was sent
+	foundWorkBuddyNotify := false
+	for _, p := range notified {
+		if p == "workbuddy" {
+			foundWorkBuddyNotify = true
+			break
+		}
+	}
+	if !foundWorkBuddyNotify {
+		t.Errorf("notifyModelRefresh was not triggered with workbuddy; notified: %v", notified)
+	}
+}

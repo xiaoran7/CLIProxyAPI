@@ -171,12 +171,14 @@ func SetWorkBuddyCreditsFetcherForTest(fn func(url string) ([]byte, bool), now f
 		workbuddyCredits.nowFunc = now
 	}
 	workbuddyCredits.buckets = make(map[string]*workbuddyCreditsBucket)
+	ClearWorkBuddyCatalogModels("")
 	workbuddyCredits.mu.Unlock()
 	return func() {
 		workbuddyCredits.mu.Lock()
 		workbuddyCredits.httpGet = prevGet
 		workbuddyCredits.nowFunc = prevNow
 		workbuddyCredits.buckets = make(map[string]*workbuddyCreditsBucket)
+		ClearWorkBuddyCatalogModels("")
 		workbuddyCredits.mu.Unlock()
 	}
 }
@@ -481,12 +483,13 @@ func InvalidateWorkBuddyCredits(realm string) {
 		return
 	}
 	workbuddyCredits.mu.Lock()
-	defer workbuddyCredits.mu.Unlock()
 	if strings.TrimSpace(realm) == "" {
 		workbuddyCredits.buckets = make(map[string]*workbuddyCreditsBucket)
-		return
+	} else {
+		delete(workbuddyCredits.buckets, workbuddyCreditsRealmKey(realm))
 	}
-	delete(workbuddyCredits.buckets, workbuddyCreditsRealmKey(realm))
+	workbuddyCredits.mu.Unlock()
+	ClearWorkBuddyCatalogModels(realm)
 }
 
 func fetchWorkBuddyCredits(realmKey string, getter func(url string) ([]byte, bool)) {
@@ -506,12 +509,19 @@ func fetchWorkBuddyCredits(realmKey string, getter func(url string) ([]byte, boo
 	now := nowFn()
 
 	entries := map[string]*workbuddyCreditsEntry(nil)
+	var dynamicModels []*ModelInfo
 	if ok && len(body) > 0 {
 		entries = parseWorkBuddyConfigCredits(body, now)
+		dynamicModels = parseWorkBuddyConfigModels(body, realmKey, entries)
 	}
 
+	modelsChanged := false
+	if len(dynamicModels) > 0 {
+		modelsChanged = SetWorkBuddyCatalogModels(realmKey, dynamicModels)
+	}
+
+	creditsChanged := false
 	workbuddyCredits.mu.Lock()
-	defer workbuddyCredits.mu.Unlock()
 	if len(entries) == 0 {
 		// An unusable credential answers 200 with an empty catalogue, so an
 		// empty result is a failure: keep serving whatever was cached before
@@ -519,6 +529,7 @@ func fetchWorkBuddyCredits(realmKey string, getter func(url string) ([]byte, boo
 		if existing := workbuddyCredits.buckets[realmKey]; existing != nil {
 			existing.fetched = now
 			existing.failed = true
+			workbuddyCredits.mu.Unlock()
 			return
 		}
 		workbuddyCredits.buckets[realmKey] = &workbuddyCreditsBucket{
@@ -526,12 +537,26 @@ func fetchWorkBuddyCredits(realmKey string, getter func(url string) ([]byte, boo
 			fetched: now,
 			failed:  true,
 		}
+		workbuddyCredits.mu.Unlock()
 		return
 	}
+
+	prevBucket := workbuddyCredits.buckets[realmKey]
+	if prevBucket != nil && prevBucket.entries != nil {
+		creditsChanged = workbuddyCreditsEntriesChanged(prevBucket.entries, entries)
+	} else {
+		creditsChanged = true
+	}
+
 	workbuddyCredits.buckets[realmKey] = &workbuddyCreditsBucket{
 		entries: entries,
 		fetched: now,
 		failed:  false,
+	}
+	workbuddyCredits.mu.Unlock()
+
+	if modelsChanged || creditsChanged {
+		notifyModelRefresh([]string{"workbuddy", "workbuddy-intl", "workbuddy-cn", "copilot-tencent"})
 	}
 }
 
@@ -921,4 +946,205 @@ func LocalWorkBuddyCreditsRate(modelID string) *WorkBuddyCreditsRate {
 		Free:       true,
 		Source:     "local-alias",
 	}
+}
+
+func workbuddyCreditsEntriesChanged(oldEntries, newEntries map[string]*workbuddyCreditsEntry) bool {
+	if len(oldEntries) != len(newEntries) {
+		return true
+	}
+	for k, newEntry := range newEntries {
+		oldEntry, ok := oldEntries[k]
+		if !ok || oldEntry == nil || newEntry == nil {
+			return true
+		}
+		if math.Abs(oldEntry.Effective-newEntry.Effective) > workbuddyCreditsEpsilon ||
+			oldEntry.PromotionID != newEntry.PromotionID ||
+			oldEntry.Source != newEntry.Source {
+			return true
+		}
+	}
+	return false
+}
+
+type workbuddyConfigModelItem struct {
+	ID          string `json:"id"`
+	Name        string `json:"name,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+	Credits     string `json:"credits,omitempty"`
+}
+
+// parseWorkBuddyConfigModels extracts published models from data.models in /v3/config.
+func parseWorkBuddyConfigModels(body []byte, realmKey string, entries map[string]*workbuddyCreditsEntry) []*ModelInfo {
+	var root struct {
+		Data struct {
+			Models []workbuddyConfigModelItem `json:"models"`
+		} `json:"data"`
+		Models []workbuddyConfigModelItem `json:"models"`
+	}
+	if err := json.Unmarshal(body, &root); err != nil {
+		return nil
+	}
+
+	items := root.Data.Models
+	if len(items) == 0 {
+		items = root.Models
+	}
+	if len(items) == 0 {
+		return nil
+	}
+
+	var models []*ModelInfo
+	seen := make(map[string]bool, len(items))
+
+	for _, item := range items {
+		cleanID := strings.TrimSpace(item.ID)
+		if cleanID == "" {
+			continue
+		}
+		lowerID := strings.ToLower(cleanID)
+		if seen[lowerID] {
+			continue
+		}
+		seen[lowerID] = true
+
+		m := buildWorkBuddyDynamicModel(cleanID, item.DisplayName, item.Name, realmKey)
+		lookupKey := workbuddyCreditsLookupKey(cleanID)
+		if entry, ok := entries[lookupKey]; ok && entry != nil && entry.Source != "" {
+			m.Credits = &ModelCredits{
+				Multiplier:    entry.Effective,
+				Source:        entry.Source,
+				PromotionID:   entry.PromotionID,
+				PromotionNote: entry.PromotionNote,
+			}
+		}
+		models = append(models, m)
+	}
+
+	return models
+}
+
+func buildWorkBuddyDynamicModel(id, displayName, name, realmKey string) *ModelInfo {
+	lowerID := strings.ToLower(id)
+	ownedBy := inferWorkBuddyModelOwner(lowerID, realmKey)
+	dn := strings.TrimSpace(displayName)
+	if dn == "" {
+		dn = strings.TrimSpace(name)
+	}
+	if dn == "" {
+		dn = formatWorkBuddyDynamicDisplayName(id, realmKey)
+	}
+
+	m := &ModelInfo{
+		ID:                  id,
+		Object:              "model",
+		OwnedBy:             ownedBy,
+		Type:                "workbuddy",
+		DisplayName:         dn,
+		ContextLength:       1048576,
+		MaxCompletionTokens: 64000,
+		InputTokenLimit:     1048576,
+		OutputTokenLimit:    64000,
+	}
+
+	if shouldSupportThinking(lowerID) {
+		m.Thinking = &ThinkingSupport{
+			Levels: []string{"low", "medium", "high", "max"},
+		}
+	}
+	return m
+}
+
+func inferWorkBuddyModelOwner(lowerID, realmKey string) string {
+	switch {
+	case strings.HasPrefix(lowerID, "deepseek"):
+		return "deepseek"
+	case strings.HasPrefix(lowerID, "gpt"), strings.HasPrefix(lowerID, "o1"), strings.HasPrefix(lowerID, "o3"), strings.HasPrefix(lowerID, "o4"):
+		return "openai"
+	case strings.HasPrefix(lowerID, "claude"):
+		return "anthropic"
+	case strings.HasPrefix(lowerID, "glm"):
+		return "zhipu"
+	case strings.HasPrefix(lowerID, "kimi"):
+		return "moonshotai"
+	case strings.HasPrefix(lowerID, "minimax"):
+		return "minimax"
+	case strings.HasPrefix(lowerID, "hy"), strings.HasPrefix(lowerID, "hunyuan"):
+		return "tencent"
+	case strings.HasPrefix(lowerID, "qwen"):
+		return "alibaba"
+	case strings.HasPrefix(lowerID, "doubao"):
+		return "bytedance"
+	case strings.HasPrefix(lowerID, "gemini"):
+		return "google"
+	case strings.HasPrefix(lowerID, "grok"):
+		return "xai"
+	default:
+		if strings.EqualFold(strings.TrimSpace(realmKey), "cn") {
+			return "tencent"
+		}
+		return "workbuddy"
+	}
+}
+
+func shouldSupportThinking(lowerID string) bool {
+	return strings.Contains(lowerID, "deepseek") ||
+		strings.Contains(lowerID, "reasoner") ||
+		strings.Contains(lowerID, "thinking") ||
+		strings.Contains(lowerID, "glm") ||
+		strings.Contains(lowerID, "kimi") ||
+		strings.Contains(lowerID, "claude") ||
+		strings.HasPrefix(lowerID, "o1") ||
+		strings.HasPrefix(lowerID, "o3") ||
+		strings.HasPrefix(lowerID, "o4")
+}
+
+func formatWorkBuddyDynamicDisplayName(id, realmKey string) string {
+	tag := " (WorkBuddy)"
+	if strings.EqualFold(strings.TrimSpace(realmKey), "cn") {
+		tag = " (CodeBuddy)"
+	}
+	parts := strings.Split(id, "-")
+	for i, p := range parts {
+		lp := strings.ToLower(p)
+		switch {
+		case lp == "gpt":
+			parts[i] = "GPT"
+		case lp == "glm":
+			parts[i] = "GLM"
+		case lp == "hy":
+			parts[i] = "Hunyuan"
+		case strings.HasPrefix(lp, "hy") && len(lp) > 2 && lp[2] >= '0' && lp[2] <= '9':
+			parts[i] = "Hunyuan " + p[2:]
+		case lp == "deepseek":
+			parts[i] = "DeepSeek"
+		case lp == "claude":
+			parts[i] = "Claude"
+		case lp == "kimi":
+			parts[i] = "Kimi"
+		case lp == "minimax":
+			parts[i] = "MiniMax"
+		case lp == "qwen":
+			parts[i] = "Qwen"
+		case lp == "flash":
+			parts[i] = "Flash"
+		case lp == "pro":
+			parts[i] = "Pro"
+		default:
+			if len(p) > 0 {
+				parts[i] = strings.ToUpper(p[:1]) + p[1:]
+			}
+		}
+	}
+
+	var formatted []string
+	for i := 0; i < len(parts); i++ {
+		p := parts[i]
+		if (p == "GPT" || p == "GLM") && i+1 < len(parts) && len(parts[i+1]) > 0 && parts[i+1][0] >= '0' && parts[i+1][0] <= '9' {
+			formatted = append(formatted, p+"-"+parts[i+1])
+			i++
+		} else {
+			formatted = append(formatted, p)
+		}
+	}
+	return strings.Join(formatted, " ") + tag
 }

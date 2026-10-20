@@ -74,10 +74,13 @@ func TestWorkBuddyCreditMultipliersReachRegisteredModels(t *testing.T) {
 	if got, ok := credits["deepseek-v4.1-flash-free"]; !ok || got != 0 {
 		t.Errorf("deepseek-v4.1-flash-free credits = %v (present=%v), want 0", got, ok)
 	}
-	// The overlay annotates the static list; it must not invent models that the
-	// registry does not publish, even when the catalogue knows their rate.
+	// Dynamic model from data.models in /v3/config is discovered and carries its rate.
+	if got, ok := credits["gpt-5.5"]; !ok || got != 3.31 {
+		t.Errorf("dynamic model gpt-5.5 credits = %v (present=%v), want 3.31", got, ok)
+	}
+	// The overlay does not invent models that only exist in promotions without being in data.models.
 	if _, ok := credits["hy3"]; ok {
-		t.Error("overlay added hy3, which is not in the static intl registry")
+		t.Error("overlay added hy3, which is not in the data.models list")
 	}
 }
 

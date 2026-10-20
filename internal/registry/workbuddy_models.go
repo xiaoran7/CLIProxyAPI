@@ -6,11 +6,92 @@ import (
 )
 
 type workbuddyModelsStore struct {
-	mu     sync.RWMutex
-	models []*ModelInfo
+	mu         sync.RWMutex
+	intlModels []*ModelInfo
+	cnModels   []*ModelInfo
 }
 
 var workbuddyCatalogStore = &workbuddyModelsStore{}
+
+// ClearWorkBuddyCatalogModels resets stored dynamic models for a realm, or all realms if realm is empty.
+func ClearWorkBuddyCatalogModels(realm string) {
+	workbuddyCatalogStore.mu.Lock()
+	defer workbuddyCatalogStore.mu.Unlock()
+	switch strings.ToLower(strings.TrimSpace(realm)) {
+	case "cn":
+		workbuddyCatalogStore.cnModels = nil
+	case "intl":
+		workbuddyCatalogStore.intlModels = nil
+	default:
+		workbuddyCatalogStore.intlModels = nil
+		workbuddyCatalogStore.cnModels = nil
+	}
+}
+
+// SetWorkBuddyCatalogModels stores dynamic models discovered from upstream for a realm.
+// It returns true if the dynamic model definitions have changed.
+func SetWorkBuddyCatalogModels(realm string, models []*ModelInfo) bool {
+	cleanRealm := strings.ToLower(strings.TrimSpace(realm))
+	workbuddyCatalogStore.mu.Lock()
+	defer workbuddyCatalogStore.mu.Unlock()
+
+	var existing []*ModelInfo
+	if cleanRealm == "cn" {
+		existing = workbuddyCatalogStore.cnModels
+	} else {
+		existing = workbuddyCatalogStore.intlModels
+	}
+
+	if !workbuddyModelsSliceChanged(existing, models) {
+		return false
+	}
+
+	cloned := cloneModelInfos(models)
+	if cleanRealm == "cn" {
+		workbuddyCatalogStore.cnModels = cloned
+	} else {
+		workbuddyCatalogStore.intlModels = cloned
+	}
+	return true
+}
+
+// GetWorkBuddyDynamicModels returns dynamic models discovered from upstream for a realm.
+func GetWorkBuddyDynamicModels(realm string) []*ModelInfo {
+	cleanRealm := strings.ToLower(strings.TrimSpace(realm))
+	workbuddyCatalogStore.mu.RLock()
+	defer workbuddyCatalogStore.mu.RUnlock()
+	if cleanRealm == "cn" {
+		return cloneModelInfos(workbuddyCatalogStore.cnModels)
+	}
+	return cloneModelInfos(workbuddyCatalogStore.intlModels)
+}
+
+func workbuddyModelsSliceChanged(oldList, newList []*ModelInfo) bool {
+	if len(oldList) != len(newList) {
+		return true
+	}
+	for i := range oldList {
+		if oldList[i] == nil || newList[i] == nil {
+			if oldList[i] != newList[i] {
+				return true
+			}
+			continue
+		}
+		if oldList[i].ID != newList[i].ID {
+			return true
+		}
+		if (oldList[i].Credits == nil) != (newList[i].Credits == nil) {
+			return true
+		}
+		if oldList[i].Credits != nil && newList[i].Credits != nil {
+			if oldList[i].Credits.Multiplier != newList[i].Credits.Multiplier ||
+				oldList[i].Credits.PromotionID != newList[i].Credits.PromotionID {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 var staticWorkBuddyIntlModels = []*ModelInfo{
 	{
@@ -280,21 +361,50 @@ var staticWorkBuddyCNModels = []*ModelInfo{
 	},
 }
 
-// GetWorkBuddyModels returns models filtered by realm ("intl" or "cn").
+// GetWorkBuddyModels returns models filtered by realm ("intl" or "cn"),
+// combining static definitions with dynamically discovered models from upstream.
 func GetWorkBuddyModels(realm string) []*ModelInfo {
-	if strings.EqualFold(strings.TrimSpace(realm), "cn") {
-		return cloneModelInfos(staticWorkBuddyCNModels)
+	cleanRealm := strings.ToLower(strings.TrimSpace(realm))
+	var staticModels, dynamicModels []*ModelInfo
+	if cleanRealm == "cn" {
+		staticModels = staticWorkBuddyCNModels
+		workbuddyCatalogStore.mu.RLock()
+		dynamicModels = workbuddyCatalogStore.cnModels
+		workbuddyCatalogStore.mu.RUnlock()
+	} else {
+		staticModels = staticWorkBuddyIntlModels
+		workbuddyCatalogStore.mu.RLock()
+		dynamicModels = workbuddyCatalogStore.intlModels
+		workbuddyCatalogStore.mu.RUnlock()
 	}
-	return cloneModelInfos(staticWorkBuddyIntlModels)
+
+	seen := make(map[string]bool, len(staticModels)+len(dynamicModels))
+	result := make([]*ModelInfo, 0, len(staticModels)+len(dynamicModels))
+
+	for _, m := range staticModels {
+		if m != nil && !seen[strings.ToLower(m.ID)] {
+			seen[strings.ToLower(m.ID)] = true
+			result = append(result, cloneModelInfo(m))
+		}
+	}
+
+	for _, m := range dynamicModels {
+		if m != nil && !seen[strings.ToLower(m.ID)] {
+			seen[strings.ToLower(m.ID)] = true
+			result = append(result, cloneModelInfo(m))
+		}
+	}
+
+	return result
 }
 
 // GetAllWorkBuddyModels returns all unique WorkBuddy models across both realms.
 func GetAllWorkBuddyModels() []*ModelInfo {
 	seen := make(map[string]bool)
 	var all []*ModelInfo
-	for _, m := range append(staticWorkBuddyIntlModels, staticWorkBuddyCNModels...) {
-		if m != nil && !seen[m.ID] {
-			seen[m.ID] = true
+	for _, m := range append(GetWorkBuddyModels("intl"), GetWorkBuddyModels("cn")...) {
+		if m != nil && !seen[strings.ToLower(m.ID)] {
+			seen[strings.ToLower(m.ID)] = true
 			all = append(all, m)
 		}
 	}

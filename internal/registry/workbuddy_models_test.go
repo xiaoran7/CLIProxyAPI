@@ -99,3 +99,95 @@ func TestLookupWorkBuddyModel(t *testing.T) {
 		}
 	}
 }
+
+func TestDynamicWorkBuddyModels(t *testing.T) {
+	ClearWorkBuddyCatalogModels("")
+	defer ClearWorkBuddyCatalogModels("")
+
+	dynamicIntl := []*ModelInfo{
+		{
+			ID:          "gpt-5.5",
+			Object:      "model",
+			OwnedBy:     "openai",
+			Type:        "workbuddy",
+			DisplayName: "GPT-5.5 (WorkBuddy)",
+		},
+		{
+			// Model that duplicates a static model ID: static definition should take precedence
+			ID:          "deepseek-v4.1-flash",
+			Object:      "model",
+			OwnedBy:     "deepseek",
+			Type:        "workbuddy",
+			DisplayName: "Overridden Display Name",
+		},
+	}
+
+	changed := SetWorkBuddyCatalogModels("intl", dynamicIntl)
+	if !changed {
+		t.Fatal("SetWorkBuddyCatalogModels(intl) should have returned true on initial insert")
+	}
+
+	// Repeated set with identical models should report no change
+	if SetWorkBuddyCatalogModels("intl", dynamicIntl) {
+		t.Error("SetWorkBuddyCatalogModels(intl) should have returned false for identical models")
+	}
+
+	stored := GetWorkBuddyDynamicModels("intl")
+	if len(stored) != 2 {
+		t.Fatalf("GetWorkBuddyDynamicModels(intl) len = %d, want 2", len(stored))
+	}
+
+	models := GetWorkBuddyModels("intl")
+	var foundGPT55, foundDeepSeek bool
+	for _, m := range models {
+		if m.ID == "gpt-5.5" {
+			foundGPT55 = true
+			if m.DisplayName != "GPT-5.5 (WorkBuddy)" {
+				t.Errorf("gpt-5.5 DisplayName = %q, want %q", m.DisplayName, "GPT-5.5 (WorkBuddy)")
+			}
+		}
+		if m.ID == "deepseek-v4.1-flash" {
+			foundDeepSeek = true
+			if m.DisplayName != "DeepSeek V4.1 Flash (WorkBuddy)" {
+				t.Errorf("static deepseek-v4.1-flash was overwritten by dynamic model: %q", m.DisplayName)
+			}
+		}
+	}
+	if !foundGPT55 {
+		t.Error("dynamic model gpt-5.5 not found in GetWorkBuddyModels(intl)")
+	}
+	if !foundDeepSeek {
+		t.Error("static model deepseek-v4.1-flash not found in GetWorkBuddyModels(intl)")
+	}
+
+	// LookupWorkBuddyModel finds dynamic model
+	mLookup := LookupWorkBuddyModel("gpt-5.5", "intl")
+	if mLookup == nil {
+		t.Fatal("LookupWorkBuddyModel failed for dynamic model gpt-5.5")
+	}
+	if mLookup.OwnedBy != "openai" {
+		t.Errorf("gpt-5.5 OwnedBy = %q, want openai", mLookup.OwnedBy)
+	}
+
+	// GetAllWorkBuddyModels includes dynamic models
+	all := GetAllWorkBuddyModels()
+	foundInAll := false
+	for _, m := range all {
+		if m.ID == "gpt-5.5" {
+			foundInAll = true
+			break
+		}
+	}
+	if !foundInAll {
+		t.Error("dynamic model gpt-5.5 not found in GetAllWorkBuddyModels()")
+	}
+
+	// Clear dynamic models
+	ClearWorkBuddyCatalogModels("intl")
+	if len(GetWorkBuddyDynamicModels("intl")) != 0 {
+		t.Error("ClearWorkBuddyCatalogModels(intl) failed to clear models")
+	}
+	if m := LookupWorkBuddyModel("gpt-5.5", "intl"); m != nil {
+		t.Errorf("gpt-5.5 still found after clearing dynamic models: %v", m)
+	}
+}
