@@ -181,6 +181,10 @@ func (m *Manager) codexBindingPath(auth *Auth) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("bind SIWC: resolve auth directory: %w", err)
 	}
+	authDir, err = filepath.Abs(authDir)
+	if err != nil {
+		return "", err
+	}
 	root, err := filepath.EvalSymlinks(authDir)
 	if err != nil {
 		return "", fmt.Errorf("bind SIWC: invalid auth directory")
@@ -193,14 +197,22 @@ func (m *Manager) codexBindingPath(auth *Auth) (string, error) {
 	if path == "" {
 		path = strings.TrimSpace(auth.Attributes["source"])
 	}
-	if path == "" {
-		path = strings.TrimSpace(auth.FileName)
+	if path != "" && !filepath.IsAbs(path) {
+		path, err = filepath.Abs(path)
+		if err != nil {
+			return "", err
+		}
+	}
+	if path == "" && strings.TrimSpace(auth.FileName) != "" {
+		fileName := strings.TrimSpace(auth.FileName)
+		if filepath.IsAbs(fileName) {
+			path = fileName
+		} else {
+			path = filepath.Join(root, fileName)
+		}
 	}
 	if path == "" {
 		return "", fmt.Errorf("bind SIWC: target is not file-backed")
-	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(root, path)
 	}
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {

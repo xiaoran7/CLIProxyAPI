@@ -353,3 +353,99 @@ func TestBindCodexSIWCRecoversUnauthorizedPreservingQuotaAndDisabled(t *testing.
 		})
 	}
 }
+
+func TestBindCodexSIWCRelativeAuthDir(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		attributes func(rel string) map[string]string
+	}{
+		{
+			name: "cwd_relative_path",
+			attributes: func(rel string) map[string]string {
+				return map[string]string{"path": rel, "source": rel}
+			},
+		},
+		{
+			name: "cwd_relative_source_only",
+			attributes: func(rel string) map[string]string {
+				return map[string]string{"source": rel, AttributeSourceBackend: AuthSourceFile}
+			},
+		},
+		{
+			name: "filename_fallback",
+			attributes: func(string) map[string]string {
+				return map[string]string{AttributeSourceBackend: AuthSourceFile}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			if errMkdir := os.Mkdir("auths", 0o700); errMkdir != nil {
+				t.Fatal(errMkdir)
+			}
+			rel := filepath.Join("auths", "auth.json")
+			metadata := map[string]any{"type": "codex", "access_token": "outer", "refresh_token": "outer-refresh", "account_id": "account"}
+			data, errMarshal := json.Marshal(metadata)
+			if errMarshal != nil {
+				t.Fatal(errMarshal)
+			}
+			if errWrite := os.WriteFile(rel, data, 0o600); errWrite != nil {
+				t.Fatal(errWrite)
+			}
+			m := NewManager(nil, nil, nil)
+			m.runtimeConfig.Store(&config.Config{AuthDir: "./auths"})
+			a, errRegister := m.Register(context.Background(), &Auth{
+				ID:         "auth.json",
+				Provider:   "codex",
+				FileName:   "auth.json",
+				Attributes: tc.attributes(rel),
+				Metadata:   metadata,
+				Status:     StatusActive,
+			})
+			if errRegister != nil {
+				t.Fatal(errRegister)
+			}
+			got, errBind := m.BindCodexSIWC(context.Background(), a.ID, a.RegistrationEpoch, bindingTokens("bound"))
+			if errBind != nil {
+				t.Fatalf("bind failed: %v", errBind)
+			}
+			if !IsCodexUseSIWC(got) {
+				t.Fatal("binding did not enable SIWC")
+			}
+			disk := readBindingDisk(t, rel)
+			if disk["use_siwc"] != true || disk["siwc"].(map[string]any)["access_token"] != "bound" {
+				t.Fatal("binding did not persist to relative auth-dir file")
+			}
+		})
+	}
+	t.Run("cwd_relative_outside_rejected", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		if errMkdir := os.Mkdir("auths", 0o700); errMkdir != nil {
+			t.Fatal(errMkdir)
+		}
+		metadata := map[string]any{"type": "codex", "access_token": "outer", "refresh_token": "outer-refresh", "account_id": "account"}
+		data, errMarshal := json.Marshal(metadata)
+		if errMarshal != nil {
+			t.Fatal(errMarshal)
+		}
+		if errWrite := os.WriteFile("outside.json", data, 0o600); errWrite != nil {
+			t.Fatal(errWrite)
+		}
+		m := NewManager(nil, nil, nil)
+		m.runtimeConfig.Store(&config.Config{AuthDir: "./auths"})
+		a, errRegister := m.Register(context.Background(), &Auth{
+			ID:         "outside.json",
+			Provider:   "codex",
+			FileName:   "outside.json",
+			Attributes: map[string]string{"path": "outside.json", "source": "outside.json"},
+			Metadata:   metadata,
+			Status:     StatusActive,
+		})
+		if errRegister != nil {
+			t.Fatal(errRegister)
+		}
+		if _, errBind := m.BindCodexSIWC(context.Background(), a.ID, a.RegistrationEpoch, bindingTokens("bound")); errBind == nil {
+			t.Fatal("relative path outside auth-dir unexpectedly succeeded")
+		}
+	})
+}

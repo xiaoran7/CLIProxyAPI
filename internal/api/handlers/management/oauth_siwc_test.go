@@ -454,3 +454,35 @@ func TestSIWCBindTargetValidationAndLegacyCallback(t *testing.T) {
 		t.Fatal("ordinary callback file missing")
 	}
 }
+
+func TestSIWCBindRelativeAuthDirCommit(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if errMkdir := os.Mkdir("auths", 0o700); errMkdir != nil {
+		t.Fatal(errMkdir)
+	}
+	f := setupSIWCFlow(t, false)
+	relPath := filepath.Join("auths", "codex.json")
+	raw, errRead := os.ReadFile(f.path)
+	if errRead != nil {
+		t.Fatal(errRead)
+	}
+	if errWrite := os.WriteFile(relPath, raw, 0o600); errWrite != nil {
+		t.Fatal(errWrite)
+	}
+	f.h.cfg.AuthDir = "./auths"
+	f.manager.SetConfig(f.h.cfg)
+	f.auth.Attributes["path"] = relPath
+	f.auth.Attributes["source"] = relPath
+	if _, errUpdate := f.manager.Update(context.Background(), f.auth); errUpdate != nil {
+		t.Fatal(errUpdate)
+	}
+	state, flow := f.start(t)
+	w := siwcRequest(t, f.router, http.MethodPost, "/callback", map[string]any{"provider": "codex", "redirect_url": siwcCallbackURL(state)})
+	if w.Code != http.StatusOK {
+		t.Fatalf("callback: %d %s", w.Code, w.Body.String())
+	}
+	waitSIWCExchange(t, flow)
+	if status := performOAuthStatusRequest(t, f.router, state); status.Status != "ok" {
+		t.Fatalf("status: %#v", status)
+	}
+}
