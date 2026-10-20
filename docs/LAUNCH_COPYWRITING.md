@@ -1,21 +1,21 @@
 # Launch Copywriting Package
 
 ## 1. V2EX (`/go/share` | `/go/create`)
-**标题**：开源一个解决 AI 编程智能体长思考断流与多账号缓存失效的 Go 代理网关：CLI Proxy API
+**Title**: Open-sourcing a Go proxy gateway that fixes long-thinking stream drops and multi-account cache invalidation for AI coding agents: CLI Proxy API
 
-**正文**：
-重度使用 Claude Code、Codex、Cursor 时常见两个痛点：
-1. **长思考断流（HTTP 524/504）**：深度思考静默 30–60 秒易被 Cloudflare/Nginx 切断；
-2. **多账号轮询导致 Prompt Cache 失效**：无状态轮询打散多轮对话，缓存命中率归零、账单暴增。
+**Body**:
+Two pain points show up constantly when you lean on Claude Code, Codex, and Cursor:
+1. **Long-thinking stream drops (HTTP 524/504)**: a silent 30–60 second deep-thinking pause is easily cut off by Cloudflare/Nginx;
+2. **Multi-account round-robin invalidates the Prompt Cache**: stateless rotation scatters a multi-turn conversation across credentials, so the cache hit rate collapses to zero and the bill balloons.
 
-我们基于 Go 1.26 构建了 **CLI Proxy API**：
-- **SSE Keepalive 心跳泵 + 循环熔断**：思考期每 15 秒发送 `: keep-alive` 保活边缘连接，256 滑窗自动熔断推理死循环；
-- **跨重启会话亲和（`session_affinity.json`）**：滑动窗口 TTL 绑定长会话至固定凭据，遇 429 自动沉入冷沉淀池并平滑切换；
-- **五种配额调度**：支持 `round-robin`、`weighted-round-robin`、`fill-first`、`smart`（临期优先）、`pace`（步调均衡）；
-- **WorkBuddy & OpenCode 原生套件**：支持腾讯 WorkBuddy 国内/国际双域（5.8.4 会话头伪装、`WB_CN_CHAT_UPSTREAM` 海外出口、北京时间自动打卡、实时倍率显示）及 OpenCode 1M 免费模型免配直通；
-- **单二进制内嵌管理台（CPAMC）**：开箱即用管理凭据、配额与模型屏蔽。
+We built **CLI Proxy API** on Go 1.26:
+- **SSE keepalive pump + loop breaker**: sends `: keep-alive` every 15 seconds during thinking pauses to hold the edge connection open, and a 256-sample sliding window automatically breaks runaway reasoning loops;
+- **Session affinity across restarts (`session_affinity.json`)**: a sliding-window TTL pins a long session to a fixed credential, and a 429 sinks it into a cold pool with a smooth switchover;
+- **Five quota scheduling strategies**: `round-robin`, `weighted-round-robin`, `fill-first`, `smart` (expiring-first), and `pace` (even pacing);
+- **Native WorkBuddy & OpenCode suites**: supports Tencent WorkBuddy's CN/INTL dual realms (5.8.4 session-header spoofing, `WB_CN_CHAT_UPSTREAM` overseas egress, automatic check-in on Beijing time, live credit multipliers) plus OpenCode's 1M free models with no key configuration;
+- **Management console embedded in a single binary (CPAMC)**: manage credentials, quota, and model blocking out of the box.
 
-仓库：https://github.com/router-for-me/CLIProxyAPI
+Repository: https://github.com/router-for-me/CLIProxyAPI
 
 ---
 

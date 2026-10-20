@@ -75,10 +75,10 @@ func (h *Handler) GetWorkBuddyCheckin(c *gin.Context) {
 			}
 
 			outcome := "inactive"
-			msg := "国际版无打卡活动"
+			msg := "No check-in campaign for the international realm"
 			if strings.EqualFold(realm, workbuddy.RealmCN) {
 				outcome = "pending"
-				msg = "今日待签到"
+				msg = "Check-in pending today"
 			}
 			user := workbuddy.ExtractNickname(a)
 			if user == "" {
@@ -243,10 +243,10 @@ func (h *Handler) GetWorkBuddyCompensation(c *gin.Context) {
 			}
 
 			outcome := "pending"
-			msg := "待领取官方活动补偿"
+			msg := "Official campaign compensation available to claim"
 			if !strings.EqualFold(realm, workbuddy.RealmCN) {
 				outcome = "inactive"
-				msg = "国际版活动未开启或已过期"
+				msg = "The campaign is not open or has expired for the international realm"
 			}
 			user := workbuddy.ExtractNickname(a)
 			if user == "" {

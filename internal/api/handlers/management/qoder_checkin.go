@@ -95,7 +95,7 @@ func (h *Handler) GetQoderCheckin(c *gin.Context) {
 				"day":     today,
 				"outcome": "pending",
 				"realm":   realm,
-				"message": "今日待签到",
+				"message": "Check-in pending today",
 			}
 		}
 	}

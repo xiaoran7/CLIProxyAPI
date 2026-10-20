@@ -370,8 +370,8 @@ func TestQueryQuota_ActivityStatusFallback(t *testing.T) {
 		t.Fatalf("QueryQuota returned unexpected error: %v", err)
 	}
 
-	if res.Subscription == nil || res.Subscription.Plan != "WorkBuddy (cn) · Buddy加油站 (第10季)" {
-		t.Errorf("Subscription.Plan = %v, want WorkBuddy (cn) · Buddy加油站 (第10季)", res.Subscription)
+	if res.Subscription == nil || res.Subscription.Plan != "WorkBuddy (cn) · Buddy加油站 (Season 10)" {
+		t.Errorf("Subscription.Plan = %v, want WorkBuddy (cn) · Buddy加油站 (Season 10)", res.Subscription)
 	}
 
 	var foundPoints bool

@@ -352,11 +352,13 @@ func ClaimCompensation(ctx context.Context, client *http.Client, auth *cliproxya
 		result.Outcome = CompensationClaimed
 		result.Credit = 500.0 // Official activity package TCACA_code_007_nzdH5h4Nl0 grants 500 credits
 		if msg == "" || msg == "OK" {
-			result.Message = "补偿领取成功，已入账500算力"
+			result.Message = "Compensation claimed successfully; 500 credits credited"
 		} else {
 			result.Message = msg
 		}
 		return result, nil
+	// The next two branches match the wording of the upstream server's `msg`
+	// field, so those literals stay in the server's original language.
 	case strings.Contains(msg, "已领取") || strings.Contains(msg, "重复领取"):
 		result.Outcome = CompensationDone
 		result.Message = msg

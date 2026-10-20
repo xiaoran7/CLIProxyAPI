@@ -117,7 +117,7 @@ func ParseModelMultiplier(model string) ParsedModelMultiplier {
 }
 
 // ValidateModelMultiplier validates that the requested multiplier matches the catalog rate.
-// If the multiplier does not match ("倍率不对"), it returns a 400 Bad Request error.
+// If the multiplier does not match the catalog rate, it returns a 400 Bad Request error.
 func ValidateModelMultiplier(parsed ParsedModelMultiplier) *interfaces.ErrorMessage {
 	if !parsed.HasMultiplier {
 		return nil
@@ -154,7 +154,7 @@ func ValidateModelMultiplier(parsed ParsedModelMultiplier) *interfaces.ErrorMess
 		if !strings.HasSuffix(strings.ToLower(requestedDisplay), "x") {
 			requestedDisplay += "x"
 		}
-		errMsg := fmt.Sprintf("model multiplier mismatch: requested %s, expected %s for model %s (模型倍率不匹配)",
+		errMsg := fmt.Sprintf("model multiplier mismatch: requested %s, expected %s for model %s",
 			requestedDisplay, expectedDisplay, parsed.BaseModel)
 		body := `{"error":{"message":"","type":"invalid_request_error","code":"model_multiplier_mismatch","param":"model"}}`
 		body, _ = sjson.Set(body, "error.message", errMsg)

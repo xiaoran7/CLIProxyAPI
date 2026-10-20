@@ -360,7 +360,7 @@ func (h *Handler) listWorkBuddyQuotas(c *gin.Context) {
 			aq := accountQuota{
 				AuthID:   auth.ID,
 				User:     user,
-				VIPLevel: "标准版",
+				VIPLevel: "Standard",
 				Realm:    realm,
 			}
 

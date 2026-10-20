@@ -417,7 +417,7 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 						season := data.Get("season").Int()
 						if theme != "" {
 							if season > 0 {
-								planName = fmt.Sprintf("%s · %s (第%d季)", editionLabel, theme, season)
+								planName = fmt.Sprintf("%s · %s (Season %d)", editionLabel, theme, season)
 							} else {
 								planName = fmt.Sprintf("%s · %s", editionLabel, theme)
 							}
