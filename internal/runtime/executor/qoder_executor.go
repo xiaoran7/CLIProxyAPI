@@ -435,16 +435,88 @@ func (e *QoderExecutor) Refresh(ctx context.Context, auth *cliproxyauth.Auth) (*
 	}
 
 	client := helps.NewProxyAwareHTTPClient(ctx, e.cfg, auth, 30*time.Second)
-	// If PAT exists, exchange/refresh job token
+	realm := qoderauth.ResolveRealm(auth)
+
+	// 1. If PAT exists, exchange/refresh job token
 	if pat := qoderauth.PersonalAccessToken(auth); pat != "" {
-		jt, err := qoderauth.EnsureValidJobToken(ctx, client, auth)
-		if err != nil {
-			return nil, fmt.Errorf("qoder executor: refresh job token failed: %w", err)
+		resp, errExchange := qoderauth.ExchangeJobToken(ctx, client, realm, pat)
+		if errExchange != nil {
+			return nil, fmt.Errorf("qoder executor: refresh job token via PAT failed: %w", errExchange)
 		}
 		if auth.Metadata == nil {
 			auth.Metadata = make(map[string]any)
 		}
-		auth.Metadata["job_token"] = jt
+		auth.Metadata["job_token"] = resp.JobToken
+		auth.Metadata["access_token"] = resp.JobToken
+		if resp.RefreshToken != "" {
+			auth.Metadata["job_refresh"] = resp.RefreshToken
+		}
+		auth.LastRefreshedAt = time.Now()
+		return auth, nil
+	}
+
+	// 2. If OAuth job_refresh exists, rotate job token
+	if jrt := qoderauth.JobRefreshToken(auth); jrt != "" {
+		resp, errJob := qoderauth.RefreshJobToken(ctx, client, realm, jrt)
+		if errJob == nil && resp != nil && strings.TrimSpace(resp.JobToken) != "" {
+			if auth.Metadata == nil {
+				auth.Metadata = make(map[string]any)
+			}
+			auth.Metadata["job_token"] = resp.JobToken
+			auth.Metadata["access_token"] = resp.JobToken
+			if resp.RefreshToken != "" {
+				auth.Metadata["job_refresh"] = resp.RefreshToken
+			}
+			if resp.ExpiresIn > 0 {
+				var expSec int64
+				if resp.ExpiresIn > 1000000 {
+					expSec = resp.ExpiresIn / 1000
+				} else {
+					expSec = resp.ExpiresIn
+				}
+				expTime := time.Now().Add(time.Duration(expSec) * time.Second)
+				auth.Metadata["expired"] = expTime.UTC().Format(time.RFC3339)
+				auth.Metadata["expires_at"] = expTime.Unix()
+			}
+			auth.LastRefreshedAt = time.Now()
+			return auth, nil
+		}
+	}
+
+	// 3. If OAuth device_refresh exists, rotate device token and attempt job token trade
+	if drt := qoderauth.DeviceRefreshToken(auth); drt != "" {
+		resp, errDev := qoderauth.RefreshDeviceToken(ctx, client, realm, drt)
+		if errDev != nil {
+			return nil, fmt.Errorf("qoder executor: refresh device token failed: %w", errDev)
+		}
+		if auth.Metadata == nil {
+			auth.Metadata = make(map[string]any)
+		}
+		auth.Metadata["device_token"] = resp.Token
+		if resp.RefreshToken != "" {
+			auth.Metadata["device_refresh"] = resp.RefreshToken
+			auth.Metadata["refresh_token"] = resp.RefreshToken
+		}
+		activeToken := resp.Token
+		if jtResp, errTrade := qoderauth.TradeJobToken(ctx, client, realm, resp.Token); errTrade == nil && jtResp != nil && strings.TrimSpace(jtResp.JobToken) != "" {
+			auth.Metadata["job_token"] = jtResp.JobToken
+			activeToken = jtResp.JobToken
+			if jtResp.RefreshToken != "" {
+				auth.Metadata["job_refresh"] = jtResp.RefreshToken
+			}
+			if jtResp.ExpiresIn > 0 {
+				var expSec int64
+				if jtResp.ExpiresIn > 1000000 {
+					expSec = jtResp.ExpiresIn / 1000
+				} else {
+					expSec = jtResp.ExpiresIn
+				}
+				expTime := time.Now().Add(time.Duration(expSec) * time.Second)
+				auth.Metadata["expired"] = expTime.UTC().Format(time.RFC3339)
+				auth.Metadata["expires_at"] = expTime.Unix()
+			}
+		}
+		auth.Metadata["access_token"] = activeToken
 		auth.LastRefreshedAt = time.Now()
 		return auth, nil
 	}

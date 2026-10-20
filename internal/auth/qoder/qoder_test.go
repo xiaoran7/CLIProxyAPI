@@ -2,6 +2,7 @@ package qoder
 
 import (
 	"testing"
+	"time"
 
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 )
@@ -96,6 +97,9 @@ func TestTokenExtraction(t *testing.T) {
 	auth := &cliproxyauth.Auth{
 		Attributes: map[string]string{
 			"personal_token": "pt-test-123",
+			"device_token":   "dt-test-789",
+			"device_refresh": "dr-test-111",
+			"job_refresh":    "jr-test-222",
 		},
 		Metadata: map[string]any{
 			"job_token": "jt-test-456",
@@ -107,5 +111,61 @@ func TestTokenExtraction(t *testing.T) {
 	}
 	if token := AccessToken(auth); token != "jt-test-456" {
 		t.Errorf("AccessToken() = %s, expected jt-test-456", token)
+	}
+	if dt := DeviceToken(auth); dt != "dt-test-789" {
+		t.Errorf("DeviceToken() = %s, expected dt-test-789", dt)
+	}
+	if drt := DeviceRefreshToken(auth); drt != "dr-test-111" {
+		t.Errorf("DeviceRefreshToken() = %s, expected dr-test-111", drt)
+	}
+	if jrt := JobRefreshToken(auth); jrt != "jr-test-222" {
+		t.Errorf("JobRefreshToken() = %s, expected jr-test-222", jrt)
+	}
+}
+
+func TestIsTokenExpired(t *testing.T) {
+	// 1. Nil auth
+	if IsTokenExpired(nil) {
+		t.Errorf("IsTokenExpired(nil) should be false")
+	}
+
+	// 2. Future expiration (RFC3339 string)
+	authFuture := &cliproxyauth.Auth{
+		Metadata: map[string]any{
+			"expired": time.Now().Add(10 * time.Minute).Format(time.RFC3339),
+		},
+	}
+	if IsTokenExpired(authFuture) {
+		t.Errorf("IsTokenExpired(future) should be false")
+	}
+
+	// 3. Past expiration (RFC3339 string)
+	authPast := &cliproxyauth.Auth{
+		Metadata: map[string]any{
+			"expired": time.Now().Add(-1 * time.Minute).Format(time.RFC3339),
+		},
+	}
+	if !IsTokenExpired(authPast) {
+		t.Errorf("IsTokenExpired(past) should be true")
+	}
+
+	// 4. Within 2-min threshold
+	authClose := &cliproxyauth.Auth{
+		Metadata: map[string]any{
+			"expired": time.Now().Add(1 * time.Minute).Format(time.RFC3339),
+		},
+	}
+	if !IsTokenExpired(authClose) {
+		t.Errorf("IsTokenExpired(close) should be true (needs refresh buffer)")
+	}
+
+	// 5. Unix timestamp expires_at
+	authUnixPast := &cliproxyauth.Auth{
+		Metadata: map[string]any{
+			"expires_at": time.Now().Add(-10 * time.Second).Unix(),
+		},
+	}
+	if !IsTokenExpired(authUnixPast) {
+		t.Errorf("IsTokenExpired(unix past) should be true")
 	}
 }

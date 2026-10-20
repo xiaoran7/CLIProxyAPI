@@ -415,8 +415,17 @@ func PollToken(ctx context.Context, httpClient *http.Client, realm, nonce, verif
 
 // WaitForAuthorization continuously polls until the user approves device login or context expires.
 func WaitForAuthorization(ctx context.Context, httpClient *http.Client, realm, nonce, verifier, machineID string) (*TokenBundle, error) {
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, LoginTimeout)
+		defer cancel()
+	}
+
 	ticker := time.NewTicker(LoginPollInterval)
 	defer ticker.Stop()
+
+	var consecutiveErrors int
+	const maxConsecutiveErrors = 15
 
 	for {
 		select {
@@ -425,9 +434,13 @@ func WaitForAuthorization(ctx context.Context, httpClient *http.Client, realm, n
 		case <-ticker.C:
 			bundle, isPending, err := PollToken(ctx, httpClient, realm, nonce, verifier, machineID)
 			if err != nil {
-				// Temporary network hiccups during polling are tolerated
+				consecutiveErrors++
+				if consecutiveErrors >= maxConsecutiveErrors {
+					return nil, fmt.Errorf("qoder: polling aborted after %d consecutive errors: %w", consecutiveErrors, err)
+				}
 				continue
 			}
+			consecutiveErrors = 0
 			if isPending {
 				continue
 			}

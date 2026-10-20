@@ -340,18 +340,146 @@ func RefreshDeviceToken(ctx context.Context, httpClient *http.Client, realm, drt
 	}, nil
 }
 
+// JobRefreshToken returns the job refresh token string if present in auth metadata/attributes.
+func JobRefreshToken(auth *cliproxyauth.Auth) string {
+	if auth == nil {
+		return ""
+	}
+	if auth.Metadata != nil {
+		if t, ok := auth.Metadata["job_refresh"].(string); ok && strings.TrimSpace(t) != "" {
+			return strings.TrimSpace(t)
+		}
+	}
+	if auth.Attributes != nil {
+		if t := strings.TrimSpace(auth.Attributes["job_refresh"]); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+// DeviceRefreshToken returns the device refresh token string if present in auth metadata/attributes.
+func DeviceRefreshToken(auth *cliproxyauth.Auth) string {
+	if auth == nil {
+		return ""
+	}
+	if auth.Metadata != nil {
+		if t, ok := auth.Metadata["device_refresh"].(string); ok && strings.TrimSpace(t) != "" {
+			return strings.TrimSpace(t)
+		}
+		if t, ok := auth.Metadata["refresh_token"].(string); ok && strings.TrimSpace(t) != "" {
+			return strings.TrimSpace(t)
+		}
+	}
+	if auth.Attributes != nil {
+		if t := strings.TrimSpace(auth.Attributes["device_refresh"]); t != "" {
+			return t
+		}
+		if t := strings.TrimSpace(auth.Attributes["refresh_token"]); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+// DeviceToken returns the raw device token (dt-...) if present in auth metadata/attributes.
+func DeviceToken(auth *cliproxyauth.Auth) string {
+	if auth == nil {
+		return ""
+	}
+	if auth.Metadata != nil {
+		if t, ok := auth.Metadata["device_token"].(string); ok && strings.TrimSpace(t) != "" {
+			return strings.TrimSpace(t)
+		}
+	}
+	if auth.Attributes != nil {
+		if t := strings.TrimSpace(auth.Attributes["device_token"]); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+// IsTokenExpired checks whether the token in the given auth object is expired or within 2 minutes of expiration.
+func IsTokenExpired(auth *cliproxyauth.Auth) bool {
+	if auth == nil {
+		return false
+	}
+	if auth.Metadata != nil {
+		if expStr, ok := auth.Metadata["expired"].(string); ok && strings.TrimSpace(expStr) != "" {
+			if t, err := time.Parse(time.RFC3339, expStr); err == nil {
+				return time.Now().Add(2 * time.Minute).After(t)
+			}
+		}
+		if expAt, ok := auth.Metadata["expires_at"].(int64); ok && expAt > 0 {
+			return time.Now().Add(2*time.Minute).Unix() >= expAt
+		}
+		if expAt, ok := auth.Metadata["expires_at"].(float64); ok && expAt > 0 {
+			return time.Now().Add(2*time.Minute).Unix() >= int64(expAt)
+		}
+	}
+	if auth.Attributes != nil {
+		if expStr := strings.TrimSpace(auth.Attributes["expired"]); expStr != "" {
+			if t, err := time.Parse(time.RFC3339, expStr); err == nil {
+				return time.Now().Add(2 * time.Minute).After(t)
+			}
+		}
+	}
+	return false
+}
+
 // EnsureValidJobToken acquires or ensures an active Job Token for the given auth object.
-// If the auth object has a direct job token (jt-...) it uses it; otherwise if it has a PAT (pt-...)
-// it exchanges it via SingleFlight to prevent concurrent redundant calls.
+// If the auth object has a direct job token (jt-...) it checks validity and refreshes if needed;
+// otherwise if it has a PAT (pt-...) it exchanges it via SingleFlight to prevent concurrent redundant calls.
 func EnsureValidJobToken(ctx context.Context, httpClient *http.Client, auth *cliproxyauth.Auth) (string, error) {
 	if auth == nil {
 		return "", errors.New("qoder: auth is nil")
 	}
 
-	// 1. Check if auth directly provides an active job token
+	realm := ResolveRealm(auth)
 	token := AccessToken(auth)
+
+	// 1. Check if auth directly provides an active job token
 	if strings.HasPrefix(token, "jt-") {
-		return token, nil
+		// If token is not expired, return directly
+		if !IsTokenExpired(auth) {
+			return token, nil
+		}
+		// If expired and job_refresh exists, attempt proactive refresh via singleflight
+		if jrt := JobRefreshToken(auth); jrt != "" {
+			key := fmt.Sprintf("job_refresh:%s:%s", realm, jrt)
+			res, err, _ := exchangeGroup.Do(key, func() (any, error) {
+				resp, errRefresh := RefreshJobToken(ctx, httpClient, realm, jrt)
+				if errRefresh != nil {
+					return "", errRefresh
+				}
+				if auth.Metadata == nil {
+					auth.Metadata = make(map[string]any)
+				}
+				auth.Metadata["job_token"] = resp.JobToken
+				auth.Metadata["access_token"] = resp.JobToken
+				if resp.RefreshToken != "" {
+					auth.Metadata["job_refresh"] = resp.RefreshToken
+				}
+				if resp.ExpiresIn > 0 {
+					var expSec int64
+					if resp.ExpiresIn > 1000000 {
+						expSec = resp.ExpiresIn / 1000
+					} else {
+						expSec = resp.ExpiresIn
+					}
+					expTime := time.Now().Add(time.Duration(expSec) * time.Second)
+					auth.Metadata["expired"] = expTime.UTC().Format(time.RFC3339)
+					auth.Metadata["expires_at"] = expTime.Unix()
+				}
+				return resp.JobToken, nil
+			})
+			if err == nil {
+				if str, ok := res.(string); ok && str != "" {
+					return str, nil
+				}
+			}
+		}
 	}
 
 	// 2. Check if a PAT exists to exchange
@@ -360,9 +488,8 @@ func EnsureValidJobToken(ctx context.Context, httpClient *http.Client, auth *cli
 		pat = token
 	}
 
-	realm := ResolveRealm(auth)
 	if pat != "" {
-		key := fmt.Sprintf("%s:%s", realm, pat)
+		key := fmt.Sprintf("pat:%s:%s", realm, pat)
 		res, err, _ := exchangeGroup.Do(key, func() (any, error) {
 			resp, errExchange := ExchangeJobToken(ctx, httpClient, realm, pat)
 			if errExchange != nil {
