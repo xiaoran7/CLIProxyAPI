@@ -37,7 +37,7 @@ const (
 	AuthWebURLCN = "https://qoder.cn"
 
 	// DefaultClientIDCN is the official Qoder CN desktop/CLI client identifier.
-	DefaultClientIDCN = "732aef47-9cf2-46a2-95fe-4cebb5d0d1fa"
+	DefaultClientIDCN = "e883ade2-e6e3-4d6d-adf7-f92ceff5fdcb"
 	// DefaultClientIDIntl is the official Qoder Global client identifier.
 	DefaultClientIDIntl = "732aef47-9cf2-46a2-95fe-4cebb5d0d1fa"
 

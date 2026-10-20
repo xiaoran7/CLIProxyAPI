@@ -1255,37 +1255,52 @@ func (h *Handler) requestQoderTokenWithRealm(c *gin.Context, realm string) {
 		}
 
 		tokenStorage := &qoderauth.QoderTokenStorage{
-			Type:         providerName,
-			AccessToken:  bundle.AccessToken,
-			RefreshToken: bundle.RefreshToken,
-			Realm:        bundle.Realm,
-			BaseURL:      bundle.BaseURL,
-			OpenAPIBase:  bundle.OpenAPIBase,
-			UserID:       bundle.UserID,
-			MachineID:    bundle.MachineID,
+			Type:          providerName,
+			AccessToken:   bundle.AccessToken,
+			RefreshToken:  bundle.RefreshToken,
+			DeviceToken:   bundle.DeviceToken,
+			DeviceRefresh: bundle.DeviceRefresh,
+			JobToken:      bundle.JobToken,
+			JobRefresh:    bundle.JobRefresh,
+			Realm:         bundle.Realm,
+			BaseURL:       bundle.BaseURL,
+			OpenAPIBase:   bundle.OpenAPIBase,
+			UserID:        bundle.UserID,
+			Nickname:      bundle.Nickname,
+			Email:         bundle.Email,
+			MachineID:     bundle.MachineID,
+			DeviceChat:    bundle.DeviceChat,
 		}
 		if bundle.ExpiresAt > 0 {
 			tokenStorage.Expired = time.Unix(bundle.ExpiresAt, 0).UTC().Format(time.RFC3339)
 		}
 
 		metadata := map[string]any{
-			"type":          providerName,
-			"access_token":  bundle.AccessToken,
-			"refresh_token": bundle.RefreshToken,
-			"realm":         bundle.Realm,
-			"base_url":      bundle.BaseURL,
-			"openapi_base":  bundle.OpenAPIBase,
-			"user_id":       bundle.UserID,
-			"nickname":      bundle.Nickname,
-			"machine_id":    bundle.MachineID,
-			"timestamp":     time.Now().UnixMilli(),
+			"type":           providerName,
+			"access_token":   bundle.AccessToken,
+			"refresh_token":  bundle.RefreshToken,
+			"device_token":   bundle.DeviceToken,
+			"device_refresh": bundle.DeviceRefresh,
+			"job_token":      bundle.JobToken,
+			"job_refresh":    bundle.JobRefresh,
+			"realm":          bundle.Realm,
+			"base_url":       bundle.BaseURL,
+			"openapi_base":   bundle.OpenAPIBase,
+			"user_id":        bundle.UserID,
+			"nickname":       bundle.Nickname,
+			"email":          bundle.Email,
+			"machine_id":     bundle.MachineID,
+			"device_chat":    bundle.DeviceChat,
+			"timestamp":      time.Now().UnixMilli(),
 		}
 		if bundle.ExpiresAt > 0 {
 			metadata["expired"] = time.Unix(bundle.ExpiresAt, 0).UTC().Format(time.RFC3339)
 		}
 
 		userLabel := displayName
-		if strings.TrimSpace(bundle.Nickname) != "" {
+		if strings.TrimSpace(bundle.Email) != "" {
+			userLabel = fmt.Sprintf("%s (%s)", displayName, strings.TrimSpace(bundle.Email))
+		} else if strings.TrimSpace(bundle.Nickname) != "" {
 			userLabel = fmt.Sprintf("%s (%s)", displayName, strings.TrimSpace(bundle.Nickname))
 		} else if strings.TrimSpace(bundle.UserID) != "" {
 			userLabel = fmt.Sprintf("%s (%s)", displayName, strings.TrimSpace(bundle.UserID))
@@ -1303,6 +1318,9 @@ func (h *Handler) requestQoderTokenWithRealm(c *gin.Context, realm string) {
 			Attributes: map[string]string{
 				"base_url": bundle.BaseURL,
 				"realm":    bundle.Realm,
+				"user_id":  bundle.UserID,
+				"email":    bundle.Email,
+				"nickname": bundle.Nickname,
 			},
 		}
 

@@ -44,19 +44,23 @@ type TokenData struct {
 
 // QoderTokenStorage matches the auth json storage schema in auths/ directory.
 type QoderTokenStorage struct {
-	Type         string         `json:"type"`
-	AccessToken  string         `json:"access_token"`
-	RefreshToken string         `json:"refresh_token,omitempty"`
-	JobToken     string         `json:"job_token,omitempty"`
-	JobRefresh   string         `json:"job_refresh,omitempty"`
-	Realm        string         `json:"realm"`
-	BaseURL      string         `json:"base_url"`
-	OpenAPIBase  string         `json:"openapi_base"`
-	UserID       string         `json:"user_id,omitempty"`
-	Nickname     string         `json:"nickname,omitempty"`
-	MachineID    string         `json:"machine_id,omitempty"`
-	Expired      string         `json:"expired,omitempty"`
-	Metadata     map[string]any `json:"-"`
+	Type          string         `json:"type"`
+	AccessToken   string         `json:"access_token"`
+	RefreshToken  string         `json:"refresh_token,omitempty"`
+	DeviceToken   string         `json:"device_token,omitempty"`
+	DeviceRefresh string         `json:"device_refresh,omitempty"`
+	JobToken      string         `json:"job_token,omitempty"`
+	JobRefresh    string         `json:"job_refresh,omitempty"`
+	Realm         string         `json:"realm"`
+	BaseURL       string         `json:"base_url"`
+	OpenAPIBase   string         `json:"openapi_base"`
+	UserID        string         `json:"user_id,omitempty"`
+	Nickname      string         `json:"nickname,omitempty"`
+	Email         string         `json:"email,omitempty"`
+	MachineID     string         `json:"machine_id,omitempty"`
+	DeviceChat    bool           `json:"device_chat,omitempty"`
+	Expired       string         `json:"expired,omitempty"`
+	Metadata      map[string]any `json:"-"`
 }
 
 // SetMetadata allows external callers to inject metadata into the storage before saving.
@@ -246,6 +250,91 @@ func RefreshJobToken(ctx context.Context, httpClient *http.Client, realm, jrt st
 
 	return &JobTokenResponse{
 		JobToken:     jobToken,
+		RefreshToken: refreshToken,
+		ExpiresIn:    expiresIn,
+	}, nil
+}
+
+// DeviceTokenResponse holds the response from the deviceToken refresh endpoint.
+type DeviceTokenResponse struct {
+	Token        string `json:"token"`
+	DeviceToken  string `json:"device_token,omitempty"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
+}
+
+// RefreshDeviceToken refreshes an active device token using the device refresh token.
+func RefreshDeviceToken(ctx context.Context, httpClient *http.Client, realm, drt string) (*DeviceTokenResponse, error) {
+	if strings.TrimSpace(drt) == "" {
+		return nil, errors.New("qoder: device refresh token is empty")
+	}
+	openAPIBase := ResolveOpenAPIBaseURL(realm)
+	reqURL := openAPIBase + "/api/v1/deviceToken/refresh"
+
+	payloadBytes, errMarshal := json.Marshal(map[string]string{
+		"refresh_token": drt,
+	})
+	if errMarshal != nil {
+		return nil, fmt.Errorf("qoder: marshal device refresh payload: %w", errMarshal)
+	}
+
+	req, errReq := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(payloadBytes))
+	if errReq != nil {
+		return nil, fmt.Errorf("qoder: build device refresh request: %w", errReq)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", DefaultUserAgent)
+
+	client := httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+
+	resp, errDo := client.Do(req)
+	if errDo != nil {
+		return nil, fmt.Errorf("qoder: device refresh request failed: %w", errDo)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	body, errRead := io.ReadAll(resp.Body)
+	if errRead != nil {
+		return nil, fmt.Errorf("qoder: read device refresh response: %w", errRead)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("qoder: device refresh returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	parsed := gjson.ParseBytes(body)
+	token := parsed.Get("token").String()
+	if token == "" {
+		token = parsed.Get("device_token").String()
+	}
+	if token == "" {
+		token = parsed.Get("data.token").String()
+	}
+	if token == "" {
+		token = parsed.Get("data.device_token").String()
+	}
+	if token == "" {
+		return nil, fmt.Errorf("qoder: device refresh response missing token: %s", string(body))
+	}
+
+	refreshToken := parsed.Get("refresh_token").String()
+	if refreshToken == "" {
+		refreshToken = parsed.Get("data.refresh_token").String()
+	}
+	expiresIn := parsed.Get("expires_in").Int()
+	if expiresIn <= 0 {
+		expiresIn = parsed.Get("data.expires_in").Int()
+	}
+
+	return &DeviceTokenResponse{
+		Token:        token,
+		DeviceToken:  token,
 		RefreshToken: refreshToken,
 		ExpiresIn:    expiresIn,
 	}, nil
