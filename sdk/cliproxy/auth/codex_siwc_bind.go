@@ -16,8 +16,8 @@ import (
 
 // BindCodexSIWC explicitly replaces the SIWC partition of an existing file-backed
 // Codex registration. Unlike ordinary persistence, a failed write never publishes
-// credentials. expectedEpoch must be the nonzero epoch captured before OAuth.
-func (m *Manager) BindCodexSIWC(ctx context.Context, id string, expectedEpoch uint64, tokenData *codex.CodexSIWCTokenData) (*Auth, error) {
+// credentials. expectedEpoch and expectedAccount must match the registration captured before OAuth.
+func (m *Manager) BindCodexSIWC(ctx context.Context, id string, expectedEpoch uint64, expectedAccount string, tokenData *codex.CodexSIWCTokenData) (*Auth, error) {
 	if m == nil || strings.TrimSpace(id) == "" || expectedEpoch == 0 || tokenData == nil || strings.TrimSpace(tokenData.AccessToken) == "" || strings.TrimSpace(tokenData.RefreshToken) == "" || strings.TrimSpace(tokenData.ClientID) == "" {
 		return nil, fmt.Errorf("bind SIWC: invalid target or token data")
 	}
@@ -65,7 +65,7 @@ func (m *Manager) BindCodexSIWC(ctx context.Context, id string, expectedEpoch ui
 		if !strings.EqualFold(strings.TrimSpace(kind), "codex") {
 			return fmt.Errorf("bind SIWC: backing file type changed")
 		}
-		if account, _ := base.Metadata["account_id"].(string); account != "" && disk["account_id"] != account {
+		if account, _ := base.Metadata["account_id"].(string); account != expectedAccount || (account != "" && disk["account_id"] != account) || (account == "" && disk["account_id"] != nil && disk["account_id"] != "") {
 			return fmt.Errorf("bind SIWC: backing account changed")
 		}
 		// Keep arbitrary disk values (including large JSON numbers) losslessly. Only

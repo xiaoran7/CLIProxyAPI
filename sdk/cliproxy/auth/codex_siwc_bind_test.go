@@ -71,7 +71,7 @@ func TestBindCodexSIWCPreservesLatestDiskAndRebinds(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, access := range []string{"bound", "rebound"} {
-		got, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, bindingTokens(access))
+		got, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, "account", bindingTokens(access))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -134,7 +134,7 @@ func TestBindCodexSIWCFailureDoesNotPublish(t *testing.T) {
 			case "outside":
 				m.runtimeConfig.Store(&config.Config{AuthDir: t.TempDir()})
 			}
-			_, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, bindingTokens("bound"))
+			_, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, "account", bindingTokens("bound"))
 			if err == nil {
 				t.Fatal("binding unexpectedly succeeded")
 			}
@@ -149,7 +149,7 @@ func TestBindCodexSIWCFailureDoesNotPublish(t *testing.T) {
 func TestBindCodexSIWCRejectsDeletedAndReimportedEpoch(t *testing.T) {
 	m, base, path, _ := setupSIWCBinding(t, "auth.json")
 	m.Remove(context.Background(), base.ID)
-	if _, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, bindingTokens("bound")); err == nil {
+	if _, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, "account", bindingTokens("bound")); err == nil {
 		t.Fatal("deleted registration accepted")
 	}
 	imported, err := m.Register(context.Background(), base.Clone())
@@ -157,7 +157,7 @@ func TestBindCodexSIWCRejectsDeletedAndReimportedEpoch(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, epoch := range []uint64{0, base.RegistrationEpoch, imported.RegistrationEpoch + 1} {
-		if _, err = m.BindCodexSIWC(context.Background(), base.ID, epoch, bindingTokens("bound")); err == nil {
+		if _, err = m.BindCodexSIWC(context.Background(), base.ID, epoch, "account", bindingTokens("bound")); err == nil {
 			t.Fatal("incorrect epoch accepted")
 		}
 	}
@@ -180,7 +180,7 @@ func TestBindCodexSIWCFencesInflightRefreshAndWatcher(t *testing.T) {
 	refreshed.Metadata["access_token"] = "refreshed-outer"
 	refreshed.Metadata["siwc"] = bindingTokens("stale-refreshed-siwc").ToMap()
 	refreshed.CodexRefreshPatch = codex.NewCredentialRefreshPatch(base.Metadata, refreshed.Metadata, true, true)
-	bound, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, bindingTokens("bound"))
+	bound, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, "account", bindingTokens("bound"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestBindCodexSIWCConcurrentFileRefresh(t *testing.T) {
 	<-locked
 	bindDone := make(chan error, 1)
 	go func() {
-		_, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, bindingTokens("bound"))
+		_, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, "account", bindingTokens("bound"))
 		bindDone <- err
 	}()
 	close(finishRefresh)
@@ -266,7 +266,7 @@ func TestBindCodexSIWCRejectsNonFileSources(t *testing.T) {
 			}
 			m.mu.Unlock()
 			before, _ := os.ReadFile(path)
-			if _, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, bindingTokens("bound")); err == nil {
+			if _, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, "account", bindingTokens("bound")); err == nil {
 				t.Fatal("non-file OAuth target accepted")
 			}
 			after, _ := os.ReadFile(path)
@@ -284,7 +284,7 @@ func TestBindCodexSIWCTildeAndAttributeOverride(t *testing.T) {
 	m.mu.Lock()
 	m.auths[base.ID].Attributes["use_siwc"] = "false"
 	m.mu.Unlock()
-	got, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, bindingTokens("bound"))
+	got, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, "account", bindingTokens("bound"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +331,7 @@ func TestBindCodexSIWCRecoversUnauthorizedPreservingQuotaAndDisabled(t *testing.
 					t.Fatal(err)
 				}
 			}
-			got, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, bindingTokens("bound"))
+			got, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, "account", bindingTokens("bound"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -405,7 +405,7 @@ func TestBindCodexSIWCRelativeAuthDir(t *testing.T) {
 			if errRegister != nil {
 				t.Fatal(errRegister)
 			}
-			got, errBind := m.BindCodexSIWC(context.Background(), a.ID, a.RegistrationEpoch, bindingTokens("bound"))
+			got, errBind := m.BindCodexSIWC(context.Background(), a.ID, a.RegistrationEpoch, "account", bindingTokens("bound"))
 			if errBind != nil {
 				t.Fatalf("bind failed: %v", errBind)
 			}
@@ -444,8 +444,35 @@ func TestBindCodexSIWCRelativeAuthDir(t *testing.T) {
 		if errRegister != nil {
 			t.Fatal(errRegister)
 		}
-		if _, errBind := m.BindCodexSIWC(context.Background(), a.ID, a.RegistrationEpoch, bindingTokens("bound")); errBind == nil {
+		if _, errBind := m.BindCodexSIWC(context.Background(), a.ID, a.RegistrationEpoch, "account", bindingTokens("bound")); errBind == nil {
 			t.Fatal("relative path outside auth-dir unexpectedly succeeded")
 		}
 	})
+}
+
+func TestBindCodexSIWCRejectsReplacedAccount(t *testing.T) {
+	m, base, path, hook := setupSIWCBinding(t, "auth.json")
+	replaced := base.Clone()
+	replaced.RegistrationEpoch = 0
+	replaced.Metadata["account_id"] = "account-b"
+	if err := codex.WriteJSONFileAtomic(path, replaced.Metadata); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Update(context.Background(), replaced); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := m.GetByID(base.ID); got.RegistrationEpoch != base.RegistrationEpoch {
+		t.Fatalf("epoch changed: %d", got.RegistrationEpoch)
+	}
+	if _, err := m.BindCodexSIWC(context.Background(), base.ID, base.RegistrationEpoch, "account", bindingTokens("bound")); err == nil {
+		t.Fatal("binding accepted a replaced account")
+	}
+	got, _ := m.GetByID(base.ID)
+	if got.Metadata["account_id"] != "account-b" || got.Metadata["use_siwc"] == true || hook.updates != 1 {
+		t.Fatalf("failed binding mutated replaced account: %#v, updates=%d", got.Metadata, hook.updates)
+	}
+	disk := readBindingDisk(t, path)
+	if disk["account_id"] != "account-b" || disk["use_siwc"] == true || disk["siwc"].(map[string]any)["access_token"] != "old-siwc" {
+		t.Fatalf("failed binding mutated replaced account on disk: %#v", disk)
+	}
 }
