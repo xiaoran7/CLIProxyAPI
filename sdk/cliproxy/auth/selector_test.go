@@ -1080,14 +1080,15 @@ func TestSessionAffinitySelector_NoSessionFallback(t *testing.T) {
 
 	fallback := &FillFirstSelector{}
 	selector := NewSessionAffinitySelector(fallback)
+	defer selector.Stop()
 
 	auths := []*Auth{
-		{ID: "auth-b"},
-		{ID: "auth-a"},
-		{ID: "auth-c"},
+		{ID: "auth-nosess-b"},
+		{ID: "auth-nosess-a"},
+		{ID: "auth-nosess-c"},
 	}
 
-	// No session in payload, should fallback to FillFirstSelector (picks "auth-a" after sorting)
+	// No session in payload, should fallback to FillFirstSelector (picks "auth-nosess-a" after sorting)
 	payload := []byte(`{"model":"claude-3"}`)
 	opts := cliproxyexecutor.Options{OriginalRequest: payload}
 
@@ -1095,8 +1096,8 @@ func TestSessionAffinitySelector_NoSessionFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Pick() error = %v", err)
 	}
-	if got.ID != "auth-a" {
-		t.Fatalf("Pick() auth.ID = %q, want %q (should fallback to FillFirst)", got.ID, "auth-a")
+	if got.ID != "auth-nosess-a" {
+		t.Fatalf("Pick() auth.ID = %q, want %q (should fallback to FillFirst)", got.ID, "auth-nosess-a")
 	}
 }
 
