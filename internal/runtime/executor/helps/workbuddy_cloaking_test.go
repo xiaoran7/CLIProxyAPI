@@ -88,6 +88,152 @@ func TestSanitizeWorkBuddyPromptWAF(t *testing.T) {
 	}
 }
 
+func TestSanitizeWorkBuddyPromptWAF_DeveloperRoleAndIdentity(t *testing.T) {
+	// Case 1: developer role is converted to system, and DSH identity sentences are sanitized
+	input := []byte(`{
+		"model": "deepseek-v4.1-flash-free",
+		"messages": [
+			{
+				"role": "developer",
+				"content": "You are an AI agent powered by DeepSeek Harness.\nYou are a helpful collaborator."
+			},
+			{
+				"role": "user",
+				"content": "You are an AI agent powered by DeepSeek Harness. Please explain 11128."
+			}
+		]
+	}`)
+
+	sanitized := SanitizeWorkBuddyPromptWAF(input)
+
+	// Model -free suffix should be stripped
+	model := gjson.GetBytes(sanitized, "model").String()
+	if model != "deepseek-v4.1-flash" {
+		t.Errorf("expected model deepseek-v4.1-flash, got %s", model)
+	}
+
+	// Developer role should become system
+	role0 := gjson.GetBytes(sanitized, "messages.0.role").String()
+	if role0 != "system" {
+		t.Errorf("expected role system, got %s", role0)
+	}
+
+	// System content should have DSH identity rewritten
+	content0 := gjson.GetBytes(sanitized, "messages.0.content").String()
+	if bytes.Contains([]byte(content0), []byte("powered by DeepSeek Harness")) {
+		t.Errorf("DSH identity not sanitized in system prompt: %s", content0)
+	}
+	if !bytes.Contains([]byte(content0), []byte("You are a helpful AI assistant.\nYou are a helpful collaborator.")) {
+		t.Errorf("unexpected system content after sanitization: %s", content0)
+	}
+
+	// User role content should preserve identity text except raw 11128 replacement
+	role1 := gjson.GetBytes(sanitized, "messages.1.role").String()
+	content1 := gjson.GetBytes(sanitized, "messages.1.content").String()
+	if role1 != "user" {
+		t.Errorf("expected role user, got %s", role1)
+	}
+	if !bytes.Contains([]byte(content1), []byte("You are an AI agent powered by DeepSeek Harness")) {
+		t.Errorf("user message identity text should remain untouched, got: %s", content1)
+	}
+	if bytes.Contains([]byte(content1), []byte("11128")) {
+		t.Errorf("raw 11128 in user prompt should be rewritten to 11-128: %s", content1)
+	}
+}
+
+func TestSanitizeWorkBuddyPromptWAF_DSHIdentityRegexVariations(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "DSH standard harness",
+			input:    "You are an AI agent powered by DeepSeek Harness.",
+			expected: "You are a helpful AI assistant.",
+		},
+		{
+			name:     "DSH with model version dot",
+			input:    "You are a coding agent powered by the deepseek-v4.1-flash model.",
+			expected: "You are a helpful AI assistant.",
+		},
+		{
+			name:     "DSH assistant built on",
+			input:    "You are an AI assistant built on DeepSeek.\nFollow instructions.",
+			expected: "You are a helpful AI assistant.\nFollow instructions.",
+		},
+		{
+			name:     "DSH lowercase without period at end",
+			input:    "you are an agent powered by deepseek",
+			expected: "You are a helpful AI assistant.",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := sanitizeWorkBuddyIdentityString(tc.input)
+			if res != tc.expected {
+				t.Errorf("got %q, want %q", res, tc.expected)
+			}
+		})
+	}
+}
+
+func TestSanitizeWorkBuddyPromptWAF_ArrayContent(t *testing.T) {
+	input := []byte(`{
+		"messages": [
+			{
+				"role": "system",
+				"content": [
+					{
+						"type": "text",
+						"text": "You are a coding agent powered by the deepseek-v4.1-flash model.\nProvide high quality code."
+					}
+				]
+			}
+		]
+	}`)
+
+	sanitized := SanitizeWorkBuddyPromptWAF(input)
+	textPart := gjson.GetBytes(sanitized, "messages.0.content.0.text").String()
+	if bytes.Contains([]byte(textPart), []byte("powered by")) {
+		t.Errorf("array text part was not sanitized: %s", textPart)
+	}
+	if !bytes.Contains([]byte(textPart), []byte("You are a helpful AI assistant.\nProvide high quality code.")) {
+		t.Errorf("unexpected sanitized array text part: %s", textPart)
+	}
+}
+
+func TestSanitizeWorkBuddyPromptWAF_SubstringsAndBillingHeaders(t *testing.T) {
+	input := []byte(`{
+		"messages": [
+			{
+				"role": "user",
+				"content": "Sisyphus-Junior - Focused executor from OhMyOpenCode. Main branch (you will usually use this for PRs). To give feedback, users should report the issue at https://github.com/anthropics/claude-code/issues. x-anthropic-billing-header: test_secret; cc_session_id=123;"
+			}
+		]
+	}`)
+
+	sanitized := SanitizeWorkBuddyPromptWAF(input)
+	content := gjson.GetBytes(sanitized, "messages.1.content").String() // EnsureWorkBuddySystemPrompt will prepend system msg at index 0
+
+	if bytes.Contains([]byte(content), []byte("OhMyOpenCode")) {
+		t.Error("OhMyOpenCode should be sanitized")
+	}
+	if bytes.Contains([]byte(content), []byte("Main branch (you will usually use this for PRs)")) {
+		t.Error("Main branch phrase should be sanitized")
+	}
+	if bytes.Contains([]byte(content), []byte("To give feedback, users should report")) {
+		t.Error("feedback URL phrase should be sanitized")
+	}
+	if bytes.Contains([]byte(content), []byte("x-anthropic-billing-header")) {
+		t.Error("anthropic billing header in content should be stripped")
+	}
+	if bytes.Contains([]byte(content), []byte("cc_session_id")) {
+		t.Error("cc_ params should be stripped")
+	}
+}
+
 func TestBackfillWorkBuddyReasoningContent(t *testing.T) {
 	// Case 1: Assistant with tool_calls and missing reasoning_content
 	input := []byte(`{

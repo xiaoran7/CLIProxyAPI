@@ -3,7 +3,9 @@ package helps
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -12,6 +14,23 @@ import (
 )
 
 const workbuddyFallbackReasoning = "[reasoning unavailable]"
+
+var (
+	workbuddyIdentityRegex               = regexp.MustCompile(`(?i)(You are an?(?:\s+AI)?(?:\s+coding)?\s+(?:agent\s+powered by|assistant\s+built on)[^\n]*?)(?:\.(?:[\s\r\n]|$)|$)`)
+	workbuddyAnthropicBillingHeaderRegex = regexp.MustCompile(`(?i)x-anthropic-billing-header:[^;\r\n]*;?\s*`)
+	workbuddyCCKeyValRegex               = regexp.MustCompile(`(?i)\bcc_[a-z0-9_]+=[^;\r\n]*;?\s*`)
+)
+
+func sanitizeWorkBuddyIdentityString(text string) string {
+	return workbuddyIdentityRegex.ReplaceAllStringFunc(text, func(m string) string {
+		trailing := ""
+		for len(m) > 0 && (m[len(m)-1] == '\n' || m[len(m)-1] == '\r' || m[len(m)-1] == ' ' || m[len(m)-1] == '\t') {
+			trailing = string(m[len(m)-1]) + trailing
+			m = m[:len(m)-1]
+		}
+		return "You are a helpful AI assistant." + trailing
+	})
+}
 
 // StripWorkBuddyForbiddenHeaders removes client billing and tracking headers
 // that would trigger Tencent WAF interception.
@@ -74,13 +93,66 @@ func EnsureWorkBuddySystemPrompt(payload []byte) []byte {
 	return payload
 }
 
-// SanitizeWorkBuddyPromptWAF rewrites prompt substrings that trigger Tencent WAF error 11128,
+// SanitizeWorkBuddyPromptWAF normalizes developer roles to system, rewrites prompt substrings
+// and framework identity sentences that trigger Tencent/WorkBuddy WAF error 11128,
 // normalizes -free model aliases to their canonical upstream model IDs,
 // and guarantees the first message is a valid system prompt.
 func SanitizeWorkBuddyPromptWAF(payload []byte) []byte {
 	if len(payload) == 0 {
 		return payload
 	}
+
+	msgs := gjson.GetBytes(payload, "messages")
+	if msgs.Exists() && msgs.IsArray() {
+		arr := msgs.Array()
+		for i, msg := range arr {
+			role := strings.TrimSpace(msg.Get("role").String())
+			pathPrefix := "messages." + strconv.Itoa(i)
+
+			// Upstream WorkBuddy only accepts system/user/assistant/tool.
+			// Map newer OpenAI "developer" role to "system" to prevent code 11128 rejection.
+			if strings.EqualFold(role, "developer") {
+				if updated, err := sjson.SetBytes(payload, pathPrefix+".role", "system"); err == nil {
+					payload = updated
+					role = "system"
+				}
+			}
+
+			// Cleanse DSH/framework identity sentences in system (and developer) turns.
+			// Upstream Tencent/WorkBuddy WAF inspects contiguous phrases like:
+			// "You are an AI agent powered by DeepSeek Harness." or "You are a coding agent powered by ...".
+			// Rewriting to neutral assistant identity in system prompts avoids WAF 11128 interception,
+			// while leaving user/assistant/tool content untouched.
+			if role == "system" {
+				content := msg.Get("content")
+				if content.Exists() {
+					if content.Type == gjson.String {
+						cStr := content.String()
+						if workbuddyIdentityRegex.MatchString(cStr) {
+							sanitizedContent := sanitizeWorkBuddyIdentityString(cStr)
+							if updated, err := sjson.SetBytes(payload, pathPrefix+".content", sanitizedContent); err == nil {
+								payload = updated
+							}
+						}
+					} else if content.IsArray() {
+						for j, part := range content.Array() {
+							if part.Get("type").String() == "text" {
+								tStr := part.Get("text").String()
+								if workbuddyIdentityRegex.MatchString(tStr) {
+									sanitizedPart := sanitizeWorkBuddyIdentityString(tStr)
+									partPath := fmt.Sprintf("%s.content.%d.text", pathPrefix, j)
+									if updated, err := sjson.SetBytes(payload, partPath, sanitizedPart); err == nil {
+										payload = updated
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	payload = EnsureWorkBuddySystemPrompt(payload)
 	if modelRes := gjson.GetBytes(payload, "model"); modelRes.Exists() {
 		m := strings.TrimSpace(modelRes.String())
@@ -91,6 +163,7 @@ func SanitizeWorkBuddyPromptWAF(payload []byte) []byte {
 			}
 		}
 	}
+
 	// Replacement map for known 11128 WAF triggers
 	replacements := []struct {
 		target []byte
@@ -112,10 +185,33 @@ func SanitizeWorkBuddyPromptWAF(payload []byte) []byte {
 			target: []byte("Anthropic"),
 			sub:    []byte("AI"),
 		},
+		{
+			target: []byte("Sisyphus-Junior - Focused executor from OhMyOpenCode"),
+			sub:    []byte("Sisyphus-Junior - Focused executor"),
+		},
+		{
+			target: []byte("Main branch (you will usually use this for PRs)"),
+			sub:    []byte("Default branch (you will usually use this for PRs)"),
+		},
+		{
+			target: []byte("You are a coding agent running in the Codex CLI, a terminal-based coding assistant."),
+			sub:    []byte("You are a coding agent running in the Codex CLI tool, a terminal-based coding assistant."),
+		},
+		{
+			target: []byte("To give feedback, users should report the issue at https://github.com/anthropics/claude-code/issues"),
+			sub:    []byte("To provide feedback, users should report the issue at https://github.com/anthropics/claude-code/issues"),
+		},
+		{
+			target: []byte("11128"),
+			sub:    []byte("11-128"),
+		},
 	}
 	for _, r := range replacements {
 		payload = bytes.ReplaceAll(payload, r.target, r.sub)
 	}
+
+	payload = workbuddyAnthropicBillingHeaderRegex.ReplaceAll(payload, nil)
+	payload = workbuddyCCKeyValRegex.ReplaceAll(payload, nil)
 	return payload
 }
 
