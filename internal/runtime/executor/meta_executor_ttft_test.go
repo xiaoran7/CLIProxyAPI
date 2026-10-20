@@ -33,6 +33,8 @@ func TestMetaExecutorTTFT(t *testing.T) {
 	const completed = "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_ttft\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"muse-spark-1.3\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"hello\"}]}],\"usage\":{\"input_tokens\":10,\"output_tokens\":3,\"total_tokens\":13}}}\n\n"
 	const emptyCompleted = "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_ttft\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"total_tokens\":0}}}\n\n"
 	const emptyIncomplete = "data: {\"type\":\"response.incomplete\",\"response\":{\"id\":\"resp_ttft\",\"status\":\"incomplete\",\"output\":[],\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"total_tokens\":0}}}\n\n"
+	const reasoningSummaryDone = `data: {"type":"response.output_item.done","output_index":0,"item":{"id":"reasoning_done","type":"reasoning","summary":[{"type":"summary_text","text":"done-only-summary"}]}}` + "\n\n"
+	const reasoningContentDone = `data: {"type":"response.output_item.done","output_index":0,"item":{"id":"reasoning_done","type":"reasoning","content":[{"type":"reasoning_text","text":"done-only-content"}]}}` + "\n\n"
 
 	tests := []struct {
 		name       string
@@ -44,9 +46,24 @@ func TestMetaExecutorTTFT(t *testing.T) {
 		httpStatus int
 		readError  error
 		wantFailed bool
+		wantTTFT   time.Duration
 	}{
 		{name: "text", event: textDelta, content: "hello"},
 		{name: "reasoning_summary", event: "data: {\"type\":\"response.reasoning_summary_text.delta\",\"output_index\":0,\"summary_index\":0,\"delta\":\"thinking\"}\n\n", content: "thinking"},
+		{name: "done_reasoning_summary_responses", event: reasoningSummaryDone, content: "done-only-summary"},
+		{name: "done_reasoning_summary_claude", event: reasoningSummaryDone, content: "done-only-summary", format: sdktranslator.FormatClaude},
+		{name: "done_reasoning_content_responses", event: reasoningContentDone, content: "done-only-content"},
+		{name: "done_reasoning_content_claude", event: reasoningContentDone, content: "done-only-content", format: sdktranslator.FormatClaude},
+		{
+			name:     "done_reasoning_empty",
+			event:    `data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","summary":[{"type":"summary_text","text":""}],"content":[]}}` + "\n\n",
+			wantTTFT: 1100 * time.Millisecond,
+		},
+		{
+			name:     "done_reasoning_encrypted_only",
+			event:    `data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","summary":[],"encrypted_content":"opaque"}}` + "\n\n",
+			wantTTFT: 1100 * time.Millisecond,
+		},
 		{name: "function_arguments", event: "data: {\"type\":\"response.function_call_arguments.delta\",\"output_index\":0,\"delta\":\"{\\\"query\\\":\\\"hello\\\"}\"}\n\n", content: "query"},
 		{name: "chat_downstream", event: textDelta, content: "hello", format: sdktranslator.FormatOpenAI},
 		{name: "completed_without_delta", event: completed, content: "hello", terminal: true},
@@ -71,7 +88,9 @@ func TestMetaExecutorTTFT(t *testing.T) {
 
 			var forwarded strings.Builder
 			var streamFailed bool
+			var firstContentAt time.Duration
 			synctest.Test(t, func(t *testing.T) {
+				started := time.Now()
 				transport := metaTTFTRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 					// All delays use synctest's virtual clock. Headers precede the first body byte.
 					time.Sleep(10 * time.Millisecond)
@@ -133,6 +152,9 @@ func TestMetaExecutorTTFT(t *testing.T) {
 				if format == sdktranslator.FormatOpenAI {
 					payload = []byte(`{"model":"muse-spark-1.3","messages":[{"role":"user","content":"hello"}]}`)
 				}
+				if format == sdktranslator.FormatClaude {
+					payload = []byte(`{"model":"muse-spark-1.3","max_tokens":64,"messages":[{"role":"user","content":"hello"}]}`)
+				}
 				req := cliproxyexecutor.Request{Model: "muse-spark-1.3", Payload: payload}
 				opts := cliproxyexecutor.Options{SourceFormat: format, Stream: !tt.nonstream}
 				if tt.nonstream {
@@ -154,6 +176,9 @@ func TestMetaExecutorTTFT(t *testing.T) {
 					t.Fatalf("ExecuteStream: %v", errExecute)
 				}
 				for chunk := range result.Chunks {
+					if firstContentAt == 0 && tt.content != "" && strings.Contains(string(chunk.Payload), tt.content) {
+						firstContentAt = time.Since(started)
+					}
 					forwarded.Write(chunk.Payload)
 					if chunk.Err != nil {
 						streamFailed = true
@@ -173,6 +198,9 @@ func TestMetaExecutorTTFT(t *testing.T) {
 			if tt.nonstream || tt.readError != nil || tt.httpStatus != 0 {
 				wantTTFT = 100 * time.Millisecond
 			}
+			if tt.wantTTFT != 0 {
+				wantTTFT = tt.wantTTFT
+			}
 			if record.TTFT != wantTTFT || record.Latency != wantLatency {
 				t.Errorf("TTFT/latency = %v/%v, want %v/%v", record.TTFT, record.Latency, wantTTFT, wantLatency)
 			}
@@ -191,6 +219,9 @@ func TestMetaExecutorTTFT(t *testing.T) {
 			if tt.content != "" {
 				if !strings.Contains(forwarded.String(), tt.content) {
 					t.Errorf("response lost content %q: %s", tt.content, forwarded.String())
+				}
+				if !tt.nonstream && firstContentAt != time.Second {
+					t.Errorf("first downstream content = %v, want 1s", firstContentAt)
 				}
 				if got := record.Detail; got.InputTokens != 10 || got.OutputTokens != 3 || got.TotalTokens != 13 {
 					t.Errorf("usage = %+v, want input/output/total = 10/3/13", got)
