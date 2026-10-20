@@ -224,6 +224,14 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 		models = registry.GetWorkBuddyModels(realm)
 		models = registry.ApplyWorkBuddyCredits(models, realm)
 		models = applyExcludedModels(models, excluded)
+	case "qoder", "qoder-intl", "qoder-en", "qoder-cn":
+		realm := "intl"
+		if provider == "qoder-cn" || (a.Attributes != nil && strings.EqualFold(a.Attributes["realm"], "cn")) {
+			realm = "cn"
+		}
+		s.warmQoderCatalogForAuth(ctx, a, realm)
+		models = registry.GetQoderModels(realm)
+		models = applyExcludedModels(models, excluded)
 	default:
 		// Handle OpenAI-compatibility providers by name using config
 		if cfg != nil {

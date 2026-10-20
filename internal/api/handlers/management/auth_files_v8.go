@@ -32,6 +32,10 @@ func (h *Handler) StartOAuthV8(c *gin.Context) {
 		h.RequestWorkBuddyToken(c)
 	case "workbuddy-cn", "codebuddy":
 		h.RequestWorkBuddyCNToken(c)
+	case "qoder", "qoder-intl", "qoder-en":
+		h.RequestQoderToken(c)
+	case "qoder-cn":
+		h.RequestQoderCNToken(c)
 	default:
 		if !h.ServePluginAuthURL(c) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "provider_not_found"})

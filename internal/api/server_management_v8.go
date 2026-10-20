@@ -64,6 +64,8 @@ func (s *Server) registerManagementV8Routes() {
 	v8.PUT("/workbuddy/checkin", s.mgmt.PutWorkBuddyCheckin)
 	v8.GET("/workbuddy/compensation", s.mgmt.GetWorkBuddyCompensation)
 	v8.POST("/workbuddy/compensation", s.mgmt.PostWorkBuddyCompensation)
+	v8.GET("/qoder/checkin", s.mgmt.GetQoderCheckin)
+	v8.POST("/qoder/checkin", s.mgmt.PostQoderCheckin)
 
 	v8.GET("/plugins", s.mgmt.ListPlugins)
 	v8.DELETE("/plugins/:id", s.mgmt.DeletePlugin)

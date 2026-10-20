@@ -1887,6 +1887,10 @@ func executorKeyFromAuth(auth *Auth) string {
 		return "kimi"
 	case "kimi.ai":
 		return "kimi-ai"
+	case "qoder-cn", "qoder-intl", "qoder-en":
+		return "qoder"
+	case "workbuddy-cn", "workbuddy-intl", "copilot-tencent":
+		return "workbuddy"
 	default:
 		return provider
 	}

@@ -539,6 +539,10 @@ func GetStaticModelDefinitionsByChannel(channel string) []*ModelInfo {
 		return GetWorkBuddyModels("intl")
 	case "workbuddy-cn", "copilot-tencent":
 		return GetWorkBuddyModels("cn")
+	case "qoder", "qoder-intl", "qoder-en":
+		return GetQoderModels("intl")
+	case "qoder-cn":
+		return GetQoderModels("cn")
 	default:
 		return nil
 	}
@@ -634,6 +638,7 @@ func LookupStaticModelProviders(modelID string) []string {
 	catalogs := []staticCatalogProvider{
 		{provider: "opencode", models: GetOpenCodeModels()},
 		{provider: "workbuddy", models: GetAllWorkBuddyModels()},
+		{provider: "qoder", models: GetAllQoderModels()},
 		{provider: "antigravity", models: data.Antigravity},
 		{provider: "claude", models: data.Claude},
 		{provider: "gemini", models: data.Gemini},

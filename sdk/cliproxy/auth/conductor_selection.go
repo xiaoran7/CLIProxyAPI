@@ -1680,6 +1680,8 @@ func (m *Manager) executorLocked(provider string) (ProviderExecutor, bool) {
 			executor, okExecutor = m.executors["kimi"]
 		case "workbuddy-cn", "workbuddy-intl", "copilot-tencent":
 			executor, okExecutor = m.executors["workbuddy"]
+		case "qoder-cn", "qoder-intl", "qoder-en":
+			executor, okExecutor = m.executors["qoder"]
 		}
 	}
 	if !okExecutor || executor == nil {

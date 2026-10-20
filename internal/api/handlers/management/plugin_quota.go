@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/qoder"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/workbuddy"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
@@ -123,6 +124,18 @@ func (h *Handler) FetchCredentialQuota(c *gin.Context) {
 		quotaResp, errQuota := workbuddy.QueryQuota(c.Request.Context(), nil, auth)
 		if errQuota != nil {
 			log.WithError(errQuota).Warnf("failed to query native workbuddy quota for credential %s", auth.Index)
+			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errQuota)})
+			return
+		}
+		c.JSON(http.StatusOK, quotaResp)
+		return
+	}
+
+	// Native Qoder quota provider
+	if strings.HasPrefix(pLower, "qoder") || strings.HasPrefix(strings.ToLower(pluginID), "qoder") {
+		quotaResp, errQuota := qoder.QueryQuota(c.Request.Context(), nil, auth)
+		if errQuota != nil {
+			log.WithError(errQuota).Warnf("failed to query native qoder quota for credential %s", auth.Index)
 			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errQuota)})
 			return
 		}

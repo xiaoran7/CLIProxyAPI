@@ -335,6 +335,8 @@ func (s *Service) registerExecutorForAuth(a *coreauth.Auth, forceReplace bool) {
 		s.coreManager.RegisterExecutor(executor.NewOpenAICompatExecutor("opencode", cfg))
 	case "workbuddy", "workbuddy-intl", "workbuddy-cn", "copilot-tencent":
 		s.coreManager.RegisterExecutor(executor.NewWorkBuddyExecutor(cfg))
+	case "qoder", "qoder-intl", "qoder-en", "qoder-cn":
+		s.coreManager.RegisterExecutor(executor.NewQoderExecutor(cfg))
 	default:
 		providerKey := strings.ToLower(strings.TrimSpace(a.Provider))
 		if providerKey == "" {
