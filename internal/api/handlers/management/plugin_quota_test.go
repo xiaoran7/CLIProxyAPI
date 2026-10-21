@@ -1658,3 +1658,107 @@ func TestWorkBuddyPluginQuota_IncludesExpirationAndTotals(t *testing.T) {
 		t.Errorf("VIPLevel = %q, want WorkBuddy (cn) · Pro", acc.VIPLevel)
 	}
 }
+
+func TestQoderPluginQuota_BatchWithoutAuthIndex(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"code": 0,
+			"msg": "ok",
+			"data": {
+				"total": 500,
+				"used": 150,
+				"remaining": 350,
+				"tier": "Pro",
+				"expire_at": 1798761599
+			}
+		}`))
+	}))
+	defer upstream.Close()
+
+	t.Setenv("QODER_CN_OPENAPI", upstream.URL)
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	auth1 := &coreauth.Auth{
+		ID:       "qoder_account1.json",
+		FileName: "qoder_account1.json",
+		Provider: "qoder-cn",
+		Metadata: map[string]any{
+			"type":         "qoder",
+			"access_token": "mock-token-1",
+			"nickname":     "QoderUserOne",
+		},
+	}
+	auth1.EnsureIndex()
+	_, _ = manager.Register(context.Background(), auth1)
+
+	// Filtered internal file
+	internalAuth := &coreauth.Auth{
+		ID:       "qoder_checkins.json",
+		FileName: "qoder_checkins.json",
+		Provider: "qoder-cn",
+		Metadata: map[string]any{
+			"type": "qoder",
+		},
+	}
+	internalAuth.EnsureIndex()
+	_, _ = manager.Register(context.Background(), internalAuth)
+
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: t.TempDir()}, manager)
+
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Params = gin.Params{{Key: "id", Value: "qoder"}}
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v8/management/plugins/qoder/quota", nil)
+
+	h.GetPluginQuota(ctx)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Accounts []struct {
+			AuthID      string  `json:"auth_id"`
+			User        string  `json:"user"`
+			Points      float64 `json:"points"`
+			Balance     float64 `json:"balance"`
+			TotalPoints float64 `json:"total_points"`
+			UsedPoints  float64 `json:"used_points"`
+			VIPLevel    string  `json:"vip_level"`
+			FreeTier    bool    `json:"free_tier"`
+			Realm       string  `json:"realm"`
+		} `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.Accounts) != 1 {
+		t.Fatalf("expected 1 account (internal file filtered out), got %d: %+v", len(resp.Accounts), resp.Accounts)
+	}
+	if resp.Accounts[0].AuthID != "qoder_account1.json" {
+		t.Fatalf("unexpected account: %+v", resp.Accounts[0])
+	}
+	if resp.Accounts[0].User != "QoderUserOne" {
+		t.Fatalf("expected user QoderUserOne, got %s", resp.Accounts[0].User)
+	}
+	if resp.Accounts[0].Realm != "cn" {
+		t.Fatalf("expected realm cn, got %s", resp.Accounts[0].Realm)
+	}
+	if resp.Accounts[0].Points != 350 {
+		t.Fatalf("expected points 350, got %v", resp.Accounts[0].Points)
+	}
+	if resp.Accounts[0].TotalPoints != 500 {
+		t.Fatalf("expected total points 500, got %v", resp.Accounts[0].TotalPoints)
+	}
+	if resp.Accounts[0].UsedPoints != 150 {
+		t.Fatalf("expected used points 150, got %v", resp.Accounts[0].UsedPoints)
+	}
+	if resp.Accounts[0].VIPLevel != "Qoder Mainland (cn) · Pro" {
+		t.Fatalf("expected VIP level 'Qoder Mainland (cn) · Pro', got %s", resp.Accounts[0].VIPLevel)
+	}
+	if resp.Accounts[0].FreeTier {
+		t.Fatalf("expected FreeTier to be false for Pro account, got true")
+	}
+}

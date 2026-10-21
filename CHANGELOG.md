@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Qoder Plugin Suite Drawer & Multi-Account Quota Ledger (`static/management.html`, `internal/api/handlers/management/plugin_quota.go`, `plugins.go`, `qoder_checkin.go`, `internal/auth/qoder/checkin.go`)**:
+  - **Gateway Plugins Suite Drawer (`QoderSuite`)**: Injected dedicated `QoderSuite` component into the Gateway management console drawer sheet, mirroring `WorkBuddySuite`, providing tabbed navigation for CST daily check-in campaigns and real-time multi-account quota/balance ledgers.
+  - **Native Plugin Registration & Deletion Protection (`plugins.go`)**: Registered native `qoder` and `qoder-cn` plugins with embedded high-resolution brand logos, enabled OAuth and Quota capability flags, and protected both instances against accidental deletion.
+  - **Concurrent Batch Quota Aggregation (`listQoderQuotas`)**: Implemented concurrent quota inspection for all registered Qoder credentials via `sync.WaitGroup` and 15s timeout, aggregating point balances, remaining quotas, subscription tiers, and package expiration timestamps with automatic internal file filtering.
+  - **Interoperable Dual Check-in Normalization (`checkin.go`, `qoder_checkin.go`)**: Synchronized legacy and modern check-in outcome representations (`Outcome` <-> `Status`, `Day` <-> `Date`, `Credit` <-> `Points`, `At` <-> `Checked`) and persisted failed check-in records for immediate visibility in the control console.
+  - **Complete 6-Locale i18n Coverage (`management.html`)**: Added full `qoder_suite` and `plugin_management.qoder_*` translation keys across all 6 locales (`zh-CN`, `zh-TW`, `en`, `ru`, `vi`, `ko`), using isolated translation identifiers (`qt`) to prevent closure shadowing.
 - **Qoder Dual-Realm Native Suite (`internal/auth/qoder/`, `qoder_executor.go`, `qoder_models.go`, `qoder_catalog.go`, `management.html`)**:
   - **Zero Hardcoded Model Discovery & Dynamic Catalog**: Complete elimination of static model lists (`staticQoderModels = nil`), dynamically discovering upstream models via COSY-signed GET `/algo/api/v2/model/list?Encode=1` (with fallback to `/api/v1/cloud/models`), thread-safe per-realm caching (`qoderCatalogStore`), automatic cold-start pre-warming (`warmQoderCatalogForAuth`), and 30-minute TTL expiration.
   - **Dual-Realm Routing**: Native support for Qoder Global (`qoder`, `api3.qoder.sh`, `openapi.qoder.sh`, `qoder.com`) and Qoder Mainland China (`qoder-cn`, `gateway.qoder.com.cn`, `openapi.qoder.com.cn`, `qoder.cn`).

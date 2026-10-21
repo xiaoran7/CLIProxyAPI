@@ -93,7 +93,9 @@ func (h *Handler) GetQoderCheckin(c *gin.Context) {
 				"auth_id": a.ID,
 				"user":    user,
 				"day":     today,
+				"date":    today,
 				"outcome": "pending",
+				"status":  "pending",
 				"realm":   realm,
 				"message": "Check-in pending today",
 			}
@@ -134,6 +136,9 @@ func (h *Handler) PostQoderCheckin(c *gin.Context) {
 		client := &http.Client{Timeout: 20 * time.Second}
 		res, err := qoder.DoCheckin(ctx, client, targetAuth)
 		if err != nil {
+			if res != nil {
+				RecordQoderCheckin(targetAuth.ID, res)
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":  err.Error(),
 				"result": res,
@@ -164,9 +169,24 @@ func (h *Handler) PostQoderCheckin(c *gin.Context) {
 
 			client := &http.Client{Timeout: 20 * time.Second}
 			res, err := qoder.DoCheckin(ctx, client, a)
-			if err == nil && res != nil {
+			if res != nil {
 				RecordQoderCheckin(a.ID, res)
 				results = append(results, res)
+			} else if err != nil {
+				failRes := &qoder.CheckinResult{
+					AuthID:  a.ID,
+					User:    qoder.ResolveUserID(a),
+					Realm:   qoder.ResolveRealm(a),
+					Date:    today,
+					Day:     today,
+					Status:  qoder.CheckinFailed,
+					Outcome: qoder.CheckinFailed,
+					Message: err.Error(),
+					Checked: time.Now(),
+					At:      time.Now(),
+				}
+				RecordQoderCheckin(a.ID, failRes)
+				results = append(results, failRes)
 			}
 		}
 	}

@@ -278,6 +278,10 @@ func (h *Handler) GetPluginQuota(c *gin.Context) {
 			h.listWorkBuddyQuotas(c)
 			return
 		}
+		if strings.HasPrefix(pLower, "qoder") {
+			h.listQoderQuotas(c)
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "auth_index is required"})
 		return
 	}
@@ -431,6 +435,112 @@ func (h *Handler) listWorkBuddyQuotas(c *gin.Context) {
 	})
 }
 
+func (h *Handler) listQoderQuotas(c *gin.Context) {
+	if h.authManager == nil {
+		c.JSON(http.StatusOK, gin.H{"accounts": []any{}})
+		return
+	}
+
+	auths := h.authManager.List()
+	type accountQuota struct {
+		AuthID      string  `json:"auth_id"`
+		User        string  `json:"user"`
+		Points      float64 `json:"points"`
+		Balance     float64 `json:"balance"`
+		TotalPoints float64 `json:"total_points,omitempty"`
+		UsedPoints  float64 `json:"used_points,omitempty"`
+		ExpiresAt   string  `json:"expires_at,omitempty"`
+		VIPLevel    string  `json:"vip_level"`
+		FreeTier    bool    `json:"free_tier"`
+		Realm       string  `json:"realm"`
+	}
+
+	var targets []*coreauth.Auth
+	for _, a := range auths {
+		if a == nil || isInternalStorageFile(a.ID) || isInternalStorageFile(a.FileName) || strings.HasSuffix(strings.ToLower(a.ID), "checkins.json") || a.ID == "enabled" || a.ID == "records" {
+			continue
+		}
+		path := strings.TrimSpace(authAttribute(a, "path"))
+		if path != "" && isInternalStorageFile(path) {
+			continue
+		}
+		provider := strings.ToLower(strings.TrimSpace(a.Provider))
+		authKind := strings.ToLower(strings.TrimSpace(a.Attributes["auth_kind"]))
+		isQoder := provider == "qoder" || provider == "qoder-cn" || provider == "qoder-intl" || provider == "qoder-en" || authKind == "qoder"
+		if isQoder {
+			targets = append(targets, a)
+		}
+	}
+
+	if len(targets) == 0 {
+		c.JSON(http.StatusOK, gin.H{"accounts": []accountQuota{}})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	results := make([]accountQuota, len(targets))
+	var wg sync.WaitGroup
+	for idx, a := range targets {
+		wg.Add(1)
+		go func(i int, auth *coreauth.Auth) {
+			defer wg.Done()
+			realm := qoder.ResolveRealm(auth)
+			user := qoder.ResolveUserID(auth)
+			if auth.Metadata != nil {
+				if nick, ok := auth.Metadata["nickname"].(string); ok && strings.TrimSpace(nick) != "" {
+					user = strings.TrimSpace(nick)
+				}
+			}
+			if user == "" {
+				user = auth.ID
+			}
+
+			aq := accountQuota{
+				AuthID:   auth.ID,
+				User:     user,
+				VIPLevel: "Standard",
+				Realm:    realm,
+				FreeTier: true,
+			}
+
+			client := &http.Client{Timeout: 10 * time.Second}
+			quotaResp, err := qoder.QueryQuota(ctx, client, auth)
+			if err == nil {
+				if quotaResp.Subscription != nil && quotaResp.Subscription.Plan != "" {
+					aq.VIPLevel = quotaResp.Subscription.Plan
+					if strings.Contains(strings.ToLower(quotaResp.Subscription.Plan), "pro") || strings.Contains(strings.ToLower(quotaResp.Subscription.Plan), "vip") {
+						aq.FreeTier = false
+					}
+				}
+				for _, metric := range quotaResp.Summary {
+					switch metric.Key {
+					case "points_remain":
+						aq.Points = metric.Value
+						aq.Balance = metric.Value
+					case "points_total":
+						aq.TotalPoints = metric.Value
+					case "points_used":
+						aq.UsedPoints = metric.Value
+					}
+				}
+				if len(quotaResp.Groups) > 0 && len(quotaResp.Groups[0].Buckets) > 0 {
+					aq.ExpiresAt = quotaResp.Groups[0].Buckets[0].ResetTime
+				}
+			} else {
+				log.WithError(err).Warnf("failed to query qoder quota for auth %s", auth.ID)
+			}
+			results[i] = aq
+		}(idx, a)
+	}
+	wg.Wait()
+
+	c.JSON(http.StatusOK, gin.H{
+		"accounts": results,
+	})
+}
+
 // FetchPluginQuota handles POST /v0/management/plugins/:id/quota
 func (h *Handler) FetchPluginQuota(c *gin.Context) {
 	pluginID := strings.TrimSpace(c.Param("id"))
@@ -444,6 +554,10 @@ func (h *Handler) FetchPluginQuota(c *gin.Context) {
 		pLower := strings.ToLower(pluginID)
 		if strings.HasPrefix(pLower, "workbuddy") {
 			h.listWorkBuddyQuotas(c)
+			return
+		}
+		if strings.HasPrefix(pLower, "qoder") {
+			h.listQoderQuotas(c)
 			return
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "auth_index is required"})
@@ -487,6 +601,17 @@ func (h *Handler) fetchQuotaForPlugin(c *gin.Context, pluginID, authIndex string
 		quotaResp, errQuota := workbuddy.QueryQuota(c.Request.Context(), nil, auth)
 		if errQuota != nil {
 			log.WithError(errQuota).Warnf("failed to query native workbuddy quota for credential %s", auth.Index)
+			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errQuota)})
+			return
+		}
+		c.JSON(http.StatusOK, quotaResp)
+		return
+	}
+
+	if strings.HasPrefix(pLower, "qoder") || strings.HasPrefix(authPLower, "qoder") {
+		quotaResp, errQuota := qoder.QueryQuota(c.Request.Context(), nil, auth)
+		if errQuota != nil {
+			log.WithError(errQuota).Warnf("failed to query native qoder quota for credential %s", auth.Index)
 			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errQuota)})
 			return
 		}

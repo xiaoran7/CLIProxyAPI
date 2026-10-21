@@ -44,10 +44,24 @@ type CheckinResult struct {
 	User    string    `json:"user,omitempty"`
 	Realm   string    `json:"realm"`
 	Date    string    `json:"date"`
+	Day     string    `json:"day,omitempty"`
 	Status  string    `json:"status"`
+	Outcome string    `json:"outcome,omitempty"`
 	Points  int64     `json:"points,omitempty"`
+	Credit  float64   `json:"credit,omitempty"`
 	Message string    `json:"message,omitempty"`
 	Checked time.Time `json:"checked_at"`
+	At      time.Time `json:"at,omitempty"`
+}
+
+func syncCheckinResult(result *CheckinResult) {
+	if result == nil {
+		return
+	}
+	result.Outcome = result.Status
+	result.Day = result.Date
+	result.Credit = float64(result.Points)
+	result.At = result.Checked
 }
 
 // DoCheckin attempts daily check-in and benefit claim for a Qoder credential.
@@ -66,6 +80,9 @@ func DoCheckin(ctx context.Context, httpClient *http.Client, auth *cliproxyauth.
 		Date:    today,
 		Checked: time.Now(),
 	}
+	defer func() {
+		syncCheckinResult(result)
+	}()
 
 	token := AccessToken(auth)
 	if token == "" {
