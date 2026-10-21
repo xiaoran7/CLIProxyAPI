@@ -16,7 +16,7 @@ import (
 const workbuddyFallbackReasoning = "[reasoning unavailable]"
 
 var (
-	workbuddyIdentityRegex               = regexp.MustCompile(`(?i)(You are an?(?:\s+AI)?(?:\s+coding)?\s+(?:agent\s+powered by|assistant\s+built on)[^\n]*?)(?:\.(?:[\s\r\n]|$)|$)`)
+	workbuddyIdentityRegex               = regexp.MustCompile(`(?i)(You are\s+(?:an?\s+|the\s+)?(?:[\w.-]+\s+){0,3}?(?:agent|assistant|model|AI|LLM)?[\s,]*(?:powered by|built on|built by|created by|developed by|made by|trained by)[^\n]*?)(?:\.(?:[\s\r\n]|$)|$)`)
 	workbuddyAnthropicBillingHeaderRegex = regexp.MustCompile(`(?i)x-anthropic-billing-header:[^;\r\n]*;?\s*`)
 	workbuddyCCKeyValRegex               = regexp.MustCompile(`(?i)\bcc_[a-z0-9_]+=[^;\r\n]*;?\s*`)
 )

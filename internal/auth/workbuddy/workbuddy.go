@@ -44,15 +44,15 @@ const (
 
 	// DefaultUserAgentIntl is the client User-Agent matching the international desktop app (5.8.4 capture).
 	DefaultUserAgentIntl = "WorkBuddy/5.8.4 workbuddy-ai/5.8.4 CLI/2.161.0"
-	// DefaultUserAgentCN is the client User-Agent matching mainland China desktop app.
-	DefaultUserAgentCN = "WorkBuddy/5.5.6 WorkBuddy/5.5.6 CLI/2.137.1"
+	// DefaultUserAgentCN is the client User-Agent matching mainland China desktop app (5.8.3 capture).
+	DefaultUserAgentCN = "WorkBuddy/5.8.3 WorkBuddy/5.8.3 CLI/2.161.0"
 	// DefaultUserAgent matches the default international desktop app.
 	DefaultUserAgent = DefaultUserAgentIntl
 
 	// DefaultIDEVersionIntl is the international desktop client version.
 	DefaultIDEVersionIntl = "5.8.4"
 	// DefaultIDEVersionCN is the mainland China desktop client version.
-	DefaultIDEVersionCN = "5.5.6"
+	DefaultIDEVersionCN = "5.8.3"
 
 	// DefaultIDEName is the X-IDE-Name header value.
 	DefaultIDEName = "WorkBuddy"

@@ -167,6 +167,46 @@ func TestSanitizeWorkBuddyPromptWAF_DSHIdentityRegexVariations(t *testing.T) {
 			input:    "you are an agent powered by deepseek",
 			expected: "You are a helpful AI assistant.",
 		},
+		{
+			name:     "built by variant with proper name and comma",
+			input:    "You are Example Agent, built by Example Corp. Be direct.",
+			expected: "You are a helpful AI assistant. Be direct.",
+		},
+		{
+			name:     "created by variant",
+			input:    "You are a coding assistant created by Example Corp.",
+			expected: "You are a helpful AI assistant.",
+		},
+		{
+			name:     "developed by variant",
+			input:    "You are an AI agent developed by Example Corp.",
+			expected: "You are a helpful AI assistant.",
+		},
+		{
+			name:     "made by variant",
+			input:    "You are a chat model made by Example Corp.",
+			expected: "You are a helpful AI assistant.",
+		},
+		{
+			name:     "trained by variant",
+			input:    "You are an assistant trained by Example Corp.",
+			expected: "You are a helpful AI assistant.",
+		},
+		{
+			name:     "bare powered by without noun",
+			input:    "You are powered by the model named glm-5.3-flash.",
+			expected: "You are a helpful AI assistant.",
+		},
+		{
+			name:     "participle modifying object is untouched",
+			input:    "You are free to use tools built by the user.",
+			expected: "You are free to use tools built by the user.",
+		},
+		{
+			name:     "pairing participle is untouched",
+			input:    "You are a coding agent pairing with the user inside their codebase.",
+			expected: "You are a coding agent pairing with the user inside their codebase.",
+		},
 	}
 
 	for _, tc := range testCases {

@@ -39,6 +39,7 @@ All paths are relative to `/v8/management`.
 | `/oauth/import?provider=vertex` | POST | Import a Vertex service account via multipart `file` upload. |
 | `/oauth/auth-url?provider=<provider>` | GET | Start OAuth (`claude`, `codex`, `antigravity`, `workbuddy`, `workbuddy-cn`, `kimi`, `kimi-ai`, `xai`, `devin`, `meta`, or plugin ID). |
 | `/oauth/siwc/bind` | POST | Start SIWC binding to an existing file-backed Codex OAuth credential. |
+| `/oauth/siwc/status` | GET | Read local SIWC credential status (`off`, `valid`, or `invalid`; also `/credentials/siwc/status`). |
 | `/oauth/status?state=<state>` | GET | Poll OAuth status (`wait` -> `ok` or `error`; `DELETE /oauth/session?state=<state>` to cancel). |
 | `/oauth/callback` | GET, POST | Submit OAuth callback (`provider`, `state`, `code`, `error`, `redirect_url`). |
 | `/plugins` | GET | List installed plugins (`DELETE /plugins/<id>` to remove). |
@@ -53,5 +54,7 @@ SIWC is a second credential partition of an existing Codex credential, not a new
 
 Start binding with `POST /v8/management/oauth/siwc/bind` and `{"name":"codex-example.json"}` (`name` matches an existing managed credential ID or file name). Returns authorization URL, random `state`, and `expires_in: 300`. Redirect URI is fixed to `http://127.0.0.1:1455/auth/callback`. Submit the callback to `POST /v8/management/oauth/callback` with `redirect_url` or direct `state`, `code`, and issued `client_id`. Poll `GET /oauth/status?state=<state>` until `ok` or `error`. Cancel with `DELETE /oauth/session?state=<state>`.
 
-For Codex entries, `GET /credentials` exposes `siwc_bind_supported` (bool), `use_siwc` (bool), `siwc_bound` (bool), and `siwc_expires_at` (RFC3339 string).
+Query local SIWC status with `GET /v8/management/oauth/siwc/status?name=<name>` (or `?auth_index=<auth_index>`), which returns `{"status": "off" | "valid" | "invalid"}`.
+
+For Codex entries, `GET /credentials` exposes `siwc_bind_supported` (bool), `use_siwc` (bool), `siwc_status` (string: `off` | `valid` | `invalid`), `siwc_bound` (bool), and `siwc_expires_at` (RFC3339 string).
 

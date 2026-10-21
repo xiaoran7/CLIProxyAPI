@@ -207,6 +207,34 @@ func TestApplyHeaders(t *testing.T) {
 	}
 }
 
+func TestApplyHeaders_CN(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "https://copilot.tencent.com/v2/chat/completions", nil)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+
+	auth := &cliproxyauth.Auth{
+		ID:       "test-cn-user",
+		Provider: "workbuddy-cn",
+		Metadata: map[string]any{
+			"user_id": "u-cn-42",
+			"realm":   "cn",
+		},
+	}
+
+	ApplyHeaders(req, auth, "cn-access-token")
+
+	if got := req.Header.Get("X-Domain"); got != DomainCN {
+		t.Errorf("X-Domain = %q, want %q", got, DomainCN)
+	}
+	if got := req.Header.Get("X-IDE-Version"); got != "5.8.3" {
+		t.Errorf("X-IDE-Version = %q, want 5.8.3", got)
+	}
+	if got := req.Header.Get("User-Agent"); got != DefaultUserAgentCN {
+		t.Errorf("User-Agent = %q, want %q", got, DefaultUserAgentCN)
+	}
+}
+
 func TestRefreshToken(t *testing.T) {
 	var callCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Upstream v8.0.37 & v8.0.38 Feature Synchronization (`sdk/cliproxy/`, `internal/`)**:
+  - **Codex Alpha Search & Specialized Tool Mode Reconciler (#6837)**: Preserves declared tool modes and reconciles original OAuth credentials when executing Alpha search and specialized Codex completions.
+  - **Standalone Claude Reasoning Effort Preservation (#6835)**: Preserves standalone Claude reasoning effort across Codex and Anthropic requests through the `internal/thinking/` pipeline without stripping model effort configurations.
+  - **OpenAI Guardian Session Credential Affinity (#6833)**: Inherits parent session credentials for OpenAI Guardian moderation reviews and maintains session affinity across guardian lifecycle invocations.
+  - **Antigravity Tool Continuity & Caller Isolation (#6825)**: Preserves replay continuity and tool invocation context across Antigravity model handoffs and complex multi-turn completions.
+  - **Codex Chat & Claude Responses Stream Caching (#6828, #6829, #6831, #6834, #6836)**: Implemented per-stream tool name metadata caching and single-pass request echo extraction to boost streaming throughput and reduce JSON allocations.
+  - **Home Cluster Rebalance Handoff Protocol (#6832)**: Planned cluster balance state handoff and fencing lifecycle for distributed gateway nodes.
+  - **Vertex AI Per-Model OpenAPI Route Routing**: Configurable per-model and per-credential OpenAPI routing endpoints and capabilities across Vertex AI executors.
+  - **Sign-in with ChatGPT (SIWC) OAuth Management Endpoints**: Native endpoints for SIWC code exchanges, account linking, and token validation.
 - **Management APICall Force Refresh & Automated 401 Interception (`internal/api/handlers/management/api_tools.go`, `api_tools_test.go`)**:
   - Added support for `force_refresh: true` in the JSON body and `?refresh=1`/`?force_refresh=true` in query parameters to force re-acquisition of OAuth access tokens (bypassing the cached token expiry timestamp) when querying upstream quota endpoints.
   - Implemented automated 401 `UNAUTHENTICATED` error interception for `$TOKEN$`-interpolated management API calls: if an upstream endpoint (such as Google Cloud Code quota API) rejects the access token with HTTP 401, CPA automatically executes a single-flight token refresh, updates in-memory and on-disk credentials via `coreauth.Store`, re-substitutes the fresh token, and retries the upstream request once seamlessly.
@@ -21,6 +30,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Console Native Panel Navigation**: Updated `openNativeCpaManagement()` in `console.html` to open `/admin/upstream/management.html?token=${secret}` in a new tab instead of direct `/management.html`, restoring one-click access from the dashboard.
 
 ### Fixed
+- **WorkBuddy WAF 11128 Channel Fingerprint & CN Desktop Version Alignment (`internal/auth/workbuddy/workbuddy.go`, `internal/runtime/executor/helps/workbuddy_cloaking.go`)**:
+  - Expanded the framework identity sentence regex in `workbuddy_cloaking.go` from 2 verb variants to 7 verb forms (`powered by`, `built on`, `built by`, `created by`, `developed by`, `made by`, `trained by`), optional modifier words, and proper noun prefixes with bounded windows, preventing Tencent/WorkBuddy WAF error code 11128 (`request illegal`) rejections while preserving user-space and tool texts.
+  - Aligned mainland China desktop default `User-Agent` and `X-IDE-Version` from legacy `5.5.6` to `5.8.3` / `CLI/2.161.0` (matching real-world client captures and upstream `ardeyouxipianyi/workbuddy2api-hub` v1.7.20 / commit `dccd0fe`).
+  - Added unit test coverage for verb variations, noun-less phrases, false-positive protection, and CN desktop header verification.
+- **Auth Rate-Limit Sink Pool Lifecycle & Recovery Isolation (`sdk/cliproxy/auth/conductor_cooldown.go`, `conductor_lifecycle.go`, `scheduler_test.go`)**:
+  - Fixed a latent state retention defect in the 429 sink pool routing algorithm where credentials sunk via `RecordRateLimitSink` during rate limits were never cleared upon model error recovery or successful request execution, leaving them permanently demoted to the tail of candidate queues.
+  - Added `ClearRateLimitSink(auth.ID)` upon successful request completion (`clearAuthStateOnSuccess`) and model error expiration in `conductor_cooldown.go`.
+  - Added `ClearRateLimitSink(id)` upon credential removal in `conductor_lifecycle.go` to prevent memory leaks and ghost records.
+  - Added explicit sink cleanups in `scheduler_test.go` to isolate parallel unit tests and eliminate test crosstalk with upstream affinity tests.
+- **Session Cache Binding Deserialization & Snapshot Restore (`sdk/cliproxy/auth/session_cache.go`)**:
+  - Enriched `SessionCacheRecord` with `SessionID` and `Provider` to properly reconstruct the `sessionBinding` struct during cache `Restore()`, resolving compile-time signature mismatches introduced by upstream's 4-parameter `replaceAliasGroupsLocked`.
+- **Upstream v8.0.38 Claude Empty Text Block & Gemini Terminal Disconnect Fixes (`internal/runtime/executor/`, `internal/translator/`)**:
+  - Stripped empty text content blocks from incoming Claude requests to eliminate upstream Anthropic HTTP 400 rejection with `cache_control` error.
+  - Preserved token usage telemetry when Gemini streaming connections terminate prematurely or disconnect mid-flight.
 - **Console Request Stream, Audit Logs & Analytics Parity (`internal/console/`)**:
   - **Dual-Array Response Protocol (`events` + `requests`)**: Resolved the critical bug where request logs were blank in the admin and member console UI ("流水拉取不到") caused by the backend returning only `requests` while the frontend SWR hook in `console-logs.js` strictly reads `data.events`. The handlers now return both `events` and `requests` alongside `total`, `today_total`, `page`, and `page_size`.
   - **Delayed Join Pagination & Search Architecture (`internal/console/db/queries_events.go`, `api/handlers_usage.go`, `api/handlers_member.go`)**: Implemented delayed-join (`JOIN (SELECT id FROM request_events ... ORDER BY id DESC LIMIT ? OFFSET ?)`) pagination to eliminate full-table scan bottlenecks. Added full support for pagination (`page`, `page_size`), multi-column search (across model, error_type, auth_index, reasoning_effort, key_id, key alias/API key, and upstream baseline name), status filters (`cached`, `2xx`, `4xx`, `5xx`, `blocked`, `errors`), time ranges (`1h`, `today`, `24h`, `3d`, `7d`, `30d`), and provider filtering via compiled pattern matching.

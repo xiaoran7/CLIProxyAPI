@@ -2392,6 +2392,8 @@ func TestManager_SchedulerTracksMarkResultCooldownAndRecovery(t *testing.T) {
 	t.Cleanup(func() {
 		reg.UnregisterClient("auth-a")
 		reg.UnregisterClient("auth-b")
+		ClearRateLimitSink("auth-a")
+		ClearRateLimitSink("auth-b")
 	})
 	if _, errRegister := manager.Register(context.Background(), &Auth{ID: "auth-a", Provider: "gemini"}); errRegister != nil {
 		t.Fatalf("Register(auth-a) error = %v", errRegister)
