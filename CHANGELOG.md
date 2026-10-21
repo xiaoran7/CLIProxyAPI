@@ -5,6 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Authenticated Upstream Management Sandbox & Edge WAF Protection (`internal/console/api/upstream_proxy.go`, `router.go`, `console.html`, `upstream_proxy_test.go`)**:
+  - Implemented authenticated upstream management proxy handlers mounted on `/admin/upstream/*` and `/console/upstream/*`, achieving 100% behavioral parity with the legacy Gate sandbox architecture.
+  - **Query Token Exchange & Cookie Management**: Supports `?token=<secret>` parameter exchange, validating against either `admin-secret` or `management-key`, automatically provisioning an `HttpOnly`, `SameSite=Lax` `gate_admin_token` session cookie and 302 redirecting to clean URLs.
+  - **Embedded Static UI Delivery & Script Injection**: Direct delivery of embedded `management.html` assets (even when `disable-control-panel: true` is configured in CPA) with client-side script injection (`rewriteUrl`) hooking `window.fetch` and `XMLHttpRequest.prototype.open`, dynamically routing `/v0/management/*`, `/v8/management/*`, and `/v0/resource/*` requests through the authenticated upstream sandbox.
+  - **Edge WAF Bypass & Loopback Reverse Proxy**: Reverse-proxies all rewritten management API calls to CPA internal loopback with automatic Bearer credential injection, bypassing OpenResty edge WAF regex rules (`location ~* ^/(v0/management|v8/management|management\.html)`) that block unauthenticated direct management access.
+  - **Console Native Panel Navigation**: Updated `openNativeCpaManagement()` in `console.html` to open `/admin/upstream/management.html?token=${secret}` in a new tab instead of direct `/management.html`, restoring one-click access from the dashboard.
+
 ### Fixed
 - **Console SQLite Nullable Columns Handling (`internal/console/db/queries_keys.go`, `db_test.go`)**: Wrapped `rpm_limit`, `daily_limit`, `hard_ratio`, `alias`, `model_whitelist`, and `model_group` in `sql.Null*` scanning guards during `SelectAllQuotaRules`, `SelectQuotaRuleByKeyID`, `SelectAllKeys`, and `SelectKeyByID`, preventing `sql: Scan error converting NULL to int is unsupported` when reading legacy `gate.db` records where `rpm_limit` or `alias` were stored as `NULL`.
 - **Console Frontend i18n Identifier Shadowing (`internal/console/assets/console.html`, `internal/console/assets/console-logs.js`)**: Resolved `TypeError: t is not a function` in `formatResetAbs` where `const t = new Date(iso)` shadowed the global translation function `t(key, vars)` during quota countdown formatting, which caused upstream quota fetching in the dashboard to collapse into a `拉取网络异常: t is not a function` error state and display blank `--` stat cards. Also corrected parameter shadowing in `errorTypeLabel(t)` to `errorTypeLabel(type)`.

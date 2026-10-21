@@ -2801,7 +2801,7 @@
         openAuthModal();
         return;
       }
-      const targetUrl = `/management.html`;
+      const targetUrl = `/admin/upstream/management.html?token=${encodeURIComponent(secret)}`;
       window.open(targetUrl, '_blank', 'noopener,noreferrer');
     }
 

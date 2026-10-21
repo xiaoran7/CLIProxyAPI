@@ -31,6 +31,9 @@ func RegisterRoutes(r *gin.Engine, eng *engine.Engine, cfg RouterConfig, pricing
 	registerConsoleRoutes(r.Group("/console/api"), eng, cfg.AdminSecret, cpaClient, pricing, providers)
 	// Compatibility alias for legacy admin frontend
 	registerConsoleRoutes(r.Group("/admin/api"), eng, cfg.AdminSecret, cpaClient, pricing, providers)
+
+	// 4. Upstream management proxy routes (/admin/upstream and /console/upstream)
+	RegisterUpstreamProxyRoutes(r, cfg)
 }
 
 func registerSystemRoutes(r *gin.Engine, eng *engine.Engine) {
