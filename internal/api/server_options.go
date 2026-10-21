@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -63,14 +64,30 @@ func WithMiddleware(mw ...gin.HandlerFunc) ServerOption {
 // WithEngineConfigurator allows callers to mutate the Gin engine prior to middleware setup.
 func WithEngineConfigurator(fn func(*gin.Engine)) ServerOption {
 	return func(cfg *serverOptionConfig) {
-		cfg.engineConfigurator = fn
+		if cfg.engineConfigurator == nil {
+			cfg.engineConfigurator = fn
+			return
+		}
+		prev := cfg.engineConfigurator
+		cfg.engineConfigurator = func(e *gin.Engine) {
+			prev(e)
+			fn(e)
+		}
 	}
 }
 
 // WithRouterConfigurator appends a callback after default routes are registered.
 func WithRouterConfigurator(fn func(*gin.Engine, *handlers.BaseAPIHandler, *config.Config)) ServerOption {
 	return func(cfg *serverOptionConfig) {
-		cfg.routerConfigurator = fn
+		if cfg.routerConfigurator == nil {
+			cfg.routerConfigurator = fn
+			return
+		}
+		prev := cfg.routerConfigurator
+		cfg.routerConfigurator = func(e *gin.Engine, h *handlers.BaseAPIHandler, c *config.Config) {
+			prev(e, h, c)
+			fn(e, h, c)
+		}
 	}
 }
 
@@ -133,4 +150,23 @@ func WithExampleAPIKeySafeMode() ServerOption {
 	return func(cfg *serverOptionConfig) {
 		cfg.exampleAPIKeySafeMode = true
 	}
+}
+
+var (
+	globalServerOptionsMu sync.RWMutex
+	globalServerOptions   []ServerOption
+)
+
+// RegisterGlobalServerOption adds server options applied to all servers constructed by NewServer.
+func RegisterGlobalServerOption(opts ...ServerOption) {
+	globalServerOptionsMu.Lock()
+	defer globalServerOptionsMu.Unlock()
+	globalServerOptions = append(globalServerOptions, opts...)
+}
+
+// ClearGlobalServerOptions removes all registered global server options (primarily used in tests).
+func ClearGlobalServerOptions() {
+	globalServerOptionsMu.Lock()
+	defer globalServerOptionsMu.Unlock()
+	globalServerOptions = nil
 }

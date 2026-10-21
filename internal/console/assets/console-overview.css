@@ -1,0 +1,244 @@
+/* 运行总览工作区 —— 沿用 admin.html 与 admin-cpa.css 的浅蓝监控设计语言 */
+
+.tab-page.ovw-workspace { display: none; gap: 16px; padding-bottom: 36px; }
+.tab-page.ovw-workspace.active { display: grid; }
+.ovw-workspace [hidden] { display: none !important; }
+
+/* 成员模式：运行总览与紧随其后的分隔线一并隐藏，避免留下孤立的分隔线 */
+body.member-mode #tab-btn-runtime,
+body.member-mode #tab-btn-runtime + .sidebar-section-divider { display: none !important; }
+
+.ovw-panel {
+  min-width: 0;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--card-border, #dce8f3);
+  border-radius: 18px;
+  padding: 22px 24px;
+  box-shadow: 0 8px 24px rgba(35, 72, 106, .04);
+}
+.ovw-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+.ovw-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .14em; color: #7aa2c4; text-transform: uppercase; }
+.ovw-title { margin: 4px 0 0; font-size: 17px; font-weight: 700; color: var(--text-main, #17324d); letter-spacing: -.02em; }
+.ovw-desc { margin: 6px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--text-dim, #637b91); }
+.ovw-countdown { font-family: var(--mono, monospace); font-size: 11.5px; color: var(--text-dim, #637b91); white-space: nowrap; }
+
+/* Hero */
+.ovw-hero {
+  display: flex; align-items: center; justify-content: space-between; gap: 28px; flex-wrap: wrap;
+  background: linear-gradient(135deg, #f2f9ff 0%, #e8f3ff 55%, #eef4ff 100%);
+  border-color: #cfe4f7;
+}
+.ovw-hero-main { min-width: 0; flex: 1 1 320px; }
+.ovw-verdict { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; color: #17694a; }
+.ovw-verdict.is-warning { color: #a15c07; }
+.ovw-verdict.is-critical { color: #b42318; }
+.ovw-verdict.is-idle { color: #5a7186; }
+.ovw-verdict .dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 0 4px rgba(16, 185, 129, .16); }
+.ovw-verdict.is-warning .dot { background: #f59e0b; box-shadow: 0 0 0 4px rgba(245, 158, 11, .16); }
+.ovw-verdict.is-critical .dot { background: #ef4444; box-shadow: 0 0 0 4px rgba(239, 68, 68, .16); animation: ovw-pulse 1.8s ease-in-out infinite; }
+.ovw-verdict.is-idle .dot { background: #94a3b8; box-shadow: 0 0 0 4px rgba(148, 163, 184, .16); }
+@keyframes ovw-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+@media (prefers-reduced-motion: reduce) { .ovw-verdict.is-critical .dot { animation: none } }
+
+.ovw-hero-figure { display: flex; align-items: baseline; gap: 12px; margin: 12px 0 4px; flex-wrap: wrap; }
+.ovw-hero-value { font-family: var(--mono, monospace); font-size: 42px; font-weight: 700; color: #12395c; letter-spacing: -.03em; line-height: 1.05; }
+.ovw-hero-label { font-size: 13px; color: var(--text-dim, #637b91); }
+.ovw-hero-meta { font-size: 12px; color: var(--text-dim, #637b91); }
+.ovw-hero-split { display: flex; gap: 18px; margin-top: 12px; flex-wrap: wrap; }
+.ovw-split-item { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #35566f; }
+.ovw-swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.ovw-swatch.is-success { background: #10b981; }
+.ovw-swatch.is-failure { background: #ef4444; }
+.ovw-split-value { font-family: var(--mono, monospace); font-weight: 700; color: #12395c; }
+.ovw-hero-spark { flex: 0 0 auto; width: 260px; max-width: 100%; }
+
+/* 核心指标 */
+.ovw-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 12px; }
+.ovw-stat { background: #f9fcff; border: 1px solid #dbe9f6; border-radius: 14px; padding: 15px 16px; min-width: 0; }
+.ovw-stat-label { font-size: 11.5px; color: var(--text-dim, #637b91); margin-bottom: 7px; }
+.ovw-stat-value { font-family: var(--mono, monospace); font-size: 24px; font-weight: 700; color: #12395c; line-height: 1.1; }
+.ovw-stat-value.is-good { color: #0f7a52; }
+.ovw-stat-value.is-bad { color: #b42318; }
+.ovw-stat-hint { font-size: 11px; color: #7d97ad; margin-top: 5px; line-height: 1.5; }
+.ovw-meter { height: 5px; border-radius: 3px; background: #e3eef8; margin-top: 9px; overflow: hidden; }
+.ovw-meter-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #38bdf8, #10b981); transition: width .4s ease; }
+
+/* 吞吐图 */
+.ovw-chart { width: 100%; height: 190px; display: block; overflow: visible; }
+.ovw-chart-bar { transition: opacity .15s ease, transform .15s ease; cursor: pointer; outline: none; }
+.ovw-chart-bar:focus { outline: none; }
+.ovw-chart:hover .ovw-chart-bar { opacity: .45; }
+.ovw-chart .ovw-chart-bar:hover, .ovw-chart .ovw-chart-bar:focus { opacity: 1; }
+.ovw-chart-bar.has-failed { cursor: pointer; }
+.ovw-chart-bar.has-failed:hover .ovw-chart-bar-failed { filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.7)) brightness(1.15); }
+.ovw-chart-axis { font-family: var(--mono, monospace); font-size: 10px; fill: #7d97ad; }
+@media (max-width: 480px) {
+  /* 超窄移动端屏幕下隐藏非首尾偶数 X 轴刻度，避免字符拥挤重叠 */
+  .ovw-chart .ovw-xaxis-sparse-hide { display: none; }
+}
+.ovw-tooltip {
+  position: fixed; z-index: 999; pointer-events: none; opacity: 0; transition: opacity .15s ease, transform .15s ease;
+  background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  color: #1e293b; border: 1px solid rgba(186, 215, 242, 0.85);
+  border-radius: 12px; padding: 12px 14px; font-size: 11.5px; line-height: 1.5;
+  box-shadow: 0 12px 30px -4px rgba(18, 57, 92, 0.18), 0 4px 12px -2px rgba(18, 57, 92, 0.08);
+  max-width: 320px; min-width: 220px;
+}
+.ovw-tooltip.is-visible { opacity: 1; }
+.ovw-tooltip b { font-family: var(--mono, monospace); }
+.ovw-chart-legend { display: flex; gap: 16px; margin-top: 10px; font-size: 11.5px; color: var(--text-dim, #637b91); }
+
+/* 供应商对比 */
+.ovw-fleet { display: grid; gap: 10px; }
+.ovw-fleet-row { display: grid; grid-template-columns: 116px 1fr auto; gap: 12px; align-items: center; padding: 11px 13px; background: #f9fcff; border: 1px solid #e2eef9; border-radius: 12px; }
+.ovw-fleet-name { font-size: 12.5px; font-weight: 700; color: #1c3f5e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ovw-fleet-spark { width: 100%; height: 30px; display: block; }
+.ovw-fleet-numbers { font-family: var(--mono, monospace); font-size: 12px; color: #35566f; text-align: right; white-space: nowrap; }
+.ovw-fleet-rate { font-weight: 700; }
+.ovw-fleet-rate.is-good { color: #0f7a52; }
+.ovw-fleet-rate.is-bad { color: #b42318; }
+
+/* 运行时一览 */
+.ovw-runtime-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.ovw-runtime-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 13px; background: #f9fcff; border: 1px solid #e2eef9; border-radius: 11px; }
+/* 标签不参与收缩：路由那几行的控件较宽，否则标签会被压成一列竖排单字 */
+.ovw-runtime-label { font-size: 12px; color: var(--text-dim, #637b91); flex: 0 0 auto; white-space: nowrap; }
+.ovw-runtime-value { font-family: var(--mono, monospace); font-size: 12.5px; font-weight: 700; color: #1c3f5e; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 58%; }
+.ovw-runtime-value.is-on { color: #0f7a52; }
+.ovw-runtime-value.is-off { color: #94a3b8; }
+
+/* 路由策略可编辑控件：运行总览里唯一允许改写 CPA 配置的入口 */
+.ovw-control {
+  font-family: var(--mono, monospace); font-size: 12.5px; font-weight: 600; color: #1c3f5e;
+  background: #fff; border: 1px solid #c9dcec; border-radius: 9px;
+  padding: 5px 9px; max-width: 62%; text-align: right;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+.ovw-control:hover:not(:disabled) {
+  border-color: #8cb6d9;
+}
+.ovw-control:disabled { opacity: .55; cursor: progress; }
+.ovw-control:focus {
+  outline: none;
+  border-color: var(--accent, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  background-color: #ffffff;
+}
+.ovw-control:focus-visible {
+  outline: none;
+  border-color: var(--accent, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+select.ovw-control {
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  max-width: 62%;
+  padding-right: 28px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2341739d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 8px center;
+}
+select.ovw-control:hover:not(:disabled) {
+  border-color: #8cb6d9;
+  background-color: #ffffff;
+}
+
+/* 现代 Aozora UI 统一路由下拉组件 */
+.ovw-dropdown-wrap {
+  position: relative;
+  display: inline-flex;
+  justify-content: flex-end;
+  max-width: 65%;
+  min-width: 0;
+}
+.ovw-routing-dropdown {
+  position: relative;
+  max-width: 100%;
+}
+.ovw-routing-dropdown .dropdown-trigger {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1c3f5e;
+  background: #ffffff;
+  border-color: #c9dcec;
+  border-radius: 8px;
+  max-width: 100%;
+}
+.ovw-routing-dropdown .dropdown-trigger:hover {
+  border-color: #8cb6d9;
+  background: #ffffff;
+}
+.ovw-routing-dropdown .dropdown-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ovw-routing-dropdown .dropdown-menu {
+  min-width: 140px;
+  font-family: inherit;
+  font-weight: 500;
+}
+.ovw-switch { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; color: #1c3f5e; cursor: pointer; }
+.ovw-switch input { width: 15px; height: 15px; accent-color: #2a6ba8; cursor: pointer; }
+.ovw-switch input:disabled { cursor: progress; }
+
+/* 降级提示 */
+.ovw-banner {
+  display: flex; align-items: flex-start; gap: 10px; padding: 12px 15px; border-radius: 12px;
+  background: #fff8ed; border: 1px solid #f5d9ac; color: #8a5300; font-size: 12.5px; line-height: 1.6;
+}
+.ovw-banner.is-error { background: #fef2f2; border-color: #f5c2c2; color: #9b1c1c; }
+
+.ovw-empty { text-align: center; padding: 30px 16px; color: var(--text-dim, #637b91); font-size: 12.5px; }
+.ovw-source-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 5px; background: #e8f3ff; color: #2a6ba8; letter-spacing: .02em; }
+.ovw-source-tag.is-local { background: #f1f0fb; color: #5b52a8; }
+.ovw-source-tag.is-warn { background: #fff4e5; color: #a15c07; }
+
+/* Aozora UI 风格时间窗口药丸切换器 */
+.ovw-window-switcher {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(220, 235, 248, 0.65);
+  border: 1px solid #cfe2f2;
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+  box-shadow: inset 0 1px 2px rgba(18, 57, 92, 0.05);
+}
+.ovw-window-btn {
+  border: none;
+  background: transparent;
+  color: #55728b;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  font-family: inherit;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.ovw-window-btn:hover {
+  color: #12395c;
+  background: rgba(255, 255, 255, 0.6);
+}
+.ovw-window-btn.active {
+  background: #ffffff;
+  color: #1b64a5;
+  font-weight: 700;
+  box-shadow: 0 1.5px 5px rgba(27, 100, 165, 0.15), 0 0.5px 1.5px rgba(0, 0, 0, 0.05);
+}
+
+@media (max-width: 640px) {
+  .ovw-hero-value { font-size: 32px; }
+  .ovw-hero-spark { width: 100%; }
+  .ovw-fleet-row { grid-template-columns: 92px 1fr; grid-template-areas: "name spark" "nums nums"; }
+  .ovw-fleet-name { grid-area: name; }
+  .ovw-fleet-spark { grid-area: spark; }
+  .ovw-fleet-numbers { grid-area: nums; text-align: left; }
+}

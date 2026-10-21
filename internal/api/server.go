@@ -125,6 +125,13 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	optionState := &serverOptionConfig{
 		requestLoggerFactory: defaultRequestLoggerFactory,
 	}
+	globalServerOptionsMu.RLock()
+	globalOpts := make([]ServerOption, len(globalServerOptions))
+	copy(globalOpts, globalServerOptions)
+	globalServerOptionsMu.RUnlock()
+	for i := range globalOpts {
+		globalOpts[i](optionState)
+	}
 	for i := range opts {
 		opts[i](optionState)
 	}

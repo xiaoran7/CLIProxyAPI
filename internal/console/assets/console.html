@@ -1,0 +1,2944 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Console — LLM Gateway</title>
+<link href="/console/assets/gate-sakura-mark-128.png" rel="icon" type="image/png"/>
+<link rel="stylesheet" href="/console/console-style.css"/>
+  <script src="/console/console-i18n.js"></script>
+  <script src="/console/console-quotas.js"></script>
+  <script src="/console/console-keys.js"></script>
+  <script src="/console/console-stats.js"></script>
+  <script src="/console/console-logs.js"></script>
+<link rel="stylesheet" href="/console/console-cpa.css"/>
+<link rel="stylesheet" href="/console/console-overview.css"/>
+</head>
+<body>
+<div class="container app-shell">
+<button aria-label="关闭导航" data-i18n-aria-label="nav.closeNav" class="sidebar-scrim" id="sidebar-scrim" onclick="closeMobileNav()" type="button"></button>
+<aside aria-label="主导航" data-i18n-aria-label="nav.mainLabel" class="app-sidebar" id="app-sidebar">
+<div class="brand-wrap">
+<div aria-hidden="true" class="brand-icon">
+<img alt="" src="/console/assets/gate-sakura-mark-128.webp" width="39" height="39"/>
+</div>
+<div class="title-group">
+<h1>Console <span class="version-tag">v8.0</span></h1>
+<div class="title-desc">LLM Gateway</div>
+</div>
+</div>
+<div class="sidebar-section-label" data-i18n="nav.workspace">工作区</div>
+<nav aria-label="工作区页面" data-i18n-aria-label="nav.workspacePages" class="nav-tabs-bar" id="main-nav-tabs">
+<button aria-current="page" class="nav-tab-btn active" id="tab-btn-quotas" onclick="switchNavTab('quotas')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+<span id="tab-text-quotas" data-i18n="nav.quotas">上游凭证</span><span class="tab-badge" id="nav-badge-quotas">0</span>
+</button>
+<button class="nav-tab-btn" id="tab-btn-validations" onclick="switchNavTab('validations')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+<span id="tab-text-validations" data-i18n="nav.validations">Google 验证</span><span class="tab-badge" id="nav-badge-validations">0</span>
+</button>
+<div class="sidebar-section-divider"></div>
+<button class="nav-tab-btn" id="tab-btn-status" onclick="switchNavTab('status')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+<span data-i18n="nav.status">服务状态</span>
+</button>
+<button class="nav-tab-btn" id="tab-btn-upstream-stats" onclick="switchNavTab('upstream-stats')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M18 20V10m-6 10V4M6 20v-6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+<span data-i18n="nav.upstreamStats">凭证统计</span>
+</button>
+<button class="nav-tab-btn" id="tab-btn-overview" onclick="switchNavTab('overview')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round"></path></svg><span data-i18n="nav.overview">用量趋势</span>
+</button>
+<button class="nav-tab-btn" id="tab-btn-logs" onclick="switchNavTab('logs')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 015.586-1.414l5.414 5.414V19a2 2 0 01-2 2H7a2 2 0 01-2-2V5" stroke-linecap="round" stroke-linejoin="round"></path></svg><span id="tab-text-logs" data-i18n="nav.logs">请求流水</span><span class="tab-badge" id="nav-badge-logs" title="今日请求数" data-i18n-title="nav.badge.todayRequests">0</span>
+</button>
+<button class="nav-tab-btn" id="tab-btn-errors" onclick="switchNavTab('errors')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-linecap="round" stroke-linejoin="round"></path></svg><span data-i18n="nav.errors">故障中心</span><span class="tab-badge" id="nav-badge-errors" style="color:var(--danger);" title="今日故障数" data-i18n-title="nav.badge.todayErrors">0</span>
+</button>
+<div class="sidebar-section-divider"></div>
+<button class="nav-tab-btn" id="tab-btn-keys" onclick="switchNavTab('keys')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" stroke-linecap="round" stroke-linejoin="round"></path></svg><span data-i18n="nav.keys">API 密钥</span><span class="tab-badge" id="nav-badge-keys">0</span>
+</button>
+</nav>
+<div class="sidebar-footer">
+  <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+    <div style="display:inline-flex;align-items:center;gap:6px;">
+      <span class="sidebar-footer-dot"></span><span data-i18n="nav.console">Console 工作台</span>
+      <span class="member-mode-badge" id="member-mode-badge" style="display:none;"></span>
+    </div>
+    <button type="button" class="btn btn-sm" id="btn-native-cpa" onclick="openNativeCpaManagement()" style="padding:2px 8px;font-size:11px;min-height:24px;border-radius:6px;background:rgba(59,130,246,0.08);color:var(--accent);border:1px solid rgba(59,130,246,0.2);" title="安全跳转至原生 CPA 管理面板 (受 Console 鉴权保护)" data-i18n-title="nav.nativePanelTitle" data-i18n="nav.nativePanel">原生面板 ↗</button>
+  </div>
+</div>
+</aside>
+<main class="workspace" id="workspace">
+<header class="workspace-topbar">
+<div class="workspace-topbar-location">
+<button aria-controls="app-sidebar" aria-expanded="false" aria-label="打开导航" data-i18n-aria-label="nav.openNav" class="mobile-menu-button" id="mobile-menu-button" onclick="toggleMobileNav()" type="button">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round"></path></svg>
+</button>
+<span class="breadcrumb-root" data-i18n="nav.breadcrumbRoot">工作台</span><span class="breadcrumb-separator">/</span><span id="breadcrumb-current" data-i18n="nav.quotas">上游凭证</span>
+</div>
+<div class="header-actions">
+<!-- 中英文切换 -->
+<button class="btn btn-secondary" id="btn-locale-toggle" onclick="toggleLocale()" title="切换界面语言 / Switch UI language" data-i18n-title="top.localeToggleTitle" type="button">
+<span id="btn-locale-text">EN</span>
+</button>
+<!-- 全局自动轮询与倒计时胶囊 (现代定制轻量 Dropdown) -->
+<div class="polling-capsule" title="全局自动刷新周期（全站统一权威定时器）" data-i18n-title="top.pollingTitle">
+<svg class="countdown-circle" viewbox="0 0 24 24">
+<circle class="countdown-bg" cx="12" cy="12" r="9"></circle>
+<circle class="countdown-bar" cx="12" cy="12" id="countdown-bar" r="9" stroke-dasharray="56.5" stroke-dashoffset="0"></circle>
+</svg>
+<div aria-label="全局自动刷新间隔" data-i18n-aria-label="top.pollingAria" class="dropdown" id="polling-interval-dropdown"></div>
+</div>
+<!-- 配额健康探针状态徽章 -->
+<button class="status-badge" id="quota-probe-badge" onclick="openQuotaModal()" title="查看配额健康探针详情" data-i18n-title="top.probeTitle" type="button">
+<span class="dot"></span>
+<span id="quota-probe-text" data-i18n="top.probeDetecting">探针检测中</span>
+</button>
+<button aria-label="新建 API Key" data-i18n-aria-label="top.createKeyAria" class="btn" id="btn-create-key" onclick="openCreateModal()">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;" viewbox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span data-i18n="top.createKey">新建 Key</span>
+        </button>
+<button class="btn btn-secondary" id="btn-prices" onclick="openPricesModal()" title="动态配置各模型计费与乘数" data-i18n-title="top.pricingTitle">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;" viewbox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span data-i18n="top.pricing">定价管理</span>
+        </button>
+<button class="btn btn-secondary" id="btn-auth" onclick="openAuthModal()" title="设置管理台鉴权密钥或成员 API Key" data-i18n-title="top.authTitle">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;" viewbox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+<span id="btn-auth-text" data-i18n="common.key">密钥</span>
+</button>
+<button aria-label="刷新全部数据" data-i18n-aria-label="top.refreshAll" class="btn btn-secondary" onclick="manualRefresh()" title="刷新全部数据" data-i18n-title="top.refreshAll">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+</header>
+<div aria-hidden="true" class="workspace-scene"></div>
+<section aria-live="polite" class="page-intro">
+<div style="display:none;" aria-hidden="true"><h2 id="page-title" data-i18n="nav.quotas">上游凭证</h2><p id="page-description" data-i18n="page.quotas.desc">查看真实上游额度、可用性与近期请求表现。</p></div>
+<div class="page-intro-actions" id="page-intro-actions"><button class="btn btn-secondary" onclick="openQuotaModal()" type="button" data-i18n="page.intro.quotaDetail">配额健康详情</button><button class="btn" onclick="refreshUpstreamQuotas(true)" type="button" data-i18n="page.intro.refreshUpstream">刷新上游配额</button></div>
+</section>
+<div class="tab-page active" id="tab-page-quotas">
+<div class="panel auth-required-panel" role="status">
+<h2 data-i18n="member.connectTitle">连接 Console 控制台</h2>
+<p data-i18n="member.inputKeyTitle">输入管理密钥查看上游配额、服务状态与请求数据。成员也可以使用自己的 API Key 查看专属用量。</p>
+<button class="btn" onclick="openAuthModal()" type="button" data-i18n="member.inputKeyBtn">输入密钥</button>
+</div>
+<!-- 成员专属用量看板 (仅成员模式下显示) -->
+<div class="member-info-card" id="member-quota-panel" style="display:none;">
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+<div style="display:flex; align-items:center; gap:10px;">
+<div class="provider-icon-badge" style="background:linear-gradient(135deg, #e0f2fe, #dbeafe); color:#0284c7; border:1px solid #bae6fd; width:32px; height:32px;">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;" viewbox="0 0 24 24"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+<div>
+<div style="font-size:14px; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:8px;">
+<span id="member-alias-display" data-i18n="member.myKey">我的 API 密钥</span>
+<span class="chip chip-green" id="member-status-pill" data-i18n="status.normal">正常</span>
+</div>
+<div id="member-key-display" style="font-size:11.5px; color:var(--text-dim); font-family:var(--mono);">sk-cpa-***</div>
+</div>
+</div>
+<div style="font-size:11.5px; color:var(--text-dim);">
+<span data-i18n="member.supportedModels">支持模型: </span><span id="member-models-display" style="color:var(--text-muted);" data-i18n="member.fullAllowed">全量允许</span>
+</div>
+</div>
+<div class="member-stats-grid">
+<div class="member-stat-box">
+<span class="member-stat-label" data-i18n="member.todayTokens">今日总消耗 Tokens</span>
+<span class="member-stat-val" id="member-tokens-total">0</span>
+</div>
+<div class="member-stat-box">
+<span class="member-stat-label" data-i18n="member.inOutTokens">输入 / 输出 Tokens</span>
+<span class="member-stat-val" id="member-tokens-io" style="font-size:14px;">0 / 0</span>
+</div>
+<div class="member-stat-box">
+<span class="member-stat-label" data-i18n="member.cacheTokens">缓存命中 Tokens (率)</span>
+<span class="member-stat-val" id="member-tokens-cache" style="color:#38bdf8; font-size:15px;">0 (0.0%)</span>
+</div>
+<div class="member-stat-box">
+<span class="member-stat-label" data-i18n="member.todayCost">今日预估花费</span>
+<span class="member-stat-val" id="member-cost-total" style="color:#34d399;">$0.00</span>
+</div>
+</div>
+<div class="member-progress-wrap" id="member-limit-box" style="display:none;">
+<div class="member-progress-header">
+<div class="member-progress-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:#38bdf8;" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="member.dailyQuota">每日可用配额额度</span>
+          </div>
+<div class="member-progress-stats">
+<span class="member-progress-pct" id="member-limit-pct">0%</span>
+<span class="member-progress-fraction" id="member-limit-fraction">0 / 0</span>
+</div>
+</div>
+<div class="member-progress-bar">
+<div class="member-progress-fill" id="member-limit-bar" style="width: 0%;"></div>
+</div>
+<div class="member-progress-footer">
+<span><span data-i18n="member.todayConsumed">今日已消耗</span> <b id="member-limit-used-desc" style="color:var(--text-main); font-family:var(--mono);">0</b> Tokens</span>
+<span><span data-i18n="member.todayRemain">今日剩余可用:</span> <span class="member-progress-remaining" id="member-limit-remaining">--</span></span>
+</div>
+</div>
+</div>
+<section aria-label="上游与网关概况" data-i18n-aria-label="ops.ariaLabel" class="operations-strip">
+<div class="operation-metric"><span class="operation-label" data-i18n="nav.quotas">上游凭证</span><strong class="operation-value num" id="ops-total-accounts">--</strong></div>
+<div class="operation-metric"><span class="operation-label" data-i18n="member.availableCreds">可用凭证</span><strong class="operation-value num" id="ops-enabled-accounts">--</strong></div>
+<div class="operation-metric"><span class="operation-label" data-i18n="member.req24h">近 24 小时请求</span><strong class="operation-value num" id="ops-requests-24h">--</strong></div>
+<div class="operation-metric"><span class="operation-label" data-i18n="member.avail7d">近 7 日可用率</span><strong class="operation-value num" id="ops-availability-7d">--</strong></div>
+<div class="operation-metric" id="ops-validations-box" style="display:none; border-color:rgba(239,68,68,0.3); background:rgba(239,68,68,0.06);"><span class="operation-label" style="color:var(--danger);" data-i18n="member.pendingValidation">待验证账号</span><strong class="operation-value num" id="ops-validations-count" style="color:var(--danger);">0</strong></div>
+</section>
+<div class="quota-workspace">
+<!-- 待安全验证账号横幅 (Google Antigravity VALIDATION_REQUIRED) -->
+<div class="panel" id="upstream-validations-banner" style="display:none; border-color:rgba(239,68,68,0.35); background:linear-gradient(135deg, rgba(239,68,68,0.08) 0%, rgba(245,158,11,0.05) 100%); margin-bottom: 20px;">
+<div class="panel-header" style="flex-wrap: wrap; gap: 10px; border-bottom: 1px solid rgba(239,68,68,0.15); padding-bottom: 10px;">
+<div style="display:flex; align-items:center; gap:8px;">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--danger);animation:pulse 2s infinite;" viewbox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+<div>
+<div class="panel-title" style="color:var(--danger); font-size:14px;" data-i18n="validations.bannerTitle">
+              Google Antigravity 账号安全验证提醒 (Account Verification Required)
+            </div>
+<div class="panel-subtitle" style="color:var(--text-muted); font-size:11.5px;" data-i18n="validations.bannerSubtitle">
+              上游返回 403 VALIDATION_REQUIRED · 需在浏览器中完成 Google 验证后账号方可恢复正常调用
+            </div>
+</div>
+</div>
+<button class="btn btn-secondary btn-sm" onclick="fetchUpstreamValidations()">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span data-i18n="validations.refreshList">刷新验证列表</span>
+        </button>
+</div>
+<div id="upstream-validations-container" style="display:flex; flex-direction:column; gap:8px; padding-top:10px;"></div>
+</div>
+<!-- 服务状态 (Uptime Kuma 风格心跳卡) -->
+
+<!-- 上游凭证配额 (CPAMC 对齐面板) -->
+<div class="panel upstream-panel" id="upstream-panel">
+<div class="panel-header" style="flex-wrap: wrap; gap: 12px;">
+<div style="display:flex; align-items:center; gap:8px;">
+<button aria-controls="upstream-panel-body" aria-expanded="true" class="panel-fold-btn" id="upstream-panel-fold-btn" onclick="togglePanelFold('upstream-panel-body', this)" title="收起/展开上游凭证配额" data-i18n-title="quotas.foldTitle">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+<div>
+<div class="panel-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:#a855f7;" viewbox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              <span data-i18n="quotas.panelTitle">上游凭证配额 (Auth Files)</span>
+            </div>
+<div class="panel-subtitle" data-i18n="quotas.panelSubtitle">真实直连 CPA 绑定的 Antigravity / Codex / WorkBuddy 官方账号额度与周期刷新倒计时</div>
+</div>
+</div>
+<div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+<!-- 搜索框 -->
+<div style="position:relative; display:flex; align-items:center;">
+<input class="logs-search-input" id="upstream-search-input" oninput="onUpstreamSearch(this.value)" placeholder="搜索邮箱或ID..." data-i18n-placeholder="quotas.searchPlaceholder" style="width:160px; padding-left:26px; font-size:11.5px; height:28px;" type="text"/>
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;position:absolute;left:8px;color:var(--text-dim);pointer-events:none;" viewbox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+<!-- 视图切换: 紧凑列表 vs 完整卡片 -->
+<div class="segmented-tabs" id="upstream-view-mode-tabs">
+<button class="active" onclick="switchUpstreamViewMode('compact')" title="单行紧凑模式，一屏浏览更多凭证" data-i18n-title="quotas.viewCompactTitle" data-i18n="quotas.viewCompact">紧凑列表</button>
+<button onclick="switchUpstreamViewMode('cards')" title="完整卡片模式，查看全部模型分桶" data-i18n-title="quotas.viewCardsTitle" data-i18n="quotas.viewCards">完整卡片</button>
+</div>
+<!-- Provider 过滤 -->
+<div class="segmented-tabs" id="upstream-filter-tabs">
+<button class="active" onclick="switchUpstreamFilter('all')" data-i18n="common.all">全部</button>
+<button onclick="switchUpstreamFilter('antigravity')">Antigravity</button>
+<button onclick="switchUpstreamFilter('codex')">Codex</button>
+<button onclick="switchUpstreamFilter('claude')">Claude</button>
+<button onclick="switchUpstreamFilter('workbuddy')">WorkBuddy</button>
+<button onclick="switchUpstreamFilter('qoder')">Qoder</button>
+<button onclick="switchUpstreamFilter('openrouter')">OpenRouter</button>
+<button onclick="switchUpstreamFilter('opencode')">OpenCode</button>
+</div>
+<!-- 隐藏已停用 -->
+<label style="display:inline-flex; align-items:center; gap:4px; font-size:11.5px; color:var(--text-muted); cursor:pointer; user-select:none;">
+<input id="upstream-hide-disabled" onchange="toggleHideDisabled(this.checked)" style="cursor:pointer; accent-color:var(--accent);" type="checkbox"/>
+            <span data-i18n="quotas.hideDisabled">隐藏已停用</span>
+          </label>
+<button class="btn btn-activate-5h" id="btn-activate-provider" onclick="triggerActivateFilteredAccounts()" style="padding:4px 12px;" title="向当前筛选的凭据批量查询最新上游额度" data-i18n-title="quotas.refreshFilteredQuotaTitle">
+            <span data-i18n="quotas.refreshAllQuotaBtn">刷新全部额度</span>
+          </button>
+<button class="btn btn-secondary" id="btn-manage-openrouter" onclick="openOpenRouterModal()" style="display:none; padding:4px 10px; font-size:11.5px;" title="在 Console 原生管理 OpenRouter 账号与 Management Key" data-i18n-title="quotas.manageAccountsTitle">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;" viewbox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-linecap="round" stroke-linejoin="round"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="quotas.manageAccounts">管理账号</span>
+          </button>
+<button class="btn btn-secondary" onclick="refreshUpstreamQuotas(true)" style="padding:4px 10px; font-size:11.5px;" title="强制重新拉取上游配额" data-i18n-title="quotas.refreshQuotaTitle">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="quotas.refreshQuota">刷新配额</span>
+          </button>
+</div>
+</div>
+<div class="panel-collapse-content" id="upstream-panel-body">
+<div class="upstream-compact-list" id="upstream-compact-container"></div>
+<div class="upstream-grid" id="upstream-cards-container" style="display:none;">
+<div class="upstream-empty-state" data-i18n="quotas.loadingQuota">正在拉取上游凭证配额...</div>
+</div>
+</div>
+</div>
+<!-- 上游凭证用量与成功率统计 (对齐 Keeper 统计视图) -->
+</div>
+
+</div>
+<div class="tab-page" id="tab-page-status"><div class="panel status-panel" style="margin-bottom: 20px;">
+<div class="panel-header">
+<div style="display:flex; align-items:center; gap:8px;">
+<button aria-controls="status-cards-container" aria-expanded="true" class="panel-fold-btn" id="status-panel-fold-btn" onclick="togglePanelFold('status-cards-container', this)" title="收起/展开服务状态" data-i18n-title="status.foldTitle">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+<div>
+<div class="panel-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:#34d399;" viewbox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              <span data-i18n="status.panelTitle">服务状态 (Service Status)</span>
+            </div>
+<div class="panel-subtitle" data-i18n="status.panelSubtitle">按提供商分组监测 · 组级健康点 · 平均延迟 · 首字 TTFT · 7 天可用性 · 60 分钟合并心跳</div>
+</div>
+</div>
+<span class="status-legend" style="display:flex; gap:12px; font-size:11px; color:var(--text-dim); align-items:center;">
+<span style="display:flex;align-items:center;gap:4px;"><i style="width:8px;height:8px;border-radius:2px;background:#10b981;display:inline-block;"></i><span data-i18n="status.normal">正常</span></span>
+<span style="display:flex;align-items:center;gap:4px;"><i style="width:8px;height:8px;border-radius:2px;background:#f59e0b;display:inline-block;"></i><span data-i18n="status.degraded">降级</span></span>
+<span style="display:flex;align-items:center;gap:4px;"><i style="width:8px;height:8px;border-radius:2px;background:#ef4444;display:inline-block;"></i><span data-i18n="status.outage">故障</span></span>
+<span style="display:flex;align-items:center;gap:4px;"><i style="width:8px;height:8px;border-radius:2px;background:rgba(148,163,184,0.2);display:inline-block;"></i><span data-i18n="status.legendNoData">无数据</span></span>
+</span>
+</div>
+<div class="status-grid panel-collapse-content" id="status-cards-container">
+<div class="status-empty" data-i18n="status.loading">正在采集服务状态...</div>
+</div>
+</div></div><div class="tab-page" id="tab-page-upstream-stats"><div class="panel" id="upstream-stats-panel" style="margin-top: 20px;">
+<div class="panel-header" style="flex-wrap: wrap; gap: 12px;">
+<div>
+<div class="panel-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:#38bdf8;" viewbox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="upstreamStats.panelTitle">上游凭证用量与成功率统计 (Upstream Identities Stats)</span>
+          </div>
+<div class="panel-subtitle" id="upstream-stats-subtitle" data-i18n="upstreamStats.panelSubtitle">本地基线推算 · CPA 运行时仅保留约 200 分钟窗口，撑不起全部历史，请求数与成功率为估算值</div>
+</div>
+<div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+<!-- 时间跨度切换 -->
+<div class="segmented-tabs" id="upstream-stats-range-tabs">
+<button onclick="switchUpstreamStatsRange('5h')" data-i18n="range.5h">5 小时</button>
+<button onclick="switchUpstreamStatsRange('24h')" data-i18n="range.24h">24 小时</button>
+<button onclick="switchUpstreamStatsRange('7d')" data-i18n="range.7d">7 天</button>
+<button class="active" onclick="switchUpstreamStatsRange('all')" data-i18n="upstreamStats.rangeAll">全部历史</button>
+</div>
+<input type="search" id="upstream-stats-filter" placeholder="筛选账号/模型/ID..." data-i18n-placeholder="upstreamStats.searchPlaceholder" oninput="renderUpstreamStatsTable()" style="padding:4px 10px; font-size:11.5px; height:28px; width:150px; border-radius:6px; border:1px solid #cedff1; background:#ffffff; color:var(--text-main); outline:none;" title="按账号名称、模型或凭证 ID 实时筛选卡片" data-i18n-title="upstreamStats.searchTitle">
+<button class="btn btn-secondary" onclick="fetchUpstreamAuthStats()" style="padding:4px 10px; font-size:11.5px;" title="刷新凭证用量与成功率统计" data-i18n-title="upstreamStats.refreshTitle">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="upstreamStats.refresh">刷新统计</span>
+          </button>
+</div>
+</div>
+<!-- 账号凭证卡片流网格容器 (Aozora UI) -->
+<div class="upstream-stats-cards-grid" id="upstream-stats-cards-container">
+  <div style="grid-column: 1 / -1; text-align:center; padding:36px 16px; color:var(--text-dim);" data-i18n="upstreamStats.loading">正在加载上游凭证用量统计...</div>
+</div>
+<!-- 已删除/历史留痕账号折叠归档区 (Aozora UI 弱化次级收纳) -->
+<div class="deleted-accounts-wrapper" id="upstream-stats-archive-container" style="display:none;"></div>
+<!-- 保留一个隐式元素以兼容旧代码引用 -->
+<table style="display:none;"><tbody id="upstream-stats-table-body"></tbody></table>
+</div></div><div class="tab-page" id="tab-page-overview">
+<!-- 5 联核心指标卡片 -->
+<div class="summary-grid">
+<!-- 1. 区间 Tokens 总量 -->
+<div class="summary-card">
+<div class="summary-header">
+<span class="summary-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span id="card-tokens-title" data-i18n="overview.cardTokensTitle">近 7 天 / 累计 Tokens</span>
+          </span>
+<span class="summary-badge highlight" id="card-alltime-tokens" title="开天辟地历史累计总消耗" data-i18n-title="overview.accumTokensTitle" data-i18n="overview.accumTokens">累计 --</span>
+</div>
+<div class="summary-value num" id="card-total-tokens">--</div>
+<div class="token-breakdown-bar" title="蓝: 输入 / 亮蓝: 缓存 / 绿: 输出" data-i18n-title="overview.legendColors">
+<div class="token-segment-prompt" id="bar-prompt" style="width: 0%"></div>
+<div class="token-segment-cached" id="bar-cached" style="width: 0%"></div>
+<div class="token-segment-completion" id="bar-completion" style="width: 0%"></div>
+</div>
+<div class="summary-footer">
+<span><span data-i18n="overview.in">入</span> <b class="num" id="sub-prompt-tokens">0</b> <span data-i18n="overview.out">/ 出</span> <b class="num" id="sub-completion-tokens">0</b></span>
+<span id="card-tokens-ratio" style="font-weight:600; color:var(--text-dim);">--</span>
+</div>
+</div>
+<!-- 2. 缓存命中率 -->
+<div class="summary-card">
+<div class="summary-header">
+<span class="summary-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="overview.cacheHitRate">缓存命中率</span>
+          </span>
+<span class="summary-badge highlight" id="card-cache-hits-label">0 Tokens</span>
+</div>
+<div class="summary-value num" id="card-cache-rate">0.0%</div>
+<div class="summary-footer">
+<span data-i18n="overview.promptCacheRead">Prompt Cache 读取</span>
+<strong class="num" id="card-cache-tokens">0</strong>
+</div>
+</div>
+<!-- 3. 区间成本预估 -->
+<div class="summary-card">
+<div class="summary-header">
+<span class="summary-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span id="card-cost-title" data-i18n="overview.cardCostTitle">近 7 天预估花费</span>
+          </span>
+<span class="summary-badge" id="card-savings-badge" style="color:#34d399;" data-i18n="overview.savedAmount">节省 $0.00</span>
+</div>
+<div class="summary-value num" id="card-cost-total">$0.00</div>
+<div class="summary-footer">
+<span data-i18n="overview.cacheSavings">缓存节省收益</span>
+<strong class="num" id="card-cost-savings" style="color:#34d399;">$0.00</strong>
+</div>
+</div>
+<!-- 4. 区间请求量 -->
+<div class="summary-card">
+<div class="summary-header">
+<span class="summary-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span id="card-req-title" data-i18n="overview.cardReqTitle">近 7 天 / 累计请求</span>
+          </span>
+<span class="summary-badge" id="card-alltime-requests" title="开天辟地历史累计总请求" data-i18n-title="overview.accumReqTitle" data-i18n="overview.accumReq">累计 --</span>
+</div>
+<div class="summary-value num" id="card-total-requests">--</div>
+<div class="summary-footer">
+<span><span data-i18n="overview.successRate">成功率</span> <b id="card-req-success-rate">--</b></span>
+<strong id="card-requests-sub" data-i18n="overview.waitingData">等待数据</strong>
+</div>
+</div>
+<!-- 5. Key 配额健康 -->
+<div class="summary-card">
+<div class="summary-header">
+<span class="summary-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="overview.keyStatus">Key 状态</span>
+          </span>
+<span class="summary-badge" id="card-keys-total" data-i18n="overview.zeroActive">0 活跃</span>
+</div>
+<div class="summary-value num" id="card-blocked-count" style="color:var(--text-main);">0</div>
+<div class="summary-footer">
+<span data-i18n="overview.blockedOrWarn">硬顶阻断 / 85%预警</span>
+<strong id="card-keys-status-sub">0 / 0</strong>
+</div>
+</div>
+</div>
+<!-- 图表分析区 -->
+<div class="charts-grid">
+<!-- 左：多维度主趋势图 -->
+<div class="panel chart-panel">
+<div class="panel-header">
+<div>
+<div class="panel-title">
+<span id="chart-main-title" data-i18n="chart.title">用量趋势分析</span>
+</div>
+<div class="panel-subtitle" id="chart-main-subtitle" data-i18n="chart.subtitleDaily">近 7 天每日构成</div>
+</div>
+<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+<!-- Key 维度筛选下拉 -->
+<div style="display:flex; align-items:center; gap:6px;">
+<span style="font-size:11.5px; color:var(--text-dim); white-space:nowrap;" data-i18n="chart.credentialFilter">凭据:</span>
+<div aria-label="趋势凭据筛选" data-i18n-aria-label="chart.credentialFilterAria" class="dropdown" id="chart-key-dropdown" style="min-width:140px; max-width:200px;"></div>
+</div>
+<!-- 指标类型切换 -->
+<div class="segmented-tabs" id="chart-metric-tabs">
+<button class="active" onclick="switchChartMetric('tokens')" data-i18n="chart.metricTokens">Token 构成</button>
+<button onclick="switchChartMetric('cost')" data-i18n="chart.metricCost">花费 ($)</button>
+<button onclick="switchChartMetric('cache')" data-i18n="chart.metricCache">缓存率 (%)</button>
+</div>
+<!-- 时间跨度切换 -->
+<div class="segmented-tabs" id="chart-range-tabs">
+<button onclick="switchChartRange(1)" data-i18n="chart.rangeToday">今日</button>
+<button class="active" onclick="switchChartRange(7)">7D</button>
+<button onclick="switchChartRange(14)">14D</button>
+<button onclick="switchChartRange(30)">30D</button>
+<button onclick="switchChartRange('all')" data-i18n="common.all">全部</button>
+</div>
+</div>
+</div>
+<div class="chart-content">
+<div class="trend-chart" id="trend-chart">
+<div class="trend-empty" data-i18n="chart.loading">加载图表数据中...</div>
+</div>
+</div>
+</div>
+<!-- 右：模型分布与花费排行 -->
+<div class="panel chart-panel">
+<div class="panel-header">
+<div>
+<div class="panel-title" data-i18n="chart.modelsTitle">模型用量分布</div>
+<div class="panel-subtitle" data-i18n="chart.modelsSubtitle">区间内消耗与预估花费排行 (Top 10)</div>
+</div>
+<span class="tag-pill" id="models-summary-tag" data-i18n="chart.zeroModels">0 个模型</span>
+</div>
+<div class="chart-content" id="models-container" style="max-height: 330px; overflow-y: auto;">
+<div class="models-empty" data-i18n="chart.noModels">暂无模型记录</div>
+</div>
+</div>
+<!-- 下：AI 提供商 Token 构成与占比分布 -->
+<div class="panel chart-panel" style="grid-column: 1 / -1; margin-top: 10px;">
+<div class="panel-header">
+<div>
+<div class="panel-title" data-i18n="chart.providersTitle">AI 提供商 Token 分布与占比</div>
+<div class="panel-subtitle" data-i18n="chart.providersSubtitle">按 OpenAI Codex、Google Gemini、Anthropic Claude 等第一类与外部按量渠道聚合统计</div>
+</div>
+<span class="tag-pill" id="providers-summary-tag" data-i18n="chart.zeroProviders">0 个提供商</span>
+</div>
+<div class="chart-content" id="providers-container">
+<div class="models-empty" data-i18n="chart.noProviders">暂无提供商统计</div>
+</div>
+</div>
+</div>
+</div>
+<div class="tab-page" id="tab-page-keys">
+<!-- Key 规则列表表格 -->
+<div class="panel">
+<div class="panel-header">
+<div>
+<div class="panel-title" data-i18n="keys.panelTitle">API 密钥与配额管控</div>
+<div class="panel-subtitle" data-i18n="keys.panelSubtitle">毫秒级内存判决 · 支持白名单模型组 · RPM 滑动窗口 · 每日软/硬额度限制</div>
+</div>
+<span class="num" id="table-keys-count" style="font-size:12px; color:var(--text-dim);" data-i18n="keys.countZero">共 0 个密钥</span>
+</div>
+<div style="overflow-x: auto;">
+<table>
+<thead>
+<tr>
+<th data-i18n="keys.thKey">Key / 备注</th>
+<th data-i18n="keys.thModel">模型权限</th>
+<th data-i18n="keys.thUsage">今日 / 累计用量</th>
+<th data-i18n="logs.filterCacheHit">缓存命中</th>
+<th data-i18n="keys.thCost">预估花费</th>
+<th data-i18n="keys.thDailyLimit">每日额度</th>
+<th>RPM</th>
+<th data-i18n="table.thStatus">状态</th>
+<th style="text-align: right;" data-i18n="table.thActions">操作</th>
+</tr>
+</thead>
+<tbody id="keys-tbody">
+<tr><td colspan="9" style="text-align: center; color: var(--text-dim); padding: 36px;" data-i18n="keys.loading">正在拉取密钥与用量配置...</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="tab-page" id="tab-page-logs">
+<!-- 最近请求流水 -->
+<div class="panel">
+<div class="panel-header">
+<div>
+<div class="panel-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:#38bdf8;" viewbox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="logs.panelTitle">实时请求流水</span>
+          </div>
+<div class="panel-subtitle" data-i18n="logs.panelSubtitle">精确定位 Prompt Caching 命中 Tokens、单笔花费预估与完整历史检索</div>
+</div>
+<!-- 过滤器 -->
+<div class="segmented-tabs" id="events-filter-tabs">
+<button class="active" onclick="filterEvents('all')" data-i18n="common.all">全部</button>
+<button onclick="filterEvents('errors')" data-i18n="logs.filterAbnormal">异常错误</button>
+<button onclick="filterEvents('cached')" data-i18n="logs.filterCacheHit">缓存命中</button>
+<button onclick="filterEvents('2xx')" data-i18n="logs.filter2xx">2xx 成功</button>
+<button onclick="filterEvents('4xx')" data-i18n="logs.filter4xx">4xx 异常</button>
+<button onclick="filterEvents('5xx')" data-i18n="logs.filter5xx">5xx 错误</button>
+<button onclick="filterEvents('blocked')" data-i18n="logs.filterBlockedOnly">仅拦截</button>
+</div>
+</div>
+<!-- 搜索、容量、Key筛选与分页控制条 (现代定制轻量 Dropdown) -->
+<div class="logs-controls">
+<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+<input class="logs-search-input" id="logs-search" oninput="onLogsSearch(this.value)" placeholder="搜索模型、思考强度、API Key/别名、上游账号或错误..." data-i18n-placeholder="logs.searchPlaceholder" type="text"/>
+<div class="filter-control-item" id="logs-key-filter-container">
+<span class="filter-label" data-i18n="logs.filterKey">筛选密钥:</span>
+<div aria-label="请求密钥筛选" data-i18n-aria-label="logs.filterKeyAria" class="dropdown" id="logs-key-dropdown" style="max-width:220px;"></div>
+</div>
+<div class="filter-control-item" id="logs-provider-filter-container">
+<span class="filter-label" data-i18n="logs.filterProvider">服务商:</span>
+<div aria-label="请求服务商筛选" data-i18n-aria-label="logs.filterProviderAria" class="dropdown" id="logs-provider-dropdown" style="min-width:140px; max-width:200px;"></div>
+</div>
+<div class="filter-control-item" id="logs-time-filter-container">
+<span class="filter-label" data-i18n="logs.filterRange">时间跨度:</span>
+<div aria-label="请求时间跨度筛选" data-i18n-aria-label="logs.filterRangeAria" class="dropdown" id="logs-time-dropdown" style="min-width:110px;"></div>
+</div>
+<div class="live-sync-badge" id="logs-sync-badge" title="当前实时跟随顶部全局定时器自动刷新" data-i18n-title="logs.liveSyncTitle">
+<span class="live-pulse-dot"></span>
+<span id="logs-sync-label" data-i18n="logs.liveSync">实时同步 · 全局 15s</span>
+</div>
+<div id="logs-auth-filter-notice" style="display:none; align-items:center; gap:6px; background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; font-size:11.5px; padding:3px 8px; border-radius:6px;">
+  <span><span data-i18n="logs.filteredAuth">当前已筛选上游账号:</span> <strong id="logs-auth-filter-name"></strong></span>
+  <button onclick="clearAuthFilter()" style="background:none; border:none; cursor:pointer; color:#1d4ed8; font-weight:700; padding:0 2px;" data-i18n="logs.clearFilter">✕ 清除</button>
+</div>
+</div>
+<div class="pagination-bar">
+<div class="filter-control-item">
+<div aria-label="每页请求条数" data-i18n-aria-label="logs.pageSizeAria" class="dropdown" id="logs-page-size-dropdown"></div>
+</div>
+<span id="logs-page-info" style="font-family:var(--mono);" data-i18n="table.pagination">第 1 / 1 页 (共 0 条)</span>
+<button class="page-btn" id="logs-prev-btn" onclick="prevLogsPage()" data-i18n="table.prevPage">上一页</button>
+<button class="page-btn" id="logs-next-btn" onclick="nextLogsPage()" data-i18n="table.nextPage">下一页</button>
+</div>
+</div>
+<div class="table-scroll-container">
+<table>
+<thead>
+<tr>
+<th data-i18n="table.thTime">时间</th>
+<th data-i18n="table.thClientKey">客户端 Key</th>
+<th data-i18n="table.thUpstreamAccount">上游账号</th>
+<th data-i18n="table.thModel">模型</th>
+<th data-i18n="table.thReasoning">思考强度</th>
+<th data-i18n="table.thStatus">状态</th>
+<th data-i18n="table.thRate">速率 (tok/s)</th>
+<th data-i18n="table.thTokens">Tokens 构成 (入 / 出)</th>
+<th data-i18n="table.thCacheDetail">缓存明细</th>
+<th data-i18n="keys.thCost">预估花费</th>
+<th data-i18n="table.thLatency">延迟 (总/TTFT)</th>
+<th data-i18n="table.thTags">标签</th>
+</tr>
+</thead>
+<tbody id="events-tbody">
+<tr><td colspan="12" style="text-align: center; color: var(--text-dim); padding: 32px;" data-i18n="logs.loading">正在加载实时请求日志...</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="tab-page" id="tab-page-errors">
+<!-- 错误与熔断中心面板 -->
+<div class="panel">
+<div class="panel-header">
+<div>
+<div class="panel-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--danger);" viewbox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="errors.panelTitle">错误与熔断中心 (Error &amp; Circuit Breaker Events)</span>
+          </div>
+<div class="panel-subtitle" data-i18n="errors.panelSubtitle">捕获上游 429、5xx 错误事件 · 上游账号熔断退避与自动解封倒计时</div>
+</div>
+<button class="btn btn-secondary btn-sm" onclick="fetchErrorsData()">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span data-i18n="errors.refresh">刷新故障记录</span>
+        </button>
+</div>
+<div class="logs-controls" style="margin-bottom: 12px;">
+<div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+  <span style="font-size:12px; color:var(--text-dim);" id="errors-summary-tip" data-i18n="errors.footerNote">所有上游异常与熔断事件全量持久化留痕</span>
+  <div class="filter-control-item" id="errors-time-filter-container">
+    <span class="filter-label" data-i18n="logs.filterRange">时间跨度:</span>
+    <div aria-label="故障时间跨度筛选" data-i18n-aria-label="errors.filterRangeAria" class="dropdown" id="errors-time-dropdown" style="min-width:110px;"></div>
+  </div>
+  <div class="live-sync-badge" id="errors-sync-badge">
+    <span class="live-pulse-dot"></span>
+    <span id="errors-sync-text" data-i18n="logs.liveSync">实时同步 · 全局 15s</span>
+  </div>
+</div>
+<div class="pagination-bar">
+<div class="filter-control-item">
+<div aria-label="每页故障条数" data-i18n-aria-label="errors.pageSizeAria" class="dropdown" id="errors-page-size-dropdown"></div>
+</div>
+<span id="errors-page-info" style="font-family:var(--mono);" data-i18n="table.pagination">第 1 / 1 页 (共 0 条)</span>
+<button class="page-btn" id="errors-prev-btn" onclick="prevErrorsPage()" data-i18n="table.prevPage">上一页</button>
+<button class="page-btn" id="errors-next-btn" onclick="nextErrorsPage()" data-i18n="table.nextPage">下一页</button>
+</div>
+</div>
+<div style="overflow-x: auto;">
+<table>
+<thead>
+<tr>
+<th data-i18n="table.thTime">时间</th>
+<th data-i18n="table.thKeyAlias">Key / 别名</th>
+<th data-i18n="table.thAccountCredential">上游账号 / 凭据</th>
+<th data-i18n="table.thModel">模型</th>
+<th data-i18n="table.thStatus">状态</th>
+<th data-i18n="table.thErrorType">错误类型</th>
+<th data-i18n="table.thBackoff">退避与解封状态</th>
+<th data-i18n="table.thErrorDetail">报错详情</th>
+</tr>
+</thead>
+<tbody id="errors-tbody">
+<tr><td colspan="8" style="text-align: center; color: var(--text-dim); padding: 32px;" data-i18n="errors.loading">正在加载错误与熔断事件...</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="tab-page" id="tab-page-validations">
+<!-- 顶部核心指标 -->
+<div class="summary-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 20px;">
+<div class="summary-card" style="border-top-color: var(--danger);">
+<div class="summary-header">
+<span class="summary-label" data-i18n="validations.pendingTitle">待完成 Google 验证</span>
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--danger);" viewbox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+<div class="summary-value" id="val-pending-count" style="color:var(--danger);">0</div>
+<div class="summary-footer"><span class="summary-subtext" data-i18n="validations.pendingHint">需在浏览器打开验证链接以解封</span></div>
+</div>
+<div class="summary-card" style="border-top-color: #3b82f6;">
+<div class="summary-header">
+<span class="summary-label" data-i18n="validations.totalAccounts">Antigravity 账号总数</span>
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:#3b82f6;" viewbox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+<div class="summary-value" id="val-total-antigravity-count">0</div>
+<div class="summary-footer"><span class="summary-subtext" data-i18n="validations.poolCount">负载池中的 Google 凭证数</span></div>
+</div>
+<div class="summary-card" style="border-top-color: var(--success);">
+<div class="summary-header">
+<span class="summary-label" data-i18n="validations.handledHistory">历史已处理验证</span>
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--success);" viewbox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+<div class="summary-value" id="val-resolved-count" style="color:var(--success);">0</div>
+<div class="summary-footer"><span class="summary-subtext" data-i18n="validations.handledCount">已成功解除限制的记录次数</span></div>
+</div>
+</div>
+<!-- 待处理验证任务卡片区 (Action Required) -->
+<div class="panel" style="margin-bottom: 20px;">
+<div class="panel-header">
+<div>
+<div class="panel-title" style="display:flex; align-items:center; gap:8px;">
+<span data-i18n="validations.actionRequired">🚨 亟需人工验证 (Action Required)</span>
+<span class="chip chip-red" id="val-pending-chip" style="display:none;" data-i18n="validations.pendingCount">有待处理</span>
+</div>
+<div class="panel-subtitle" data-i18n="validations.actionRequiredSubtitle">
+            上游调用触发 Google 安全风控拦截 (VALIDATION_REQUIRED) 时自动捕获，点击直达官方验证页面
+          </div>
+</div>
+<div style="display:flex; align-items:center; gap:8px;">
+<button class="btn btn-secondary btn-sm" onclick="openManualValidationModal()">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;" viewbox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="validations.manualEntry">手动录入验证链接</span>
+          </button>
+<button class="btn btn-sm" onclick="fetchUpstreamValidations(true)">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="validations.refreshListBtn">刷新列表</span>
+          </button>
+</div>
+</div>
+<div id="validations-pending-list" style="padding:14px 18px; display:flex; flex-direction:column; gap:12px;">
+<!-- 待验证卡片或空态 -->
+</div>
+</div>
+<!-- 所有 Google Antigravity 账号验证与健康清单 -->
+<div class="panel" style="margin-bottom: 20px;">
+<div class="panel-header">
+<div>
+<div class="panel-title" data-i18n="validations.monitorTitle">Google Antigravity 账号安全状态监控</div>
+<div class="panel-subtitle" data-i18n="validations.monitorSubtitle">巡检全部已载入的 Google 账号是否被上游要求验证，可随时直接录入或处理</div>
+</div>
+</div>
+<div style="overflow-x: auto;">
+<table>
+<thead>
+<tr>
+<th data-i18n="validations.thAccount">账号标识 / 邮箱</th>
+<th>Auth Index</th>
+<th data-i18n="validations.thStatus">当前状态</th>
+<th data-i18n="validations.thHealth">验证健康状况</th>
+<th data-i18n="validations.thUpdated">最近更新</th>
+<th style="text-align: right;" data-i18n="validations.thActions">快速操作</th>
+</tr>
+</thead>
+<tbody id="antigravity-accounts-tbody">
+<tr><td colspan="6" style="text-align:center; color:var(--text-dim); padding:24px;" data-i18n="validations.loadingAccounts">加载账号中...</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- 历史验证审计流水 -->
+<div class="panel">
+<div class="panel-header">
+<div>
+<div class="panel-title" data-i18n="validations.auditTitle">验证记录与审计历史 (Audit History)</div>
+<div class="panel-subtitle" data-i18n="validations.auditSubtitle">展示所有被拦截并捕获的 Google 验证事件日志与处置结果</div>
+</div>
+</div>
+<div style="overflow-x: auto;">
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th data-i18n="validations.thTriggeredAt">触发时间</th>
+<th data-i18n="or.thName">账号名称</th>
+<th>Auth Index</th>
+<th data-i18n="validations.thErrorMessage">错误信息</th>
+<th data-i18n="validations.thHandleStatus">处理状态</th>
+<th data-i18n="validations.thUpdatedAt">更新时间</th>
+<th style="text-align: right;" data-i18n="table.thActions">操作</th>
+</tr>
+</thead>
+<tbody id="validations-history-tbody">
+<tr><td colspan="8" style="text-align:center; color:var(--text-dim); padding:24px;" data-i18n="validations.loadingHistory">加载历史记录中...</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- 手动录入验证链接 Modal -->
+<div class="modal-backdrop" id="manual-val-modal">
+<div class="modal">
+<div class="modal-header">
+<div class="modal-title" data-i18n="valModal.title">手动录入 Google 验证链接</div>
+<button class="close-btn" onclick="closeModal('manual-val-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div class="form-group">
+<label for="manual-val-account" data-i18n="valModal.accountLabel">关联账号 / 邮箱 (可选)</label>
+<input class="form-control" id="manual-val-account" placeholder="如 user@example.com 或留空" data-i18n-placeholder="valModal.accountPlaceholder" type="text"/>
+</div>
+<div class="form-group">
+<label for="manual-val-url" data-i18n="valModal.urlLabel">验证链接 (validation_url) *</label>
+<textarea class="form-control" id="manual-val-url" placeholder="https://accounts.google.com/signin/continue?plt=..." rows="3"></textarea>
+</div>
+<div class="modal-actions">
+<button class="btn btn-secondary" data-i18n="common.cancel" onclick="closeModal('manual-val-modal')">取消</button>
+<button class="btn" onclick="submitManualValidation()" data-i18n="valModal.saveAndOpen">保存并打开验证 ↗</button>
+</div>
+</div>
+</div>
+<!-- 配额巡检与 Uptime Kuma 配置弹窗 -->
+<div class="modal-backdrop" id="quota-modal">
+<div class="modal modal-wide">
+<div class="modal-header">
+<div class="modal-title" data-i18n="quotaModal.title">配额状态巡检 &amp; Uptime Kuma 监控</div>
+<button class="close-btn" onclick="closeModal('quota-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div style="margin-bottom: 18px;">
+<div style="font-size: 13px; font-weight: 500; color: var(--text-main); margin-bottom: 6px;" data-i18n="quotaModal.kumaTitle">Uptime Kuma 监控探针配置</div>
+<div style="font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+          <span data-i18n="quotaModal.kumaIntro">Console 提供了专用的轻量级免密健康接口，可直接配置至 Uptime Kuma 的</span> <b>HTTP(s) - Keyword / Status</b> <span data-i18n="quotaModal.kumaIntroEnd">监控项：</span>
+        </div>
+<div class="probe-code-box">
+<span id="probe-url-text">https://your-domain.com/api/status/quota</span>
+<button class="btn btn-secondary btn-sm copy-probe-btn" onclick="copyProbeUrl()" data-i18n="quotaModal.copyLink">复制链接</button>
+</div>
+<div style="font-size: 11.5px; color: var(--text-dim); line-height: 1.5;">
+          • <b>HTTP 200</b><span data-i18n="quotaModal.http200">: 所有 Key 额度安全，网关持久化正常</span><br/>
+          • <b>HTTP 429</b><span data-i18n="quotaModal.http429">: 存在 Key 触及每日硬限额已被拦截（Uptime Kuma 自动告警）</span><br/>
+          • <b>HTTP 503</b><span data-i18n="quotaModal.http503">: 存储持久化 Outbox 队列积压或 Flush 连续失败</span><br/>
+          <span data-i18n="quotaModal.strictPrefix">• 支持追加参数</span> <code>?strict=1</code><span data-i18n="quotaModal.strictSuffix">，在达到 85% 预警阈值时立即返回 503 触发报警。</span>
+        </div>
+</div>
+<div style="border-top: 1px solid var(--card-border); padding-top: 16px;">
+<div style="font-size: 13px; font-weight: 500; color: var(--text-main); margin-bottom: 10px;" data-i18n="quotaModal.healthList">当前 Key 额度健康清单</div>
+<div id="quota-modal-list" style="max-height: 220px; overflow-y: auto; font-size: 12px;">
+<div style="color: var(--text-dim); text-align: center; padding: 20px;" data-i18n="quotaModal.checking">正在检查配额健康状况...</div>
+</div>
+</div>
+<div class="modal-actions">
+<button class="btn btn-secondary" data-i18n="common.close" onclick="closeModal('quota-modal')">关闭</button>
+</div>
+</div>
+</div>
+<!-- 鉴权 Secret 配置 Modal -->
+<div class="modal-backdrop" id="auth-modal">
+<div class="modal">
+<div class="modal-header">
+<div class="modal-title" id="auth-modal-title" data-i18n="auth.title">身份凭据与鉴权</div>
+<button class="close-btn" onclick="closeModal('auth-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div class="form-group">
+<label for="auth-secret-input" data-i18n="auth.label">管理密钥 (GATE_ADMIN_SECRET) 或 成员 API Key</label>
+<div class="input-wrapper" style="position: relative; display: flex; align-items: center;">
+<input autocomplete="off" class="form-control" id="auth-secret-input" placeholder="输入管理密钥或 sk-cpa-... 成员 API Key" data-i18n-placeholder="auth.placeholder" style="padding-right: 42px;" type="password"/>
+<button class="eye-toggle-btn" id="auth-secret-eye-btn" onclick="toggleAuthInputVisibility()" title="查看明文 / 密文" data-i18n-title="auth.toggleVisibility" type="button">
+<svg fill="none" id="auth-eye-icon-open" stroke="currentColor" stroke-width="2" style="width: 18px; height: 18px; display: none;" viewbox="0 0 24 24">
+<path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round"></path>
+<path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<svg fill="none" id="auth-eye-icon-closed" stroke="currentColor" stroke-width="2" style="width: 18px; height: 18px; display: block;" viewbox="0 0 24 24">
+<path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+</div>
+<div class="help-text">
+          <span data-i18n="auth.hintBullet">• 输入</span> <b>GATE_ADMIN_SECRET</b><span data-i18n="auth.hintAdminTail">：进入全功能管理员后台。</span><br/>
+          <span data-i18n="auth.hintBullet">• 输入</span> <b data-i18n="auth.memberKeyLabel">成员 API Key (sk-cpa-...)</b><span data-i18n="auth.hintMemberTail">：进入成员专属看板（仅查看服务状态、个人 Key 今日用量及专属流水）。</span>
+        </div>
+</div>
+<div class="modal-actions" style="display:flex; justify-content:space-between; align-items:center;">
+<button class="btn btn-secondary btn-sm" id="btn-clear-auth" onclick="clearAuthSecret()" style="color:var(--danger);" data-i18n="auth.clear">清除当前凭证</button>
+<div style="display:flex; gap:8px;">
+<button class="btn btn-secondary" data-i18n="common.cancel" onclick="closeModal('auth-modal')">取消</button>
+<button class="btn" onclick="saveAuthSecret()" data-i18n="auth.enter">进入看板</button>
+</div>
+</div>
+</div>
+</div>
+<!-- 新建 Key Modal -->
+<div class="modal-backdrop" id="create-modal">
+<div class="modal">
+<div class="modal-header">
+<div class="modal-title" data-i18n="top.createKeyAria">新建 API Key</div>
+<button class="close-btn" onclick="closeModal('create-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div id="create-form">
+<div class="form-group">
+<label for="create-alias" data-i18n="keysModal.aliasLabel">密钥备注 / 别名</label>
+<input class="form-control" id="create-alias" placeholder="如：ZCode / 沉浸式翻译 / 生产业务" data-i18n-placeholder="keysModal.aliasPlaceholder" type="text"/>
+</div>
+<div class="form-group"><label for="create-custom-key" data-i18n="keysModal.customKeyLabel">自定义 API Key（可选）</label><input class="form-control" id="create-custom-key" autocomplete="off" placeholder="留空则自动生成安全随机 Key" data-i18n-placeholder="keysModal.customKeyPlaceholder" type="text"/><div class="help-text" data-i18n="keysModal.customKeyHelp">可导入已有 Key；至少 16 位，不能包含空格。</div></div>
+<div class="form-group">
+<label class="switch-label">
+<span data-i18n="keysModal.enableQuota">启用每日额度</span>
+<label class="switch-toggle">
+<input id="create-enabled" onchange="toggleCreateLimit()" type="checkbox"/>
+<span class="slider"></span>
+</label>
+</label>
+</div>
+<div class="form-group" id="create-limit-group" style="display:none;">
+<label for="create-limit" data-i18n="keysModal.softLimitLabel">每日软限额 (Tokens)</label>
+<input class="form-control" id="create-limit" placeholder="如 5000000 (5M)" data-i18n-placeholder="keysModal.softLimitPlaceholder" type="number"/>
+</div>
+<div class="modal-actions">
+<button class="btn btn-secondary" data-i18n="common.cancel" onclick="closeModal('create-modal')">取消</button>
+<button class="btn" id="create-submit-btn" onclick="submitCreateKey()" data-i18n="keysModal.create">创建并生效</button>
+</div>
+</div>
+<div id="create-result" style="display:none; text-align: center;">
+<div style="color: var(--success); font-weight: 600; margin-bottom: 8px;" data-i18n="keysModal.successTitle">Key 创建成功！</div>
+<div style="font-size: 12px; color: var(--text-dim); margin-bottom: 12px;" data-i18n="keysModal.successHint">密钥已同步持久化，请妥善保管：</div>
+<div class="probe-code-box" id="created-key-val"></div>
+<div class="modal-actions" style="justify-content:center;">
+<button class="btn" onclick="copyCreatedKey()" data-i18n="keysModal.copyKey">复制 Key</button>
+<button class="btn btn-secondary" onclick="finishCreateKey()" data-i18n="keysModal.done">完成</button>
+</div>
+</div>
+</div>
+</div>
+<!-- 快捷修改别名 Modal -->
+<div class="modal-backdrop" id="rename-modal">
+<div class="modal" style="max-width: 420px;">
+<div class="modal-header">
+<div class="modal-title" id="rename-modal-title" data-i18n="renameModal.title">修改密钥别名</div>
+<button class="close-btn" onclick="closeModal('rename-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div class="form-group">
+<label for="rename-alias-input" data-i18n="renameModal.aliasLabel">新备注 / 别名</label>
+<input class="form-control" id="rename-alias-input" maxlength="60" placeholder="如：生产环境 / 沉浸式翻译" data-i18n-placeholder="renameModal.aliasPlaceholder" type="text"/>
+<div class="help-text" data-i18n="renameModal.aliasHelp">用于在流水与报表中快速识别人类可读名称，即时生效。</div>
+</div>
+<div class="modal-actions">
+<button class="btn btn-secondary" data-i18n="common.cancel" onclick="closeModal('rename-modal')">取消</button>
+<button class="btn" id="rename-save-btn" onclick="submitRenameKey()" data-i18n="renameModal.save">保存别名</button>
+</div>
+</div>
+</div>
+<!-- 配置 Key 规则 Modal -->
+<div class="modal-backdrop" id="edit-modal">
+<div class="modal">
+<div class="modal-header">
+<div class="modal-title" id="edit-modal-title" data-i18n="editModal.title">配置 Key 规则</div>
+<button class="close-btn" onclick="closeModal('edit-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div class="form-group" id="edit-key-raw-group" style="display:none;">
+<label data-i18n="editModal.rawKeyLabel">完整 API 密钥 (Key)</label>
+<div style="display:flex; gap:8px; align-items:center;">
+<input class="form-control" id="edit-key-raw-input" onclick="copyToClipboard(this.value, 'API Key 已成功复制')" readonly="" style="font-family:var(--mono); color:var(--accent); font-size:12px; cursor:pointer;" title="点击全选复制" data-i18n-title="editModal.selectAllTitle" type="text"/>
+<button class="btn btn-secondary btn-sm" onclick="copyToClipboard(document.getElementById('edit-key-raw-input').value, 'API Key 已成功复制')" type="button" data-i18n="common.copy">复制</button>
+</div>
+</div>
+<div class="form-group">
+<label for="edit-alias" data-i18n="editModal.aliasLabel">备注 / 别名</label>
+<input class="form-control" id="edit-alias" maxlength="60" type="text"/>
+</div>
+<div class="form-group">
+<label data-i18n="editModal.whitelistLabel">允许访问模型 (白名单)</label>
+<div class="tag-container" id="edit-tags-box"></div>
+<div class="model-picker-dropdown" id="model-picker-container">
+  <div class="model-picker-trigger" id="model-picker-trigger" onclick="toggleModelPickerDropdown()">
+    <div class="model-picker-trigger-left">
+      <svg class="model-picker-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+      <span class="model-picker-label" data-i18n="editModal.modelPickerPlaceholder" id="model-picker-label">点击搜索或选择上游模型添加...</span>
+    </div>
+    <div class="model-picker-trigger-right">
+      <button class="model-picker-fetch-btn" id="btn-fetch-models" onclick="event.stopPropagation(); fetchUpstreamModelsForPicker();" title="重新从上游同步模型清单" data-i18n-title="editModal.resyncModelsTitle" type="button">
+        <svg class="fetch-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        <span data-i18n="editModal.syncModels">同步上游</span>
+      </button>
+      <svg class="picker-arrow-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </div>
+  </div>
+  <div class="model-picker-menu" id="model-picker-menu">
+    <div class="model-picker-search-bar" onclick="event.stopPropagation();">
+      <svg class="search-bar-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" x2="16.65" y1="21" y2="16.65"></line></svg>
+      <input autocomplete="off" class="model-picker-search-input" id="model-picker-search" oninput="filterUpstreamModels(this.value)" placeholder="快速过滤或输入任意模型ID..." data-i18n-placeholder="editModal.modelSearchPlaceholder" type="text"/>
+      <span class="model-picker-clear-search" id="model-picker-clear-btn" onclick="clearModelPickerSearch(event)" style="display:none;">&times;</span>
+    </div>
+    <div class="model-picker-list" id="model-picker-list">
+      <div class="model-picker-empty" data-i18n="editModal.loadingModels">正在加载上游模型...</div>
+    </div>
+  </div>
+</div>
+</div>
+<div class="form-group" style="display:flex; justify-content:space-between; align-items:center;">
+<div>
+<div style="font-size:12.5px; font-weight:500; color:var(--text-main);" data-i18n="editModal.enableHardCap">启用每日额度硬顶管控</div>
+<div style="font-size:11px; color:var(--text-dim); margin-top:2px;" data-i18n="editModal.hardCapHelp">开启后当今日 Token 达到每日限额时将严格返回 429 阻断超额请求；输入每日限额时将自动开启</div>
+</div>
+<label class="switch-toggle">
+<input id="edit-enabled" type="checkbox"/>
+<span class="slider"></span>
+</label>
+</div>
+<div class="form-group">
+<label for="edit-limit" data-i18n="editModal.dailyLimitLabel">每日限额 (Tokens)</label>
+<input class="form-control" id="edit-limit" placeholder="如 5000000" data-i18n-placeholder="editModal.dailyLimitPlaceholder" type="number"/>
+</div>
+<div class="form-group">
+<label for="edit-ratio" data-i18n="editModal.hardRatioLabel">硬截止容差比率 (默认 1.2 即 120%)</label>
+<input class="form-control" id="edit-ratio" max="3.0" min="1.0" step="0.05" type="number"/>
+</div>
+<div class="form-group">
+<label for="edit-rpm" data-i18n="editModal.rpmLabel">RPM 速率限制 (每分钟最多请求数，0 为不限)</label>
+<input class="form-control" id="edit-rpm" max="10000" min="0" placeholder="如 60" data-i18n-placeholder="editModal.rpmPlaceholder" type="number"/>
+</div>
+<div class="modal-actions">
+<button class="btn btn-secondary" data-i18n="common.cancel" onclick="closeModal('edit-modal')">取消</button>
+<button class="btn" onclick="saveKeyRule()" data-i18n="editModal.save">保存配置</button>
+</div>
+</div>
+</div>
+<!-- 模型定价管理 Modal -->
+<div class="modal-backdrop" id="prices-modal">
+<div class="modal modal-wide">
+<div class="modal-header">
+<div class="modal-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:#34d399;" viewbox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span data-i18n="pricesModal.title">模型定价与倍率管理 (Model Pricing)</span>
+        </div>
+<button class="close-btn" onclick="closeModal('prices-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div style="font-size:12px; color:var(--text-muted); margin-bottom:14px;" data-i18n="pricesModal.subtitle">
+        配置各模型的每 1M Tokens (美元) 计费基准与倍率。系统热路径纳秒级正则匹配，即刻生效。
+      </div>
+<!-- 添加/编辑表单 -->
+<div style="background:#f8fafc; border:1px solid var(--card-border); border-radius:var(--radius-md); padding:12px; margin-bottom:16px;">
+<div id="price-form-title" style="font-size:12.5px; font-weight:600; margin-bottom:8px;" data-i18n="pricesModal.addRule">添加 / 编辑定价规则</div>
+<input id="price-form-id" type="hidden"/>
+<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:10px;">
+<div>
+<label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:3px;" data-i18n="pricesModal.patternLabel">模型匹配模式 (Regex/String)</label>
+<input class="form-control" id="price-pattern" placeholder="如 gpt-5.6-sol" data-i18n-placeholder="pricesModal.patternPlaceholder" type="text"/>
+</div>
+<div>
+<label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:3px;" data-i18n="pricesModal.inputPrice">输入价 ($/1M Prompt)</label>
+<input class="form-control" id="price-prompt" placeholder="如 3.00" data-i18n-placeholder="pricesModal.inputPricePlaceholder" step="0.01" type="number"/>
+</div>
+<div>
+<label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:3px;" data-i18n="pricesModal.outputPrice">输出价 ($/1M Completion)</label>
+<input class="form-control" id="price-completion" placeholder="如 15.00" data-i18n-placeholder="pricesModal.outputPricePlaceholder" step="0.01" type="number"/>
+</div>
+<div>
+<label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:3px;" data-i18n="pricesModal.cachePrice">缓存读 ($/1M Cached)</label>
+<input class="form-control" id="price-cache" placeholder="如 0.30" data-i18n-placeholder="pricesModal.cachePricePlaceholder" step="0.001" type="number"/>
+</div>
+<div>
+<label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:3px;" data-i18n="pricesModal.multiplier">价格乘数 (倍率)</label>
+<input class="form-control" id="price-multiplier" placeholder="1.0" step="0.1" type="number" value="1.0"/>
+</div>
+</div>
+<div style="display:flex; justify-content:flex-end; gap:8px;">
+<button class="btn btn-secondary btn-sm" onclick="resetPriceForm()" data-i18n="common.reset">重置</button>
+<button class="btn btn-sm" onclick="saveModelPrice()" data-i18n="pricesModal.saveRule">保存规则</button>
+</div>
+</div>
+<!-- 定价规则列表 -->
+<div style="max-height: 320px; overflow-y: auto;">
+<table>
+<thead>
+<tr>
+<th data-i18n="prices.thPattern">模型匹配模式</th>
+<th data-i18n="prices.thInput">输入价 ($/1M)</th>
+<th data-i18n="prices.thOutput">输出价 ($/1M)</th>
+<th data-i18n="prices.thCache">缓存读 ($/1M)</th>
+<th data-i18n="prices.thMultiplier">倍率</th>
+<th style="text-align: right;" data-i18n="table.thActions">操作</th>
+</tr>
+</thead>
+<tbody id="prices-tbody">
+<tr><td colspan="6" style="text-align:center; color:var(--text-dim); padding:20px;" data-i18n="prices.loading">正在加载模型价格配置...</td></tr>
+</tbody>
+</table>
+</div>
+<div class="modal-actions">
+<button class="btn btn-secondary" data-i18n="common.close" onclick="closeModal('prices-modal')">关闭</button>
+</div>
+</div>
+</div>
+<!-- 上游凭证优先级调整 Modal -->
+<div class="modal-backdrop" id="upstream-priority-modal">
+<div class="modal modal-md">
+<div class="modal-header">
+<div class="modal-title" style="display:flex; align-items:center; gap:8px;">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:#fbbf24;" viewbox="0 0 24 24"><path d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span data-i18n="prioModal.title">调整上游授权调度优先级</span>
+        </div>
+<button class="close-btn" onclick="closeModal('upstream-priority-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div style="margin-bottom: 16px;">
+<div style="background: rgba(255,255,255,0.04); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 14px;">
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+<span style="font-size:11.5px; color:var(--text-dim);" data-i18n="prioModal.fileLabel">凭证文件</span>
+<span id="prio-modal-filename" style="font-family:var(--mono); font-size:12px; color:var(--text-muted);">--</span>
+</div>
+<div style="display:flex; align-items:center; justify-content:space-between;">
+<span style="font-size:11.5px; color:var(--text-dim);" data-i18n="prioModal.accountLabel">授权账号</span>
+<span id="prio-modal-email" style="font-weight:600; font-size:13px; color:var(--text-main);">--</span>
+</div>
+</div>
+<div style="margin-bottom: 14px;">
+<label style="font-size: 12px; font-weight: 600; color: var(--text-main); display: block; margin-bottom: 6px;" data-i18n="prioModal.priorityLabel">
+            调度优先级 Priority (0 ~ 1000)
+          </label>
+<div style="display: flex; gap: 8px; align-items: center;">
+<input class="form-control num" id="prio-modal-input" max="1000" min="0" placeholder="0" step="1" style="font-size: 15px; font-weight: 700; width: 120px;" type="number"/>
+<span style="font-size: 12px; color: var(--text-muted);" data-i18n="prioModal.priorityHint">数值越大越优先调度</span>
+</div>
+<div id="prio-modal-default-hint" style="font-size: 11px; color: var(--text-dim); margin-top: 6px;" data-i18n="prioModal.defaultTier">未显式设置时的默认档位：P0</div>
+</div>
+<!-- 常用预设快捷按钮 -->
+<div style="margin-bottom: 16px;">
+<div style="font-size: 11px; color: var(--text-dim); margin-bottom: 6px;" data-i18n="prioModal.presetsTitle">快捷预设档位：</div>
+<div style="display:flex; flex-wrap:wrap; gap:6px;">
+<button class="btn btn-secondary btn-sm" onclick="setPresetPriority(30)" title="P30 最高优先级，优先打光此账号" data-i18n-title="prioModal.preset30Title" data-i18n="prioModal.preset30" type="button">P30 · 最高优</button>
+<button class="btn btn-secondary btn-sm" onclick="setPresetPriority(20)" title="P20 高优先级" data-i18n-title="prioModal.preset20Title" data-i18n="prioModal.preset20" type="button">P20 · 优先</button>
+<button class="btn btn-secondary btn-sm" onclick="setPresetPriority(10)" title="P10 标准档（注意：未显式设置的凭据默认是 P0）" data-i18n-title="prioModal.preset10Title" data-i18n="prioModal.preset10" type="button">P10 · 标准</button>
+<button class="btn btn-secondary btn-sm" onclick="setPresetPriority(5)" title="P5 次选备用" data-i18n-title="prioModal.preset5Title" data-i18n="prioModal.preset5" type="button">P5 · 备用</button>
+<button class="btn btn-secondary btn-sm" onclick="setPresetPriority(0)" title="P0 兜底，未显式设置的凭据即为该档位" data-i18n-title="prioModal.preset0Title" data-i18n="prioModal.preset0" type="button">P0 · 兜底</button>
+</div>
+</div>
+<!-- 启用/停用开关 -->
+<div style="background: rgba(0,0,0,0.25); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 12px; display:flex; align-items:center; justify-content:space-between;">
+<div>
+<div style="font-size: 12.5px; font-weight: 600; color: var(--text-main);" data-i18n="prioModal.statusLabel">账号可用状态</div>
+<div style="font-size: 11.5px; color: var(--text-dim);" data-i18n="prioModal.statusHint">停用后 CPA 调度器将暂时跳过此账号</div>
+</div>
+<label class="switch-toggle">
+<input id="prio-modal-status-toggle" type="checkbox"/>
+<span class="slider" id="prio-modal-status-slider"></span>
+</label>
+</div>
+<div style="margin-top: 12px; font-size: 11px; color: var(--text-dim); line-height: 1.5;" data-i18n="prioModal.rulesHint">
+          调度规则：CPA 优先调度优先级数值更高的账号；同优先级内按已配置策略（轮询或 fill-first）分发。
+        </div>
+</div>
+<div class="modal-actions">
+<button class="btn btn-secondary" data-i18n="common.cancel" onclick="closeModal('upstream-priority-modal')">取消</button>
+<button class="btn btn-primary" id="prio-modal-save-btn" onclick="saveUpstreamPriority()" data-i18n="prioModal.save">保存并生效</button>
+</div>
+</div>
+</div>
+<!-- OpenRouter 独立账号管理 Modal (Console 自治) -->
+<div class="modal-backdrop" id="modal-openrouter-accounts">
+<div class="modal modal-wide" style="max-width:880px;">
+<div class="modal-header">
+<div class="modal-title" style="display:flex; align-items:center; gap:8px;">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:#3b82f6;" viewbox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-linecap="round" stroke-linejoin="round"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+  <span data-i18n="orModal.title">OpenRouter 原生账号管理 (Console 自治)</span>
+</div>
+<button class="close-btn" onclick="closeModal('modal-openrouter-accounts')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div style="margin-bottom:14px; font-size:12px; color:var(--text-muted); display:flex; justify-content:space-between; align-items:center;">
+  <span data-i18n="orModal.subtitle">在此直接管理 OpenRouter 账号及用于统计调用次数的 Management Key，数据完全由 Console 本地私有管理，不依赖外部监控程序。</span>
+  <button class="btn btn-sm btn-primary" onclick="showAddOpenRouterForm()" style="white-space:nowrap; padding:4px 10px;" data-i18n="orModal.addAccount">➕ 添加账号</button>
+</div>
+
+<!-- 录入 / 编辑表单区域 -->
+<div id="openrouter-form-card" style="display:none; background:var(--bg-subtle, rgba(0,0,0,0.02)); border:1px solid var(--border-subtle, rgba(0,0,0,0.08)); border-radius:8px; padding:14px; margin-bottom:16px;">
+  <div style="font-size:13px; font-weight:600; margin-bottom:10px; color:var(--text-main);" id="openrouter-form-title" data-i18n="orModal.addTitle">添加 OpenRouter 账号</div>
+  <input type="hidden" id="openrouter-form-id"/>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+    <div class="form-group" style="margin:0;">
+      <label style="font-size:11.5px; color:var(--text-muted); margin-bottom:3px; display:block;" data-i18n="orModal.nameLabel">账号名称 / 标识 *</label>
+      <input class="form-control" id="openrouter-form-name" placeholder="如：我的主号 / or-account-1" data-i18n-placeholder="orModal.namePlaceholder" style="font-size:12px;" type="text"/>
+    </div>
+    <div class="form-group" style="margin:0;">
+      <label style="font-size:11.5px; color:var(--text-muted); margin-bottom:3px; display:block;" data-i18n="orModal.noteLabel">备注说明 (可选)</label>
+      <input class="form-control" id="openrouter-form-note" placeholder="可选备注说明" data-i18n-placeholder="orModal.notePlaceholder" style="font-size:12px;" type="text"/>
+    </div>
+  </div>
+  <div class="form-group" style="margin-bottom:10px;">
+    <label style="font-size:11.5px; color:var(--text-muted); margin-bottom:3px; display:block;" data-i18n="orModal.apiKeyLabel">OpenRouter API Key (用于模型请求，sk-or-v1-...)</label>
+    <input class="form-control" id="openrouter-form-apikey" autocomplete="off" placeholder="sk-or-v1-..." style="font-family:var(--mono); font-size:12px;" type="password"/>
+    <div style="font-size:10.5px; color:var(--text-dim); margin-top:2px;" data-i18n="orModal.apiKeyHint">若仅修改信息且不更换 Key，可留空保留原 API Key。</div>
+  </div>
+  <div class="form-group" style="margin-bottom:12px;">
+    <label style="font-size:11.5px; color:var(--text-muted); margin-bottom:3px; display:block;" data-i18n="orModal.mgmtKeyLabel">Management Key (用于拉取今日调用次数，sk-or-v1-...)</label>
+    <input class="form-control" id="openrouter-form-mgmtkey" autocomplete="off" placeholder="sk-or-v1-..." style="font-family:var(--mono); font-size:12px;" type="password"/>
+    <div style="font-size:10.5px; color:var(--text-dim); margin-top:2px;" data-i18n="orModal.mgmtKeyHint">OpenRouter 官方仅允许带有管理权限的 Provisioning / Management Key 请求统计接口。留空则保留原 Key。</div>
+  </div>
+  <div style="display:flex; justify-content:flex-end; gap:8px;">
+    <button class="btn btn-secondary btn-sm" data-i18n="common.cancel" onclick="hideOpenRouterForm()" type="button">取消</button>
+    <button class="btn btn-primary btn-sm" onclick="submitOpenRouterAccount()" id="openrouter-form-submit-btn" type="button" data-i18n="orModal.save">保存账号</button>
+  </div>
+</div>
+
+<!-- 账号列表表格 -->
+<div style="overflow-x:auto; max-height:420px;">
+  <table class="table" style="width:100%; font-size:12px; margin:0;">
+    <thead>
+      <tr style="text-align:left; border-bottom:1px solid var(--border-subtle, rgba(0,0,0,0.06)); color:var(--text-muted);">
+        <th style="padding:8px 6px;" data-i18n="or.thName">账号名称</th>
+        <th style="padding:8px 6px;" data-i18n="or.thNote">备注</th>
+        <th style="padding:8px 6px;">API Key</th>
+        <th style="padding:8px 6px;" data-i18n="or.thMgmtKey">Management Key (次数统计)</th>
+        <th style="padding:8px 6px;" data-i18n="or.thTodayCalls">今日已调</th>
+        <th style="padding:8px 6px; text-align:right;" data-i18n="table.thActions">操作</th>
+      </tr>
+    </thead>
+    <tbody id="openrouter-accounts-tbody">
+      <tr><td colspan="6" style="text-align:center; color:var(--text-dim); padding:24px;" data-i18n="or.loading">正在加载 OpenRouter 账号列表...</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="modal-actions" style="margin-top:14px;">
+  <button class="btn btn-secondary" data-i18n="common.close" onclick="closeModal('modal-openrouter-accounts')">关闭</button>
+</div>
+</div>
+</div>
+
+<div id="toast-box"></div>
+<script>
+
+    // ---- 状态与持久化配置 ----
+    // 与 lib/config.mjs 的 AUTH_PRIORITY_MIN/MAX 对齐（与 CPA 同一区间）
+    const PRIORITY_MIN = 0;
+    const PRIORITY_MAX = 1000;
+
+    let activeNavTab = 'quotas'; // quotas | overview | keys | logs
+    // 持久化存储与短效多级缓存配置
+    const KEY_STORAGE_KEYS = 'gate_cache_keys_v2';
+    const KEY_STORAGE_LOGS = 'gate_cache_logs_v2';
+    const KEY_STORAGE_ERRORS = 'gate_cache_errors_v2';
+    const KEY_STORAGE_TODAY_BADGES = 'gate_cache_today_badges_v1';
+
+    // 格式化上海时区日期字符串 (YYYY-MM-DD)，用于今日计数隔天自愈归零
+    function getShanghaiDateStr(d = new Date()) {
+      try {
+        return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(d);
+      } catch {
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      }
+    }
+
+    // 格式化徽标显示数字（上限 9999+）
+    function formatBadgeCount(val) {
+      const num = Number(val);
+      if (!Number.isFinite(num) || num <= 0) return '0';
+      return num > 9999 ? '9999+' : String(num);
+    }
+
+    function getTodayBadgesFromStorage() {
+      try {
+        const raw = localStorage.getItem(KEY_STORAGE_TODAY_BADGES);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        const todayStr = getShanghaiDateStr();
+        if (parsed && parsed.date === todayStr) {
+          return parsed;
+        }
+      } catch {}
+      return null;
+    }
+
+    function saveTodayBadgesToStorage(partial) {
+      try {
+        const todayStr = getShanghaiDateStr();
+        const current = getTodayBadgesFromStorage() || { date: todayStr, logs: 0, errors: 0 };
+        const updated = {
+          date: todayStr,
+          logs: partial.logs !== undefined ? partial.logs : current.logs,
+          errors: partial.errors !== undefined ? partial.errors : current.errors,
+          ts: Date.now()
+        };
+        localStorage.setItem(KEY_STORAGE_TODAY_BADGES, JSON.stringify(updated));
+      } catch {}
+    }
+
+    function updateNavBadgeLogs(count) {
+      const num = Number(count);
+      if (!Number.isFinite(num)) return;
+      const badge = document.getElementById('nav-badge-logs');
+      if (badge) badge.innerText = formatBadgeCount(num);
+      saveTodayBadgesToStorage({ logs: num });
+    }
+
+    function updateNavBadgeErrors(count) {
+      const num = Number(count);
+      if (!Number.isFinite(num)) return;
+      const badge = document.getElementById('nav-badge-errors');
+      if (badge) badge.innerText = formatBadgeCount(num);
+      saveTodayBadgesToStorage({ errors: num });
+    }
+
+    // 完整 API Key 一律不落 localStorage：列表接口只给 display_key，
+    // 完整明文仅在点击「复制」时按需拉取。这里在写盘前再剥一次，
+    // 兜住任何将来不小心把 api_key 塞进 cachedKeys 的路径。
+    function sanitizeKeysForStorage(keys) {
+      if (!Array.isArray(keys)) return [];
+      return keys.map(k => {
+        if (!k || typeof k !== 'object') return k;
+        const { api_key, ...rest } = k;
+        return rest;
+      });
+    }
+
+    function persistKeysToStorage(keys) {
+      try {
+        localStorage.setItem(KEY_STORAGE_KEYS, JSON.stringify({ keys: sanitizeKeysForStorage(keys), ts: Date.now() }));
+      } catch {}
+    }
+
+    // 全量 Key 列表（用于流水/趋势筛选下拉）。keyMetaMap 与 /console/api/keys 都是全量的，
+    // 不依赖当前 Tab 是否访问过「API 密钥」页。
+    let cachedKeys = [];
+    let cachedKeysLoadedAt = 0;
+    const CACHED_KEYS_TTL_MS = 30000;
+
+    // 前端内存查询缓存池 (TTL 15s, 支持 SWR 快速翻页与筛选)
+    const logsQueryCache = new Map();
+    const errorsQueryCache = new Map();
+    const QUERY_CACHE_TTL_MS = 15000;
+
+    function getLogsQueryCache(k) {
+      const item = logsQueryCache.get(k);
+      if (!item) return null;
+      if (Date.now() - item.ts > QUERY_CACHE_TTL_MS) {
+        logsQueryCache.delete(k);
+        return null;
+      }
+      return item;
+    }
+
+    function setLogsQueryCache(k, data) {
+      logsQueryCache.set(k, { data, ts: Date.now() });
+      if (logsQueryCache.size > 80) {
+        const firstKey = logsQueryCache.keys().next().value;
+        logsQueryCache.delete(firstKey);
+      }
+    }
+
+    function clearLogsQueryCache() {
+      logsQueryCache.clear();
+    }
+
+    function getErrorsQueryCache(k) {
+      const item = errorsQueryCache.get(k);
+      if (!item) return null;
+      if (Date.now() - item.ts > QUERY_CACHE_TTL_MS) {
+        errorsQueryCache.delete(k);
+        return null;
+      }
+      return item;
+    }
+
+    function setErrorsQueryCache(k, data) {
+      errorsQueryCache.set(k, { data, ts: Date.now() });
+      if (errorsQueryCache.size > 80) {
+        const firstKey = errorsQueryCache.keys().next().value;
+        errorsQueryCache.delete(firstKey);
+      }
+    }
+
+    function clearErrorsQueryCache() {
+      errorsQueryCache.clear();
+    }
+
+    function invalidateKeysFrontendCache() {
+      cachedKeysLoadedAt = 0;
+      try { localStorage.removeItem(KEY_STORAGE_KEYS); } catch {}
+      clearLogsQueryCache();
+    }
+
+    // 首屏持久化水合：从 localStorage 恢复 Keys、最近流水和故障记录，避免白屏卡顿
+    function hydratePersistentCaches() {
+      try {
+        const rawKeys = localStorage.getItem(KEY_STORAGE_KEYS);
+        if (rawKeys) {
+          const parsed = JSON.parse(rawKeys);
+          if (Array.isArray(parsed.keys) && parsed.keys.length > 0) {
+            // 旧版本可能已把完整 api_key 写进盘上缓存，读回时一律剥掉
+            cachedKeys = sanitizeKeysForStorage(parsed.keys);
+            cachedKeysLoadedAt = parsed.ts || 0;
+            const navBadge = document.getElementById('nav-badge-keys');
+            if (navBadge) navBadge.innerText = cachedKeys.length;
+          }
+        }
+      } catch {}
+
+      try {
+        const rawLogs = localStorage.getItem(KEY_STORAGE_LOGS);
+        if (rawLogs) {
+          const parsed = JSON.parse(rawLogs);
+          if (Array.isArray(parsed.events)) {
+            cachedEvents = parsed.events;
+            cachedEventsTotal = Number.isFinite(parsed.total) ? parsed.total : cachedEvents.length;
+          }
+        }
+      } catch {}
+
+      try {
+        const rawErrors = localStorage.getItem(KEY_STORAGE_ERRORS);
+        if (rawErrors) {
+          const parsed = JSON.parse(rawErrors);
+          if (Array.isArray(parsed.errors)) {
+            cachedErrors = parsed.errors;
+            cachedErrorsTotal = Number.isFinite(parsed.total) ? parsed.total : cachedErrors.length;
+          }
+        }
+      } catch {}
+
+      // 统一水合今日流水与今日故障徽标（仅展示当天的计数，隔天自动归零，不再展示历史全量）
+      try {
+        const todayBadges = getTodayBadgesFromStorage();
+        const badgeLogs = document.getElementById('nav-badge-logs');
+        if (badgeLogs) {
+          badgeLogs.innerText = formatBadgeCount(todayBadges ? todayBadges.logs : 0);
+        }
+        const badgeErrors = document.getElementById('nav-badge-errors');
+        if (badgeErrors) {
+          badgeErrors.innerText = formatBadgeCount(todayBadges ? todayBadges.errors : 0);
+        }
+      } catch {}
+    }
+
+    // 确保全量 Key 列表已加载：带 TTL 节流，避免每次刷新流水都重打一次 /console/api/keys。
+    // 并写入持久化缓存与触发筛选下拉更新。
+    async function ensureKeysLoaded(force = false) {
+      if (isMemberAuth()) return;
+      if (!force && cachedKeys.length > 0 && (Date.now() - cachedKeysLoadedAt) < CACHED_KEYS_TTL_MS) return;
+      try {
+        const res = await fetch('/console/api/keys', { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        cachedKeys = data.keys || [];
+        cachedKeysLoadedAt = Date.now();
+        persistKeysToStorage(cachedKeys);
+        updateLogsKeySelect(cachedEvents);
+        updateStatsKeyDropdown(cachedKeys);
+      } catch (err) {
+        console.warn('ensureKeysLoaded error:', err.message);
+      }
+    }
+    let cachedStats = null;
+    let cachedEvents = [];
+    let cachedErrors = [];
+    let cachedUpstream = { accounts: [] };
+
+    // 未显式设置 priority 的凭据由服务端下发的默认档位接管，前端不硬编码
+    function defaultAuthPriority() {
+      const n = Number(cachedUpstream?.default_priority);
+      return Number.isFinite(n) ? n : 0;
+    }
+    // 缺字段按默认档位收敛；越界同样回落。注意 0 是合法档位（P0 兜底），
+    // 不能用 `|| default` 判定。
+    function normalizeAuthPriority(value) {
+      if (value === null || value === undefined || value === '') return defaultAuthPriority();
+      const n = typeof value === 'number' ? value : Number.parseInt(value, 10);
+      if (!Number.isFinite(n)) return defaultAuthPriority();
+      if (n < PRIORITY_MIN || n > PRIORITY_MAX) return defaultAuthPriority();
+      return Math.trunc(n);
+    }
+    let upstreamLoaded = false;
+    let cachedStatusSummary = null;
+    let cachedUpstreamStats = null;
+    let activeUpstreamStatsRange = 'all'; // 5h | 24h | 7d | all
+    let activeUpstreamFilter = 'all'; // all | antigravity | codex | claude | workbuddy
+    let activeUpstreamViewMode = localStorage.getItem('cpa_upstream_view_mode') || 'compact'; // compact | cards
+    let upstreamSearchQuery = '';
+    let upstreamHideDisabled = localStorage.getItem('cpa_upstream_hide_disabled') === 'true';
+    let activeMetric = 'tokens'; // tokens | cost | cache
+    let statsRangeDays = 7;
+    let statsKeyFilter = 'all'; // all | key_id
+    let currentKeyId = null;
+    let currentSelectedModels = [];
+    let pollingTimer = null;
+    let countdownInterval = null;
+    const DEFAULT_POLLING_INTERVAL_MS = 15000;
+    let pollingIntervalMs = DEFAULT_POLLING_INTERVAL_MS;
+    try {
+      const savedPoll = localStorage.getItem('gate_admin_polling_interval');
+      if (savedPoll !== null && !Number.isNaN(Number(savedPoll))) {
+        pollingIntervalMs = Number(savedPoll);
+      }
+    } catch {}
+    let nextPollTime = Date.now() + (pollingIntervalMs > 0 ? pollingIntervalMs : 60000);
+    let eventFilter = 'all';
+    let logsKeyFilter = 'all'; // all | key_id
+    let logsProviderFilter = 'all'; // all | provider_key
+    let logsAuthFilter = 'all'; // all | auth_index
+    let logsTimeRange = 'all'; // all | today | 24h | 3d | 7d | 30d
+    let logsSearchQuery = '';
+    let logsPage = 1;
+    let logsPageSize = 25; // 25 条每页
+    let cachedEventsTotal = 0;
+    let logsSearchTimer = null;
+    let errorsPage = 1;
+    let errorsPageSize = 25;
+    let errorsTimeRange = 'all'; // all | today | 24h | 3d | 7d | 30d
+    let cachedErrorsTotal = 0;
+    let createdKeyRaw = null;
+
+    // pageMeta 存的是「字典 key」而非已翻译文案，切换语言时重算
+    const pageMeta = {
+      quotas: { title: 'nav.quotas', eyebrow: 'UPSTREAM OPERATIONS', description: 'page.quotas.desc' },
+      status: { title: 'nav.status', eyebrow: 'SERVICE STATUS', description: 'page.status.desc' },
+      'upstream-stats': { title: 'nav.upstreamStats', eyebrow: 'IDENTITY ANALYTICS', description: 'page.upstreamStats.desc' },
+      validations: { title: 'nav.validations', eyebrow: 'SECURITY & VALIDATIONS', description: 'page.validations.desc' },
+      overview: { title: 'nav.overview', eyebrow: 'USAGE ANALYTICS', description: 'page.overview.desc' },
+      keys: { title: 'nav.keys', eyebrow: 'ACCESS CONTROL', description: 'page.keys.desc' },
+      logs: { title: 'nav.logs', eyebrow: 'REQUEST ACTIVITY', description: 'page.logs.desc' },
+      errors: { title: 'nav.errors', eyebrow: 'INCIDENTS & CIRCUIT BREAKERS', description: 'page.errors.desc' }
+    };
+
+    // pageMeta 条目里的 title/description 若是字典 key，取当前语言文案
+    function pageMetaText(value) {
+      if (typeof value !== 'string') return value || '';
+      return /^[a-zA-Z][\w]*(\.[a-zA-Z][\w]*)+$/.test(value) && typeof t === 'function' ? t(value) : value;
+    }
+
+    function closeMobileNav() {
+      document.body.classList.remove('nav-open');
+      document.getElementById('mobile-menu-button')?.setAttribute('aria-expanded', 'false');
+    }
+
+    function toggleMobileNav() {
+      const isOpen = document.body.classList.toggle('nav-open');
+      document.getElementById('mobile-menu-button')?.setAttribute('aria-expanded', String(isOpen));
+    }
+
+    function updatePageContext(tabId = activeNavTab) {
+      const meta = pageMeta[tabId];
+      if (!meta) return;
+      const isMember = isMemberAuth();
+      const title = isMember && tabId === 'quotas' ? t('member.myQuotaTitle') : isMember && tabId === 'logs' ? t('member.myLogsTitle') : pageMetaText(meta.title);
+      document.getElementById('breadcrumb-current').textContent = title;
+      const eyebrowEl = document.getElementById('page-eyebrow');
+      if (eyebrowEl) eyebrowEl.textContent = meta.eyebrow || '';
+      document.getElementById('page-title').textContent = title;
+      document.getElementById('page-description').textContent = isMember && tabId === 'quotas' ? t('member.memberDesc') : pageMetaText(meta.description);
+    }
+
+    // ---- 工作区页面切换 ----
+    function switchNavTab(tabId) {
+      if (!pageMeta[tabId]) return;
+      activeNavTab = tabId;
+      document.body.dataset.activeTab = tabId;
+      updatePageContext(tabId);
+      document.querySelectorAll('#main-nav-tabs .nav-tab-btn').forEach(btn => {
+        const selected = btn.id === `tab-btn-${tabId}`;
+        btn.classList.toggle('active', selected);
+        btn.setAttribute('aria-current', selected ? 'page' : 'false');
+      });
+      document.querySelectorAll('.tab-page').forEach(page => {
+        page.classList.toggle('active', page.id === `tab-page-${tabId}`);
+      });
+      closeMobileNav();
+      window.scrollTo({ top: 0, behavior: 'auto' });
+
+      if (tabId === 'overview' && cachedStats) {
+        renderMainChart(cachedStats);
+      } else if (tabId === 'keys' && cachedKeys && cachedKeys.length > 0) {
+        renderKeysTable(cachedKeys);
+      } else if (tabId === 'logs' && cachedEvents && cachedEvents.length > 0) {
+        renderEventsTable(cachedEvents, cachedEventsTotal);
+      } else if (tabId === 'errors' && cachedErrors && cachedErrors.length > 0) {
+        renderErrorsTable(cachedErrors, cachedErrorsTotal);
+      } else if (tabId === 'validations') {
+        renderValidationsPage();
+      }
+
+      // 靶向触发当前激活 Tab 专属数据拉取与更新 (按需精准拉取，杜绝并发阻塞)
+      refreshCurrentTab();
+      // 切页时重置倒计时圆环，让新页面获得完整的轮询周期
+      resetPolling();
+    }
+
+    // ---- 现代轻量定制 Dropdown 统一驱动类 (支持浮动菜单、键盘与外部点击关闭、选中高亮、无原生弹窗) ----
+    class CustomDropdown {
+      constructor({ containerId, options = [], value, onChange, menuClass = '' }) {
+        this.container = document.getElementById(containerId);
+        this.options = options;
+        this.value = value !== undefined ? String(value) : (options[0]?.value ? String(options[0].value) : '');
+        this.onChange = onChange || (() => {});
+        this.menuClass = menuClass;
+        this.isOpen = false;
+        this.init();
+      }
+
+      init() {
+        if (!this.container) return;
+        this.container.classList.add('dropdown');
+        this.render();
+        this.bindEvents();
+      }
+
+      updateOptions(options, selectedValue) {
+        const nextVal = selectedValue !== undefined ? String(selectedValue) : this.value;
+        const isSameOptions = Array.isArray(this.options) && Array.isArray(options) &&
+          this.options.length === options.length &&
+          this.options.every((opt, i) => String(opt.value) === String(options[i]?.value) && opt.label === options[i]?.label);
+
+        if (isSameOptions && String(this.value) === String(nextVal)) {
+          // 选项和选中项完全一致，无需重绘 DOM，保留用户正在展开/操作的下拉菜单及滚动位置
+          return;
+        }
+
+        const menuEl = this.container?.querySelector('.dropdown-menu');
+        const prevScrollTop = menuEl ? menuEl.scrollTop : 0;
+
+        this.options = options;
+        if (selectedValue !== undefined) {
+          this.value = String(selectedValue);
+        } else if (!this.options.some(o => String(o.value) === String(this.value))) {
+          this.value = this.options[0]?.value !== undefined ? String(this.options[0].value) : '';
+        }
+        this.render();
+
+        if (this.isOpen) {
+          this.container.classList.add('open');
+          const newMenuEl = this.container.querySelector('.dropdown-menu');
+          if (newMenuEl && prevScrollTop > 0) {
+            newMenuEl.scrollTop = prevScrollTop;
+          }
+        }
+      }
+
+      setValue(val, triggerChange = false) {
+        const hadFocus = this.container?.contains(document.activeElement);
+        this.value = String(val);
+        this.render();
+        if (hadFocus) this.container.querySelector('.dropdown-trigger')?.focus();
+        if (triggerChange) this.onChange(this.value);
+      }
+
+      getValue() {
+        return this.value;
+      }
+
+      render() {
+        if (!this.container) return;
+        const currentOpt = this.options.find(o => String(o.value) === String(this.value)) || this.options[0];
+        const displayLabel = currentOpt ? currentOpt.label : t('runtime.selectPrompt');
+
+        let itemsHtml = '';
+        for (const opt of this.options) {
+          const isSelected = String(opt.value) === String(this.value);
+          itemsHtml += `
+            <div class="dropdown-item ${isSelected ? 'selected' : ''}" role="option" aria-selected="${isSelected}" data-value="${escapeHtml(String(opt.value))}">
+              <span>${escapeHtml(opt.label)}</span>
+              <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </div>`;
+        }
+
+        this.container.innerHTML = `
+          <button type="button" class="dropdown-trigger" aria-label="${escapeHtml(this.container.getAttribute('aria-label') || t('runtime.selectPrompt'))}" aria-expanded="${this.isOpen}" aria-haspopup="listbox">
+            <span class="dropdown-label">${escapeHtml(displayLabel)}</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <div class="dropdown-menu ${this.menuClass}" role="listbox">
+            ${itemsHtml}
+          </div>
+        `;
+      }
+
+      bindEvents() {
+        if (!this.container) return;
+        // 点击 trigger 展开/收起
+        this.container.addEventListener('click', e => {
+          const trigger = e.target.closest('.dropdown-trigger');
+          if (trigger) {
+            e.stopPropagation();
+            this.toggle();
+            return;
+          }
+
+          const item = e.target.closest('.dropdown-item');
+          if (item) {
+            e.stopPropagation();
+            const val = item.getAttribute('data-value');
+            if (val !== this.value) {
+              this.value = val;
+              this.render();
+              this.onChange(this.value);
+            }
+            this.close();
+          }
+        });
+
+        this.container.addEventListener('keydown', e => {
+          if (e.key === 'Escape' && this.isOpen) {
+            e.preventDefault();
+            this.close();
+            this.container.querySelector('.dropdown-trigger')?.focus();
+          } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (!this.options.length) return;
+            if (!this.isOpen) { this.open(); return; }
+            const index = this.options.findIndex(o => String(o.value) === this.value);
+            const next = (index + (e.key === 'ArrowDown' ? 1 : -1) + this.options.length) % this.options.length;
+            if (this.options[next]) this.setValue(this.options[next].value, true);
+          }
+        });
+
+        // 点击页面其他区域关闭
+        document.addEventListener('click', e => {
+          if (!this.container.contains(e.target) && this.isOpen) {
+            this.close();
+          }
+        });
+      }
+
+      toggle() {
+        if (this.isOpen) this.close();
+        else this.open();
+      }
+
+      open() {
+        // 关闭其他已打开的 dropdown
+        Object.values(dropdownInstances).forEach(dropdown => {
+          if (dropdown !== this && dropdown.isOpen) dropdown.close();
+        });
+
+        // 智能方向计算：若下方视口剩余空间不足容纳下拉菜单，且上方空间更充裕，则自适应向上展开
+        if (this.container) {
+          const rect = this.container.getBoundingClientRect();
+          const menuHeight = 270; // 预估最大菜单高度 260px + 间距
+          const spaceBelow = window.innerHeight - rect.bottom;
+          const spaceAbove = rect.top;
+          if (spaceBelow < menuHeight && spaceAbove > spaceBelow) {
+            this.container.classList.add('dropup');
+          } else {
+            this.container.classList.remove('dropup');
+          }
+        }
+
+        this.container.classList.add('open');
+        this.isOpen = true;
+        this.container.closest('.logs-controls')?.classList.add('has-open-dropdown');
+        this.container.querySelector('.dropdown-trigger')?.setAttribute('aria-expanded', 'true');
+      }
+
+      close() {
+        this.container.classList.remove('open');
+        this.isOpen = false;
+        const parentControls = this.container.closest('.logs-controls');
+        if (parentControls && !parentControls.querySelector('.dropdown.open')) {
+          parentControls.classList.remove('has-open-dropdown');
+        }
+        this.container.querySelector('.dropdown-trigger')?.setAttribute('aria-expanded', 'false');
+      }
+    }
+
+    // 全局 dropdown 实例映射
+    let dropdownInstances = {};
+    window.CustomDropdown = CustomDropdown;
+    window.dropdownInstances = dropdownInstances;
+
+    function toggleAuthInputVisibility() {
+      const input = document.getElementById('auth-secret-input');
+      const iconOpen = document.getElementById('auth-eye-icon-open');
+      const iconClosed = document.getElementById('auth-eye-icon-closed');
+      if (!input) return;
+      if (input.type === 'password') {
+        input.type = 'text';
+        if (iconOpen) iconOpen.style.display = 'block';
+        if (iconClosed) iconClosed.style.display = 'none';
+      } else {
+        input.type = 'password';
+        if (iconOpen) iconOpen.style.display = 'none';
+        if (iconClosed) iconClosed.style.display = 'block';
+      }
+    }
+
+    // 管理密钥是万能凭证（建/删/轮换 Key、改配额全放行），
+    // 只存 sessionStorage：关掉标签页即失效，不在机器上跨会话留存。
+    // 历史上它存 localStorage，关浏览器后依然可被同源脚本读取。
+    // 兼容读取旧的 localStorage 键，读到即迁移并删除旧值。
+    const ADMIN_SECRET_STORAGE_KEY = 'gate_admin_secret';
+    const ADMIN_SECRET_LEGACY_KEY = 'cpa_admin_secret';
+    const adminSecretStore = {
+      get() {
+        try {
+          const s = sessionStorage.getItem(ADMIN_SECRET_STORAGE_KEY);
+          if (s) return s;
+          const legacy = localStorage.getItem(ADMIN_SECRET_STORAGE_KEY)
+            || localStorage.getItem(ADMIN_SECRET_LEGACY_KEY);
+          if (legacy) {
+            try { sessionStorage.setItem(ADMIN_SECRET_STORAGE_KEY, legacy); } catch {}
+            try {
+              localStorage.removeItem(ADMIN_SECRET_STORAGE_KEY);
+              localStorage.removeItem(ADMIN_SECRET_LEGACY_KEY);
+            } catch {}
+            return legacy;
+          }
+        } catch {}
+        return '';
+      },
+      set(val) {
+        try {
+          sessionStorage.setItem(ADMIN_SECRET_STORAGE_KEY, val);
+          try {
+            localStorage.removeItem(ADMIN_SECRET_STORAGE_KEY);
+            localStorage.removeItem(ADMIN_SECRET_LEGACY_KEY);
+          } catch {}
+        } catch {}
+      },
+      clear() {
+        try { sessionStorage.removeItem(ADMIN_SECRET_STORAGE_KEY); } catch {}
+        try {
+          localStorage.removeItem(ADMIN_SECRET_STORAGE_KEY);
+          localStorage.removeItem(ADMIN_SECRET_LEGACY_KEY);
+        } catch {}
+      }
+    };
+
+    function getStoredToken() {
+      // 若处于 /member 路由，优先使用 member key 或 URL 参数中的 key
+      if (window.location.pathname.startsWith('/member')) {
+        const params = new URLSearchParams(window.location.search);
+        const urlKey = params.get('key');
+        if (urlKey) return urlKey.trim();
+        return localStorage.getItem('gate_member_key') || '';
+      }
+
+      // 管理员模式：若本地显式配置了管理员密码，优先遵循管理员模式
+      const adminSecret = adminSecretStore.get();
+      if (adminSecret) {
+        return adminSecret;
+      }
+
+      // 否则检查 URL query key
+      const params = new URLSearchParams(window.location.search);
+      const urlKey = params.get('key');
+      if (urlKey) return urlKey.trim();
+
+      const memberKey = localStorage.getItem('gate_member_key');
+      return memberKey || '';
+    }
+
+    function isMemberAuth(token = getStoredToken()) {
+      if (window.location.pathname.startsWith('/member')) return true;
+      const adminSecret = adminSecretStore.get();
+      // 如果已配置管理员密码，且 token 等于管理员密码，则必定不是 memberAuth
+      if (adminSecret && token === adminSecret) return false;
+      if (!token) return false;
+      if (token.startsWith('sk-') || localStorage.getItem('gate_member_key') === token) {
+        return true;
+      }
+      return false;
+    }
+
+    function getAdminSecret() {
+      if (isMemberAuth()) return '';
+      return adminSecretStore.get();
+    }
+
+    function getMemberKey() {
+      if (window.location.pathname.startsWith('/member')) {
+        const params = new URLSearchParams(window.location.search);
+        const urlKey = params.get('key');
+        if (urlKey) return urlKey.trim();
+        return localStorage.getItem('gate_member_key') || '';
+      }
+      const params = new URLSearchParams(window.location.search);
+      const urlKey = params.get('key');
+      if (urlKey && (urlKey.startsWith('sk-') || urlKey.length < 24)) return urlKey.trim();
+      return localStorage.getItem('gate_member_key') || (isMemberAuth() ? getStoredToken() : '');
+    }
+
+    function getAuthHeaders() {
+      const token = getStoredToken();
+      return token ? { 'Authorization': 'Bearer ' + token } : {};
+    }
+
+    // 完整 API Key 只在用户显式点击「复制」时按需拉取，不随 Key 列表下发，
+    // 也就不进 cachedKeys 缓存与 localStorage。取到即用，不做任何持久化。
+    async function fetchFullKey(keyId) {
+      const res = await fetch(`/console/api/keys/${encodeURIComponent(keyId)}/reveal`, { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error(t('runtime.fullKeyRevealFailed'));
+      const data = await res.json();
+      return data.api_key || '';
+    }
+
+    async function copyFullKey(keyId) {
+      try {
+        const raw = await fetchFullKey(keyId);
+        if (!raw) throw new Error('empty');
+        copyToClipboard(raw, t('runtime.fullKeyCopied'));
+      } catch (e) {
+        showToast(t('runtime.fullKeyFetchFailed'), 'error');
+      }
+    }
+
+    function saveAuthSecret() {
+      const val = document.getElementById('auth-secret-input').value.trim();
+      if (!val) { showToast(t('runtime.manageSecretRequired'), 'error'); return; }
+      if (val.startsWith('sk-') || val.length < 24) {
+        localStorage.setItem('gate_member_key', val);
+        adminSecretStore.clear();
+        showToast(t('runtime.memberModeEnabled'), 'success');
+      } else {
+        adminSecretStore.set(val);
+        localStorage.removeItem('gate_member_key');
+        // 清理掉 URL 中残留的 ?key= 参数，防止页面被锁定在旧的成员 key
+        if (window.location.search) {
+          try {
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
+          } catch (e) {}
+        }
+        showToast(t('runtime.manageSecretSaved'), 'success');
+      }
+      closeModal('auth-modal');
+      applyAuthModeUI();
+      manualRefresh();
+    }
+
+    function clearAuthSecret() {
+      adminSecretStore.clear();
+      localStorage.removeItem('gate_member_key');
+      if (window.location.search) {
+        try {
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        } catch (e) {}
+      }
+      closeModal('auth-modal');
+      showToast(t('runtime.authCleared'), 'info');
+      applyAuthModeUI();
+      manualRefresh();
+    }
+
+    function applyAuthModeUI() {
+      const isMember = isMemberAuth();
+      const needsAuth = !getStoredToken();
+      document.body.classList.toggle('needs-auth', needsAuth);
+      document.body.classList.toggle('member-mode', isMember);
+      if (needsAuth && activeNavTab !== 'quotas') switchNavTab('quotas');
+      const badge = document.getElementById('member-mode-badge');
+      const btnCreate = document.getElementById('btn-create-key');
+      const btnPrices = document.getElementById('btn-prices');
+      const btnAuthText = document.getElementById('btn-auth-text');
+      const tabOverview = document.getElementById('tab-btn-overview');
+      const tabValidations = document.getElementById('tab-btn-validations');
+      const tabKeys = document.getElementById('tab-btn-keys');
+      const tabErrors = document.getElementById('tab-btn-errors');
+      const tabTextQuotas = document.getElementById('tab-text-quotas');
+      const tabTextLogs = document.getElementById('tab-text-logs');
+      const memberPanel = document.getElementById('member-quota-panel');
+      const upstreamPanel = document.getElementById('upstream-panel');
+      const upstreamStatsPanel = document.getElementById('upstream-stats-panel');
+      const keyFilterContainer = document.getElementById('logs-key-filter-container');
+
+      if (isMember) {
+        if (badge) {
+          badge.style.display = 'inline-flex';
+          badge.innerText = t('member.title');
+        }
+        if (btnCreate) btnCreate.style.display = 'none';
+        if (btnPrices) btnPrices.style.display = 'none';
+        if (btnAuthText) btnAuthText.innerText = needsAuth ? t('common.key') : t('common.switchKey');
+        if (tabValidations) tabValidations.style.display = 'none';
+        if (tabOverview) tabOverview.style.display = 'none';
+        if (tabKeys) tabKeys.style.display = 'none';
+        if (tabErrors) tabErrors.style.display = 'none';
+        // 运行总览聚合的是全站上游调度事实，成员不得查看
+        const tabRuntime = document.getElementById('tab-btn-runtime');
+        if (tabRuntime) tabRuntime.style.display = 'none';
+        if (activeNavTab === 'runtime') switchNavTab('quotas');
+        if (tabTextQuotas) tabTextQuotas.innerText = t('member.myQuotaTitle');
+        if (tabTextLogs) tabTextLogs.innerText = t('member.myLogsTitle');
+        if (memberPanel) memberPanel.style.display = 'flex';
+        // 彻底隔离：成员模式下完全移除或隐藏上游卡片与统计面板，绝不显示空加载状态
+        if (upstreamPanel) {
+          upstreamPanel.style.display = 'none';
+          const uContainer = document.getElementById('upstream-cards-container');
+          if (uContainer) uContainer.innerHTML = '';
+        }
+        if (upstreamStatsPanel) {
+          upstreamStatsPanel.style.display = 'none';
+          const sTbody = document.getElementById('upstream-stats-table-body');
+          if (sTbody) sTbody.innerHTML = '';
+          const sCards = document.getElementById('upstream-stats-cards-container');
+          if (sCards) sCards.innerHTML = '';
+          const sArchive = document.getElementById('upstream-stats-archive-container');
+          if (sArchive) { sArchive.style.display = 'none'; sArchive.innerHTML = ''; }
+        }
+        if (keyFilterContainer) keyFilterContainer.style.display = 'none';
+        // 如果当前处在不可见的 tab，切回 quotas
+        if (['overview', 'keys', 'errors', 'validations', 'status', 'upstream-stats'].includes(activeNavTab)) {
+          switchNavTab('quotas');
+        }
+      } else {
+        if (badge) badge.style.display = 'none';
+        if (btnCreate) btnCreate.style.display = 'inline-flex';
+        if (btnPrices) btnPrices.style.display = 'inline-flex';
+        if (btnAuthText) btnAuthText.innerText = t('common.key');
+        if (tabValidations) tabValidations.style.display = 'inline-flex';
+        if (tabOverview) tabOverview.style.display = 'inline-flex';
+        if (tabKeys) tabKeys.style.display = 'inline-flex';
+        if (tabErrors) tabErrors.style.display = 'inline-flex';
+        if (tabTextQuotas) tabTextQuotas.innerText = t('nav.quotas');
+        if (tabTextLogs) tabTextLogs.innerText = t('nav.logs');
+        if (memberPanel) memberPanel.style.display = 'none';
+        if (upstreamPanel) upstreamPanel.style.display = 'block';
+        if (upstreamStatsPanel) upstreamStatsPanel.style.display = 'block';
+        if (keyFilterContainer) keyFilterContainer.style.display = 'flex';
+      }
+      updatePageContext();
+    }
+
+    // ---- 通用格式化辅助 ----
+    function formatTokens(n) {
+      if (!n || n <= 0) return '0';
+      if (n >= 1e9) return (n / 1e9).toFixed(2) + ' B';
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + ' M';
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + ' K';
+      return Number(n).toLocaleString(LOCALE);
+    }
+    function formatCost(val) {
+      const n = Number(val) || 0;
+      if (n === 0) return '$0.00';
+      if (n < 0.01) return '$' + n.toFixed(4);
+      return '$' + n.toFixed(2);
+    }
+    function formatLatencyMs(ms) {
+      const n = Number(ms) || 0;
+      if (n <= 0) return '--';
+      if (n >= 60000) return (n / 60000).toFixed(1) + ' min';
+      if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + ' s';
+      return String(Math.round(n)) + ' ms';
+    }
+    // 绝对刷新时刻（客户端本地时区）：9月13日 18:05（若跨年则带年份）
+    function formatResetAbs(iso) {
+      const t = new Date(iso);
+      if (!iso || isNaN(t.getTime())) return '';
+      const hh = String(t.getHours()).padStart(2, '0');
+      const mm = String(t.getMinutes()).padStart(2, '0');
+      const now = new Date();
+      const vars = {
+        year: t.getFullYear(),
+        month: t.getMonth() + 1,
+        day: t.getDate(),
+        hh,
+        mm
+      };
+      if (t.getFullYear() !== now.getFullYear()) {
+        return t('reset.absDateTime', vars);
+      }
+      return t('reset.absDateTimeNoYear', vars);
+    }
+    // 客户端实时重置倒计时计算
+    function formatResetCountdownLive(targetTime) {
+      if (!targetTime) return '';
+      const target = typeof targetTime === 'number' ? targetTime : new Date(targetTime).getTime();
+      if (Number.isNaN(target)) return '';
+      const now = Date.now();
+      const diff = target - now;
+      if (diff <= 0) return t('reset.justReset');
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      if (hours > 24) {
+        const days = Math.floor(hours / 24);
+        if (days >= 365) {
+          const years = Math.floor(days / 365);
+          if (years >= 3) return t('reset.longTerm');
+          const remMonths = Math.floor((days % 365) / 30);
+          return remMonths >= 1
+            ? t('reset.yearsMonths', { years, remMonths })
+            : t('reset.yearsOnly', { years });
+        }
+        const remHours = hours % 24;
+        return t('reset.daysHours', { days, remHours });
+      }
+      return t('reset.hoursMinutes', { hours, mins });
+    }
+    function updateLiveCountdowns() {
+      const nodes = document.querySelectorAll('[data-reset-time]');
+      nodes.forEach(el => {
+        const timeStr = el.dataset.resetTime;
+        if (!timeStr) return;
+        const text = formatResetCountdownLive(timeStr);
+        if (text && el.textContent !== text) {
+          el.textContent = text;
+        }
+      });
+    }
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
+    }
+
+    function safeGoogleLink(value, accountEmail = null) {
+      if (!value) return '';
+      try {
+        let clean = String(value).trim()
+          .replace(/&amp;/gi, '&')
+          .replace(/\\u(0026|003d|003f|0025)/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+          .replace(/\\\//g, '/');
+        const url = new URL(clean);
+        if (url.protocol !== 'https:' || url.hostname !== 'accounts.google.com') return '';
+        if (url.pathname === '/signin/continue' && (!url.searchParams.get('plt') || !url.searchParams.get('continue'))) return '';
+        if (accountEmail && typeof accountEmail === 'string' && accountEmail.includes('@') && !url.searchParams.has('authuser')) {
+          url.searchParams.set('authuser', accountEmail.trim());
+        }
+        return escapeHtml(url.href);
+      } catch (_) { return ''; }
+    }
+
+    function copyToClipboard(text, successMsg = t('runtime.clipboardCopied')) {
+      if (!text) return;
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => {
+          showToast(successMsg, 'success');
+        }).catch(() => fallbackCopyText(text, successMsg));
+      } else {
+        fallbackCopyText(text, successMsg);
+      }
+    }
+
+    function fallbackCopyText(text, successMsg) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        showToast(successMsg, 'success');
+      } catch (err) {
+        showToast(t('runtime.clipboardFailed'), 'error');
+      }
+      document.body.removeChild(textarea);
+    }
+
+    let lastToastMsg = '';
+    let lastToastTime = 0;
+    function showToast(msg, type = 'info') {
+      const now = Date.now();
+      if (msg === lastToastMsg && now - lastToastTime < 1500) {
+        return; // 防抖去重，避免重复点击产生连排重复提示
+      }
+      lastToastMsg = msg;
+      lastToastTime = now;
+      const box = document.getElementById('toast-box');
+      if (!box) return;
+      const el = document.createElement('div');
+      el.className = 'toast ' + type;
+      el.textContent = msg;
+      box.appendChild(el);
+      setTimeout(() => {
+        el.classList.add('toast-out');
+        setTimeout(() => el.remove(), 220);
+      }, 3200);
+    }
+
+    function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+    // ---- 提供商矢量品牌图标与显式标签定义 ----
+    function getProviderBrand(providerRaw) {
+      const p = (providerRaw || '').toLowerCase();
+      if (p.includes('antigravity')) {
+        return {
+          id: 'antigravity',
+          name: t('provider.antigravity'),
+          shortName: t('provider.antigravityShort'),
+          iconClass: 'provider-icon-antigravity',
+          pillClass: 'provider-pill-antigravity',
+          // Google Antigravity 高清全彩官方图标
+          iconSvg: `<img src="data:image/png;base64,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" alt="Antigravity" />`
+        };
+      }
+      if (p.includes('codex') || p.includes('chatgpt') || p.includes('openai')) {
+        return {
+          id: 'codex',
+          name: t('provider.codex'),
+          shortName: 'Codex',
+          iconClass: 'provider-icon-codex',
+          pillClass: 'provider-pill-codex',
+          // OpenAI / Codex 官方原版六边形涡轮图标
+          iconSvg: `<img src="data:image/png;base64,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" alt="Codex" />`
+        };
+      }
+      if (p.includes('claude') || p.includes('anthropic')) {
+        return {
+          id: 'claude',
+          name: t('provider.claude'),
+          shortName: 'Claude',
+          iconClass: 'provider-icon-claude',
+          pillClass: 'provider-pill-claude',
+          // Anthropic Claude 官方珊瑚橙太阳花图标
+          iconSvg: `<img src="data:image/png;base64,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" alt="Claude" />`
+        };
+      }
+      if (p.includes('gemini')) {
+        return {
+          id: 'gemini',
+          name: 'Google Gemini',
+          shortName: 'Gemini',
+          iconClass: 'provider-icon-gemini',
+          pillClass: 'provider-pill-antigravity',
+          iconSvg: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C12 7.52 7.52 12 2 12c5.52 0 10 4.48 10 10 0-5.52 4.48-10 10-10-5.52 0-10-4.48-10-10z"/></svg>`
+        };
+      }
+      if (p.includes('stepfun') || p.includes('step')) {
+        return {
+          id: 'stepfun',
+          name: t('provider.stepfun'),
+          shortName: 'StepFun',
+          iconClass: 'provider-icon-stepfun',
+          pillClass: 'provider-pill-stepfun',
+          iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>`
+        };
+      }
+      if (p.includes('opencode')) {
+        return {
+          id: 'opencode',
+          name: 'OpenCode Zen',
+          shortName: 'OpenCode',
+          iconClass: 'provider-icon-opencode',
+          pillClass: 'provider-pill-opencode',
+          iconSvg: `<svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd"><path d="M3 2h18v20H3V2zm4 4h10v12H7V6z"/></svg>`
+        };
+      }
+      if (p.includes('stealth')) {
+        return {
+          id: 'stealth',
+          name: 'stealth',
+          shortName: 'stealth',
+          iconClass: 'provider-icon-other',
+          pillClass: 'provider-pill-other',
+          iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>`
+        };
+      }
+      if (p.includes('deepseek')) {
+        return {
+          id: 'deepseek',
+          name: 'DeepSeek',
+          shortName: 'DeepSeek',
+          iconClass: 'provider-icon-deepseek',
+          pillClass: 'provider-pill-stepfun',
+          iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>`
+        };
+      }
+      if (p.includes('qwen') || p.includes('qianwen')) {
+        return {
+          id: 'qwen',
+          name: t('provider.qwen'),
+          shortName: 'Qwen',
+          iconClass: 'provider-icon-qwen',
+          pillClass: 'provider-pill-other',
+          iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>`
+        };
+      }
+      if (p.includes('kimi') || p.includes('moonshot')) {
+        return {
+          id: 'moonshot',
+          name: 'Moonshot Kimi',
+          shortName: 'Kimi',
+          iconClass: 'provider-icon-kimi',
+          pillClass: 'provider-pill-other',
+          iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>`
+        };
+      }
+      if (p.includes('glm') || p.includes('zhipu')) {
+        return {
+          id: 'zhipu',
+          name: 'Zhipu GLM',
+          shortName: 'GLM',
+          iconClass: 'provider-icon-glm',
+          pillClass: 'provider-pill-other',
+          iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>`
+        };
+      }
+      if (p.includes('openrouter')) {
+        return {
+          id: 'openrouter',
+          name: 'OpenRouter',
+          shortName: 'OpenRouter',
+          iconClass: 'provider-icon-openrouter',
+          pillClass: 'provider-pill-other',
+          iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>`
+        };
+      }
+      if (p.includes('workbuddy') || p.includes('codebuddy')) {
+        const isCn = p.includes('cn') || p.includes('codebuddy');
+        return {
+          id: 'workbuddy',
+          name: isCn ? 'WorkBuddy (CodeBuddy)' : t('provider.workbuddyCn'),
+          shortName: isCn ? 'CodeBuddy' : 'WorkBuddy',
+          iconClass: 'provider-icon-workbuddy',
+          pillClass: 'provider-pill-workbuddy',
+          iconSvg: `<img src="data:image/jpeg;base64,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" alt="WorkBuddy" />`
+        };
+      }
+      if (p.includes('qoder') || p.includes('lingma')) {
+        const isCn = p.includes('cn') || p.includes('lingma');
+        return {
+          id: isCn ? 'qoder-cn' : 'qoder',
+          name: isCn ? t('provider.qoderCn') : t('provider.qoder'),
+          shortName: isCn ? t('provider.qoderCnShort') : 'Qoder',
+          iconClass: 'provider-icon-qoder',
+          pillClass: 'provider-pill-qoder',
+          iconSvg: `<img src="data:image/png;base64,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" alt="Qoder" />`
+        };
+      }
+      if (p.includes('gate')) {
+        return {
+          id: 'gate',
+          name: t('provider.gateway'),
+          shortName: t('provider.gatewayShort'),
+          iconClass: 'provider-icon-gate',
+          pillClass: 'provider-pill-other',
+          iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>`
+        };
+      }
+      return {
+        id: 'other',
+        name: t('provider.other'),
+        shortName: 'Upstream',
+        iconClass: 'provider-icon-other',
+        pillClass: 'provider-pill-other',
+        iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"/></svg>`
+      };
+    }
+
+
+    // ---- 全局轮询状态指示联动 ----
+    function updateLiveSyncBadges() {
+      const logsBadge = document.getElementById('logs-sync-badge');
+      const logsText = document.getElementById('logs-sync-text');
+      const logsLabel = document.getElementById('logs-sync-label');
+      const errorsBadge = document.getElementById('errors-sync-badge');
+      const errorsText = document.getElementById('errors-sync-text');
+
+      const isPaused = pollingIntervalMs <= 0;
+      const sec = Math.round(pollingIntervalMs / 1000);
+      const text = isPaused ? t('logs.liveSyncPaused') : t('logs.liveSyncInterval', { sec });
+
+      if (logsText) logsText.textContent = text;
+      if (logsLabel) logsLabel.textContent = text;
+      if (errorsText) errorsText.textContent = text;
+
+      if (logsBadge) logsBadge.classList.toggle('is-paused', isPaused);
+      if (errorsBadge) errorsBadge.classList.toggle('is-paused', isPaused);
+    }
+
+    // ---- 倒计时与轮询控制 ----
+    function getSafePollingInterval() {
+      // 用量趋势 (overview) 为重度 SQL 统计分析页，高频轮询时自适应节流至不少于 30 秒，保护后端性能
+      if (activeNavTab === 'overview' && pollingIntervalMs > 0 && pollingIntervalMs < 30000) {
+        return 30000;
+      }
+      return pollingIntervalMs;
+    }
+
+    function changePollingInterval(val, persist = true) {
+      pollingIntervalMs = Number(val);
+      if (persist) {
+        try { localStorage.setItem('gate_admin_polling_interval', String(pollingIntervalMs)); } catch {}
+      }
+      if (dropdownInstances['polling-interval-dropdown'] && dropdownInstances['polling-interval-dropdown'].value !== String(pollingIntervalMs)) {
+        dropdownInstances['polling-interval-dropdown'].setValue(String(pollingIntervalMs), false);
+      }
+      updateLiveSyncBadges();
+      resetPolling();
+    }
+
+    function isUserBusyInteracting() {
+      // 1. 存在打开的弹窗
+      const openModal = document.querySelector('.modal-backdrop[style*="display: block"], .modal-backdrop[style*="display: flex"]');
+      if (openModal) return true;
+      // 2. 焦点位于正在打字的输入框
+      const el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && !el.readOnly) return true;
+      // 3. 流水页正在看深层分页（非第 1 页）
+      if (activeNavTab === 'logs' && logsPage > 1) return true;
+      // 4. 运行总览 tooltip 正在悬停
+      const tip = document.getElementById('ovw-tooltip');
+      if (tip && tip.classList.contains('is-visible')) return true;
+      return false;
+    }
+
+    function resetPolling() {
+      if (pollingTimer) clearTimeout(pollingTimer);
+      if (countdownInterval) clearInterval(countdownInterval);
+      const effectiveInterval = getSafePollingInterval();
+      if (effectiveInterval <= 0) {
+        const bar = document.getElementById('countdown-bar');
+        if (bar) bar.style.strokeDashoffset = '56.5';
+        document.querySelectorAll('.status-refresh-countdown').forEach(el => { el.innerText = t('runtime.refreshPaused'); });
+        return;
+      }
+      nextPollTime = Date.now() + effectiveInterval;
+      countdownInterval = setInterval(updateCountdownCircle, 1000);
+      pollingTimer = setTimeout(runPeriodicRefresh, effectiveInterval);
+      updateCountdownCircle();
+    }
+
+    function updateCountdownCircle() {
+      updateLiveCountdowns();
+      const countdownEls = document.querySelectorAll('.status-refresh-countdown');
+      const effectiveInterval = getSafePollingInterval();
+      if (effectiveInterval <= 0) {
+        countdownEls.forEach(el => { el.innerText = t('runtime.refreshPaused'); });
+        return;
+      }
+      const left = Math.max(0, nextPollTime - Date.now());
+      const fraction = left / effectiveInterval;
+      const circumference = 56.5;
+      const bar = document.getElementById('countdown-bar');
+      if (bar) bar.style.strokeDashoffset = (circumference * (1 - fraction)).toFixed(1);
+      const secText = t('runtime.refreshInSec', { sec: Math.ceil(left / 1000) });
+      countdownEls.forEach(el => { el.innerText = secText; });
+    }
+
+    async function runPeriodicRefresh() {
+      if (!document.hidden) {
+        if (!isUserBusyInteracting()) {
+          try {
+            await refreshAll();
+          } catch (e) {
+            console.warn('[Gate] Periodic refresh warning:', e);
+          }
+        }
+      }
+      resetPolling();
+    }
+
+    function manualRefresh() {
+      refreshAll();
+      resetPolling();
+    }
+
+    // ---- 成员专属数据拉取与渲染 ----
+    let cachedMemberInfo = null;
+
+    async function fetchMemberInfo() {
+      const memberKey = getMemberKey();
+      if (!memberKey) return;
+      try {
+        const res = await fetch('/api/member/info', { headers: getAuthHeaders() });
+        if (!res.ok) {
+          if (res.status === 401) {
+            showToast(t('runtime.memberKeyInvalid'), 'error');
+          }
+          return;
+        }
+        cachedMemberInfo = await res.json();
+        renderMemberPanel(cachedMemberInfo);
+      } catch (err) {
+        console.warn('Member info fetch error:', err.message);
+      }
+    }
+
+    function renderMemberPanel(info) {
+      if (!info) return;
+      const aliasEl = document.getElementById('member-alias-display');
+      if (aliasEl) aliasEl.innerText = info.key_alias || t('member.myKeyAlias');
+      
+      const statusPill = document.getElementById('member-status-pill');
+      if (statusPill) {
+        if (info.enabled) {
+          statusPill.className = 'chip chip-green';
+          statusPill.innerText = t('member.runningStatus');
+        } else {
+          statusPill.className = 'chip chip-red';
+          statusPill.innerText = t('member.disabledStatus');
+        }
+      }
+
+      const keyDisp = document.getElementById('member-key-display');
+      if (keyDisp) keyDisp.innerText = info.display_key || 'sk-cpa-***';
+
+      const modelsEl = document.getElementById('member-models-display');
+      if (modelsEl) {
+        if (Array.isArray(info.model_whitelist) && info.model_whitelist.length > 0) {
+          modelsEl.innerText = info.model_whitelist.join(', ');
+        } else {
+          modelsEl.innerText = t('member.allModelsAvailable');
+        }
+      }
+
+      document.getElementById('member-tokens-total').innerText = formatTokens(info.today_tokens);
+      document.getElementById('member-tokens-io').innerText = `${formatTokens(info.today_prompt_tokens)} / ${formatTokens(info.today_completion_tokens)}`;
+      document.getElementById('member-tokens-cache').innerText = `${formatTokens(info.today_cached_tokens)} (${(info.cache_hit_rate || 0).toFixed(1)}%)`;
+      document.getElementById('member-cost-total').innerText = formatCost(info.today_cost_usd);
+
+      const limitBox = document.getElementById('member-limit-box');
+      if (info.daily_limit && info.daily_limit > 0) {
+        limitBox.style.display = 'block';
+        const used = Number(info.today_tokens) || 0;
+        const limit = Number(info.daily_limit) || 0;
+        const ratio = limit > 0 ? (used / limit) : 0;
+        const pct = Math.min(100, Math.round(ratio * 100));
+        const rem = Math.max(0, limit - used);
+
+        const pctEl = document.getElementById('member-limit-pct');
+        if (pctEl) {
+          pctEl.innerText = `${pct}%`;
+          if (pct >= 100) pctEl.className = 'member-progress-pct danger';
+          else if (pct >= 80) pctEl.className = 'member-progress-pct warn';
+          else pctEl.className = 'member-progress-pct';
+        }
+
+        const fracEl = document.getElementById('member-limit-fraction');
+        if (fracEl) fracEl.innerText = `${formatTokens(used)} / ${formatTokens(limit)}`;
+
+        const usedDescEl = document.getElementById('member-limit-used-desc');
+        if (usedDescEl) usedDescEl.innerText = formatTokens(used);
+
+        const remEl = document.getElementById('member-limit-remaining');
+        if (remEl) remEl.innerText = `${formatTokens(rem)} Tokens`;
+
+        const bar = document.getElementById('member-limit-bar');
+        if (bar) {
+          bar.style.width = Math.max(pct > 0 ? pct : (used > 0 ? 1 : 0), 0) + '%';
+          if (pct >= 100) {
+            bar.className = 'member-progress-fill danger';
+          } else if (pct >= 80) {
+            bar.className = 'member-progress-fill warn';
+          } else {
+            bar.className = 'member-progress-fill';
+          }
+        }
+      } else {
+        limitBox.style.display = 'none';
+      }
+
+      if (Number.isFinite(info.today_requests)) {
+        updateNavBadgeLogs(info.today_requests);
+      }
+    }
+
+    // ---- 智能靶向数据拉取与更新 (按需精准拉取，根除并发队头阻塞与非当前Tab的DOM重绘风暴) ----
+    let lastGlobalProbeTs = 0;
+    const GLOBAL_PROBE_INTERVAL_MS = 15000;
+
+    async function refreshCurrentTab(force = false) {
+      applyAuthModeUI();
+      try {
+        if (!getStoredToken()) {
+          fetchQuotaProbeStatus().catch(() => {});
+          return;
+        }
+
+        // 1. 全局轻量探活与系统健康状态（异步非阻塞，带 15s 节流，杜绝切 Tab 串行等待）
+        const now = Date.now();
+        if (force || (now - lastGlobalProbeTs > GLOBAL_PROBE_INTERVAL_MS)) {
+          lastGlobalProbeTs = now;
+          Promise.allSettled([
+            fetchQuotaProbeStatus(),
+            fetchGateStatus()
+          ]).catch(() => {});
+        }
+
+        // 2. 仅针对当前激活的 activeNavTab 进行精准靶向数据拉取与局部 DOM 渲染
+        if (isMemberAuth()) {
+          if (activeNavTab === 'logs') {
+            await fetchEventsData(force);
+          } else {
+            await fetchMemberInfo();
+          }
+        } else {
+          switch (activeNavTab) {
+            case 'quotas':
+              await fetchUpstreamQuotas();
+              break;
+            case 'overview':
+              await fetchStatsData();
+              break;
+            case 'logs':
+              await fetchEventsData(force);
+              break;
+            case 'errors':
+              await fetchErrorsData(force);
+              break;
+            case 'keys':
+              await fetchKeysData(force);
+              break;
+            case 'validations':
+              await fetchUpstreamValidations();
+              break;
+            case 'upstream-stats':
+              await fetchUpstreamAuthStats();
+              break;
+            case 'status':
+              // 状态页需要即时网关状态
+              await fetchGateStatus();
+              break;
+            case 'runtime':
+              if (window.ovwRuntime) {
+                if (typeof window.ovwRuntime.fetch === 'function') {
+                  try { window.ovwRuntime.fetch(); } catch (err) { console.warn('[Overview] fetch error:', err.message); }
+                }
+                if (typeof window.ovwRuntime.fetchConfig === 'function') {
+                  try { window.ovwRuntime.fetchConfig(); } catch (err) { console.warn('[Overview] fetchConfig error:', err.message); }
+                }
+              }
+              break;
+            default:
+              await fetchUpstreamQuotas();
+              break;
+          }
+        }
+      } catch (e) {
+        console.warn('Targeted refresh error:', e.message);
+      }
+    }
+
+    // 兼容历史调用名
+    async function refreshAll() {
+      await refreshCurrentTab(true);
+    }
+
+    function togglePanelFold(bodyId, btn) {
+      const el = document.getElementById(bodyId);
+      if (!el) return;
+      const isCollapsed = el.classList.toggle('collapsed');
+      if (btn) {
+        btn.classList.toggle('folded', isCollapsed);
+        btn.setAttribute('aria-expanded', String(!isCollapsed));
+      }
+    }
+
+    // ---- 初始化下拉组件与默认值 ----
+    function initCustomDropdowns() {
+      // 1. 全局自动刷新
+      dropdownInstances['polling-interval-dropdown'] = new CustomDropdown({
+        containerId: 'polling-interval-dropdown',
+        options: [
+          { value: '10000', label: t('poll.10s') },
+          { value: '15000', label: t('poll.15s') },
+          { value: '30000', label: t('poll.30s') },
+          { value: '60000', label: t('poll.60s') },
+          { value: '300000', label: t('poll.300s') },
+          { value: '0', label: t('poll.paused') }
+        ],
+        value: String(pollingIntervalMs),
+        onChange: val => changePollingInterval(val),
+        menuClass: 'menu-right'
+      });
+      updateLiveSyncBadges();
+
+      // 2. 趋势图筛选 Key (基于首屏水合 cachedKeys 预填充)
+      const initialChartKeyOptions = [{ value: 'all', label: t('filter.allCreds') }];
+      if (Array.isArray(cachedKeys)) {
+        for (const k of cachedKeys) {
+          const id = String(k.key_id);
+          const label = k.key_alias ? `${k.key_alias} (${k.display_key || id})` : (k.display_key || `Key #${id}`);
+          initialChartKeyOptions.push({ value: id, label });
+        }
+      }
+      dropdownInstances['chart-key-dropdown'] = new CustomDropdown({
+        containerId: 'chart-key-dropdown',
+        options: initialChartKeyOptions,
+        value: statsKeyFilter || 'all',
+        onChange: val => changeStatsKeyFilter(val),
+        menuClass: 'menu-right'
+      });
+
+      // 3. 流水筛选 Key (基于首屏水合 cachedKeys 预填充，杜绝未点 API 密钥页时选项为空)
+      const initialLogsKeyOptions = [{ value: 'all', label: t('filter.allKeys') }];
+      const initialKeyMap = new Map();
+      if (Array.isArray(cachedKeys)) {
+        for (const k of cachedKeys) {
+          initialKeyMap.set(String(k.key_id), { id: String(k.key_id), alias: k.key_alias || '', display: k.display_key || '' });
+        }
+      }
+      if (Array.isArray(cachedEvents)) {
+        for (const ev of cachedEvents) {
+          const id = ev.key_id != null ? String(ev.key_id) : (ev.display_key || '');
+          if (id && !initialKeyMap.has(id)) {
+            initialKeyMap.set(id, { id, alias: ev.key_alias || '', display: ev.display_key || '' });
+          }
+        }
+      }
+      for (const [id, info] of initialKeyMap.entries()) {
+        const label = info.alias ? `${info.alias} (${info.display || id})` : (info.display || `Key #${id}`);
+        initialLogsKeyOptions.push({ value: id, label });
+      }
+
+      dropdownInstances['logs-key-dropdown'] = new CustomDropdown({
+        containerId: 'logs-key-dropdown',
+        options: initialLogsKeyOptions,
+        value: logsKeyFilter || 'all',
+        onChange: val => changeLogsKeyFilter(val)
+      });
+
+      // 3.5 流水服务商筛选
+      if (document.getElementById('logs-provider-dropdown')) {
+        dropdownInstances['logs-provider-dropdown'] = new CustomDropdown({
+          containerId: 'logs-provider-dropdown',
+          options: [
+            { value: 'all', label: t('filter.allProviders') },
+            { value: 'antigravity', label: t('provider.antigravity') },
+            { value: 'codex', label: 'OpenAI Codex' },
+            { value: 'gemini', label: 'Google Gemini' },
+            { value: 'claude', label: 'Anthropic Claude' },
+            { value: 'stepfun', label: t('provider.stepfun') },
+            { value: 'opencode', label: 'OpenCode Zen' },
+            { value: 'workbuddy', label: t('provider.workbuddy') },
+            { value: 'workbuddy-cn', label: 'WorkBuddy (CodeBuddy)' },
+            { value: 'qoder', label: t('provider.qoder') },
+            { value: 'qoder-cn', label: t('provider.qoderCn') },
+            { value: 'deepseek', label: 'DeepSeek' },
+            { value: 'openrouter', label: 'OpenRouter' },
+            { value: 'qwen', label: t('provider.qwen') },
+            { value: 'moonshot', label: 'Moonshot Kimi' },
+            { value: 'zhipu', label: 'Zhipu GLM' },
+            { value: 'stealth', label: 'stealth' },
+            { value: 'other', label: t('provider.other') }
+          ],
+          value: logsProviderFilter || 'all',
+          onChange: val => changeLogsProviderFilter(val)
+        });
+      }
+
+      // 4. 流水时间跨度筛选
+      if (document.getElementById('logs-time-dropdown')) {
+        dropdownInstances['logs-time-dropdown'] = new CustomDropdown({
+          containerId: 'logs-time-dropdown',
+          options: [
+            { value: 'all', label: t('filter.allTime') },
+            { value: 'today', label: t('filter.today') },
+            { value: '24h', label: t('filter.last24h') },
+            { value: '3d', label: t('filter.last3d') },
+            { value: '7d', label: t('filter.last7d') },
+            { value: '30d', label: t('filter.last30d') }
+          ],
+          value: 'all',
+          onChange: val => changeLogsTimeRange(val)
+        });
+      }
+
+      // 5. 流水分页条数
+      dropdownInstances['logs-page-size-dropdown'] = new CustomDropdown({
+        containerId: 'logs-page-size-dropdown',
+        options: [
+          { value: '25', label: t('filter.page25') },
+          { value: '50', label: t('filter.page50') },
+          { value: '100', label: t('filter.page100') }
+        ],
+        value: '25',
+        onChange: val => changeLogsPageSize(val),
+        menuClass: 'dropup'
+      });
+
+      // 5.5 故障中心时间跨度与分页条数
+      if (document.getElementById('errors-time-dropdown')) {
+        dropdownInstances['errors-time-dropdown'] = new CustomDropdown({
+          containerId: 'errors-time-dropdown',
+          options: [
+            { value: 'all', label: t('filter.allTime') },
+            { value: 'today', label: t('filter.today') },
+            { value: '24h', label: t('filter.last24h') },
+            { value: '3d', label: t('filter.last3d') },
+            { value: '7d', label: t('filter.last7d') },
+            { value: '30d', label: t('filter.last30d') }
+          ],
+          value: 'all',
+          onChange: val => changeErrorsTimeRange(val)
+        });
+      }
+
+      if (document.getElementById('errors-page-size-dropdown')) {
+        dropdownInstances['errors-page-size-dropdown'] = new CustomDropdown({
+          containerId: 'errors-page-size-dropdown',
+          options: [
+            { value: '25', label: t('filter.page25') },
+            { value: '50', label: t('filter.page50') },
+            { value: '100', label: t('filter.page100') }
+          ],
+          value: '25',
+          onChange: val => changeErrorsPageSize(val),
+          menuClass: 'dropup'
+        });
+      }
+    }
+
+    function openAuthModal() {
+      const input = document.getElementById('auth-secret-input');
+      document.getElementById('btn-clear-auth').style.display = getStoredToken() ? 'inline-flex' : 'none';
+      if (input) {
+        input.value = getStoredToken();
+        input.type = 'password';
+      }
+      const iconOpen = document.getElementById('auth-eye-icon-open');
+      const iconClosed = document.getElementById('auth-eye-icon-closed');
+      if (iconOpen) iconOpen.style.display = 'none';
+      if (iconClosed) iconClosed.style.display = 'block';
+      openModal('auth-modal');
+    }
+
+    // 打开受 Console 保护的上游原生 CPA 管理控制台
+    function openNativeCpaManagement() {
+      const secret = getAdminSecret();
+      if (!secret) {
+        showToast(t('runtime.authSecretRequired'), 'error');
+        openAuthModal();
+        return;
+      }
+      const targetUrl = `/management.html`;
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    }
+
+    // ---- 初始化执行 ----
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialKey = urlParams.get('key');
+    if (initialKey) {
+      const trimmed = initialKey.trim();
+      if (trimmed.startsWith('sk-') || trimmed.length < 24) {
+        // 成员 Key：低权限、可撤销，落 localStorage 便于刷新后仍生效
+        localStorage.setItem('gate_member_key', trimmed);
+      } else {
+        // 管理密钥：只进 sessionStorage（关标签页即失效）。
+        // 绝不写 localStorage——URL 会留在历史与 Referer 里，
+        // 再落一份持久化等于把万能凭证留在机器上。
+        adminSecretStore.set(trimmed);
+      }
+      // 立刻把 ?key= 从地址栏抹掉，避免被截图、分享或带进 Referer
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch {}
+    }
+
+    // 初始化时检测：若未配置管理员密钥且非成员凭据，弹窗提示配置
+    if (!isMemberAuth() && !getAdminSecret()) {
+      const msg = `
+        <div class="upstream-empty-state" style="padding: 32px 20px;">
+          <div style="font-size: 14px; color: var(--text-muted); margin-bottom: 8px;">${t('auth.noSecretConfigured')}</div>
+          <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 16px;">${t('auth.noSecretHint')}</div>
+          <button class="btn btn-secondary btn-sm" onclick="openAuthModal()">${t('auth.setSecretNow')}</button>
+        </div>
+      `;
+      const container = document.getElementById('upstream-cards-container');
+      if (container) container.innerHTML = msg;
+      const compactContainer = document.getElementById('upstream-compact-container');
+      if (compactContainer) compactContainer.innerHTML = msg;
+    }
+
+    // ---- 语言切换：静态文案已由 admin-i18n.js 应用，这里负责重建动态渲染 ----
+    function relocalizeDynamicUI() {
+      // 1. 语言切换按钮自身文案
+      const localeBtn = document.getElementById('btn-locale-text');
+      // i18n-exempt: 语言切换按钮始终以「目标语言自己的语言」标注（中文态显示 EN，英文态显示 中文），不随 UI locale 翻译
+      if (localeBtn) localeBtn.textContent = (window.GATE_LOCALE === 'en') ? '中文' : 'EN';
+
+      // 2. 页面标题 / 面包屑 / 成员模式标签
+      if (typeof applyAuthModeUI === 'function') applyAuthModeUI();
+      if (typeof updatePageContext === 'function') updatePageContext();
+
+      // 3. 下拉框选项（标签来自字典，需重建）
+      if (typeof initCustomDropdowns === 'function') initCustomDropdowns();
+
+      // 3.5 实时同步徽标文案（含秒数，随语言重建）
+      if (typeof updateLiveSyncBadges === 'function') updateLiveSyncBadges();
+
+      // 4. 各 Tab 的动态内容：用内存缓存重绘，不重新请求网络
+      try {
+        if (activeNavTab === 'overview' && cachedStats) renderMainChart(cachedStats);
+        if (activeNavTab === 'keys' && cachedKeys && cachedKeys.length > 0) renderKeysTable(cachedKeys);
+        if (activeNavTab === 'logs' && cachedEvents && cachedEvents.length > 0) renderEventsTable(cachedEvents, cachedEventsTotal);
+        if (activeNavTab === 'errors' && cachedErrors && cachedErrors.length > 0) renderErrorsTable(cachedErrors, cachedErrorsTotal);
+        if (activeNavTab === 'validations') renderValidationsPage();
+        if (activeNavTab === 'quotas') {
+          renderUpstreamCards();
+          renderUpstreamStatsTable();
+          renderOpenRouterAccountsTable();
+        }
+        if (activeNavTab === 'status') renderStatusCards();
+        if (activeNavTab === 'upstream-stats') renderUpstreamStatsTable();
+      } catch (e) {
+        console.warn('[i18n] relocalize render failed:', e && e.message);
+      }
+    }
+
+    if (typeof onLocaleChange === 'function') {
+      onLocaleChange(function () { relocalizeDynamicUI(); });
+    }
+
+    // 首屏应用语言：静态文案 + <html lang> + 切换按钮文案
+    (function applyInitialLocale() {
+      if (typeof setLocale === 'function') {
+        setLocale(window.GATE_LOCALE || 'zh');
+      } else if (typeof applyStaticI18n === 'function') {
+        applyStaticI18n(document);
+      }
+      const localeBtn = document.getElementById('btn-locale-text');
+      // i18n-exempt: 语言切换按钮始终以「目标语言自己的语言」标注（中文态显示 EN，英文态显示 中文），不随 UI locale 翻译
+      if (localeBtn) localeBtn.textContent = (window.GATE_LOCALE === 'en') ? '中文' : 'EN';
+    })();
+
+    hydratePersistentCaches();
+    applyAuthModeUI();
+    initCustomDropdowns();
+    switchNavTab(activeNavTab);
+    if (!isMemberAuth()) {
+      ensureKeysLoaded().catch(() => {});
+    }
+    // 立即激活单一权威全局自动轮询与倒计时圆环（热加载就绪）
+    resetPolling();
+    document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+      backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.style.display = 'none'; });
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        closeMobileNav();
+        document.querySelectorAll('.modal-backdrop').forEach(m => m.style.display = 'none');
+      }
+    });
+
+    // 监听网络恢复与休眠唤醒（前后台切换自愈机制，增加 5 秒节流防抖根除频繁切屏导致的风暴与掉帧）
+    let lastVisibilityRefreshTime = 0;
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        const now = Date.now();
+        if (now - lastVisibilityRefreshTime > 5000) {
+          lastVisibilityRefreshTime = now;
+          if (typeof resetPolling === 'function') resetPolling();
+          refreshCurrentTab();
+        }
+      }
+    });
+    window.addEventListener('online', () => {
+      showToast(t('runtime.networkRestored'), 'info');
+      refreshCurrentTab(true);
+    });
+    window.addEventListener('offline', () => {
+      const badge = document.getElementById('quota-probe-badge');
+      const text = document.getElementById('quota-probe-text');
+      if (badge) {
+        badge.className = 'status-badge error';
+        badge.title = t('runtime.networkOfflineBadge');
+      }
+      if (text) text.innerText = t('runtime.networkOfflineBadgeText');
+      showToast(t('runtime.networkOffline'), 'warning');
+    });
+  
+</script>
+  <script src="/console/console-cpa.js"></script>
+  <script src="/console/console-overview.js"></script>
+</body>
+</html>

@@ -36,6 +36,8 @@ examples/plugin/bin/*
 pgstore/*
 gitstore/*
 objectstore/*
+*.db
+*.db-*
 
 # Static assets
 static/*
