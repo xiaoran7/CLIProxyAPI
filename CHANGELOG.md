@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Management APICall Force Refresh & Automated 401 Interception (`internal/api/handlers/management/api_tools.go`, `api_tools_test.go`)**:
+  - Added support for `force_refresh: true` in the JSON body and `?refresh=1`/`?force_refresh=true` in query parameters to force re-acquisition of OAuth access tokens (bypassing the cached token expiry timestamp) when querying upstream quota endpoints.
+  - Implemented automated 401 `UNAUTHENTICATED` error interception for `$TOKEN$`-interpolated management API calls: if an upstream endpoint (such as Google Cloud Code quota API) rejects the access token with HTTP 401, CPA automatically executes a single-flight token refresh, updates in-memory and on-disk credentials via `coreauth.Store`, re-substitutes the fresh token, and retries the upstream request once seamlessly.
+  - Ensured refreshed Antigravity OAuth tokens are immediately persisted to disk (`auths/`) via `store.Save(ctx, auth)` across server restarts.
+- **Console Upstream Quotas & OpenRouter Route Parity (`internal/console/api/`)**:
+  - Registered `/upstream-quotas` (GET and POST), `/upstream-routing`, `/upstream-auth/priority`, `/upstream-auth/status`, `/upstream-auth/activate-window`, and `/openrouter/accounts` (GET/POST/PATCH/PUT/DELETE) under both `/console/api` and `/admin/api`.
+  - Added safe JSON parsing guards in `console-quotas.js` to eliminate unexpected EOF exceptions when encountering empty or non-JSON responses.
 - **Authenticated Upstream Management Sandbox & Edge WAF Protection (`internal/console/api/upstream_proxy.go`, `router.go`, `console.html`, `upstream_proxy_test.go`)**:
   - Implemented authenticated upstream management proxy handlers mounted on `/admin/upstream/*` and `/console/upstream/*`, achieving 100% behavioral parity with the legacy Gate sandbox architecture.
   - **Query Token Exchange & Cookie Management**: Supports `?token=<secret>` parameter exchange, validating against either `admin-secret` or `management-key`, automatically provisioning an `HttpOnly`, `SameSite=Lax` `gate_admin_token` session cookie and 302 redirecting to clean URLs.

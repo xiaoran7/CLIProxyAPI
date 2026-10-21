@@ -474,6 +474,154 @@ func TestSystemTelemetryEndpoints(t *testing.T) {
 	}
 }
 
+func TestNewConsoleEndpoints(t *testing.T) {
+	r, _, _, _, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	authHdr := "Bearer test-secret-12345"
+
+	// 1. GET /console/api/upstream-quotas and /admin/api/upstream-quotas (fallback mode when CPA offline)
+	for _, path := range []string{"/console/api/upstream-quotas", "/admin/api/upstream-quotas"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", authHdr)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 for %s, got %d: %s", path, w.Code, w.Body.String())
+		}
+		var qResp struct {
+			Accounts []interface{} `json:"accounts"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &qResp); err != nil {
+			t.Fatalf("failed to parse upstream-quotas JSON from %s: %v", path, err)
+		}
+	}
+
+	// 2. GET /console/api/runtime-facts (degraded mode when CPA offline)
+	for _, window := range []string{"1h", "3h20m", "6h", "12h", "24h"} {
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/console/api/runtime-facts?window=%s", window), nil)
+		req.Header.Set("Authorization", authHdr)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 for runtime-facts?window=%s, got %d: %s", window, w.Code, w.Body.String())
+		}
+		var fResp struct {
+			Source   string                 `json:"source"`
+			Degraded bool                   `json:"degraded"`
+			Totals   map[string]interface{} `json:"totals"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &fResp); err != nil {
+			t.Fatalf("failed to parse runtime-facts JSON: %v", err)
+		}
+		if fResp.Totals == nil {
+			t.Fatalf("expected totals in runtime-facts response")
+		}
+	}
+
+	// 3. GET /console/api/models and /console/api/models/catalog
+	for _, path := range []string{"/console/api/models", "/console/api/models/catalog"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", authHdr)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 for %s, got %d: %s", path, w.Code, w.Body.String())
+		}
+		var mResp struct {
+			Models []interface{} `json:"models"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &mResp); err != nil {
+			t.Fatalf("failed to parse models JSON from %s: %v", path, err)
+		}
+	}
+
+	// 4. GET /console/api/upstream-auth-stats with range filters
+	for _, rng := range []string{"", "1d", "today", "7d", "30d", "all"} {
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/console/api/upstream-auth-stats?range=%s", rng), nil)
+		req.Header.Set("Authorization", authHdr)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 for upstream-auth-stats?range=%s, got %d: %s", rng, w.Code, w.Body.String())
+		}
+		var sResp struct {
+			Totals map[string]interface{} `json:"totals"`
+			Groups []interface{}          `json:"groups"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &sResp); err != nil {
+			t.Fatalf("failed to parse upstream-auth-stats JSON: %v", err)
+		}
+	}
+
+	// 5. OpenRouter Accounts CRUD
+	// 5.1 GET list
+	req := httptest.NewRequest(http.MethodGet, "/console/api/openrouter/accounts", nil)
+	req.Header.Set("Authorization", authHdr)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for GET openrouter/accounts, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 5.2 POST create
+	createAccPayload := map[string]interface{}{
+		"name":     "Test OpenRouter Account",
+		"note":     "Automated Unit Test",
+		"apiKey":   "sk-or-v1-abcdef0123456789abcdef0123456789",
+		"mgmtKey":  "sk-or-mgmt-9876543210",
+		"priority": 1,
+		"weight":   100,
+		"enabled":  true,
+	}
+	body, _ := json.Marshal(createAccPayload)
+	req = httptest.NewRequest(http.MethodPost, "/console/api/openrouter/accounts", bytes.NewReader(body))
+	req.Header.Set("Authorization", authHdr)
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for POST openrouter/accounts, got %d: %s", w.Code, w.Body.String())
+	}
+	var accCreated struct {
+		Success bool `json:"success"`
+		Account struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"account"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &accCreated)
+	if !accCreated.Success || accCreated.Account.ID == "" {
+		t.Fatalf("invalid create account response: %s", w.Body.String())
+	}
+	accID := accCreated.Account.ID
+
+	// 5.3 PATCH update
+	updatedName := "Test OpenRouter Account Updated"
+	updatePayload := map[string]interface{}{
+		"name": &updatedName,
+		"note": "Updated note",
+	}
+	body, _ = json.Marshal(updatePayload)
+	req = httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/console/api/openrouter/accounts/%s", accID), bytes.NewReader(body))
+	req.Header.Set("Authorization", authHdr)
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for PATCH openrouter/accounts/%s, got %d: %s", accID, w.Code, w.Body.String())
+	}
+
+	// 5.4 DELETE account
+	req = httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/console/api/openrouter/accounts/%s", accID), nil)
+	req.Header.Set("Authorization", authHdr)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for DELETE openrouter/accounts/%s, got %d: %s", accID, w.Code, w.Body.String())
+	}
+}
+
 func int64Ptr(v int64) *int64 {
 	return &v
 }

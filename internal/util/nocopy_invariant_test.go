@@ -112,6 +112,7 @@ var reviewedInPlaceByteWrites = map[string]reviewedInPlaceByteWrite{
 	"internal/client/codex/live/tcp_proxy.go":               {1, "copies header and payload into a freshly allocated frame"},
 	"internal/home/client.go":                               {1, "zeroes a secret buffer after json.Unmarshal has copied every value out"},
 	"internal/pluginstore/auth.go":                          {1, "zeroes a locally built credential buffer after base64 encoding copied it out"},
+	"internal/console/engine/memory_maps.go":                {2, "resets in-memory key token and request counter map entries to zero; operates on map[int64]int64, not byte buffers"},
 }
 
 // TestInPlaceByteWritesAreReviewed keeps the set of in-place byte writes small

@@ -1490,3 +1490,248 @@ func TestAPICallRejectsWhenOnlyIDTokenPresentWithoutRefreshToken(t *testing.T) {
 		t.Fatal("upstream must not be hit when access token cannot be resolved")
 	}
 }
+
+func TestAPICallAntigravityForceRefresh(t *testing.T) {
+	var refreshCalls atomic.Int32
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		refreshCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "antigravity-refreshed-token",
+			"refresh_token": "antigravity-refreshed-refresh-token",
+			"token_type":    "Bearer",
+			"expires_in":    3600,
+		})
+	}))
+	defer tokenServer.Close()
+
+	origTokenURL := antigravityOAuthTokenURL
+	antigravityOAuthTokenURL = tokenServer.URL
+	defer func() {
+		antigravityOAuthTokenURL = origTokenURL
+	}()
+
+	var receivedAuth string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"quota":"ok"}`))
+	}))
+	defer upstream.Close()
+
+	store := &memoryAuthStore{}
+	manager := coreauth.NewManager(store, nil, nil)
+	agAuth := &coreauth.Auth{
+		ID:       "antigravity-test.json",
+		FileName: "antigravity-test.json",
+		Provider: "antigravity",
+		Metadata: map[string]any{
+			"type":          "antigravity",
+			"access_token":  "antigravity-stale-token",
+			"refresh_token": "antigravity-refresh-token-123",
+			// expired is in the future, so without force_refresh it would not refresh
+			"expired": time.Now().Add(2 * time.Hour).Format(time.RFC3339),
+		},
+	}
+	if _, errRegister := manager.Register(context.Background(), agAuth); errRegister != nil {
+		t.Fatalf("register antigravity auth: %v", errRegister)
+	}
+	authIndex := agAuth.EnsureIndex()
+
+	h := &Handler{cfg: &config.Config{}, authManager: manager, tokenStore: store}
+	router := gin.New()
+	router.POST("/v0/management/api-call", h.APICall)
+
+	// Test 1: Normal call without force_refresh should reuse stale token (since expired is in the future)
+	{
+		body := `{"auth_index":"` + authIndex + `","method":"GET","url":"` + upstream.URL + `/quota","header":{"Authorization":"Bearer $TOKEN$"}}`
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/v0/management/api-call", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("APICall status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+		}
+		if receivedAuth != "Bearer antigravity-stale-token" {
+			t.Fatalf("receivedAuth = %q, want 'Bearer antigravity-stale-token'", receivedAuth)
+		}
+		if refreshCalls.Load() != 0 {
+			t.Fatalf("expected 0 refresh calls, got %d", refreshCalls.Load())
+		}
+	}
+
+	// Test 2: Call with force_refresh: true in JSON body
+	{
+		body := `{"auth_index":"` + authIndex + `","method":"GET","url":"` + upstream.URL + `/quota","header":{"Authorization":"Bearer $TOKEN$"},"force_refresh":true}`
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/v0/management/api-call", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("APICall status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+		}
+		if receivedAuth != "Bearer antigravity-refreshed-token" {
+			t.Fatalf("receivedAuth = %q, want 'Bearer antigravity-refreshed-token'", receivedAuth)
+		}
+		if refreshCalls.Load() != 1 {
+			t.Fatalf("expected 1 refresh call, got %d", refreshCalls.Load())
+		}
+
+		// Verify token was saved to store and manager
+		live := h.authByIndex(authIndex)
+		if live == nil {
+			t.Fatal("expected auth to be addressable by index")
+		}
+		if live.Metadata["access_token"] != "antigravity-refreshed-token" {
+			t.Fatalf("manager access_token = %v, want antigravity-refreshed-token", live.Metadata["access_token"])
+		}
+		saved := store.items[agAuth.ID]
+		if saved == nil {
+			t.Fatal("expected refreshed token to be saved to store")
+		}
+		if saved.Metadata["access_token"] != "antigravity-refreshed-token" {
+			t.Fatalf("store access_token = %v, want antigravity-refreshed-token", saved.Metadata["access_token"])
+		}
+	}
+
+	// Test 3: Call with ?refresh=1 query parameter
+	{
+		body := `{"auth_index":"` + authIndex + `","method":"GET","url":"` + upstream.URL + `/quota","header":{"Authorization":"Bearer $TOKEN$"}}`
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/v0/management/api-call?refresh=1", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("APICall status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+		}
+		if receivedAuth != "Bearer antigravity-refreshed-token" {
+			t.Fatalf("receivedAuth = %q, want 'Bearer antigravity-refreshed-token'", receivedAuth)
+		}
+		if refreshCalls.Load() != 2 {
+			t.Fatalf("expected 2 refresh calls, got %d", refreshCalls.Load())
+		}
+	}
+}
+
+func TestAPICallAntigravity401AutoRetry(t *testing.T) {
+	var refreshCalls atomic.Int32
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		refreshCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "antigravity-auto-retry-fresh-token",
+			"refresh_token": "antigravity-auto-retry-refresh-token",
+			"token_type":    "Bearer",
+			"expires_in":    3600,
+		})
+	}))
+	defer tokenServer.Close()
+
+	origTokenURL := antigravityOAuthTokenURL
+	antigravityOAuthTokenURL = tokenServer.URL
+	defer func() {
+		antigravityOAuthTokenURL = origTokenURL
+	}()
+
+	var upstreamCalls atomic.Int32
+	var receivedAuths []string
+	var mu sync.Mutex
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callNum := upstreamCalls.Add(1)
+		authHeader := r.Header.Get("Authorization")
+		mu.Lock()
+		receivedAuths = append(receivedAuths, authHeader)
+		mu.Unlock()
+
+		if callNum == 1 {
+			// First call: initial token is dead / revoked by Google
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":{"code":401,"message":"Request had invalid authentication credentials. Expected OAuth 2 access token","status":"UNAUTHENTICATED"}}`))
+			return
+		}
+
+		// Second call (after automatic token refresh and retry): succeed
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"userQuota":{"allowed":true}}`))
+	}))
+	defer upstream.Close()
+
+	store := &memoryAuthStore{}
+	manager := coreauth.NewManager(store, nil, nil)
+	agAuth := &coreauth.Auth{
+		ID:       "antigravity-retry.json",
+		FileName: "antigravity-retry.json",
+		Provider: "antigravity",
+		Metadata: map[string]any{
+			"type":          "antigravity",
+			"access_token":  "antigravity-revoked-token",
+			"refresh_token": "antigravity-refresh-token-456",
+			// expired is in the future, so without 401 retry it wouldn't know it was revoked
+			"expired": time.Now().Add(time.Hour).Format(time.RFC3339),
+		},
+	}
+	if _, errRegister := manager.Register(context.Background(), agAuth); errRegister != nil {
+		t.Fatalf("register antigravity auth: %v", errRegister)
+	}
+	authIndex := agAuth.EnsureIndex()
+
+	h := &Handler{cfg: &config.Config{}, authManager: manager, tokenStore: store}
+	router := gin.New()
+	router.POST("/v0/management/api-call", h.APICall)
+
+	body := `{"auth_index":"` + authIndex + `","method":"POST","url":"` + upstream.URL + `/retrieveUserQuotaSummary","header":{"Authorization":"Bearer $TOKEN$","User-Agent":"antigravity/hub/2.23.0 darwin/arm64"}}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v0/management/api-call", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("APICall status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+
+	var resp apiCallResponse
+	if errDecode := json.Unmarshal(rec.Body.Bytes(), &resp); errDecode != nil {
+		t.Fatalf("decode apiCallResponse: %v", errDecode)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("upstream status code = %d, want 200; body = %s", resp.StatusCode, resp.Body)
+	}
+	if !strings.Contains(resp.Body, "userQuota") {
+		t.Fatalf("unexpected upstream body: %s", resp.Body)
+	}
+
+	if upstreamCalls.Load() != 2 {
+		t.Fatalf("upstream calls = %d, want 2 (initial 401 + retry 200)", upstreamCalls.Load())
+	}
+	if refreshCalls.Load() != 1 {
+		t.Fatalf("token refresh calls = %d, want 1", refreshCalls.Load())
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(receivedAuths) != 2 {
+		t.Fatalf("received auth headers count = %d, want 2", len(receivedAuths))
+	}
+	if receivedAuths[0] != "Bearer antigravity-revoked-token" {
+		t.Errorf("call 1 auth = %q, want 'Bearer antigravity-revoked-token'", receivedAuths[0])
+	}
+	if receivedAuths[1] != "Bearer antigravity-auto-retry-fresh-token" {
+		t.Errorf("call 2 auth = %q, want 'Bearer antigravity-auto-retry-fresh-token'", receivedAuths[1])
+	}
+
+	// Verify the refreshed token is persisted
+	saved := store.items[agAuth.ID]
+	if saved == nil {
+		t.Fatal("expected auth to be saved in token store after auto retry")
+	}
+	if saved.Metadata["access_token"] != "antigravity-auto-retry-fresh-token" {
+		t.Fatalf("saved access_token = %v, want antigravity-auto-retry-fresh-token", saved.Metadata["access_token"])
+	}
+}

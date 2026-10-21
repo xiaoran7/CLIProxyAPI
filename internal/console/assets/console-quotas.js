@@ -115,8 +115,12 @@
           headers: getAuthHeaders()
         });
         if (!res.ok) throw new Error(t('quotas.openrouter.fetchListFailed'));
-        const data = await res.json();
-        cachedOpenRouterAccountList = data.accounts || [];
+        const text = await res.text();
+        let data = { accounts: [] };
+        try {
+          data = text ? JSON.parse(text) : { accounts: [] };
+        } catch (_) {}
+        cachedOpenRouterAccountList = (data && Array.isArray(data.accounts)) ? data.accounts : [];
         renderOpenRouterAccountsTable();
       } catch (err) {
         tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--danger); padding:20px;">${escapeHtml(err.message)}</td></tr>`;
@@ -284,8 +288,12 @@
           headers: getAuthHeaders()
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        cachedUpstreamValidations = data.validations || [];
+        const text = await res.text();
+        let data = { validations: [] };
+        try {
+          data = text ? JSON.parse(text) : { validations: [] };
+        } catch (_) {}
+        cachedUpstreamValidations = (data && Array.isArray(data.validations)) ? data.validations : [];
         renderValidationsBanner();
         renderValidationsPage();
         if (showTip) showToast(t('quotas.validation.listUpdatedToast'), 'success');
@@ -685,7 +693,14 @@
           headers: { 'Authorization': 'Bearer ' + secret }
         });
         if (res.status === 200) {
-          cachedUpstream = await res.json();
+          const text = await res.text();
+          let data = { accounts: [] };
+          try {
+            data = text ? JSON.parse(text) : { accounts: [] };
+          } catch (parseErr) {
+            console.warn('Upstream quota JSON parse error:', parseErr.message);
+          }
+          cachedUpstream = (data && Array.isArray(data.accounts)) ? data : { accounts: [] };
           upstreamLoaded = true;
           renderUpstreamCards();
           renderStatusCards();
@@ -738,7 +753,11 @@
           },
           body: JSON.stringify({ filename, provider, authIndex })
         });
-        const data = await res.json();
+        const text = await res.text();
+        let data = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch (_) {}
         if (!res.ok) throw new Error(data.error || t('quotas.quotaQueryFailed'));
         showToast(t('quotas.quotaQueryDoneToast'), 'success');
         // 前端主动触发刷新获取最新配额与重置时刻
@@ -1749,7 +1768,12 @@
           headers: { 'Authorization': 'Bearer ' + secret }
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        cachedUpstreamStats = await res.json();
+        const text = await res.text();
+        let data = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch (_) {}
+        cachedUpstreamStats = data;
         renderUpstreamStatsTable();
       } catch (err) {
         const container = document.getElementById('upstream-stats-cards-container');

@@ -122,6 +122,22 @@ func registerConsoleRoutes(
 		rg.DELETE("/provider-registry/:key", HandleDeleteProviderRegistry(eng, providers))
 
 		// Upstream quotas & validations
+		rg.GET("/upstream-quotas", HandleGetUpstreamQuotas(eng, cpa, providers))
+		rg.POST("/upstream-quotas", HandleGetUpstreamQuotas(eng, cpa, providers))
+		rg.GET("/upstream-routing", HandleGetUpstreamRouting(cpa))
+		rg.PUT("/upstream-routing", HandlePutUpstreamRouting(cpa))
+		rg.PUT("/upstream-auth/batch", HandlePutUpstreamAuthBatch(cpa))
+		rg.PUT("/upstream-auth/priority", HandlePutUpstreamAuthPriority(cpa))
+		rg.PUT("/upstream-auth/status", HandlePutUpstreamAuthStatus(cpa))
+		rg.POST("/upstream-auth/activate-window", HandlePostUpstreamAuthActivateWindow(cpa))
+		rg.GET("/runtime-facts", HandleGetRuntimeFacts(eng, cpa, providers))
+		rg.GET("/models", HandleGetCpaModels(eng, cpa, providers))
+		rg.GET("/models/catalog", HandleGetCpaModels(eng, cpa, providers))
+		rg.GET("/openrouter/accounts", HandleGetOpenRouterAccounts(cpa))
+		rg.POST("/openrouter/accounts", HandleCreateOpenRouterAccount(cpa))
+		rg.PATCH("/openrouter/accounts/:id", HandleUpdateOpenRouterAccount(cpa))
+		rg.PUT("/openrouter/accounts/:id", HandleUpdateOpenRouterAccount(cpa))
+		rg.DELETE("/openrouter/accounts/:id", HandleDeleteOpenRouterAccount(cpa))
 		rg.GET("/quota-snapshots", HandleGetQuotaSnapshots(eng))
 		rg.GET("/upstream-auth-stats", HandleGetUpstreamAuthStats(eng, providers))
 		rg.GET("/upstream-validations", HandleGetValidations(eng))
@@ -149,6 +165,6 @@ func registerConsoleRoutes(
 		})
 
 		// CPA loopback proxy routes
-		RegisterCpaRoutes(rg.Group("/cpa"), cpa)
+		RegisterCpaRoutes(rg.Group("/cpa"), cpa, eng, providers)
 	}
 }

@@ -8,11 +8,13 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/engine"
 )
 
 var safeAuthFilenameRegex = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}\.json$`)
@@ -21,8 +23,178 @@ func isSafeAuthFilename(name string) bool {
 	return safeAuthFilenameRegex.MatchString(name) && !strings.Contains(name, "..")
 }
 
+var safeErrorLogRegex = regexp.MustCompile(`^error-[A-Za-z0-9._-]+\.log$`)
+
+func isSafeErrorLogFilename(name string) bool {
+	return safeErrorLogRegex.MatchString(name) && !strings.Contains(name, "..")
+}
+
+// CpaModelItem represents a model catalog item with availability and origin source.
+type CpaModelItem struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Provider  string `json:"provider"`
+	Available bool   `json:"available"`
+	Source    string `json:"source"`
+}
+
+// HandleGetCpaModels aggregates models from SQLite model_prices, CPA auth-files, and CPA openai-compatibility channels.
+func HandleGetCpaModels(eng *engine.Engine, cpa *CpaClient, providers *ProviderRegistryEngine) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+		catalogMap := make(map[string]CpaModelItem)
+
+		// 1. From SQLite model_prices
+		prices, err := eng.DB().SelectAllModelPrices(ctx)
+		if err == nil {
+			for _, p := range prices {
+				if p.Pattern != "" {
+					prov := providers.InferProvider(p.Pattern, "").Key
+					if prov == "" {
+						prov = "general"
+					}
+					catalogMap[p.Pattern] = CpaModelItem{
+						ID:        p.Pattern,
+						Name:      p.Pattern,
+						Provider:  prov,
+						Available: true,
+						Source:    "system-catalog",
+					}
+				}
+			}
+		}
+
+		// 2. From CPA auth-files
+		var authFilesResp struct {
+			Files []struct {
+				Name      string `json:"name"`
+				Provider  string `json:"provider"`
+				Disabled  bool   `json:"disabled"`
+				AuthIndex string `json:"auth_index"`
+			} `json:"files"`
+		}
+		if err := cpa.RequestJSON(ctx, http.MethodGet, "/auth-files", nil, "v0", &authFilesResp); err == nil {
+			files := authFilesResp.Files
+			if len(files) > 15 {
+				files = files[:15]
+			}
+			for _, f := range files {
+				if isSafeAuthFilename(f.Name) {
+					var mResp struct {
+						Models []interface{} `json:"models"`
+					}
+					targetURL := fmt.Sprintf("/auth-files/models?name=%s", f.Name)
+					if err := cpa.RequestJSON(ctx, http.MethodGet, targetURL, nil, "v0", &mResp); err == nil {
+						prov := f.Provider
+						if prov == "" {
+							prov = "upstream"
+						}
+						for _, m := range mResp.Models {
+							mID := ""
+							switch v := m.(type) {
+							case string:
+								mID = v
+							case map[string]interface{}:
+								if idStr, ok := v["id"].(string); ok && idStr != "" {
+									mID = idStr
+								} else if nameStr, ok := v["name"].(string); ok && nameStr != "" {
+									mID = nameStr
+								}
+							}
+							if mID != "" {
+								if _, exists := catalogMap[mID]; !exists {
+									catalogMap[mID] = CpaModelItem{
+										ID:        mID,
+										Name:      mID,
+										Provider:  prov,
+										Available: !f.Disabled,
+										Source:    f.Name,
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// 3. From CPA openai-compatibility channels
+		var compatResp struct {
+			Compat []struct {
+				Name     string        `json:"name"`
+				Disabled bool          `json:"disabled"`
+				Models   []interface{} `json:"models"`
+			} `json:"openai-compatibility"`
+		}
+		if err := cpa.RequestJSON(ctx, http.MethodGet, "/openai-compatibility", nil, "v0", &compatResp); err == nil {
+			for _, ch := range compatResp.Compat {
+				cName := ch.Name
+				if cName == "" {
+					cName = "custom"
+				}
+				for _, m := range ch.Models {
+					mName := ""
+					switch v := m.(type) {
+					case string:
+						mName = v
+					case map[string]interface{}:
+						if idStr, ok := v["id"].(string); ok && idStr != "" {
+							mName = idStr
+						} else if nameStr, ok := v["name"].(string); ok && nameStr != "" {
+							mName = nameStr
+						}
+					}
+					if mName != "" {
+						if _, exists := catalogMap[mName]; !exists {
+							catalogMap[mName] = CpaModelItem{
+								ID:        mName,
+								Name:      mName,
+								Provider:  cName,
+								Available: !ch.Disabled,
+								Source:    "compat:" + cName,
+							}
+						}
+					}
+				}
+			}
+		}
+
+		modelsList := make([]CpaModelItem, 0, len(catalogMap))
+		for _, m := range catalogMap {
+			modelsList = append(modelsList, m)
+		}
+		sort.Slice(modelsList, func(i, j int) bool {
+			return modelsList[i].ID < modelsList[j].ID
+		})
+
+		c.JSON(http.StatusOK, gin.H{"models": modelsList})
+	}
+}
+
+// HandleDownloadErrorLog streams error log file download with content disposition.
+func HandleDownloadErrorLog(cpa *CpaClient) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		name := c.Query("name")
+		if !isSafeErrorLogFilename(name) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的日志文件名"})
+			return
+		}
+		targetURL := fmt.Sprintf("/request-error-logs/%s", name)
+		resp, err := cpa.Request(c.Request.Context(), http.MethodGet, targetURL, nil, "text/plain", "v0")
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+			return
+		}
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", name))
+		c.Header("Cache-Control", "no-store")
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Data(resp.StatusCode, "text/plain; charset=utf-8", resp.Bytes)
+	}
+}
+
 // RegisterCpaRoutes mounts all CPA loopback management endpoints.
-func RegisterCpaRoutes(rg *gin.RouterGroup, cpa *CpaClient) {
+func RegisterCpaRoutes(rg *gin.RouterGroup, cpa *CpaClient, eng *engine.Engine, providers *ProviderRegistryEngine) {
 	// Config YAML
 	rg.GET("/config-yaml", func(c *gin.Context) {
 		resp, err := cpa.Request(c.Request.Context(), http.MethodGet, "/config.yaml", nil, "application/yaml", "v0")
@@ -197,6 +369,10 @@ func RegisterCpaRoutes(rg *gin.RouterGroup, cpa *CpaClient) {
 		forwardCpa(c, cpa, c.Request.Method, subpath, body, "v8")
 	})
 
+	// Models catalog
+	rg.GET("/models", HandleGetCpaModels(eng, cpa, providers))
+	rg.GET("/models/catalog", HandleGetCpaModels(eng, cpa, providers))
+
 	// Logs
 	rg.GET("/logs", func(c *gin.Context) {
 		after := c.Query("after")
@@ -227,14 +403,31 @@ func RegisterCpaRoutes(rg *gin.RouterGroup, cpa *CpaClient) {
 
 	rg.GET("/request-error-logs/preview", func(c *gin.Context) {
 		name := c.Query("name")
+		if !isSafeErrorLogFilename(name) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的日志文件名"})
+			return
+		}
 		targetURL := fmt.Sprintf("/request-error-logs/%s", name)
 		resp, err := cpa.Request(c.Request.Context(), http.MethodGet, targetURL, nil, "text/plain", "v0")
 		if err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 			return
 		}
+		if len(resp.Bytes) > 2*1024*1024 {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error": "日志体积超过 2 MiB 预览上限，请使用“下载”功能在本地查看",
+				"size":  len(resp.Bytes),
+				"name":  name,
+			})
+			return
+		}
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+		c.Header("Cache-Control", "no-store")
+		c.Header("X-Content-Type-Options", "nosniff")
 		c.Data(resp.StatusCode, "text/plain; charset=utf-8", resp.Bytes)
 	})
+
+	rg.GET("/request-error-logs/download", HandleDownloadErrorLog(cpa))
 
 	// Quota reset & cooldown
 	rg.POST("/reset-quota", func(c *gin.Context) {

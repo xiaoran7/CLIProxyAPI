@@ -31,14 +31,16 @@ const (
 var antigravityOAuthTokenURL = "https://oauth2.googleapis.com/token"
 
 type apiCallRequest struct {
-	AuthIndexSnake  *string           `json:"auth_index"`
-	AuthIndexCamel  *string           `json:"authIndex"`
-	AuthIndexPascal *string           `json:"AuthIndex"`
-	Method          string            `json:"method"`
-	URL             string            `json:"url"`
-	ProxyURL        string            `json:"proxy_url"`
-	Header          map[string]string `json:"header"`
-	Data            string            `json:"data"`
+	AuthIndexSnake    *string           `json:"auth_index"`
+	AuthIndexCamel    *string           `json:"authIndex"`
+	AuthIndexPascal   *string           `json:"AuthIndex"`
+	Method            string            `json:"method"`
+	URL               string            `json:"url"`
+	ProxyURL          string            `json:"proxy_url"`
+	Header            map[string]string `json:"header"`
+	Data              string            `json:"data"`
+	ForceRefreshSnake *bool             `json:"force_refresh"`
+	ForceRefreshCamel *bool             `json:"forceRefresh"`
 }
 
 type apiCallResponse struct {
@@ -136,19 +138,41 @@ func (h *Handler) APICall(c *gin.Context) {
 	authIndex := firstNonEmptyString(body.AuthIndexSnake, body.AuthIndexCamel, body.AuthIndexPascal)
 	auth := h.authByIndex(authIndex)
 
-	reqHeaders := body.Header
-	if reqHeaders == nil {
-		reqHeaders = map[string]string{}
+	queryRefresh := c.Query("refresh") == "1" ||
+		strings.EqualFold(c.Query("refresh"), "true") ||
+		c.Query("force_refresh") == "1" ||
+		strings.EqualFold(c.Query("force_refresh"), "true") ||
+		c.Query("forceRefresh") == "1" ||
+		strings.EqualFold(c.Query("forceRefresh"), "true")
+
+	forceRefresh := (body.ForceRefreshSnake != nil && *body.ForceRefreshSnake) ||
+		(body.ForceRefreshCamel != nil && *body.ForceRefreshCamel) ||
+		queryRefresh
+
+	origHeaders := body.Header
+	if origHeaders == nil {
+		origHeaders = map[string]string{}
+	}
+	origData := body.Data
+
+	hasTokenPlaceholder := false
+	for _, value := range origHeaders {
+		if strings.Contains(value, "$TOKEN$") {
+			hasTokenPlaceholder = true
+			break
+		}
+	}
+	if !hasTokenPlaceholder && strings.Contains(origData, "$TOKEN$") {
+		hasTokenPlaceholder = true
 	}
 
-	var hostOverride string
 	var token string
 	var tokenResolved bool
 	var tokenErr error
 
-	resolveToken := func() error {
-		if !tokenResolved {
-			token, tokenErr = h.resolveTokenForAuth(c.Request.Context(), auth, requestProxyURL)
+	resolveToken := func(force bool) error {
+		if !tokenResolved || force {
+			token, tokenErr = h.resolveTokenForAuthWithForce(c.Request.Context(), auth, requestProxyURL, force)
 			tokenResolved = true
 		}
 		if token == "" {
@@ -163,51 +187,62 @@ func (h *Handler) APICall(c *gin.Context) {
 		return nil
 	}
 
-	for key, value := range reqHeaders {
-		if !strings.Contains(value, "$TOKEN$") {
-			continue
-		}
-		if errToken := resolveToken(); errToken != nil {
+	if hasTokenPlaceholder {
+		if errToken := resolveToken(forceRefresh); errToken != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": errToken.Error()})
 			return
 		}
-		reqHeaders[key] = strings.ReplaceAll(value, "$TOKEN$", token)
 	}
 
-	if strings.Contains(body.Data, "$TOKEN$") {
-		if errToken := resolveToken(); errToken != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": errToken.Error()})
-			return
-		}
-		replacement := token
-		if json.Valid([]byte(body.Data)) && strings.ContainsAny(token, "\"\\\r\n\t") {
-			if b, errMarshal := json.Marshal(token); errMarshal == nil && len(b) >= 2 {
-				replacement = string(b[1 : len(b)-1])
+	buildRequest := func(curToken string) (*http.Request, error) {
+		reqHeaders := make(map[string]string, len(origHeaders))
+		for k, v := range origHeaders {
+			if strings.Contains(v, "$TOKEN$") {
+				reqHeaders[k] = strings.ReplaceAll(v, "$TOKEN$", curToken)
+			} else {
+				reqHeaders[k] = v
 			}
 		}
-		body.Data = strings.ReplaceAll(body.Data, "$TOKEN$", replacement)
+
+		dataStr := origData
+		if strings.Contains(dataStr, "$TOKEN$") {
+			replacement := curToken
+			if json.Valid([]byte(dataStr)) && strings.ContainsAny(curToken, "\"\\\r\n\t") {
+				if b, errMarshal := json.Marshal(curToken); errMarshal == nil && len(b) >= 2 {
+					replacement = string(b[1 : len(b)-1])
+				}
+			}
+			dataStr = strings.ReplaceAll(dataStr, "$TOKEN$", replacement)
+		}
+
+		var requestBody io.Reader
+		if dataStr != "" {
+			requestBody = strings.NewReader(dataStr)
+		}
+
+		req, errNewRequest := http.NewRequestWithContext(c.Request.Context(), method, urlStr, requestBody)
+		if errNewRequest != nil {
+			return nil, errNewRequest
+		}
+
+		hostOverride := ""
+		for key, value := range reqHeaders {
+			if strings.EqualFold(key, "host") {
+				hostOverride = strings.TrimSpace(value)
+				continue
+			}
+			req.Header.Set(key, value)
+		}
+		if hostOverride != "" {
+			req.Host = hostOverride
+		}
+		return req, nil
 	}
 
-	var requestBody io.Reader
-	if body.Data != "" {
-		requestBody = strings.NewReader(body.Data)
-	}
-
-	req, errNewRequest := http.NewRequestWithContext(c.Request.Context(), method, urlStr, requestBody)
-	if errNewRequest != nil {
+	req, errBuild := buildRequest(token)
+	if errBuild != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to build request"})
 		return
-	}
-
-	for key, value := range reqHeaders {
-		if strings.EqualFold(key, "host") {
-			hostOverride = strings.TrimSpace(value)
-			continue
-		}
-		req.Header.Set(key, value)
-	}
-	if hostOverride != "" {
-		req.Host = hostOverride
 	}
 
 	httpClient := &http.Client{
@@ -221,16 +256,35 @@ func (h *Handler) APICall(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "request failed"})
 		return
 	}
-	defer func() {
-		if errClose := resp.Body.Close(); errClose != nil {
-			log.Errorf("response body close error: %v", errClose)
-		}
-	}()
 
 	respBody, errReadAll := io.ReadAll(resp.Body)
+	if errClose := resp.Body.Close(); errClose != nil {
+		log.Errorf("response body close error: %v", errClose)
+	}
 	if errReadAll != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read response"})
 		return
+	}
+
+	// If upstream returned 401 Unauthorized, and we used a credential token placeholder ($TOKEN$),
+	// attempt an automatic forced refresh once and retry the request.
+	if resp.StatusCode == http.StatusUnauthorized && hasTokenPlaceholder && auth != nil && !forceRefresh {
+		if errRefresh := resolveToken(true); errRefresh == nil && token != "" {
+			if retryReq, errRetryBuild := buildRequest(token); errRetryBuild == nil {
+				if retryResp, errRetryDo := httpClient.Do(retryReq); errRetryDo == nil {
+					retryBody, errRetryRead := io.ReadAll(retryResp.Body)
+					if errRetryClose := retryResp.Body.Close(); errRetryClose != nil {
+						log.Errorf("retry response body close error: %v", errRetryClose)
+					}
+					if errRetryRead == nil {
+						resp = retryResp
+						respBody = retryBody
+					}
+				} else {
+					log.WithError(errRetryDo).Debug("management APICall retry request failed")
+				}
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, apiCallResponse{
@@ -271,12 +325,16 @@ func tokenValueForAuth(auth *coreauth.Auth) string {
 }
 
 func (h *Handler) resolveTokenForAuth(ctx context.Context, auth *coreauth.Auth, requestProxyURL string) (string, error) {
+	return h.resolveTokenForAuthWithForce(ctx, auth, requestProxyURL, false)
+}
+
+func (h *Handler) resolveTokenForAuthWithForce(ctx context.Context, auth *coreauth.Auth, requestProxyURL string, force bool) (string, error) {
 	if auth == nil {
 		return "", nil
 	}
 
 	if strings.EqualFold(strings.TrimSpace(auth.Provider), "antigravity") {
-		token, errToken := h.refreshAntigravityOAuthAccessToken(ctx, auth, requestProxyURL)
+		token, errToken := h.refreshAntigravityOAuthAccessToken(ctx, auth, requestProxyURL, force)
 		return token, errToken
 	}
 
@@ -286,14 +344,14 @@ func (h *Handler) resolveTokenForAuth(ctx context.Context, auth *coreauth.Auth, 
 	}
 
 	if strings.EqualFold(strings.TrimSpace(auth.Provider), "xai") {
-		token, errToken := h.resolveXAIToken(ctx, auth, requestProxyURL)
+		token, errToken := h.resolveXAIToken(ctx, auth, requestProxyURL, force)
 		return token, errToken
 	}
 
 	return tokenValueForAuth(auth), nil
 }
 
-func (h *Handler) resolveXAIToken(ctx context.Context, auth *coreauth.Auth, requestProxyURL string) (string, error) {
+func (h *Handler) resolveXAIToken(ctx context.Context, auth *coreauth.Auth, requestProxyURL string, force bool) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -302,7 +360,7 @@ func (h *Handler) resolveXAIToken(ctx context.Context, auth *coreauth.Auth, requ
 	}
 
 	current := xaiTokenValue(auth)
-	if current != "" && !xaiOAuthTokenNeedsRefresh(auth) {
+	if !force && current != "" && !xaiOAuthTokenNeedsRefresh(auth) {
 		return current, nil
 	}
 
@@ -527,7 +585,7 @@ func xaiOAuthTokenNeedsRefresh(auth *coreauth.Auth) bool {
 	return !temp.HasValidAccessToken(now)
 }
 
-func (h *Handler) refreshAntigravityOAuthAccessToken(ctx context.Context, auth *coreauth.Auth, requestProxyURL string) (string, error) {
+func (h *Handler) refreshAntigravityOAuthAccessToken(ctx context.Context, auth *coreauth.Auth, requestProxyURL string, force bool) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -541,7 +599,7 @@ func (h *Handler) refreshAntigravityOAuthAccessToken(ctx context.Context, auth *
 	}
 
 	current := strings.TrimSpace(tokenValueFromMetadata(metadata))
-	if current != "" && !antigravityTokenNeedsRefresh(metadata) {
+	if !force && current != "" && !antigravityTokenNeedsRefresh(metadata) {
 		return current, nil
 	}
 
@@ -617,10 +675,17 @@ func (h *Handler) refreshAntigravityOAuthAccessToken(ctx context.Context, auth *
 	}
 	auth.Metadata["type"] = "antigravity"
 
+	if store := h.tokenStoreWithBaseDir(); store != nil && !coreauth.IsConfigAPIKeyAuth(auth) {
+		if _, errSave := store.Save(ctx, auth); errSave != nil {
+			log.WithError(errSave).Warn("management APICall: failed to persist refreshed antigravity oauth token")
+		}
+	}
 	if h != nil && h.authManager != nil {
 		auth.LastRefreshedAt = now
 		auth.UpdatedAt = now
-		_, _ = h.authManager.Update(ctx, auth)
+		if _, errUpdate := h.authManager.Update(ctx, auth); errUpdate != nil {
+			log.WithError(errUpdate).Warn("management APICall: failed to update refreshed antigravity oauth credential in manager")
+		}
 	}
 
 	return strings.TrimSpace(tokenResp.AccessToken), nil
