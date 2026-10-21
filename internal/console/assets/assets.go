@@ -57,29 +57,33 @@ func GetAsset(name string) ([]byte, error) {
 
 // RegisterUI mounts all Console UI routes, static assets, and backward-compatible admin aliases.
 func RegisterUI(r *gin.Engine) {
+	registerGetHead := func(path string, handler gin.HandlerFunc) {
+		r.GET(path, handler)
+		r.HEAD(path, handler)
+	}
+
 	// Root / console index handlers
 	consoleIndexHandler := func(c *gin.Context) {
 		serveEmbeddedFile(c, "console.html", "text/html; charset=utf-8", "no-cache, must-revalidate")
 	}
 
-	r.GET("/console", consoleIndexHandler)
-	r.GET("/console/", consoleIndexHandler)
-	r.GET("/console/index.html", consoleIndexHandler)
-	r.GET("/console/console.html", consoleIndexHandler)
+	registerGetHead("/console", consoleIndexHandler)
+	registerGetHead("/console/", consoleIndexHandler)
+	registerGetHead("/console/index.html", consoleIndexHandler)
+	registerGetHead("/console/console.html", consoleIndexHandler)
 
 	// Legacy admin and member redirects
-	r.GET("/admin", func(c *gin.Context) {
+	adminRedirectHandler := func(c *gin.Context) {
 		c.Redirect(http.StatusMovedPermanently, "/console")
-	})
-	r.GET("/admin/", func(c *gin.Context) {
-		c.Redirect(http.StatusMovedPermanently, "/console")
-	})
-	r.GET("/member", func(c *gin.Context) {
+	}
+	registerGetHead("/admin", adminRedirectHandler)
+	registerGetHead("/admin/", adminRedirectHandler)
+
+	memberRedirectHandler := func(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/console")
-	})
-	r.GET("/member/", func(c *gin.Context) {
-		c.Redirect(http.StatusFound, "/console")
-	})
+	}
+	registerGetHead("/member", memberRedirectHandler)
+	registerGetHead("/member/", memberRedirectHandler)
 
 	// Static JS and CSS assets under /console/*
 	assetFiles := map[string]string{
@@ -111,7 +115,7 @@ func RegisterUI(r *gin.Engine) {
 		if strings.HasSuffix(name, ".css") {
 			contentType = "text/css; charset=utf-8"
 		}
-		r.GET(routePath, func(c *gin.Context) {
+		registerGetHead(routePath, func(c *gin.Context) {
 			serveEmbeddedFile(c, name, contentType, "no-cache, must-revalidate")
 		})
 	}
@@ -146,7 +150,7 @@ func RegisterUI(r *gin.Engine) {
 		if strings.HasSuffix(name, ".css") {
 			contentType = "text/css; charset=utf-8"
 		}
-		r.GET(routePath, func(c *gin.Context) {
+		registerGetHead(routePath, func(c *gin.Context) {
 			serveEmbeddedFile(c, name, contentType, "no-cache, must-revalidate")
 		})
 	}
@@ -192,11 +196,15 @@ func RegisterUI(r *gin.Engine) {
 		c.Header("ETag", etag)
 		c.Header("Cache-Control", "public, max-age=604800, immutable")
 		c.Header("Content-Type", ctype)
+		if c.Request.Method == http.MethodHead {
+			c.Status(http.StatusOK)
+			return
+		}
 		c.Data(http.StatusOK, ctype, data)
 	}
 
-	r.GET("/console/assets/*filepath", imageHandler)
-	r.GET("/admin/assets/*filepath", imageHandler)
+	registerGetHead("/console/assets/*filepath", imageHandler)
+	registerGetHead("/admin/assets/*filepath", imageHandler)
 }
 
 func serveEmbeddedFile(c *gin.Context, assetName, contentType, cacheControl string) {
@@ -224,6 +232,10 @@ func serveEmbeddedFile(c *gin.Context, assetName, contentType, cacheControl stri
 	c.Header("Cache-Control", cacheControl)
 	c.Header("Content-Type", contentType)
 	c.Header("X-Content-Type-Options", "nosniff")
+	if c.Request.Method == http.MethodHead {
+		c.Status(http.StatusOK)
+		return
+	}
 	c.Data(http.StatusOK, contentType, data)
 }
 

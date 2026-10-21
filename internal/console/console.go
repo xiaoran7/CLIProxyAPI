@@ -1,10 +1,13 @@
 package console
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
@@ -14,6 +17,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/db"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/engine"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/middleware"
+	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
 	sdkhandlers "github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	"github.com/sirupsen/logrus"
 )
@@ -78,6 +82,9 @@ func InitSubsystem(cfg SubsystemConfig) (*Subsystem, error) {
 	// Start engine background flusher
 	eng.Start()
 
+	// Register native CPA access provider for zero-latency, in-memory request authentication
+	sdkaccess.RegisterProvider(AccessProviderTypeConsole, NewConsoleAccessProvider(eng))
+
 	sub := &Subsystem{
 		cfg:       cfg,
 		db:        database,
@@ -106,6 +113,8 @@ func (s *Subsystem) Stop() {
 	}
 	globalSubsystemMu.Lock()
 	defer globalSubsystemMu.Unlock()
+
+	sdkaccess.UnregisterProvider(AccessProviderTypeConsole)
 
 	if s.engine != nil {
 		s.engine.Stop()
@@ -176,6 +185,37 @@ func ServerOptions(cfg SubsystemConfig) []api.ServerOption {
 			}
 			if serverCfg.Host != "" && serverCfg.Host != "0.0.0.0" {
 				routerCfg.CpaHost = serverCfg.Host
+			}
+
+			// Reconcile and import API keys defined in CPA server configuration into Console database
+			if len(serverCfg.APIKeys) > 0 {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				reconciled := 0
+				for _, k := range serverCfg.APIKeys {
+					trimmed := strings.TrimSpace(k)
+					if trimmed == "" {
+						continue
+					}
+					if _, exists := sub.engine.ResolveKeyID(trimmed); !exists {
+						keyID, err := sub.db.InsertKey(ctx, trimmed, "CPA Config Key")
+						if err == nil && keyID > 0 {
+							rule := &db.QuotaRuleRow{
+								KeyID:          keyID,
+								Enabled:        0,
+								HardRatio:      1.2,
+								RPMLimit:       0,
+								ModelWhitelist: "[]",
+							}
+							_ = sub.db.UpsertQuotaRule(ctx, rule)
+							reconciled++
+						}
+					}
+				}
+				if reconciled > 0 {
+					_ = sub.engine.ReloadState(ctx)
+					sub.logger.Infof("console: reconciled %d keys from CPA configuration", reconciled)
+				}
 			}
 		}
 

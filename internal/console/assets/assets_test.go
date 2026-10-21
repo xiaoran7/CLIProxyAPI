@@ -117,4 +117,48 @@ func TestStaticRoutesServing(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for legacy image asset, got %d", w.Code)
 	}
+
+	// 9. Test HTTP HEAD on /console (curl -I)
+	reqHead := httptest.NewRequest(http.MethodHead, "/console", nil)
+	wHead := httptest.NewRecorder()
+	r.ServeHTTP(wHead, reqHead)
+	if wHead.Code != http.StatusOK {
+		t.Fatalf("expected 200 for HEAD /console, got %d", wHead.Code)
+	}
+	if wHead.Body.Len() != 0 {
+		t.Fatalf("expected empty body for HEAD /console, got %d bytes", wHead.Body.Len())
+	}
+	if ct := wHead.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
+		t.Fatalf("expected text/html for HEAD /console, got %s", ct)
+	}
+
+	// 10. Test HTTP HEAD on /admin (redirect)
+	reqAdminHead := httptest.NewRequest(http.MethodHead, "/admin", nil)
+	wAdminHead := httptest.NewRecorder()
+	r.ServeHTTP(wAdminHead, reqAdminHead)
+	if wAdminHead.Code != http.StatusMovedPermanently {
+		t.Fatalf("expected 301 for HEAD /admin, got %d", wAdminHead.Code)
+	}
+
+	// 11. Test HTTP HEAD on CSS asset
+	reqCssHead := httptest.NewRequest(http.MethodHead, "/console/console-style.css", nil)
+	wCssHead := httptest.NewRecorder()
+	r.ServeHTTP(wCssHead, reqCssHead)
+	if wCssHead.Code != http.StatusOK {
+		t.Fatalf("expected 200 for HEAD CSS, got %d", wCssHead.Code)
+	}
+	if wCssHead.Body.Len() != 0 {
+		t.Fatalf("expected empty body for HEAD CSS, got %d bytes", wCssHead.Body.Len())
+	}
+
+	// 12. Test HTTP HEAD on image asset
+	reqImgHead := httptest.NewRequest(http.MethodHead, "/console/assets/gate-sakura-mark-128.webp", nil)
+	wImgHead := httptest.NewRecorder()
+	r.ServeHTTP(wImgHead, reqImgHead)
+	if wImgHead.Code != http.StatusOK {
+		t.Fatalf("expected 200 for HEAD image, got %d", wImgHead.Code)
+	}
+	if wImgHead.Body.Len() != 0 {
+		t.Fatalf("expected empty body for HEAD image, got %d bytes", wImgHead.Body.Len())
+	}
 }
