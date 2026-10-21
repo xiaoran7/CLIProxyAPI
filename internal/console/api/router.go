@@ -28,9 +28,9 @@ func RegisterRoutes(r *gin.Engine, eng *engine.Engine, cfg RouterConfig, pricing
 	registerMemberRoutes(r.Group("/api/member"), eng, pricing, providers)
 
 	// 3. Console management endpoints (authenticated via management secret)
-	registerConsoleRoutes(r.Group("/console/api"), eng, cfg.AdminSecret, cpaClient, pricing, providers)
+	registerConsoleRoutes(r.Group("/console/api"), eng, cfg.AdminSecret, cfg.CpaSecret, cpaClient, pricing, providers)
 	// Compatibility alias for legacy admin frontend
-	registerConsoleRoutes(r.Group("/admin/api"), eng, cfg.AdminSecret, cpaClient, pricing, providers)
+	registerConsoleRoutes(r.Group("/admin/api"), eng, cfg.AdminSecret, cfg.CpaSecret, cpaClient, pricing, providers)
 
 	// 4. Upstream management proxy routes (/admin/upstream and /console/upstream)
 	RegisterUpstreamProxyRoutes(r, cfg)
@@ -88,12 +88,12 @@ func registerMemberRoutes(rg *gin.RouterGroup, eng *engine.Engine, pricing *Pric
 func registerConsoleRoutes(
 	rg *gin.RouterGroup,
 	eng *engine.Engine,
-	adminSecret string,
+	adminSecret, cpaSecret string,
 	cpa *CpaClient,
 	pricing *PricingEngine,
 	providers *ProviderRegistryEngine,
 ) {
-	rg.Use(AdminAuthMiddleware(adminSecret))
+	rg.Use(AdminAuthMiddleware(adminSecret, cpaSecret))
 	{
 		// Keys management
 		rg.GET("/keys", HandleGetKeys(eng))

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"crypto/subtle"
 	"net/http"
 	"strings"
 
@@ -9,11 +8,19 @@ import (
 )
 
 // AdminAuthMiddleware validates the management secret for console admin endpoints.
-// It checks Authorization: Bearer <secret> or x-admin-key: <secret> using constant-time comparison.
-func AdminAuthMiddleware(secret string) gin.HandlerFunc {
+// It checks Authorization: Bearer <secret>, custom headers (x-admin-key, x-management-key),
+// the GateAdminTokenCookie, or query token, supporting constant-time string comparison and bcrypt hashes.
+func AdminAuthMiddleware(adminSecret string, cpaSecret ...string) gin.HandlerFunc {
+	secondSecret := ""
+	if len(cpaSecret) > 0 {
+		secondSecret = cpaSecret[0]
+	}
+
 	return func(c *gin.Context) {
-		trimmedSecret := strings.TrimSpace(secret)
-		if trimmedSecret == "" {
+		trimmedAdmin := strings.TrimSpace(adminSecret)
+		trimmedCpa := strings.TrimSpace(secondSecret)
+
+		if trimmedAdmin == "" && trimmedCpa == "" {
 			// If no management secret is configured, allow requests from loopback/localhost only
 			clientIP := c.ClientIP()
 			if clientIP == "127.0.0.1" || clientIP == "::1" || clientIP == "localhost" {
@@ -43,7 +50,19 @@ func AdminAuthMiddleware(secret string) gin.HandlerFunc {
 			token = strings.TrimSpace(c.GetHeader("x-management-key"))
 		}
 
-		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(trimmedSecret)) != 1 {
+		if token == "" {
+			if cookie, err := c.Cookie(GateAdminTokenCookie); err == nil && cookie != "" {
+				token = strings.TrimSpace(cookie)
+			}
+		}
+
+		if token == "" {
+			if qToken := strings.TrimSpace(c.Query("token")); qToken != "" {
+				token = qToken
+			}
+		}
+
+		if token == "" || !verifySecretCandidate(token, trimmedAdmin, trimmedCpa) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error": "Unauthorized: invalid or missing management secret",
 			})

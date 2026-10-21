@@ -1827,6 +1827,18 @@
         return adminSecret;
       }
 
+      // 检查 Cookie 中是否已有有效管理员凭据
+      const cookieMatch = document.cookie.match(/(?:^|;\s*)gate_admin_token=([^;]+)/);
+      if (cookieMatch && cookieMatch[1]) {
+        try {
+          const cookieVal = decodeURIComponent(cookieMatch[1]).trim();
+          if (cookieVal) {
+            adminSecretStore.set(cookieVal);
+            return cookieVal;
+          }
+        } catch {}
+      }
+
       // 否则检查 URL query key
       const params = new URLSearchParams(window.location.search);
       const urlKey = params.get('key');
@@ -1896,10 +1908,13 @@
       if (val.startsWith('sk-') || val.length < 24) {
         localStorage.setItem('gate_member_key', val);
         adminSecretStore.clear();
+        document.cookie = 'gate_admin_token=; path=/; max-age=0; SameSite=Lax';
         showToast(t('runtime.memberModeEnabled'), 'success');
       } else {
         adminSecretStore.set(val);
         localStorage.removeItem('gate_member_key');
+        // 同步写 Cookie，使得原生 CPA 面板、iframe 与各上游路由均能保持登录凭证
+        document.cookie = 'gate_admin_token=' + encodeURIComponent(val) + '; path=/; max-age=2592000; SameSite=Lax';
         // 清理掉 URL 中残留的 ?key= 参数，防止页面被锁定在旧的成员 key
         if (window.location.search) {
           try {
@@ -1917,6 +1932,7 @@
     function clearAuthSecret() {
       adminSecretStore.clear();
       localStorage.removeItem('gate_member_key');
+      document.cookie = 'gate_admin_token=; path=/; max-age=0; SameSite=Lax';
       if (window.location.search) {
         try {
           const cleanUrl = window.location.pathname;
@@ -2801,12 +2817,20 @@
         openAuthModal();
         return;
       }
-      const targetUrl = `/admin/upstream/management.html?token=${encodeURIComponent(secret)}`;
+      const targetUrl = `/console/upstream/management.html?token=${encodeURIComponent(secret)}`;
       window.open(targetUrl, '_blank', 'noopener,noreferrer');
     }
 
     // ---- 初始化执行 ----
     const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('error') === 'auth_required') {
+      showToast(t('auth.adminAuthRequired') || '请先配置管理密钥以访问控制台', 'warning');
+      openAuthModal();
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch {}
+    }
+
     const initialKey = urlParams.get('key');
     if (initialKey) {
       const trimmed = initialKey.trim();
@@ -2818,6 +2842,7 @@
         // 绝不写 localStorage——URL 会留在历史与 Referer 里，
         // 再落一份持久化等于把万能凭证留在机器上。
         adminSecretStore.set(trimmed);
+        document.cookie = 'gate_admin_token=' + encodeURIComponent(trimmed) + '; path=/; max-age=2592000; SameSite=Lax';
       }
       // 立刻把 ?key= 从地址栏抹掉，避免被截图、分享或带进 Referer
       try {
