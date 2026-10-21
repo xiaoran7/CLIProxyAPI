@@ -546,7 +546,7 @@
       }
     }
 
-    function errorTypeLabel(t) {
+    function errorTypeLabel(type) {
       const map = {
         quota_exceeded: t('logs.errorQuotaExceeded'),
         rate_limited: t('logs.errorRateLimited'),
@@ -558,7 +558,7 @@
         payload_too_large: t('logs.errorPayloadTooLarge'),
         upstream_validation_required: t('logs.errorUpstreamVerification')
       };
-      return map[t] || t;
+      return map[type] || type;
     }
 
     // ---- 错误与熔断中心 (Error Events & Circuit Breaker, 支持 SWR 缓存) ----

@@ -19,15 +19,23 @@ func (d *DB) SelectAllKeys(ctx context.Context) ([]KeyRow, error) {
 	var keys []KeyRow
 	for rows.Next() {
 		var k KeyRow
-		var createdAt, updatedAt string
-		if err := rows.Scan(&k.ID, &k.APIKey, &k.Alias, &k.Active, &createdAt, &updatedAt); err != nil {
+		var alias sql.NullString
+		var createdAt, updatedAt sql.NullString
+		if err := rows.Scan(&k.ID, &k.APIKey, &alias, &k.Active, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("scan key failed: %w", err)
 		}
-		if t, err := time.Parse("2006-01-02 15:04:05", createdAt); err == nil {
-			k.CreatedAt = t
+		if alias.Valid {
+			k.Alias = alias.String
 		}
-		if t, err := time.Parse("2006-01-02 15:04:05", updatedAt); err == nil {
-			k.UpdatedAt = t
+		if createdAt.Valid {
+			if t, err := time.Parse("2006-01-02 15:04:05", createdAt.String); err == nil {
+				k.CreatedAt = t
+			}
+		}
+		if updatedAt.Valid {
+			if t, err := time.Parse("2006-01-02 15:04:05", updatedAt.String); err == nil {
+				k.UpdatedAt = t
+			}
 		}
 		keys = append(keys, k)
 	}
@@ -43,18 +51,26 @@ func (d *DB) SelectKeyByID(ctx context.Context, id int64) (*KeyRow, error) {
 	row := d.QueryRowContext(ctx, query, id)
 
 	var k KeyRow
-	var createdAt, updatedAt string
-	if err := row.Scan(&k.ID, &k.APIKey, &k.Alias, &k.Active, &createdAt, &updatedAt); err != nil {
+	var alias sql.NullString
+	var createdAt, updatedAt sql.NullString
+	if err := row.Scan(&k.ID, &k.APIKey, &alias, &k.Active, &createdAt, &updatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("select key by id failed: %w", err)
 	}
-	if t, err := time.Parse("2006-01-02 15:04:05", createdAt); err == nil {
-		k.CreatedAt = t
+	if alias.Valid {
+		k.Alias = alias.String
 	}
-	if t, err := time.Parse("2006-01-02 15:04:05", updatedAt); err == nil {
-		k.UpdatedAt = t
+	if createdAt.Valid {
+		if t, err := time.Parse("2006-01-02 15:04:05", createdAt.String); err == nil {
+			k.CreatedAt = t
+		}
+	}
+	if updatedAt.Valid {
+		if t, err := time.Parse("2006-01-02 15:04:05", updatedAt.String); err == nil {
+			k.UpdatedAt = t
+		}
 	}
 	return &k, nil
 }
@@ -65,18 +81,26 @@ func (d *DB) SelectKeyByRaw(ctx context.Context, apiKey string) (*KeyRow, error)
 	row := d.QueryRowContext(ctx, query, apiKey)
 
 	var k KeyRow
-	var createdAt, updatedAt string
-	if err := row.Scan(&k.ID, &k.APIKey, &k.Alias, &k.Active, &createdAt, &updatedAt); err != nil {
+	var alias sql.NullString
+	var createdAt, updatedAt sql.NullString
+	if err := row.Scan(&k.ID, &k.APIKey, &alias, &k.Active, &createdAt, &updatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("select key by raw failed: %w", err)
 	}
-	if t, err := time.Parse("2006-01-02 15:04:05", createdAt); err == nil {
-		k.CreatedAt = t
+	if alias.Valid {
+		k.Alias = alias.String
 	}
-	if t, err := time.Parse("2006-01-02 15:04:05", updatedAt); err == nil {
-		k.UpdatedAt = t
+	if createdAt.Valid {
+		if t, err := time.Parse("2006-01-02 15:04:05", createdAt.String); err == nil {
+			k.CreatedAt = t
+		}
+	}
+	if updatedAt.Valid {
+		if t, err := time.Parse("2006-01-02 15:04:05", updatedAt.String); err == nil {
+			k.UpdatedAt = t
+		}
 	}
 	return &k, nil
 }
@@ -152,13 +176,31 @@ func (d *DB) SelectAllQuotaRules(ctx context.Context) ([]QuotaRuleRow, error) {
 	for rows.Next() {
 		var r QuotaRuleRow
 		var dailyLimit sql.NullInt64
+		var hardRatio sql.NullFloat64
+		var rpmLimit sql.NullInt64
+		var modelWhitelist sql.NullString
+		var modelGroup sql.NullString
 		var updatedAt sql.NullString
-		if err := rows.Scan(&r.KeyID, &r.Enabled, &dailyLimit, &r.HardRatio, &r.RPMLimit, &r.ModelWhitelist, &r.ModelGroup, &updatedAt); err != nil {
+		if err := rows.Scan(&r.KeyID, &r.Enabled, &dailyLimit, &hardRatio, &rpmLimit, &modelWhitelist, &modelGroup, &updatedAt); err != nil {
 			return nil, fmt.Errorf("scan quota rule failed: %w", err)
 		}
 		if dailyLimit.Valid {
 			v := dailyLimit.Int64
 			r.DailyLimit = &v
+		}
+		if hardRatio.Valid && hardRatio.Float64 > 0 {
+			r.HardRatio = hardRatio.Float64
+		} else {
+			r.HardRatio = 1.2
+		}
+		if rpmLimit.Valid {
+			r.RPMLimit = int(rpmLimit.Int64)
+		}
+		if modelWhitelist.Valid {
+			r.ModelWhitelist = modelWhitelist.String
+		}
+		if modelGroup.Valid {
+			r.ModelGroup = modelGroup.String
 		}
 		if updatedAt.Valid {
 			if t, err := time.Parse("2006-01-02 15:04:05", updatedAt.String); err == nil {
@@ -180,8 +222,12 @@ func (d *DB) SelectQuotaRuleByKeyID(ctx context.Context, keyID int64) (*QuotaRul
 
 	var r QuotaRuleRow
 	var dailyLimit sql.NullInt64
+	var hardRatio sql.NullFloat64
+	var rpmLimit sql.NullInt64
+	var modelWhitelist sql.NullString
+	var modelGroup sql.NullString
 	var updatedAt sql.NullString
-	if err := row.Scan(&r.KeyID, &r.Enabled, &dailyLimit, &r.HardRatio, &r.RPMLimit, &r.ModelWhitelist, &r.ModelGroup, &updatedAt); err != nil {
+	if err := row.Scan(&r.KeyID, &r.Enabled, &dailyLimit, &hardRatio, &rpmLimit, &modelWhitelist, &modelGroup, &updatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -190,6 +236,20 @@ func (d *DB) SelectQuotaRuleByKeyID(ctx context.Context, keyID int64) (*QuotaRul
 	if dailyLimit.Valid {
 		v := dailyLimit.Int64
 		r.DailyLimit = &v
+	}
+	if hardRatio.Valid && hardRatio.Float64 > 0 {
+		r.HardRatio = hardRatio.Float64
+	} else {
+		r.HardRatio = 1.2
+	}
+	if rpmLimit.Valid {
+		r.RPMLimit = int(rpmLimit.Int64)
+	}
+	if modelWhitelist.Valid {
+		r.ModelWhitelist = modelWhitelist.String
+	}
+	if modelGroup.Valid {
+		r.ModelGroup = modelGroup.String
 	}
 	if updatedAt.Valid {
 		if t, err := time.Parse("2006-01-02 15:04:05", updatedAt.String); err == nil {

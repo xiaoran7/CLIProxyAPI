@@ -138,3 +138,59 @@ func TestDB_OpenAndMigrate(t *testing.T) {
 		t.Fatalf("unexpected summary: %+v", summary)
 	}
 }
+
+func TestDB_NullableColumnsHandling(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_nulls.db")
+
+	database, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Raw insert key with NULL alias
+	_, err = database.ExecContext(ctx, "INSERT INTO keys (id, api_key, alias, active) VALUES (1, 'sk-test-null', NULL, 1)")
+	if err != nil {
+		t.Fatalf("failed to raw insert key: %v", err)
+	}
+
+	// Raw insert quota_rule with NULL rpm_limit, NULL daily_limit, NULL model_whitelist, NULL model_group
+	_, err = database.ExecContext(ctx, "INSERT INTO quota_rules (key_id, enabled, daily_limit, hard_ratio, rpm_limit, model_whitelist, model_group) VALUES (1, 1, NULL, 1.2, NULL, NULL, NULL)")
+	if err != nil {
+		t.Fatalf("failed to raw insert quota rule: %v", err)
+	}
+
+	// Verify SelectAllKeys scans without error
+	keys, err := database.SelectAllKeys(ctx)
+	if err != nil {
+		t.Fatalf("SelectAllKeys failed on NULL alias: %v", err)
+	}
+	if len(keys) != 1 || keys[0].Alias != "" {
+		t.Fatalf("unexpected keys result: %+v", keys)
+	}
+
+	// Verify SelectKeyByID scans without error
+	key, err := database.SelectKeyByID(ctx, 1)
+	if err != nil || key == nil {
+		t.Fatalf("SelectKeyByID failed on NULL alias: %v", err)
+	}
+
+	// Verify SelectAllQuotaRules scans without error
+	rules, err := database.SelectAllQuotaRules(ctx)
+	if err != nil {
+		t.Fatalf("SelectAllQuotaRules failed on NULL fields: %v", err)
+	}
+	if len(rules) != 1 || rules[0].RPMLimit != 0 || rules[0].DailyLimit != nil {
+		t.Fatalf("unexpected rules result: %+v", rules)
+	}
+
+	// Verify SelectQuotaRuleByKeyID scans without error
+	rule, err := database.SelectQuotaRuleByKeyID(ctx, 1)
+	if err != nil || rule == nil {
+		t.Fatalf("SelectQuotaRuleByKeyID failed on NULL fields: %v", err)
+	}
+}

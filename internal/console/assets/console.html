@@ -2031,19 +2031,20 @@
     }
     // 绝对刷新时刻（客户端本地时区）：9月13日 18:05（若跨年则带年份）
     function formatResetAbs(iso) {
-      const t = new Date(iso);
-      if (!iso || isNaN(t.getTime())) return '';
-      const hh = String(t.getHours()).padStart(2, '0');
-      const mm = String(t.getMinutes()).padStart(2, '0');
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
       const now = new Date();
       const vars = {
-        year: t.getFullYear(),
-        month: t.getMonth() + 1,
-        day: t.getDate(),
+        year: d.getFullYear(),
+        month: d.getMonth() + 1,
+        day: d.getDate(),
         hh,
         mm
       };
-      if (t.getFullYear() !== now.getFullYear()) {
+      if (d.getFullYear() !== now.getFullYear()) {
         return t('reset.absDateTime', vars);
       }
       return t('reset.absDateTimeNoYear', vars);
