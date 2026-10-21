@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Qoder Plugin Suite Consolidation (`internal/api/handlers/management/plugins.go`)**: Consolidated duplicate Qoder plugin entries (`qoder` and `qoder-cn`) in `nativeOAuthPlugins` into a single unified "Qoder" plugin instance, matching WorkBuddy's dual-realm management pattern while retaining dedicated global (`qoder`) and mainland China (`qoder-cn`) OAuth provider authorization cards.
 - **Qoder Plugin Suite Drawer Syntax Defect (`static/management.html`, `internal/managementasset/assets/management.html`, `Project/gate/static/management.html`)**: Corrected an unexpected token syntax error in minified React 18 JSX AST closures within `QoderSuite` (re-established proper bracket pairing for check-in empty state button wrapper and tabbed ternary closures), verified AST via Node.js SourceTextModule, and synchronized bit-identical MD5 checksums across all static management assets.
 
 ### Added
