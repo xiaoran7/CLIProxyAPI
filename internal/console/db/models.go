@@ -178,3 +178,69 @@ type ModelStatsSummary struct {
 	SuccessCount     int64  `json:"success_count"`
 	FailureCount     int64  `json:"failure_count"`
 }
+
+// DailyModelStatSummary represents usage grouped by date and model.
+type DailyModelStatSummary struct {
+	Date             string `json:"date"`
+	Model            string `json:"model"`
+	Requests         int64  `json:"requests"`
+	PromptTokens     int64  `json:"prompt_tokens"`
+	CompletionTokens int64  `json:"completion_tokens"`
+	CachedTokens     int64  `json:"cached_tokens"`
+	TotalTokens      int64  `json:"total_tokens"`
+	SuccessCount     int64  `json:"success_count"`
+	FailureCount     int64  `json:"failure_count"`
+}
+
+// HourlyEventAggRow represents request_events grouped by hour and model.
+type HourlyEventAggRow struct {
+	Hour             string `json:"hour"`
+	Model            string `json:"model"`
+	Requests         int64  `json:"requests"`
+	PromptTokens     int64  `json:"prompt_tokens"`
+	CompletionTokens int64  `json:"completion_tokens"`
+	CachedTokens     int64  `json:"cached_tokens"`
+	TotalTokens      int64  `json:"total_tokens"`
+	SuccessCount     int64  `json:"success_count"`
+	FailureCount     int64  `json:"failure_count"`
+}
+
+// AuthModelAggRow represents request_events grouped by auth_index and model.
+type AuthModelAggRow struct {
+	AuthIndex        string `json:"auth_index"`
+	Model            string `json:"model"`
+	Requests         int64  `json:"requests"`
+	PromptTokens     int64  `json:"prompt_tokens"`
+	CompletionTokens int64  `json:"completion_tokens"`
+	CachedTokens     int64  `json:"cached_tokens"`
+	TotalTokens      int64  `json:"total_tokens"`
+}
+
+// EventFilterParams encapsulates query parameters for filtering request_events.
+type EventFilterParams struct {
+	KeyID         *int64
+	AuthIndex     string
+	Provider      string
+	ProviderAuths []string
+	ModelPatterns []string
+	AuthPatterns  []string
+	Filter        string
+	Search        string
+	TimeRange     string
+	Since         *int64
+	Until         *int64
+	BeforeID      int64
+	Page          int
+	PageSize      int
+}
+
+// ErrorFilterParams encapsulates query parameters for filtering error_events.
+type ErrorFilterParams struct {
+	KeyID     *int64
+	TimeRange string
+	Since     *int64
+	Until     *int64
+	BeforeID  int64
+	Page      int
+	PageSize  int
+}

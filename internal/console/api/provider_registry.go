@@ -486,3 +486,31 @@ func ValidateProviderKey(key string) error {
 	}
 	return nil
 }
+
+// GetProviderPatterns returns raw model and auth string patterns for a given provider key.
+func (pe *ProviderRegistryEngine) GetProviderPatterns(key string) (modelPatterns, authPatterns []string) {
+	k := strings.ToLower(strings.TrimSpace(key))
+	if k == "" {
+		return nil, nil
+	}
+
+	pe.mu.RLock()
+	defer pe.mu.RUnlock()
+
+	for _, cp := range pe.providers {
+		if cp.ProviderKey == k {
+			for _, p := range cp.ModelPatterns {
+				if p.P != "" {
+					modelPatterns = append(modelPatterns, p.P)
+				}
+			}
+			for _, p := range cp.AuthPatterns {
+				if p.P != "" {
+					authPatterns = append(authPatterns, p.P)
+				}
+			}
+			return modelPatterns, authPatterns
+		}
+	}
+	return nil, nil
+}

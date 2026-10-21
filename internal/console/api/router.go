@@ -80,7 +80,7 @@ func registerMemberRoutes(rg *gin.RouterGroup, eng *engine.Engine, pricing *Pric
 	rg.Use(MemberAuthMiddleware(eng))
 	{
 		rg.GET("/info", HandleMemberInfo(eng, pricing))
-		rg.GET("/status-summary", HandleMemberStatusSummary(eng))
+		rg.GET("/status-summary", HandleMemberStatusSummary(eng, providers))
 		rg.GET("/requests", HandleMemberRequests(eng, pricing, providers))
 	}
 }
@@ -106,7 +106,7 @@ func registerConsoleRoutes(
 		rg.DELETE("/keys/:id/quota", HandleDeleteQuotaRule(eng))
 
 		// Usage stats and request logs
-		rg.GET("/stats", HandleGetStats(eng, pricing))
+		rg.GET("/stats", HandleGetStats(eng, pricing, providers))
 		rg.GET("/requests", HandleGetRequests(eng, pricing, providers))
 		rg.GET("/errors", HandleGetErrors(eng, providers))
 		rg.GET("/status-summary", HandleGetStatusSummary(eng, providers))

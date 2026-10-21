@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/db"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/engine"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 	"github.com/tidwall/gjson"
 )
 
@@ -345,8 +346,19 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 }
 
 func (w *accountingWriter) extractAuthIndex(c *gin.Context) string {
-	// 1. From response header X-Cpa-Trace-Id (format: ...-<16-hex-auth-index>-...)
-	traceID := w.ResponseWriter.Header().Get("X-Cpa-Trace-Id")
+	// 1. Check logging CPA trace state
+	traceID := logging.GetGinCPATraceID(c)
+
+	// 2. From response header X-CPA-TRACE-ID or X-Cpa-Trace-Id
+	if traceID == "" {
+		traceID = w.ResponseWriter.Header().Get("X-CPA-TRACE-ID")
+	}
+	if traceID == "" {
+		traceID = w.ResponseWriter.Header().Get("X-Cpa-Trace-Id")
+	}
+	if traceID == "" {
+		traceID = c.Writer.Header().Get("X-CPA-TRACE-ID")
+	}
 	if traceID == "" {
 		traceID = c.Writer.Header().Get("X-Cpa-Trace-Id")
 	}
@@ -355,15 +367,25 @@ func (w *accountingWriter) extractAuthIndex(c *gin.Context) string {
 		if len(matches) > 1 {
 			return strings.ToLower(matches[1])
 		}
+		// Format: <14-digits-timestamp>-<authIndex>-<requestID>
+		parts := strings.Split(traceID, "-")
+		if len(parts) >= 3 && len(parts[0]) == 14 {
+			return strings.ToLower(parts[1])
+		}
 	}
 
-	// 2. From context
+	// 3. From context keys
 	if val, exists := c.Get(ContextAuthIndex); exists {
 		if s, ok := val.(string); ok && s != "" {
 			return s
 		}
 	}
 	if val, exists := c.Get("AUTH_INDEX"); exists {
+		if s, ok := val.(string); ok && s != "" {
+			return s
+		}
+	}
+	if val, exists := c.Get("auth_index"); exists {
 		if s, ok := val.(string); ok && s != "" {
 			return s
 		}

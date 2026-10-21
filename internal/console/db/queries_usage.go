@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 // UpsertUsageDailyTx increments usage counters in usage_daily inside an existing transaction.
@@ -275,4 +276,134 @@ func (d *DB) PruneDaily(ctx context.Context, beforeDate string) (int64, error) {
 		return 0, fmt.Errorf("prune daily failed: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+// SelectDailyModelsRange returns usage grouped by date and model, optionally filtered by keyID.
+func (d *DB) SelectDailyModelsRange(ctx context.Context, sinceDate string, keyID *int64) ([]DailyModelStatSummary, error) {
+	var where []string
+	var args []interface{}
+
+	if sinceDate != "" {
+		where = append(where, "date >= ?")
+		args = append(args, sinceDate)
+	}
+	if keyID != nil {
+		where = append(where, "key_id = ?")
+		args = append(args, *keyID)
+	}
+
+	whereClause := ""
+	if len(where) > 0 {
+		whereClause = "WHERE " + strings.Join(where, " AND ")
+	}
+
+	query := fmt.Sprintf(`
+SELECT date, model,
+       SUM(requests) AS requests,
+       SUM(prompt_tokens) AS prompt_tokens,
+       SUM(completion_tokens) AS completion_tokens,
+       SUM(cached_tokens) AS cached_tokens,
+       SUM(total_tokens) AS total_tokens,
+       SUM(success_count) AS success_count,
+       SUM(failure_count) AS failure_count
+FROM usage_daily %s
+GROUP BY date, model
+ORDER BY date ASC
+`, whereClause)
+
+	rows, err := d.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("select daily models range failed: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var list []DailyModelStatSummary
+	for rows.Next() {
+		var s DailyModelStatSummary
+		if err := rows.Scan(
+			&s.Date, &s.Model, &s.Requests, &s.PromptTokens, &s.CompletionTokens,
+			&s.CachedTokens, &s.TotalTokens, &s.SuccessCount, &s.FailureCount,
+		); err != nil {
+			return nil, fmt.Errorf("scan daily model summary failed: %w", err)
+		}
+		list = append(list, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration failed: %w", err)
+	}
+	return list, nil
+}
+
+// SelectDailyAllTimeDetailed returns lifetime stats, optionally filtered by keyID.
+func (d *DB) SelectDailyAllTimeDetailed(ctx context.Context, keyID *int64) (*DailyStatsSummary, error) {
+	var whereClause string
+	var args []interface{}
+	if keyID != nil {
+		whereClause = "WHERE key_id = ?"
+		args = append(args, *keyID)
+	}
+
+	query := fmt.Sprintf(`
+SELECT COALESCE(SUM(requests), 0) AS requests,
+       COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+       COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+       COALESCE(SUM(cached_tokens), 0) AS cached_tokens,
+       COALESCE(SUM(total_tokens), 0) AS total_tokens,
+       COALESCE(SUM(success_count), 0) AS success_count,
+       COALESCE(SUM(failure_count), 0) AS failure_count
+FROM usage_daily %s
+`, whereClause)
+
+	row := d.QueryRowContext(ctx, query, args...)
+	var s DailyStatsSummary
+	if err := row.Scan(&s.Requests, &s.PromptTokens, &s.CompletionTokens, &s.CachedTokens, &s.TotalTokens, &s.SuccessCount, &s.FailureCount); err != nil {
+		return nil, fmt.Errorf("select daily all time detailed failed: %w", err)
+	}
+	return &s, nil
+}
+
+// SelectModelAllTimeDetailed returns lifetime stats grouped by model, optionally filtered by keyID.
+func (d *DB) SelectModelAllTimeDetailed(ctx context.Context, keyID *int64) ([]ModelStatsSummary, error) {
+	var whereClause string
+	var args []interface{}
+	if keyID != nil {
+		whereClause = "WHERE key_id = ?"
+		args = append(args, *keyID)
+	}
+
+	query := fmt.Sprintf(`
+SELECT model,
+       SUM(requests) AS requests,
+       SUM(prompt_tokens) AS prompt_tokens,
+       SUM(completion_tokens) AS completion_tokens,
+       SUM(cached_tokens) AS cached_tokens,
+       SUM(total_tokens) AS total_tokens,
+       SUM(success_count) AS success_count,
+       SUM(failure_count) AS failure_count
+FROM usage_daily %s
+GROUP BY model
+ORDER BY total_tokens DESC
+`, whereClause)
+
+	rows, err := d.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("select model all time detailed failed: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var list []ModelStatsSummary
+	for rows.Next() {
+		var s ModelStatsSummary
+		if err := rows.Scan(
+			&s.Model, &s.Requests, &s.PromptTokens, &s.CompletionTokens,
+			&s.CachedTokens, &s.TotalTokens, &s.SuccessCount, &s.FailureCount,
+		); err != nil {
+			return nil, fmt.Errorf("scan model all time summary failed: %w", err)
+		}
+		list = append(list, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration failed: %w", err)
+	}
+	return list, nil
 }

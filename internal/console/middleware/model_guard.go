@@ -37,8 +37,8 @@ func ModelGuardMiddleware(eng *engine.Engine) gin.HandlerFunc {
 		var model string
 		var reasoningEffort string
 
-		if c.Request.Body != nil && c.Request.ContentLength > 0 && c.Request.ContentLength < 16*1024*1024 {
-			bodyBytes, err := io.ReadAll(c.Request.Body)
+		if c.Request.Body != nil && (c.Request.ContentLength == -1 || (c.Request.ContentLength > 0 && c.Request.ContentLength < 16*1024*1024)) {
+			bodyBytes, err := io.ReadAll(io.LimitReader(c.Request.Body, 16*1024*1024))
 			if err == nil {
 				c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
