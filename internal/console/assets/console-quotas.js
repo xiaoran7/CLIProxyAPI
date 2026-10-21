@@ -1222,9 +1222,11 @@
             const prio = normalizeAuthPriority(acc.priority);
             const prioCls = prio >= 20 ? 'p-high' : (prio >= 10 ? 'p-normal' : 'p-low');
 
-            // 智能提取配额桶：针对 Antigravity 提取 Gemini 5h 与 Gemini 周限额；针对 Codex 提取 5h 与周限额
+            // 智能提取配额桶：针对 Antigravity 提取 Claude 5h/周限额 与 Gemini 5h/周限额；针对 Codex 提取 5h 与周限额
             let gemini5hBucket = null;
             let geminiWeeklyBucket = null;
+            let claude5hBucket = null;
+            let claudeWeeklyBucket = null;
             let codex5hBucket = null;
             let codexWeeklyBucket = null;
             let fallbackBucket = null;
@@ -1234,12 +1236,16 @@
               for (const bkt of (grp.buckets || [])) {
                 if (!fallbackBucket) fallbackBucket = bkt;
                 const bname = (bkt.name || '').toLowerCase();
-                const is5h = bname.includes('5h') || bname.includes('5 hour') || bname.includes('five') || bkt.window === '5h' || (bkt.bucket_id || '').includes('5h');
-                const isWeekly = bname.includes('weekly') || bname.includes('week') || bname.includes(t('quotas.bucket.weekly')) || bkt.window === 'weekly' || (bkt.bucket_id || '').includes('weekly');
+                const bid = (bkt.bucket_id || '').toLowerCase();
+                const is5h = bname.includes('5h') || bname.includes('5 hour') || bname.includes('five') || bkt.window === '5h' || bid.includes('5h');
+                const isWeekly = bname.includes('weekly') || bname.includes('week') || bname.includes(t('quotas.bucket.weekly')) || bkt.window === 'weekly' || bid.includes('weekly');
 
-                if (gname.includes('gemini') || bname.includes('gemini') || (bkt.bucket_id || '').includes('gemini')) {
+                if (gname.includes('gemini') || bname.includes('gemini') || bid.includes('gemini')) {
                   if (is5h) gemini5hBucket = bkt;
                   if (isWeekly) geminiWeeklyBucket = bkt;
+                } else if (gname.includes('claude') || bname.includes('claude') || bid.includes('claude') || gname.includes('gpt') || bname.includes('gpt')) {
+                  if (is5h) claude5hBucket = bkt;
+                  if (isWeekly) claudeWeeklyBucket = bkt;
                 } else if (!gname.includes('claude') && !gname.includes('gpt') && !gname.includes('3p')) {
                   if (is5h) codex5hBucket = bkt;
                   if (isWeekly) codexWeeklyBucket = bkt;
@@ -1253,7 +1259,7 @@
               metersHtml = `<div class="account-health-warning">${escapeHtml(health.detail || health.label || t('quotas.cpaCredentialUnavailable'))} ${t('quotas.quotaHiddenSuffix')}</div>`;
             } else if (acc.raw_error) {
               metersHtml = `<div class="account-health-warning" style="color:var(--danger); font-size:11px;" title="${escapeHtml(acc.raw_error)}">${escapeHtml(acc.raw_error)}</div>`;
-            } else if ((acc.provider === 'antigravity' && !Number.isFinite(gemini5hBucket?.remaining_percent)) || (acc.provider === 'codex' && !Number.isFinite(codex5hBucket?.remaining_percent))) {
+            } else if ((acc.provider === 'antigravity' && !Number.isFinite(gemini5hBucket?.remaining_percent) && !Number.isFinite(claude5hBucket?.remaining_percent)) || (acc.provider === 'codex' && !Number.isFinite(codex5hBucket?.remaining_percent))) {
               metersHtml = `<div class="account-quota-unknown">${t('quotas.quotaUnknownUpstream')}</div>`;
             } else if (acc.provider === 'opencode') {
               const todayCount = Number.isFinite(acc.today_requests) ? acc.today_requests : 0;
@@ -1330,50 +1336,59 @@
             } else if (!Number.isFinite(fallbackBucket?.remaining_percent)) {
               metersHtml = `<div class="account-quota-unknown">${t('quotas.quotaUnknownCpa')}</div>`;
             } else if (acc.provider === 'antigravity') {
-              const b1 = gemini5hBucket;
-              const b2 = geminiWeeklyBucket;
+              const hasClaude = claude5hBucket && Number.isFinite(claude5hBucket.remaining_percent);
+              const hasGemini = gemini5hBucket && Number.isFinite(gemini5hBucket.remaining_percent);
 
-              const rem1 = b1.remaining_percent;
-              let cls1 = 'meter-high'; let col1 = '#10b981';
-              if (rem1 <= 25) { cls1 = 'meter-low'; col1 = '#ef4444'; }
-              else if (rem1 <= 60) { cls1 = 'meter-medium'; col1 = '#f59e0b'; }
-              const txt1 = (b1?.reset_time || b1?.reset_countdown) ? escapeHtml(b1.reset_countdown || (formatResetAbs(b1.reset_time) + t('quotas.actionRefresh'))) : t('quotas.bucket.pendingActivation');
+              const buildAntigravityMeter = (bkt, weeklyBkt, defaultLabel, rollingTipKey) => {
+                if (!bkt || !Number.isFinite(bkt.remaining_percent)) return '';
+                const rem = bkt.remaining_percent;
+                let cls = 'meter-high'; let col = '#10b981';
+                if (rem <= 25) { cls = 'meter-low'; col = '#ef4444'; }
+                else if (rem <= 60) { cls = 'meter-medium'; col = '#f59e0b'; }
+                const txt = (bkt?.reset_time || bkt?.reset_countdown) ? escapeHtml(bkt.reset_countdown || (formatResetAbs(bkt.reset_time) + t('quotas.actionRefresh'))) : t('quotas.bucket.pendingActivation');
 
-              let col2Html = '';
-              if (b2 && Number.isFinite(b2.remaining_percent)) {
-                const rem2 = b2.remaining_percent;
-                let cls2 = 'meter-high'; let col2 = '#10b981';
-                if (rem2 <= 25) { cls2 = 'meter-low'; col2 = '#ef4444'; }
-                else if (rem2 <= 60) { cls2 = 'meter-medium'; col2 = '#f59e0b'; }
-                const txt2 = (b2?.reset_time || b2?.reset_countdown) ? escapeHtml(b2.reset_countdown || (formatResetAbs(b2.reset_time) + t('quotas.actionRefresh'))) : t('quotas.bucket.pendingActivation');
+                let title = t(rollingTipKey);
+                if (weeklyBkt && Number.isFinite(weeklyBkt.remaining_percent)) {
+                  title += ` (${t('quotas.bucket.weeklyRemaining')} ${weeklyBkt.remaining_percent}%)`;
+                }
 
-                col2Html = `
-                  <div class="compact-meter-wrap" title="${t('quotas.bucket.geminiWeeklyTotal')}">
+                return `
+                  <div class="compact-meter-wrap" title="${escapeHtml(title)}">
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
-                      <span style="color:var(--text-muted); font-size:10.5px;">${t('quotas.bucket.geminiWeekly')}</span>
-                      <span style="font-family:var(--mono); font-weight:700; color:${col2};">${t('quotas.bucket.secondRemainingPercent', { rem2: rem2 })}</span>
+                      <span style="color:var(--text-muted); font-size:10.5px;">${escapeHtml(defaultLabel)}</span>
+                      <span style="font-family:var(--mono); font-weight:700; color:${col};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem })}</span>
                     </div>
                     <div class="quota-meter-bar" style="height:4px;">
-                      <div class="quota-meter-fill ${cls2}" style="width: ${rem2}%"></div>
+                      <div class="quota-meter-fill ${cls}" style="width: ${rem}%"></div>
                     </div>
-                    <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); text-align:right;">${txt2}</span>
+                    <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); text-align:right;" ${bkt?.reset_time ? `data-reset-time="${escapeHtml(bkt.reset_time)}"` : ''}>${txt}</span>
                   </div>
                 `;
-              }
+              };
 
-              metersHtml = `
-                <div class="compact-meter-wrap" title="${t('quotas.bucket.geminiRolling5h')}">
-                  <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
-                    <span style="color:var(--text-muted); font-size:10.5px;">Gemini 5h</span>
-                    <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
-                  </div>
-                  <div class="quota-meter-bar" style="height:4px;">
-                    <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
-                  </div>
-                  <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); text-align:right;" ${b1?.reset_time ? `data-reset-time="${escapeHtml(b1.reset_time)}"` : ''}>${txt1}</span>
-                </div>
-                ${col2Html}
-              `;
+              if (hasClaude && hasGemini) {
+                // 双主力模型组均存在：展示 Claude 5h 与 Gemini 5h，并在悬浮提示中展示对应周限额
+                metersHtml = `
+                  ${buildAntigravityMeter(claude5hBucket, claudeWeeklyBucket, 'Claude 5h', 'quotas.bucket.claudeRolling5h')}
+                  ${buildAntigravityMeter(gemini5hBucket, geminiWeeklyBucket, 'Gemini 5h', 'quotas.bucket.geminiRolling5h')}
+                `;
+              } else if (hasClaude) {
+                const col2Html = claudeWeeklyBucket && Number.isFinite(claudeWeeklyBucket.remaining_percent)
+                  ? buildAntigravityMeter(claudeWeeklyBucket, null, t('quotas.bucket.claudeWeekly'), 'quotas.bucket.claudeWeeklyTotal')
+                  : '';
+                metersHtml = `
+                  ${buildAntigravityMeter(claude5hBucket, claudeWeeklyBucket, 'Claude 5h', 'quotas.bucket.claudeRolling5h')}
+                  ${col2Html}
+                `;
+              } else {
+                const col2Html = geminiWeeklyBucket && Number.isFinite(geminiWeeklyBucket.remaining_percent)
+                  ? buildAntigravityMeter(geminiWeeklyBucket, null, t('quotas.bucket.geminiWeekly'), 'quotas.bucket.geminiWeeklyTotal')
+                  : '';
+                metersHtml = `
+                  ${buildAntigravityMeter(gemini5hBucket, geminiWeeklyBucket, 'Gemini 5h', 'quotas.bucket.geminiRolling5h')}
+                  ${col2Html}
+                `;
+              }
             } else if (acc.provider === 'codex') {
               const b1 = codex5hBucket;
               const b2 = codexWeeklyBucket;
@@ -2018,15 +2033,17 @@
             else if (rem5h < 50) barColor = '#f59e0b'; // 警戒 (黄)
 
             const countdownText = it.quota_5h.reset_countdown || (rem5h >= 100 ? t('quotas.bucket.fullQuotaReady') : '');
+            const title5h = it.quota_5h.name ? `${escapeHtml(it.quota_5h.name)} ${t('quotas.bucket.fiveHourRemaining')}` : t('quotas.bucket.fiveHourRemaining');
+            const titleWeekly = it.quota_weekly?.name ? `${escapeHtml(it.quota_weekly.name)}:` : t('quotas.bucket.weeklyRemaining');
             quotaHtml = `
               <div class="quota-box-row">
-                <span class="quota-box-title">${t('quotas.bucket.fiveHourRemaining')} <b style="color:${barColor};">${rem5h.toFixed(1)}%</b></span>
+                <span class="quota-box-title">${title5h} <b style="color:${barColor};">${rem5h.toFixed(1)}%</b></span>
                 <span class="quota-box-countdown">${escapeHtml(countdownText)}</span>
               </div>
               <div class="quota-progress-track">
                 <div class="quota-progress-fill" style="width:${Math.max(0, Math.min(100, rem5h))}%; background:${barColor};"></div>
               </div>
-              ${it.quota_weekly ? `<div class="quota-weekly-row">${t('quotas.bucket.weeklyRemaining')} <b>${it.quota_weekly.remaining_percent.toFixed(1)}%</b> ${it.quota_weekly.reset_countdown ? `· ${escapeHtml(it.quota_weekly.reset_countdown)}` : ''}</div>` : ''}
+              ${it.quota_weekly ? `<div class="quota-weekly-row">${titleWeekly} <b>${it.quota_weekly.remaining_percent.toFixed(1)}%</b> ${it.quota_weekly.reset_countdown ? `· ${escapeHtml(it.quota_weekly.reset_countdown)}` : ''}</div>` : ''}
             `;
           }
 
