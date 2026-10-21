@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Qoder Plugin Suite Drawer Syntax Defect (`static/management.html`, `internal/managementasset/assets/management.html`, `Project/gate/static/management.html`)**: Corrected an unexpected token syntax error in minified React 18 JSX AST closures within `QoderSuite` (re-established proper bracket pairing for check-in empty state button wrapper and tabbed ternary closures), verified AST via Node.js SourceTextModule, and synchronized bit-identical MD5 checksums across all static management assets.
+
 ### Added
 - **Qoder Plugin Suite Drawer & Multi-Account Quota Ledger (`static/management.html`, `internal/api/handlers/management/plugin_quota.go`, `plugins.go`, `qoder_checkin.go`, `internal/auth/qoder/checkin.go`)**:
   - **Gateway Plugins Suite Drawer (`QoderSuite`)**: Injected dedicated `QoderSuite` component into the Gateway management console drawer sheet, mirroring `WorkBuddySuite`, providing tabbed navigation for CST daily check-in campaigns and real-time multi-account quota/balance ledgers.
