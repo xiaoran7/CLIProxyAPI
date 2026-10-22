@@ -19,6 +19,9 @@ type OutboxFlusher struct {
 	mem    *MemoryState
 	logger *logrus.Entry
 
+	providerResolver func(model, authIndex string) string
+	providerMu       sync.RWMutex
+
 	flushInterval time.Duration
 	flushLock     sync.Mutex
 	stopCh        chan struct{}
@@ -42,6 +45,22 @@ func NewOutboxFlusher(database *db.DB, mem *MemoryState, interval time.Duration)
 		stopCh:        make(chan struct{}),
 		stopped:       make(chan struct{}),
 	}
+}
+
+// SetProviderResolver assigns the provider resolution function.
+func (f *OutboxFlusher) SetProviderResolver(fn func(model, authIndex string) string) {
+	f.providerMu.Lock()
+	defer f.providerMu.Unlock()
+	f.providerResolver = fn
+}
+
+func (f *OutboxFlusher) resolveProvider(model, authIndex string) string {
+	f.providerMu.RLock()
+	defer f.providerMu.RUnlock()
+	if f.providerResolver != nil {
+		return f.providerResolver(model, authIndex)
+	}
+	return ""
 }
 
 // Start begins the background flush ticker.
@@ -308,10 +327,11 @@ func (f *OutboxFlusher) FlushUsage(ctx context.Context) error {
 
 		// 2. Upsert upstream_daily_stats if auth_index present
 		if ev.AuthIndex != "" {
+			prov := f.resolveProvider(ev.Model, ev.AuthIndex)
 			upstreamRow := &db.UpstreamDailyStatRow{
 				Date:             date,
 				AuthIndex:        ev.AuthIndex,
-				Provider:         "",
+				Provider:         prov,
 				Requests:         1,
 				SuccessCount:     isSuccess,
 				FailureCount:     isFailure,

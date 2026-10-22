@@ -828,6 +828,79 @@ func TestPluginDisplayFieldsEscapeHTML(t *testing.T) {
 	}
 }
 
+func TestListPluginsNativePluginsPreserveCapabilitiesAndEffectiveEnabled(t *testing.T) {
+	t.Parallel()
+
+	disabled := false
+	enabled := true
+	h := &Handler{
+		cfg: &config.Config{
+			Plugins: config.PluginsConfig{
+				Enabled: false,
+				Configs: map[string]config.PluginInstanceConfig{
+					"workbuddy": {Enabled: &enabled},
+					"qoder":     {Enabled: &disabled},
+				},
+			},
+		},
+		configFilePath: writeTestConfigFile(t),
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v0/management/plugins", nil)
+
+	h.ListPlugins(c)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body struct {
+		Plugins []struct {
+			ID               string `json:"id"`
+			Registered       bool   `json:"registered"`
+			Enabled          bool   `json:"enabled"`
+			EffectiveEnabled bool   `json:"effective_enabled"`
+			SupportsOAuth    bool   `json:"supports_oauth"`
+			OAuthProvider    string `json:"oauth_provider"`
+			SupportsQuota    bool   `json:"supports_quota"`
+			QuotaProvider    string `json:"quota_provider"`
+		} `json:"plugins"`
+	}
+	if errDecode := json.Unmarshal(rec.Body.Bytes(), &body); errDecode != nil {
+		t.Fatalf("decode response: %v", errDecode)
+	}
+
+	found := make(map[string]any)
+	for _, p := range body.Plugins {
+		if p.ID == "workbuddy" {
+			found["workbuddy"] = p
+			if !p.Registered || !p.SupportsQuota || p.QuotaProvider != "workbuddy" || !p.SupportsOAuth || p.OAuthProvider != "workbuddy" {
+				t.Fatalf("workbuddy missing capabilities: %#v", p)
+			}
+			if !p.Enabled || !p.EffectiveEnabled {
+				t.Fatalf("workbuddy should be effective enabled even when plugins.enabled=false: %#v", p)
+			}
+		}
+		if p.ID == "qoder" {
+			found["qoder"] = p
+			if !p.Registered || !p.SupportsQuota || p.QuotaProvider != "qoder" || !p.SupportsOAuth || p.OAuthProvider != "qoder" {
+				t.Fatalf("qoder missing capabilities: %#v", p)
+			}
+			if p.EffectiveEnabled {
+				t.Fatalf("qoder disabled in config should not be effective enabled: %#v", p)
+			}
+		}
+	}
+	if _, ok := found["workbuddy"]; !ok {
+		t.Fatal("workbuddy not found in plugins list")
+	}
+	if _, ok := found["qoder"]; !ok {
+		t.Fatal("qoder not found in plugins list")
+	}
+}
+
 func writeManagementPluginFile(t *testing.T, id string) string {
 	t.Helper()
 	root := t.TempDir()

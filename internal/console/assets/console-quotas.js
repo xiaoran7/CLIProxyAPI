@@ -725,8 +725,10 @@
         console.warn('Upstream quota fetch error:', err.message);
         setUpstreamPlaceholder(`<div class="upstream-empty-state" style="color:var(--danger);">${t('quotas.fetchNetworkError', { value: escapeHtml(err.message) })}</div>`);
       } finally {
-        renderOperationsStrip();
         isFetchingUpstreamQuotas = false;
+        try {
+          renderOperationsStrip();
+        } catch (_) {}
       }
     }
 
@@ -1234,23 +1236,27 @@
             let fallbackBucket = null;
 
             for (const grp of (acc.groups || [])) {
-              const gname = (grp.name || '').toLowerCase();
+              const gname = ((grp.name || '') + ' ' + (grp.displayName || '')).toLowerCase();
               for (const bkt of (grp.buckets || [])) {
-                if (!fallbackBucket) fallbackBucket = bkt;
-                const bname = (bkt.name || '').toLowerCase();
+                if (!fallbackBucket && Number.isFinite(bkt.remaining_percent)) fallbackBucket = bkt;
+                const bname = ((bkt.name || '') + ' ' + (bkt.displayName || '')).toLowerCase();
                 const bid = (bkt.bucket_id || '').toLowerCase();
-                const is5h = bname.includes('5h') || bname.includes('5 hour') || bname.includes('five') || bkt.window === '5h' || bid.includes('5h');
-                const isWeekly = bname.includes('weekly') || bname.includes('week') || bname.includes(t('quotas.bucket.weekly')) || bkt.window === 'weekly' || bid.includes('weekly');
+                const bwin = (bkt.window || '').toLowerCase();
+                const isWeekly = bwin === 'weekly' || bname.includes('weekly') || bname.includes('week') || bname.includes(t('quotas.bucket.weekly')) || bid.includes('weekly');
+                const is5h = bwin === '5h' || bname.includes('5h') || bname.includes('5 hour') || bname.includes('five') || bid.includes('5h') || !isWeekly;
 
                 if (gname.includes('gemini') || bname.includes('gemini') || bid.includes('gemini')) {
-                  if (is5h) gemini5hBucket = bkt;
                   if (isWeekly) geminiWeeklyBucket = bkt;
+                  else if (!gemini5hBucket || is5h) gemini5hBucket = bkt;
                 } else if (gname.includes('claude') || bname.includes('claude') || bid.includes('claude') || gname.includes('gpt') || bname.includes('gpt')) {
-                  if (is5h) claude5hBucket = bkt;
                   if (isWeekly) claudeWeeklyBucket = bkt;
+                  else if (!claude5hBucket || is5h) claude5hBucket = bkt;
                 } else if (!gname.includes('claude') && !gname.includes('gpt') && !gname.includes('3p')) {
-                  if (is5h) codex5hBucket = bkt;
                   if (isWeekly) codexWeeklyBucket = bkt;
+                  else if (!codex5hBucket || is5h) codex5hBucket = bkt;
+                } else {
+                  if (isWeekly && !claudeWeeklyBucket) claudeWeeklyBucket = bkt;
+                  else if (!claude5hBucket) claude5hBucket = bkt;
                 }
               }
             }
@@ -1265,7 +1271,7 @@
               metersHtml = `<div class="account-health-warning">${escapeHtml(health.detail || health.label || t('quotas.cpaCredentialUnavailable'))} ${t('quotas.quotaHiddenSuffix')}</div>`;
             } else if (acc.raw_error) {
               metersHtml = `<div class="account-health-warning" style="color:var(--danger); font-size:11px;" title="${escapeHtml(acc.raw_error)}">${escapeHtml(acc.raw_error)}</div>`;
-            } else if ((acc.provider === 'antigravity' && !Number.isFinite(gemini5hBucket?.remaining_percent) && !Number.isFinite(claude5hBucket?.remaining_percent)) || (acc.provider === 'codex' && !Number.isFinite(codex5hBucket?.remaining_percent))) {
+            } else if ((acc.provider === 'antigravity' && !Number.isFinite(gemini5hBucket?.remaining_percent) && !Number.isFinite(claude5hBucket?.remaining_percent) && !Number.isFinite(fallbackBucket?.remaining_percent)) || (acc.provider === 'codex' && !Number.isFinite(codex5hBucket?.remaining_percent) && !Number.isFinite(fallbackBucket?.remaining_percent))) {
               metersHtml = cooldownCompactNotice + `<div class="account-quota-unknown">${t('quotas.quotaUnknownUpstream')}</div>`;
             } else if (acc.provider === 'opencode') {
               const todayCount = Number.isFinite(acc.today_requests) ? acc.today_requests : 0;
@@ -1423,7 +1429,7 @@
                   ${buildAntigravityMeter(claude5hBucket, claudeWeeklyBucket, 'Claude 5h', 'quotas.bucket.claudeRolling5h')}
                   ${col2Html}
                 `;
-              } else {
+              } else if (hasGemini) {
                 const col2Html = geminiWeeklyBucket && Number.isFinite(geminiWeeklyBucket.remaining_percent)
                   ? buildAntigravityMeter(geminiWeeklyBucket, null, t('quotas.bucket.geminiWeekly'), 'quotas.bucket.geminiWeeklyTotal')
                   : '';
@@ -1431,59 +1437,69 @@
                   ${buildAntigravityMeter(gemini5hBucket, geminiWeeklyBucket, 'Gemini 5h', 'quotas.bucket.geminiRolling5h')}
                   ${col2Html}
                 `;
+              } else if (fallbackBucket && Number.isFinite(fallbackBucket.remaining_percent)) {
+                metersHtml = `
+                  ${buildAntigravityMeter(fallbackBucket, null, formatBucketLabel(fallbackBucket.name, fallbackBucket.window) || '5h 额度', 'quotas.bucket.claudeRolling5h')}
+                `;
+              } else {
+                metersHtml = cooldownCompactNotice + `<div class="account-quota-unknown">${t('quotas.quotaUnknownUpstream')}</div>`;
               }
             } else if (acc.provider === 'codex') {
-              const b1 = codex5hBucket;
+              const b1 = (codex5hBucket && Number.isFinite(codex5hBucket.remaining_percent)) ? codex5hBucket : fallbackBucket;
               const b2 = codexWeeklyBucket;
 
-              const rem1 = b1.remaining_percent;
-              let cls1 = 'meter-high'; let col1 = '#10b981';
-              if (rem1 <= 25) { cls1 = 'meter-low'; col1 = '#ef4444'; }
-              else if (rem1 <= 60) { cls1 = 'meter-medium'; col1 = '#f59e0b'; }
-              const txt1 = (b1?.reset_time || b1?.reset_countdown) ? escapeHtml(b1.reset_countdown || (formatResetAbs(b1.reset_time) + t('quotas.actionRefresh'))) : t('quotas.bucket.pendingActivation');
+              if (!b1 || !Number.isFinite(b1.remaining_percent)) {
+                metersHtml = cooldownCompactNotice + `<div class="account-quota-unknown">${t('quotas.quotaUnknownUpstream')}</div>`;
+              } else {
+                const rem1 = b1.remaining_percent;
+                let cls1 = 'meter-high'; let col1 = '#10b981';
+                if (rem1 <= 25) { cls1 = 'meter-low'; col1 = '#ef4444'; }
+                else if (rem1 <= 60) { cls1 = 'meter-medium'; col1 = '#f59e0b'; }
+                const txt1 = (b1?.reset_time || b1?.reset_countdown) ? escapeHtml(b1.reset_countdown || (formatResetAbs(b1.reset_time) + t('quotas.actionRefresh'))) : t('quotas.bucket.pendingActivation');
 
-              let col2Html = '';
-              if (b2 && Number.isFinite(b2.remaining_percent)) {
-                const rem2 = b2.remaining_percent;
-                let cls2 = 'meter-high'; let col2 = '#10b981';
-                if (rem2 <= 25) { cls2 = 'meter-low'; col2 = '#ef4444'; }
-                else if (rem2 <= 60) { cls2 = 'meter-medium'; col2 = '#f59e0b'; }
-                const txt2 = (b2?.reset_time || b2?.reset_countdown) ? escapeHtml(b2.reset_countdown || (formatResetAbs(b2.reset_time) + t('quotas.actionRefresh'))) : t('quotas.bucket.pendingActivation');
+                let col2Html = '';
+                if (b2 && Number.isFinite(b2.remaining_percent)) {
+                  const rem2 = b2.remaining_percent;
+                  let cls2 = 'meter-high'; let col2 = '#10b981';
+                  if (rem2 <= 25) { cls2 = 'meter-low'; col2 = '#ef4444'; }
+                  else if (rem2 <= 60) { cls2 = 'meter-medium'; col2 = '#f59e0b'; }
+                  const txt2 = (b2?.reset_time || b2?.reset_countdown) ? escapeHtml(b2.reset_countdown || (formatResetAbs(b2.reset_time) + t('quotas.actionRefresh'))) : t('quotas.bucket.pendingActivation');
 
-                col2Html = `
-                  <div class="compact-meter-wrap" title="${t('quotas.bucket.codexWeekly')}">
+                  col2Html = `
+                    <div class="compact-meter-wrap" title="${t('quotas.bucket.codexWeekly')}">
+                      <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+                        <span style="color:var(--text-muted); font-size:10.5px;">${t('quotas.bucket.weeklyLimit')}</span>
+                        <span style="font-family:var(--mono); font-weight:700; color:${col2};">${t('quotas.bucket.secondRemainingPercent', { rem2: rem2 })}</span>
+                      </div>
+                      <div class="quota-meter-bar" style="height:4px;">
+                        <div class="quota-meter-fill ${cls2}" style="width: ${rem2}%"></div>
+                      </div>
+                      <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); text-align:right;" ${b2?.reset_time ? `data-reset-time="${escapeHtml(b2.reset_time)}"` : ''}>${txt2}</span>
+                    </div>
+                  `;
+                }
+
+                metersHtml = `
+                  <div class="compact-meter-wrap" title="${t('quotas.bucket.codexRolling5h')}">
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
-                      <span style="color:var(--text-muted); font-size:10.5px;">${t('quotas.bucket.weeklyLimit')}</span>
-                      <span style="font-family:var(--mono); font-weight:700; color:${col2};">${t('quotas.bucket.secondRemainingPercent', { rem2: rem2 })}</span>
+                      <span style="color:var(--text-muted); font-size:10.5px;">${t('quotas.bucket.fiveHourLimit')}</span>
+                      <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
                     </div>
                     <div class="quota-meter-bar" style="height:4px;">
-                      <div class="quota-meter-fill ${cls2}" style="width: ${rem2}%"></div>
+                      <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
                     </div>
-                    <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); text-align:right;" ${b2?.reset_time ? `data-reset-time="${escapeHtml(b2.reset_time)}"` : ''}>${txt2}</span>
+                    <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); text-align:right;" ${b1?.reset_time ? `data-reset-time="${escapeHtml(b1.reset_time)}"` : ''}>${txt1}</span>
                   </div>
+                  ${col2Html}
                 `;
               }
-
-              metersHtml = `
-                <div class="compact-meter-wrap" title="${t('quotas.bucket.codexRolling5h')}">
-                  <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
-                    <span style="color:var(--text-muted); font-size:10.5px;">${t('quotas.bucket.fiveHourLimit')}</span>
-                    <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
-                  </div>
-                  <div class="quota-meter-bar" style="height:4px;">
-                    <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
-                  </div>
-                  <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); text-align:right;" ${b1?.reset_time ? `data-reset-time="${escapeHtml(b1.reset_time)}"` : ''}>${txt1}</span>
-                </div>
-                ${col2Html}
-              `;
-            } else {
+            } else if (fallbackBucket && Number.isFinite(fallbackBucket.remaining_percent)) {
               const b1 = fallbackBucket;
               const rem1 = b1.remaining_percent;
               let cls1 = 'meter-high'; let col1 = '#10b981';
               if (rem1 <= 25) { cls1 = 'meter-low'; col1 = '#ef4444'; }
               else if (rem1 <= 60) { cls1 = 'meter-medium'; col1 = '#f59e0b'; }
-              const bname = b1 ? formatBucketLabel(b1.name, b1.window) : t('quotas.bucket.standardQuota');
+              const bname = formatBucketLabel(b1.name, b1.window) || t('quotas.bucket.standardQuota');
               const txt1 = (b1?.reset_time || b1?.reset_countdown) ? escapeHtml(b1.reset_countdown || (formatResetAbs(b1.reset_time) + t('quotas.actionRefresh'))) : t('quotas.bucket.pendingActivation');
 
               metersHtml = `
@@ -1498,7 +1514,29 @@
                   <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); text-align:right;" ${b1?.reset_time ? `data-reset-time="${escapeHtml(b1.reset_time)}"` : ''}>${txt1}</span>
                 </div>
               `;
+            } else {
+              metersHtml = cooldownCompactNotice + `<div class="account-quota-unknown">${t('quotas.quotaUnknownUpstream')}</div>`;
             }
+
+            const todayCount = Number.isFinite(acc.today_requests) ? acc.today_requests : 0;
+            const todayTokens = Number.isFinite(acc.today_tokens) ? acc.today_tokens : 0;
+            const fiveHTokens = Number.isFinite(acc.five_hour_tokens) ? acc.five_hour_tokens : 0;
+            const fiveHRequests = Number.isFinite(acc.five_hour_requests) ? acc.five_hour_requests : 0;
+
+            const localUsageHtml = `
+              <div class="compact-meter-wrap compact-local-usage" style="background:rgba(241, 245, 249, 0.65); border:1px solid rgba(186, 215, 242, 0.4); border-radius:6px; padding:4px 8px; justify-content:center; gap:2px;" title="${t('quotas.localUsageTooltip', { today: todayTokens.toLocaleString(LOCALE), todayReq: todayCount, fiveH: fiveHTokens.toLocaleString(LOCALE), fiveHReq: fiveHRequests })}">
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:10.5px;">
+                  <span style="color:var(--text-muted); font-weight:600;">${t('quotas.localAuthenticToday')}</span>
+                  <span style="font-family:var(--mono); font-weight:700; color:#0284c7;">
+                    ${formatTokens(todayTokens)} <span style="font-size:9.5px; font-weight:normal; color:var(--text-dim);">Tokens (${todayCount}${t('quotas.timesUnit')})</span>
+                  </span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--text-dim); font-family:var(--mono);">
+                  <span>${t('quotas.localAuthentic5h')}</span>
+                  <span style="color:#6366f1; font-weight:600;">${formatTokens(fiveHTokens)} <span style="font-size:9px; font-weight:normal; color:var(--text-dim);">Tokens (${fiveHRequests}${t('quotas.timesUnit')})</span></span>
+                </div>
+              </div>
+            `;
 
             const valInfo = acc.validation;
             const hasValidation = Boolean(valInfo && valInfo.status === 'pending');
@@ -1529,6 +1567,7 @@
 
                 <div class="compact-mid">
                   ${metersHtml}
+                  ${localUsageHtml}
                 </div>
 
                 <div class="compact-right">
@@ -1765,6 +1804,43 @@
               quotaSectionHtml = cooldownBanner + `<div class="account-quota-unknown">${t('quotas.quotaUnknownCpa')}</div>`;
             }
 
+            const todayCount = Number.isFinite(acc.today_requests) ? acc.today_requests : 0;
+            const todayTokens = Number.isFinite(acc.today_tokens) ? acc.today_tokens : 0;
+            const fiveHTokens = Number.isFinite(acc.five_hour_tokens) ? acc.five_hour_tokens : 0;
+            const fiveHRequests = Number.isFinite(acc.five_hour_requests) ? acc.five_hour_requests : 0;
+
+            let cardLocalUsageHtml = '';
+            if (acc.provider !== 'opencode') {
+              cardLocalUsageHtml = `
+                <div class="account-card-local-usage" style="margin-top:12px; padding:10px 12px; background:var(--bg-subtle, #f1f5f9); border:1px solid var(--card-border-subtle, rgba(186, 215, 242, 0.45)); border-radius:8px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <span style="font-size:11px; font-weight:600; color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;">
+                      <span>📊</span> ${t('quotas.localAuthenticUsageTitle')}
+                    </span>
+                    <span style="font-size:10px; color:var(--text-dim);" title="${t('quotas.localGroundTruthTip')}">
+                      ${t('quotas.localGroundTruthTip')}
+                    </span>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                    <div style="background:var(--card-bg, #fff); padding:6px 10px; border-radius:6px; border:1px solid var(--card-border-subtle, rgba(186, 215, 242, 0.3));">
+                      <div style="font-size:10px; color:var(--text-dim); margin-bottom:2px;">${t('quotas.localAuthenticToday')}</div>
+                      <div style="display:flex; align-items:baseline; gap:4px;">
+                        <span style="font-family:var(--mono); font-size:13.5px; font-weight:700; color:#0284c7;">${formatTokens(todayTokens)}</span>
+                        <span style="font-size:10px; color:var(--text-dim); font-family:var(--mono);">(${todayCount}${t('quotas.timesUnit')})</span>
+                      </div>
+                    </div>
+                    <div style="background:var(--card-bg, #fff); padding:6px 10px; border-radius:6px; border:1px solid var(--card-border-subtle, rgba(186, 215, 242, 0.3));">
+                      <div style="font-size:10px; color:var(--text-dim); margin-bottom:2px;">${t('quotas.localAuthentic5h')}</div>
+                      <div style="display:flex; align-items:baseline; gap:4px;">
+                        <span style="font-family:var(--mono); font-size:13.5px; font-weight:700; color:#6366f1;">${formatTokens(fiveHTokens)}</span>
+                        <span style="font-size:10px; color:var(--text-dim); font-family:var(--mono);">(${fiveHRequests}${t('quotas.timesUnit')})</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }
+
             const accountCardTitle = (acc.display_name || acc.email || acc.filename || '').replace(/\.json$/i, '');
             const cardFullTip = acc.email && acc.email !== accountCardTitle ? `${accountCardTitle} (${acc.email})` : accountCardTitle;
 
@@ -1817,6 +1893,7 @@
                   </div>
                 ` : ''}
                 ${quotaSectionHtml}
+                ${cardLocalUsageHtml}
               </div>
             `;
           }).join('');

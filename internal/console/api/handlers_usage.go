@@ -890,8 +890,11 @@ func HandleGetRequests(eng *engine.Engine, pricing *PricingEngine, providers *Pr
 
 		cleanProvider := strings.ToLower(strings.TrimSpace(c.Query("provider")))
 		var modelPatterns, authPatterns []string
+		var providerAuths, excludeAuths []string
 		if cleanProvider != "" && cleanProvider != "all" {
 			modelPatterns, authPatterns = providers.GetProviderPatterns(cleanProvider)
+			providerAuths = providers.GetProviderAuthIndexes(cleanProvider)
+			excludeAuths = providers.GetExcludeAuthIndexes(cleanProvider)
 		}
 
 		var beforeIDVal int64
@@ -905,6 +908,8 @@ func HandleGetRequests(eng *engine.Engine, pricing *PricingEngine, providers *Pr
 			KeyID:         keyIDPtr,
 			AuthIndex:     authIndex,
 			Provider:      cleanProvider,
+			ProviderAuths: providerAuths,
+			ExcludeAuths:  excludeAuths,
 			ModelPatterns: modelPatterns,
 			AuthPatterns:  authPatterns,
 			Filter:        filter,
@@ -998,6 +1003,8 @@ func HandleGetRequests(eng *engine.Engine, pricing *PricingEngine, providers *Pr
 			if e.AuthIndex != "" {
 				if name, ok := baselineMap[e.AuthIndex]; ok && name != "" {
 					authName = name
+				} else if acc, ok := providers.GetAuthAccount(e.AuthIndex); ok && acc.Name != "" {
+					authName = acc.Name
 				} else {
 					shortAuth := e.AuthIndex
 					if len(shortAuth) > 8 {

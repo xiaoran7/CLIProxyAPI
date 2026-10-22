@@ -2,6 +2,9 @@ package api
 
 import (
 	"testing"
+	"time"
+
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/db"
 )
 
 func TestReconcileAntigravityQuotaGroups(t *testing.T) {
@@ -213,6 +216,58 @@ func TestParseAntigravityQuotaGroups(t *testing.T) {
 	}
 }
 
+func TestParseAntigravityQuotaGroups_MissingWindowAndNameDefaultsTo5h(t *testing.T) {
+	t.Parallel()
+
+	// Real Google Cloud Code PA responses omit displayName and window for the 5h bucket
+	rawJSON := []byte(`{
+		"groups": [
+			{
+				"name": "models/gemini",
+				"displayName": "GEMINI Models",
+				"buckets": [
+					{
+						"remainingFraction": 0.75,
+						"resetTime": "2026-10-22T17:00:00Z"
+					},
+					{
+						"displayName": "Weekly Limit",
+						"remainingFraction": 1.0,
+						"resetTime": "2026-10-29T12:00:00Z"
+					}
+				]
+			}
+		]
+	}`)
+
+	groups := parseAntigravityQuotaGroups(rawJSON)
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(groups))
+	}
+	if len(groups[0].Buckets) != 2 {
+		t.Fatalf("expected 2 buckets, got %d", len(groups[0].Buckets))
+	}
+
+	b5h := groups[0].Buckets[0]
+	if b5h.Window != "5h" {
+		t.Errorf("expected window '5h', got %q", b5h.Window)
+	}
+	if b5h.Name != "5-Hour Limit" {
+		t.Errorf("expected name '5-Hour Limit', got %q", b5h.Name)
+	}
+	if b5h.RemainingPercent == nil || *b5h.RemainingPercent != 75 {
+		t.Errorf("expected 75%% remaining, got %v", b5h.RemainingPercent)
+	}
+	if b5h.BucketID != "models/gemini-5h" {
+		t.Errorf("expected bucketId 'models/gemini-5h', got %q", b5h.BucketID)
+	}
+
+	bWeekly := groups[0].Buckets[1]
+	if bWeekly.Window != "weekly" {
+		t.Errorf("expected window 'weekly', got %q", bWeekly.Window)
+	}
+}
+
 func TestParseCodexQuotaGroups(t *testing.T) {
 	t.Parallel()
 
@@ -251,6 +306,42 @@ func TestParseCodexQuotaGroups(t *testing.T) {
 	bWeekly := groups[0].Buckets[1]
 	if bWeekly.RemainingPercent == nil || *bWeekly.RemainingPercent != 20 {
 		t.Errorf("weekly remainingPercent = %v, want 20", bWeekly.RemainingPercent)
+	}
+}
+
+func TestParseCodexQuotaGroups_PercentageScale100(t *testing.T) {
+	t.Parallel()
+
+	// Some upstreams return 0-100 used_percent instead of 0-1 fraction
+	rawJSON := []byte(`{
+		"plan_type": "pro",
+		"rate_limit": {
+			"primary_window": {
+				"used_percent": 25.0,
+				"reset_after_seconds": 3600
+			},
+			"secondary_window": {
+				"used_percent": 75.0,
+				"reset_after_seconds": 86400
+			}
+		}
+	}`)
+
+	groups, planType, planName := parseCodexQuotaGroups(rawJSON)
+	if planType != "pro" || planName != "PRO" {
+		t.Errorf("expected pro/PRO, got %s/%s", planType, planName)
+	}
+	if len(groups) != 1 || len(groups[0].Buckets) != 2 {
+		t.Fatalf("expected 1 group with 2 buckets, got %v", groups)
+	}
+
+	// 100 - 25 = 75%
+	if groups[0].Buckets[0].RemainingPercent == nil || *groups[0].Buckets[0].RemainingPercent != 75 {
+		t.Errorf("expected 75%% remaining, got %v", groups[0].Buckets[0].RemainingPercent)
+	}
+	// 100 - 75 = 25%
+	if groups[0].Buckets[1].RemainingPercent == nil || *groups[0].Buckets[1].RemainingPercent != 25 {
+		t.Errorf("expected 25%% remaining, got %v", groups[0].Buckets[1].RemainingPercent)
 	}
 }
 
@@ -293,5 +384,61 @@ func TestComputeHealthModelCooldownNotBlockingCredential(t *testing.T) {
 	hCred := computeHealth(fileCredCooling)
 	if !hCred.Blocked {
 		t.Errorf("credential-scoped cooldown MUST mark credential as blocked")
+	}
+}
+
+func TestHydrateQuotaGroupsFromSnapshots(t *testing.T) {
+	t.Parallel()
+
+	resetTS := time.Now().Add(1 * time.Hour).Unix()
+	geminiWin := "models/gemini:5h"
+	claudeWin := "models/claude:weekly"
+	snapshots := []db.QuotaSnapshotRow{
+		{
+			AuthIndex:        "antigravity-01",
+			Provider:         "antigravity",
+			WindowName:       &geminiWin,
+			RemainingPercent: 80,
+			ResetAt:          &resetTS,
+			TS:               1729600000,
+		},
+		{
+			AuthIndex:        "antigravity-01",
+			Provider:         "antigravity",
+			WindowName:       &claudeWin,
+			RemainingPercent: 45,
+			ResetAt:          &resetTS,
+			TS:               1729600000,
+		},
+	}
+
+	resultMap, latestTSMap := hydrateQuotaGroupsFromSnapshots(snapshots)
+	if latestTSMap["antigravity-01"] != 1729600000 {
+		t.Errorf("expected latest TS 1729600000, got %v", latestTSMap["antigravity-01"])
+	}
+	groups, ok := resultMap["antigravity-01"]
+	if !ok || len(groups) != 2 {
+		t.Fatalf("expected 2 groups for antigravity-01, got %v", len(groups))
+	}
+
+	geminiFound := false
+	claudeFound := false
+	for _, g := range groups {
+		if g.Name == "models/gemini" {
+			geminiFound = true
+			if len(g.Buckets) != 1 || *g.Buckets[0].RemainingPercent != 80 {
+				t.Errorf("expected 80%% for gemini bucket, got %v", g.Buckets[0].RemainingPercent)
+			}
+		}
+		if g.Name == "models/claude" {
+			claudeFound = true
+			if len(g.Buckets) != 1 || *g.Buckets[0].RemainingPercent != 45 {
+				t.Errorf("expected 45%% for claude bucket, got %v", g.Buckets[0].RemainingPercent)
+			}
+		}
+	}
+
+	if !geminiFound || !claudeFound {
+		t.Errorf("expected both gemini and claude groups to be hydrated, got gemini=%v, claude=%v", geminiFound, claudeFound)
 	}
 }

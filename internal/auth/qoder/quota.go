@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
@@ -28,6 +29,8 @@ func QueryQuota(ctx context.Context, httpClient *http.Client, auth *cliproxyauth
 	}
 	realm := ResolveRealm(auth)
 	token := AccessToken(auth)
+	token = strings.TrimPrefix(token, "Bearer ")
+	token = strings.TrimSpace(token)
 	if token == "" {
 		return pluginapi.QuotaFetchResponse{}, fmt.Errorf("qoder: no access token in auth")
 	}
@@ -79,9 +82,27 @@ func QueryQuota(ctx context.Context, httpClient *http.Client, auth *cliproxyauth
 
 	data := parsed.Get("data")
 	total := data.Get("total").Float()
+	if total == 0 {
+		total = data.Get("total_points").Float()
+	}
+	if total == 0 {
+		total = data.Get("quota").Float()
+	}
 	used := data.Get("used").Float()
+	if used == 0 {
+		used = data.Get("used_points").Float()
+	}
 	remaining := data.Get("remaining").Float()
-	if remaining == 0 && total > 0 {
+	if remaining == 0 {
+		remaining = data.Get("remaining_points").Float()
+	}
+	if remaining == 0 {
+		remaining = data.Get("points").Float()
+	}
+	if remaining == 0 {
+		remaining = data.Get("balance").Float()
+	}
+	if remaining == 0 && total > 0 && used > 0 {
 		remaining = total - used
 		if remaining < 0 {
 			remaining = 0
@@ -134,6 +155,15 @@ func QueryQuota(ctx context.Context, httpClient *http.Client, auth *cliproxyauth
 
 	var resetTime string
 	expireSec := data.Get("expire_at").Int()
+	if expireSec == 0 {
+		expireSec = data.Get("expires_at").Int()
+	}
+	if expireSec == 0 {
+		expireSec = data.Get("expire_time").Int()
+	}
+	if expireSec > 1e11 {
+		expireSec /= 1000
+	}
 	if expireSec > 0 {
 		resetTime = time.Unix(expireSec, 0).UTC().Format(time.RFC3339)
 	}

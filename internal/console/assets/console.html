@@ -2438,7 +2438,7 @@
       if (!document.hidden) {
         if (!isUserBusyInteracting()) {
           try {
-            await refreshAll();
+            await refreshCurrentTab(false);
           } catch (e) {
             console.warn('[Gate] Periodic refresh warning:', e);
           }
@@ -2584,7 +2584,7 @@
         } else {
           switch (activeNavTab) {
             case 'quotas':
-              await fetchUpstreamQuotas();
+              await fetchUpstreamQuotas(force);
               break;
             case 'overview':
               await fetchStatsData();
@@ -2619,7 +2619,7 @@
               }
               break;
             default:
-              await fetchUpstreamQuotas();
+              await fetchUpstreamQuotas(force);
               break;
           }
         }

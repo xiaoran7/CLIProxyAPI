@@ -228,8 +228,11 @@ func HandleMemberRequests(eng *engine.Engine, pricing *PricingEngine, providers 
 
 		cleanProvider := strings.ToLower(strings.TrimSpace(c.Query("provider")))
 		var modelPatterns, authPatterns []string
+		var providerAuths, excludeAuths []string
 		if cleanProvider != "" && cleanProvider != "all" {
 			modelPatterns, authPatterns = providers.GetProviderPatterns(cleanProvider)
+			providerAuths = providers.GetProviderAuthIndexes(cleanProvider)
+			excludeAuths = providers.GetExcludeAuthIndexes(cleanProvider)
 		}
 
 		var beforeIDVal int64
@@ -242,6 +245,8 @@ func HandleMemberRequests(eng *engine.Engine, pricing *PricingEngine, providers 
 			PageSize:      pageSize,
 			KeyID:         &keyID,
 			Provider:      cleanProvider,
+			ProviderAuths: providerAuths,
+			ExcludeAuths:  excludeAuths,
 			ModelPatterns: modelPatterns,
 			AuthPatterns:  authPatterns,
 			Filter:        filter,
@@ -304,7 +309,7 @@ func HandleMemberRequests(eng *engine.Engine, pricing *PricingEngine, providers 
 
 		var items []MemberEventItemResponse
 		for _, e := range events {
-			provRes := providers.InferProvider(e.Model, "")
+			provRes := providers.InferProvider(e.Model, e.AuthIndex)
 			cost := pricing.CalculateModelCost(e.Model, e.PromptTokens, e.CompletionTokens, e.CachedTokens)
 
 			pBase := e.PromptTokens

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -520,6 +521,14 @@ func HandleGetUpstreamAuthStats(eng *engine.Engine, providers *ProviderRegistryE
 					prov = *b.Provider
 				}
 			}
+			if acc, ok := providers.GetAuthAccount(d.AuthIndex); ok {
+				if (name == "" || name == d.AuthIndex) && acc.Name != "" {
+					name = acc.Name
+				}
+				if prov == "" && acc.ProviderKey != "" {
+					prov = acc.ProviderKey
+				}
+			}
 
 			provRes := providers.InferProvider("", d.AuthIndex)
 			if prov == "" {
@@ -528,6 +537,9 @@ func HandleGetUpstreamAuthStats(eng *engine.Engine, providers *ProviderRegistryE
 			provLabel := provRes.Label
 			if provLabel == "" {
 				provLabel = providers.GetProviderLabel(prov)
+			}
+			if provLabel == "" {
+				provLabel = UnknownProviderLabel
 			}
 
 			items = append(items, AuthStatResponseItem{
@@ -562,39 +574,517 @@ type RuntimeFactsWindowPreset struct {
 	BucketCount   int    `json:"bucket_count"`
 }
 
+var (
+	chinaTzLocation = time.FixedZone("CST", 8*3600)
+	chinaTzOffset   = int64(8 * 3600)
+)
+
 var runtimeFactsWindows = []RuntimeFactsWindowPreset{
-	{ID: "1h", Label: "1小时", ShortLabel: "1h", WindowMinutes: 60, BucketMinutes: 5, BucketCount: 12},
-	{ID: "3h20m", Label: "3小时20分", ShortLabel: "3.3h", WindowMinutes: 200, BucketMinutes: 10, BucketCount: 20},
-	{ID: "6h", Label: "6小时", ShortLabel: "6h", WindowMinutes: 360, BucketMinutes: 15, BucketCount: 24},
-	{ID: "12h", Label: "12小时", ShortLabel: "12h", WindowMinutes: 720, BucketMinutes: 30, BucketCount: 24},
-	{ID: "24h", Label: "24小时", ShortLabel: "24h", WindowMinutes: 1440, BucketMinutes: 60, BucketCount: 24},
+	{ID: "3h20m", Label: "近 3 小时 20 分", ShortLabel: "3h20m", WindowMinutes: 200, BucketMinutes: 10, BucketCount: 20},
+	{ID: "5h", Label: "近 5 小时", ShortLabel: "5h", WindowMinutes: 300, BucketMinutes: 10, BucketCount: 30},
+	{ID: "1d", Label: "近 1 天", ShortLabel: "1d", WindowMinutes: 1440, BucketMinutes: 60, BucketCount: 24},
+	{ID: "3d", Label: "近 3 天", ShortLabel: "3d", WindowMinutes: 4320, BucketMinutes: 180, BucketCount: 24},
+	{ID: "7d", Label: "近 7 天", ShortLabel: "7d", WindowMinutes: 10080, BucketMinutes: 360, BucketCount: 28},
+	{ID: "30d", Label: "近 30 天", ShortLabel: "30d", WindowMinutes: 43200, BucketMinutes: 1440, BucketCount: 30},
+}
+
+func resolveWindowPreset(windowParam string) RuntimeFactsWindowPreset {
+	norm := strings.ToLower(strings.TrimSpace(windowParam))
+	switch norm {
+	case "1h":
+		norm = "3h20m"
+	case "6h":
+		norm = "5h"
+	case "12h", "24h":
+		norm = "1d"
+	}
+	for _, w := range runtimeFactsWindows {
+		if strings.EqualFold(w.ID, norm) {
+			return w
+		}
+	}
+	return runtimeFactsWindows[0]
+}
+
+// RecentBucket represents a time-slotted request count entry.
+type RecentBucket struct {
+	Time    string `json:"time"`
+	Success int64  `json:"success"`
+	Failed  int64  `json:"failed"`
+	Start   int64  `json:"start,omitempty"`
+	End     int64  `json:"end,omitempty"`
+}
+
+func formatWindowBucketTime(startSec, endSec int64, bucketMinutes int) string {
+	t1 := time.Unix(startSec, 0).In(chinaTzLocation)
+	t2 := time.Unix(endSec, 0).In(chinaTzLocation)
+
+	if bucketMinutes < 60 {
+		return fmt.Sprintf("%02d:%02d-%02d:%02d", t1.Hour(), t1.Minute(), t2.Hour(), t2.Minute())
+	}
+	if bucketMinutes >= 1440 {
+		return fmt.Sprintf("%02d-%02d", t1.Month(), t1.Day())
+	}
+	if t1.Month() == t2.Month() && t1.Day() == t2.Day() {
+		return fmt.Sprintf("%02d-%02d %02d:%02d-%02d:%02d", t1.Month(), t1.Day(), t1.Hour(), t1.Minute(), t2.Hour(), t2.Minute())
+	}
+	return fmt.Sprintf("%02d-%02d %02d:%02d-%02d-%02d %02d:%02d", t1.Month(), t1.Day(), t1.Hour(), t1.Minute(), t2.Month(), t2.Day(), t2.Hour(), t2.Minute())
+}
+
+func alignAndSum(sequences [][]RecentBucket, bucketCount int) []RecentBucket {
+	result := make([]RecentBucket, bucketCount)
+	var nonEmpty [][]RecentBucket
+	maxWidth := 0
+	for _, seq := range sequences {
+		if len(seq) > 0 {
+			nonEmpty = append(nonEmpty, seq)
+			if len(seq) > maxWidth {
+				maxWidth = len(seq)
+			}
+		}
+	}
+	if len(nonEmpty) == 0 {
+		return result
+	}
+	if maxWidth > bucketCount {
+		maxWidth = bucketCount
+	}
+	offset := bucketCount - maxWidth
+	for _, seq := range nonEmpty {
+		seqLen := len(seq)
+		if seqLen > bucketCount {
+			seq = seq[seqLen-bucketCount:]
+			seqLen = bucketCount
+		}
+		seqOffset := offset + (maxWidth - seqLen)
+		for i, b := range seq {
+			idx := seqOffset + i
+			if idx >= 0 && idx < bucketCount {
+				result[idx].Success += b.Success
+				result[idx].Failed += b.Failed
+				if result[idx].Time == "" && b.Time != "" {
+					result[idx].Time = b.Time
+				}
+				if result[idx].Start == 0 && b.Start != 0 {
+					result[idx].Start = b.Start
+					result[idx].End = b.End
+				}
+			}
+		}
+	}
+	return result
+}
+
+func getLocalTrafficBuckets(ctx context.Context, eng *engine.Engine, preset RuntimeFactsWindowPreset, nowSec int64) []RecentBucket {
+	bucketSeconds := int64(preset.BucketMinutes * 60)
+	localCurrentSec := nowSec + chinaTzOffset
+	localCurrentSlot := localCurrentSec / bucketSeconds
+	minSlot := localCurrentSlot - int64(preset.BucketCount) + 1
+	minTs := minSlot*bucketSeconds - chinaTzOffset
+	maxTs := (localCurrentSlot+1)*bucketSeconds - chinaTzOffset
+
+	type slotEntry struct {
+		success int64
+		failed  int64
+	}
+	countMap := make(map[int64]*slotEntry)
+
+	// 1. Query SQLite window aggregate
+	if eng != nil && eng.DB() != nil {
+		rows, err := eng.DB().SelectEventsWindowAggregate(ctx, chinaTzOffset, bucketSeconds, minTs, maxTs)
+		if err == nil {
+			for _, r := range rows {
+				countMap[r.SlotStart] = &slotEntry{
+					success: r.Success,
+					failed:  r.Failed,
+				}
+			}
+		}
+	}
+
+	// 2. Overlay unflushed events in usage_outbox
+	if eng != nil && eng.DB() != nil {
+		outbox, err := eng.DB().SelectAllOutbox(ctx)
+		if err == nil {
+			for _, ev := range outbox {
+				if ev.TS >= minTs && ev.TS < maxTs {
+					localTs := ev.TS + chinaTzOffset
+					slotStart := (localTs/bucketSeconds)*bucketSeconds - chinaTzOffset
+					entry := countMap[slotStart]
+					if entry == nil {
+						entry = &slotEntry{}
+						countMap[slotStart] = entry
+					}
+					if ev.Status >= 200 && ev.Status < 400 {
+						entry.success++
+					} else {
+						entry.failed++
+					}
+				}
+			}
+		}
+	}
+
+	// 3. Overlay in-memory pending events
+	if eng != nil {
+		pending := eng.PeekPendingEvents()
+		for _, ev := range pending {
+			if ev != nil && ev.TS >= minTs && ev.TS < maxTs {
+				localTs := ev.TS + chinaTzOffset
+				slotStart := (localTs/bucketSeconds)*bucketSeconds - chinaTzOffset
+				entry := countMap[slotStart]
+				if entry == nil {
+					entry = &slotEntry{}
+					countMap[slotStart] = entry
+				}
+				if ev.Status >= 200 && ev.Status < 400 {
+					entry.success++
+				} else {
+					entry.failed++
+				}
+			}
+		}
+	}
+
+	// 4. Build contiguous buckets slice
+	buckets := make([]RecentBucket, preset.BucketCount)
+	for i := 0; i < preset.BucketCount; i++ {
+		slot := minSlot + int64(i)
+		startSec := slot*bucketSeconds - chinaTzOffset
+		endSec := (slot+1)*bucketSeconds - chinaTzOffset
+		var s, f int64
+		if entry := countMap[startSec]; entry != nil {
+			s = entry.success
+			f = entry.failed
+		}
+		buckets[i] = RecentBucket{
+			Time:    formatWindowBucketTime(startSec, endSec, preset.BucketMinutes),
+			Success: s,
+			Failed:  f,
+			Start:   startSec,
+			End:     endSec,
+		}
+	}
+
+	return buckets
+}
+
+type rawCooldownRecord struct {
+	Scope            string    `json:"scope"`
+	ModelKey         string    `json:"model_key"`
+	Reason           string    `json:"reason"`
+	RetryAt          time.Time `json:"retry_at"`
+	RemainingSeconds int64     `json:"remaining_seconds"`
+	BackoffLevel     *int      `json:"backoff_level"`
+	HTTPStatus       *int      `json:"http_status"`
+}
+
+// CooldownSummary holds normalized aggregate cooldown data.
+type CooldownSummary struct {
+	Scope            string   `json:"scope"`
+	ScopeLabel       string   `json:"scope_label"`
+	ModelCount       int      `json:"model_count"`
+	Reason           string   `json:"reason"`
+	ReasonLabel      string   `json:"reason_label"`
+	RemainingSeconds int64    `json:"remaining_seconds"`
+	RemainingText    string   `json:"remaining_text"`
+	EarliestRetryAt  *int64   `json:"earliest_retry_at"`
+	HTTPStatus       *int     `json:"http_status"`
+	BackoffLevel     *int     `json:"backoff_level"`
+	ObservedAt       int64    `json:"observed_at"`
+	Reasons          []string `json:"reasons"`
+	ModelKeys        []string `json:"model_keys"`
+}
+
+// AuthHealthInfo holds classified operational health for an upstream credential.
+type AuthHealthInfo struct {
+	State    string           `json:"state"`
+	Label    string           `json:"label"`
+	Detail   string           `json:"detail"`
+	Blocked  bool             `json:"blocked"`
+	Cooldown *CooldownSummary `json:"cooldown"`
+}
+
+func formatCooldownRemaining(seconds int64) string {
+	if seconds <= 0 {
+		return "计时已到期"
+	}
+	if seconds < 60 {
+		return fmt.Sprintf("%d 秒", seconds)
+	}
+	minutes := (seconds + 59) / 60
+	if minutes < 60 {
+		return fmt.Sprintf("%d 分钟", minutes)
+	}
+	hours := minutes / 60
+	restMinutes := minutes % 60
+	if hours >= 24 {
+		days := hours / 24
+		return fmt.Sprintf("%d 天 %d 小时", days, hours%24)
+	}
+	if restMinutes > 0 {
+		return fmt.Sprintf("%d 小时 %d 分钟", hours, restMinutes)
+	}
+	return fmt.Sprintf("%d 小时", hours)
+}
+
+func interpretCooldowns(rawList []rawCooldownRecord, observedAtMs int64, nowMs int64) *CooldownSummary {
+	if len(rawList) == 0 {
+		return nil
+	}
+	elapsedSec := (nowMs - observedAtMs) / 1000
+	if elapsedSec < 0 {
+		elapsedSec = 0
+	}
+
+	var active []rawCooldownRecord
+	var activeRemaining []int64
+
+	for _, r := range rawList {
+		rem := r.RemainingSeconds - elapsedSec
+		if rem > 0 {
+			active = append(active, r)
+			activeRemaining = append(activeRemaining, rem)
+		}
+	}
+	if len(active) == 0 {
+		return nil
+	}
+
+	modelCount := 0
+	credentialWide := false
+	modelKeyMap := make(map[string]bool)
+	reasonMap := make(map[string]bool)
+
+	var earliestRetryAt *int64
+	var firstHTTPStatus *int
+	var maxBackoffLevel *int
+	minRemaining := activeRemaining[0]
+
+	for i, r := range active {
+		rem := activeRemaining[i]
+		if rem < minRemaining {
+			minRemaining = rem
+		}
+		if r.Scope == "credential" {
+			credentialWide = true
+		} else if r.Scope == "model" {
+			modelCount++
+			if r.ModelKey != "" {
+				modelKeyMap[r.ModelKey] = true
+			}
+		}
+		if r.Reason != "" {
+			reasonMap[r.Reason] = true
+		}
+		if !r.RetryAt.IsZero() {
+			ms := r.RetryAt.UnixMilli()
+			if earliestRetryAt == nil || ms < *earliestRetryAt {
+				earliestRetryAt = &ms
+			}
+		}
+		if firstHTTPStatus == nil && r.HTTPStatus != nil {
+			firstHTTPStatus = r.HTTPStatus
+		}
+		if r.BackoffLevel != nil {
+			if maxBackoffLevel == nil || *r.BackoffLevel > *maxBackoffLevel {
+				maxBackoffLevel = r.BackoffLevel
+			}
+		}
+	}
+
+	scope := "models"
+	scopeLabel := fmt.Sprintf("%d 个模型冷却", modelCount)
+	if credentialWide && modelCount > 0 {
+		scope = "credential_and_models"
+		scopeLabel = fmt.Sprintf("凭证及 %d 个模型冷却", modelCount)
+	} else if credentialWide {
+		scope = "credential"
+		scopeLabel = "整个凭证"
+	}
+
+	severityRank := map[string]int{
+		"quota":                1,
+		"credential_quota":     2,
+		"payment_required":     3,
+		"cloudflare_challenge": 4,
+		"invalid_grant":        5,
+		"unauthorized":         6,
+		"model_not_supported":  7,
+		"not_found":            8,
+		"transient_error":      9,
+	}
+
+	reasons := make([]string, 0, len(reasonMap))
+	for k := range reasonMap {
+		reasons = append(reasons, k)
+	}
+	sort.Slice(reasons, func(i, j int) bool {
+		rI := severityRank[reasons[i]]
+		if rI == 0 {
+			rI = 99
+		}
+		rJ := severityRank[reasons[j]]
+		if rJ == 0 {
+			rJ = 99
+		}
+		return rI < rJ
+	})
+	primaryReason := "unknown"
+	if len(reasons) > 0 {
+		primaryReason = reasons[0]
+	}
+
+	reasonLabels := map[string]string{
+		"quota":                "额度限制",
+		"credential_quota":     "凭证额度限制",
+		"cloudflare_challenge": "Cloudflare 验证",
+		"invalid_grant":        "授权无效",
+		"unauthorized":         "未获授权",
+		"payment_required":     "访问受限",
+		"not_found":            "资源未找到",
+		"model_not_supported":  "模型不受支持",
+		"transient_error":      "上游暂时出错",
+	}
+	reasonLabel := reasonLabels[primaryReason]
+	if reasonLabel == "" {
+		reasonLabel = "其他或未知原因"
+	}
+
+	modelKeys := make([]string, 0, len(modelKeyMap))
+	for k := range modelKeyMap {
+		modelKeys = append(modelKeys, k)
+	}
+	sort.Strings(modelKeys)
+
+	return &CooldownSummary{
+		Scope:            scope,
+		ScopeLabel:       scopeLabel,
+		ModelCount:       modelCount,
+		Reason:           primaryReason,
+		ReasonLabel:      reasonLabel,
+		RemainingSeconds: minRemaining,
+		RemainingText:    formatCooldownRemaining(minRemaining),
+		EarliestRetryAt:  earliestRetryAt,
+		HTTPStatus:       firstHTTPStatus,
+		BackoffLevel:     maxBackoffLevel,
+		ObservedAt:       observedAtMs,
+		Reasons:          reasons,
+		ModelKeys:        modelKeys,
+	}
+}
+
+func getAuthHealth(cooldown *CooldownSummary, disabled bool, unavailable bool, status string, statusMsg string) AuthHealthInfo {
+	if cooldown != nil {
+		return AuthHealthInfo{
+			State:    "cooldown",
+			Label:    "冷却中",
+			Detail:   fmt.Sprintf("%s · %s · 最早结束约 %s", cooldown.ReasonLabel, cooldown.ScopeLabel, cooldown.RemainingText),
+			Blocked:  true,
+			Cooldown: cooldown,
+		}
+	}
+	statusLower := strings.ToLower(strings.TrimSpace(status))
+	msgLower := strings.ToLower(strings.TrimSpace(statusMsg))
+	if strings.Contains(msgLower, "token expired") || strings.Contains(msgLower, "credential expired") || strings.Contains(msgLower, "credentials expired") || strings.Contains(msgLower, "令牌已过期") || strings.Contains(msgLower, "凭据已过期") || statusLower == "expired" {
+		return AuthHealthInfo{
+			State:   "expired",
+			Label:   "Token 已过期",
+			Detail:  "CPA 报告 token expired，请重新授权或刷新凭据",
+			Blocked: true,
+		}
+	}
+	if disabled || statusLower == "disabled" {
+		return AuthHealthInfo{
+			State:   "disabled",
+			Label:   "已停用",
+			Detail:  "CPA 已停用此凭据",
+			Blocked: true,
+		}
+	}
+	if statusLower == "error" || statusLower == "invalid" || statusLower == "failed" {
+		return AuthHealthInfo{
+			State:   "error",
+			Label:   "凭据异常",
+			Detail:  "CPA 报告凭据错误，请检查认证状态",
+			Blocked: true,
+		}
+	}
+	if unavailable || statusLower == "unavailable" {
+		return AuthHealthInfo{
+			State:   "unavailable",
+			Label:   "暂不可用",
+			Detail:  "CPA 当前标记此凭据不可用",
+			Blocked: true,
+		}
+	}
+	return AuthHealthInfo{
+		State:   "ready",
+		Label:   "可用",
+		Detail:  "",
+		Blocked: false,
+	}
+}
+
+func resolveAuthAccountDisplayName(name, authIndex, email, label, nickname string) string {
+	nick := strings.TrimSpace(nickname)
+	if nick != "" {
+		return nick
+	}
+	rawLabel := strings.TrimSpace(label)
+	if rawLabel != "" {
+		if idx := strings.LastIndex(rawLabel, "("); idx != -1 && strings.HasSuffix(rawLabel, ")") {
+			inner := strings.TrimSpace(rawLabel[idx+1 : len(rawLabel)-1])
+			innerLower := strings.ToLower(inner)
+			if inner != "" && innerLower != "cn" && innerLower != "intl" && innerLower != "global" && innerLower != "default" && innerLower != "api" {
+				return inner
+			}
+		}
+		if !strings.EqualFold(rawLabel, name) {
+			return rawLabel
+		}
+	}
+	rawEmail := strings.TrimSpace(email)
+	if rawEmail != "" && !strings.EqualFold(rawEmail, name) {
+		return rawEmail
+	}
+	cleanName := strings.TrimSuffix(strings.TrimSpace(name), ".json")
+	if cleanName != "" {
+		return cleanName
+	}
+	return authIndex
 }
 
 // HandleGetRuntimeFacts returns runtime traffic telemetry with graceful degraded mode.
 func HandleGetRuntimeFacts(eng *engine.Engine, cpa *CpaClient, providers *ProviderRegistryEngine) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
+		now := time.Now()
+		nowSec := now.Unix()
+		nowMs := now.UnixMilli()
+
 		windowParam := strings.TrimSpace(c.Query("window"))
-		if windowParam == "" {
-			windowParam = "3h20m"
-		}
+		matchedPreset := resolveWindowPreset(windowParam)
 
-		matchedPreset := runtimeFactsWindows[1] // default 3h20m
-		for _, w := range runtimeFactsWindows {
-			if strings.EqualFold(w.ID, windowParam) {
-				matchedPreset = w
-				break
-			}
-		}
-
-		// Try to query CPA auth-files and api-key-usage
+		// 1. Fetch CPA auth-files
 		var authFilesResp struct {
-			Files []struct {
-				Name      string `json:"name"`
-				AuthIndex string `json:"auth_index"`
-				Provider  string `json:"provider"`
-				Disabled  bool   `json:"disabled"`
-				Status    string `json:"status"`
+			ObservedAt time.Time `json:"observed_at"`
+			Files      []struct {
+				Name           string              `json:"name"`
+				AuthIndex      string              `json:"auth_index"`
+				Provider       string              `json:"provider"`
+				Disabled       bool                `json:"disabled"`
+				Unavailable    bool                `json:"unavailable"`
+				Status         string              `json:"status"`
+				StatusMessage  string              `json:"status_message"`
+				Email          string              `json:"email"`
+				Label          string              `json:"label"`
+				Nickname       string              `json:"nickname"`
+				Priority       int                 `json:"priority"`
+				Success        int64               `json:"success"`
+				Failed         int64               `json:"failed"`
+				Cooldowns      []rawCooldownRecord `json:"cooldowns"`
+				RecentRequests []RecentBucket      `json:"recent_requests"`
 			} `json:"files"`
 		}
 
@@ -605,7 +1095,7 @@ func HandleGetRuntimeFacts(eng *engine.Engine, cpa *CpaClient, providers *Provid
 				"source":            "cpa_runtime",
 				"degraded":          true,
 				"error":             cpaErr.Error(),
-				"fetched_at":        time.Now().UnixMilli(),
+				"fetched_at":        nowMs,
 				"window":            matchedPreset.ID,
 				"window_label":      matchedPreset.Label,
 				"window_minutes":    matchedPreset.WindowMinutes,
@@ -624,6 +1114,9 @@ func HandleGetRuntimeFacts(eng *engine.Engine, cpa *CpaClient, providers *Provid
 					"failure_count":        0,
 					"total_requests":       0,
 					"success_rate":         nil,
+					"window_minutes":       matchedPreset.WindowMinutes,
+					"bucket_minutes":       matchedPreset.BucketMinutes,
+					"bucket_count":         matchedPreset.BucketCount,
 					"source":               "cpa_runtime",
 				},
 				"providers":   []interface{}{},
@@ -632,106 +1125,256 @@ func HandleGetRuntimeFacts(eng *engine.Engine, cpa *CpaClient, providers *Provid
 			return
 		}
 
-		// Calculate statistics from auth files and daily aggregates
-		dailyAgg, _ := eng.DB().SelectUpstreamDailyAgg(ctx)
-		dailyMap := make(map[string]db.UpstreamDailyStatRow)
-		for _, d := range dailyAgg {
-			dailyMap[d.AuthIndex] = d
+		// 2. Fetch CPA api-key-usage
+		var apiKeyUsageResp map[string]map[string]struct {
+			Success        int64          `json:"success"`
+			Failed         int64          `json:"failed"`
+			RecentRequests []RecentBucket `json:"recent_requests"`
+		}
+		_ = cpa.RequestJSON(ctx, http.MethodGet, "/api-key-usage", nil, "v0", &apiKeyUsageResp)
+
+		observedAtMs := nowMs
+		if !authFilesResp.ObservedAt.IsZero() {
+			observedAtMs = authFilesResp.ObservedAt.UnixMilli()
+		}
+
+		// 3. Query native gate local buckets (authoritative dual-track SQLite + Outbox + Memory)
+		localBuckets := getLocalTrafficBuckets(ctx, eng, matchedPreset, nowSec)
+		hasLocalTraffic := false
+		for _, b := range localBuckets {
+			if b.Success > 0 || b.Failed > 0 {
+				hasLocalTraffic = true
+				break
+			}
 		}
 
 		type CredentialFact struct {
-			AuthIndex string `json:"auth_index"`
-			Filename  string `json:"filename"`
-			Provider  string `json:"provider"`
-			Status    string `json:"status"`
-			Disabled  bool   `json:"disabled"`
-			Success   int64  `json:"success"`
-			Failed    int64  `json:"failed"`
-			Total     int64  `json:"total"`
+			AuthIndex     string         `json:"auth_index"`
+			Name          string         `json:"name"`
+			DisplayName   string         `json:"display_name"`
+			Nickname      string         `json:"nickname"`
+			Email         string         `json:"email"`
+			Provider      string         `json:"provider"`
+			Priority      int            `json:"priority"`
+			Status        string         `json:"status"`
+			Disabled      bool           `json:"disabled"`
+			Unavailable   bool           `json:"unavailable"`
+			Success       int64          `json:"success"`
+			Failed        int64          `json:"failed"`
+			Health        AuthHealthInfo `json:"health"`
+			Buckets       []RecentBucket `json:"buckets"`
+			WindowMinutes int            `json:"window_minutes"`
 		}
 
 		type ProviderFact struct {
-			Provider     string `json:"provider"`
-			KeyCount     int    `json:"key_count"`
-			TotalSuccess int64  `json:"total_success"`
-			TotalFailed  int64  `json:"total_failed"`
-			Total        int64  `json:"total"`
+			Provider      string         `json:"provider"`
+			KeyCount      int            `json:"key_count"`
+			TotalSuccess  int64          `json:"total_success"`
+			TotalFailed   int64          `json:"total_failed"`
+			Total         int64          `json:"total"`
+			SuccessRate   *float64       `json:"success_rate"`
+			Buckets       []RecentBucket `json:"buckets"`
+			WindowMinutes int            `json:"window_minutes"`
 		}
 
+		type providerCollector struct {
+			provider     string
+			keyCount     int
+			totalSuccess int64
+			totalFailed  int64
+			bucketSeqs   [][]RecentBucket
+		}
+		provCollectorMap := make(map[string]*providerCollector)
+
 		var credFacts []CredentialFact
-		provMap := make(map[string]*ProviderFact)
-		var totalSuccess, totalFailed int64
+		var credBucketSeqs [][]RecentBucket
+		var cumulativeSuccess, cumulativeFailed int64
 		activeCount := 0
 		disabledCount := 0
+		cooldownCount := 0
+		blockedCount := 0
+		hasWindowTraffic := false
 
 		for _, f := range authFilesResp.Files {
-			prov := f.Provider
+			prov := strings.ToLower(strings.TrimSpace(f.Provider))
 			if prov == "" {
-				prov = providers.InferProvider("", f.AuthIndex).Key
+				prov = strings.ToLower(providers.InferProvider("", f.AuthIndex).Key)
 			}
 			if prov == "" {
 				prov = "general"
 			}
 
-			statusStr := "active"
+			cooldown := interpretCooldowns(f.Cooldowns, observedAtMs, nowMs)
+			health := getAuthHealth(cooldown, f.Disabled, f.Unavailable, f.Status, f.StatusMessage)
+
 			if f.Disabled {
-				statusStr = "disabled"
 				disabledCount++
 			} else {
 				activeCount++
 			}
-
-			var sCount, fCount, reqCount int64
-			if d, ok := dailyMap[f.AuthIndex]; ok {
-				sCount = d.SuccessCount
-				fCount = d.FailureCount
-				reqCount = d.Requests
+			if health.State == "cooldown" {
+				cooldownCount++
+			}
+			if health.Blocked {
+				blockedCount++
 			}
 
-			totalSuccess += sCount
-			totalFailed += fCount
+			cumulativeSuccess += f.Success
+			cumulativeFailed += f.Failed
+
+			displayName := resolveAuthAccountDisplayName(f.Name, f.AuthIndex, f.Email, f.Label, f.Nickname)
+			credBuckets := f.RecentRequests
+			if len(credBuckets) > 0 {
+				credBucketSeqs = append(credBucketSeqs, credBuckets)
+				if !hasWindowTraffic {
+					for _, b := range credBuckets {
+						if b.Success > 0 || b.Failed > 0 {
+							hasWindowTraffic = true
+							break
+						}
+					}
+				}
+			}
 
 			credFacts = append(credFacts, CredentialFact{
-				AuthIndex: f.AuthIndex,
-				Filename:  f.Name,
-				Provider:  prov,
-				Status:    statusStr,
-				Disabled:  f.Disabled,
-				Success:   sCount,
-				Failed:    fCount,
-				Total:     reqCount,
+				AuthIndex:     f.AuthIndex,
+				Name:          displayName,
+				DisplayName:   displayName,
+				Nickname:      f.Nickname,
+				Email:         f.Email,
+				Provider:      prov,
+				Priority:      f.Priority,
+				Status:        f.Status,
+				Disabled:      f.Disabled,
+				Unavailable:   f.Unavailable,
+				Success:       f.Success,
+				Failed:        f.Failed,
+				Health:        health,
+				Buckets:       credBuckets,
+				WindowMinutes: matchedPreset.WindowMinutes,
 			})
 
-			pf, ok := provMap[prov]
-			if !ok {
-				pf = &ProviderFact{Provider: prov}
-				provMap[prov] = pf
+			pCol := provCollectorMap[prov]
+			if pCol == nil {
+				pCol = &providerCollector{provider: prov}
+				provCollectorMap[prov] = pCol
 			}
-			pf.KeyCount++
-			pf.TotalSuccess += sCount
-			pf.TotalFailed += fCount
-			pf.Total += reqCount
+			pCol.keyCount++
+			pCol.totalSuccess += f.Success
+			pCol.totalFailed += f.Failed
+			if len(credBuckets) > 0 {
+				pCol.bucketSeqs = append(pCol.bucketSeqs, credBuckets)
+			}
+		}
+
+		// Merge API key usage providers
+		for pRaw, keyMap := range apiKeyUsageResp {
+			pNorm := strings.ToLower(strings.TrimSpace(pRaw))
+			if pNorm == "" {
+				pNorm = "unknown"
+			}
+			pCol := provCollectorMap[pNorm]
+			if pCol == nil {
+				pCol = &providerCollector{provider: pNorm}
+				provCollectorMap[pNorm] = pCol
+			}
+			for _, stats := range keyMap {
+				pCol.keyCount++
+				pCol.totalSuccess += stats.Success
+				pCol.totalFailed += stats.Failed
+				cumulativeSuccess += stats.Success
+				cumulativeFailed += stats.Failed
+				if len(stats.RecentRequests) > 0 {
+					pCol.bucketSeqs = append(pCol.bucketSeqs, stats.RecentRequests)
+					credBucketSeqs = append(credBucketSeqs, stats.RecentRequests)
+					if !hasWindowTraffic {
+						for _, b := range stats.RecentRequests {
+							if b.Success > 0 || b.Failed > 0 {
+								hasWindowTraffic = true
+								break
+							}
+						}
+					}
+				}
+			}
 		}
 
 		var provList []ProviderFact
-		for _, pf := range provMap {
-			provList = append(provList, *pf)
+		for _, pCol := range provCollectorMap {
+			total := pCol.totalSuccess + pCol.totalFailed
+			var sRate *float64
+			if total > 0 {
+				r := float64(pCol.totalSuccess) / float64(total) * 100
+				r = float64(int(r*100+0.5)) / 100
+				sRate = &r
+			}
+			pBuckets := alignAndSum(pCol.bucketSeqs, matchedPreset.BucketCount)
+			provList = append(provList, ProviderFact{
+				Provider:      pCol.provider,
+				KeyCount:      pCol.keyCount,
+				TotalSuccess:  pCol.totalSuccess,
+				TotalFailed:   pCol.totalFailed,
+				Total:         total,
+				SuccessRate:   sRate,
+				Buckets:       pBuckets,
+				WindowMinutes: matchedPreset.WindowMinutes,
+			})
 		}
 		sort.Slice(provList, func(i, j int) bool {
-			return provList[i].Total > provList[j].Total
+			if provList[i].Total != provList[j].Total {
+				return provList[i].Total > provList[j].Total
+			}
+			return provList[i].Provider < provList[j].Provider
 		})
 
-		totalRequests := totalSuccess + totalFailed
+		// Decide throughput buckets:
+		// Gate local buckets are authoritative; if empty and CPA has window traffic, fall back to CPA ring buffer
+		useLocal := hasLocalTraffic || !hasWindowTraffic || matchedPreset.ID != "3h20m"
+		var finalBuckets []RecentBucket
+		var finalSource string
+		if useLocal {
+			finalBuckets = localBuckets
+			if hasLocalTraffic {
+				finalSource = "gate_local"
+			} else {
+				finalSource = "cpa_runtime"
+			}
+		} else {
+			finalBuckets = alignAndSum(credBucketSeqs, matchedPreset.BucketCount)
+			finalSource = "cpa_runtime"
+		}
+
+		var windowSuccess, windowFailed int64
+		for _, b := range finalBuckets {
+			windowSuccess += b.Success
+			windowFailed += b.Failed
+		}
+
+		effectiveTraffic := hasLocalTraffic || hasWindowTraffic
+		var finalSuccess, finalFailed int64
+		var scope string
+		if effectiveTraffic {
+			finalSuccess = windowSuccess
+			finalFailed = windowFailed
+			scope = "window"
+		} else {
+			finalSuccess = cumulativeSuccess
+			finalFailed = cumulativeFailed
+			scope = "cumulative"
+		}
+
+		totalReqs := finalSuccess + finalFailed
 		var successRate *float64
-		if totalRequests > 0 {
-			rate := float64(totalSuccess) / float64(totalRequests) * 100
+		if totalReqs > 0 {
+			rate := float64(finalSuccess) / float64(totalReqs) * 100
+			rate = float64(int(rate*100+0.5)) / 100
 			successRate = &rate
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"source":            "cpa_runtime",
+			"source":            finalSource,
 			"degraded":          false,
-			"fetched_at":        time.Now().UnixMilli(),
+			"fetched_at":        nowMs,
 			"window":            matchedPreset.ID,
 			"window_label":      matchedPreset.Label,
 			"window_minutes":    matchedPreset.WindowMinutes,
@@ -742,15 +1385,18 @@ func HandleGetRuntimeFacts(eng *engine.Engine, cpa *CpaClient, providers *Provid
 				"credentials_total":    len(credFacts),
 				"credentials_active":   activeCount,
 				"credentials_disabled": disabledCount,
-				"credentials_cooldown": 0,
-				"credentials_blocked":  0,
-				"scope":                "window",
-				"buckets":              []interface{}{},
-				"success_count":        totalSuccess,
-				"failure_count":        totalFailed,
-				"total_requests":       totalRequests,
+				"credentials_cooldown": cooldownCount,
+				"credentials_blocked":  blockedCount,
+				"scope":                scope,
+				"buckets":              finalBuckets,
+				"success_count":        finalSuccess,
+				"failure_count":        finalFailed,
+				"total_requests":       totalReqs,
 				"success_rate":         successRate,
-				"source":               "cpa_runtime",
+				"window_minutes":       matchedPreset.WindowMinutes,
+				"bucket_minutes":       matchedPreset.BucketMinutes,
+				"bucket_count":         matchedPreset.BucketCount,
+				"source":               finalSource,
 			},
 			"providers":   provList,
 			"credentials": credFacts,
@@ -758,11 +1404,164 @@ func HandleGetRuntimeFacts(eng *engine.Engine, cpa *CpaClient, providers *Provid
 	}
 }
 
+// UpstreamRoutingConfig holds routing configuration fields.
+type UpstreamRoutingConfig struct {
+	Strategy           string `json:"strategy"`
+	SessionAffinity    bool   `json:"session_affinity"`
+	SessionAffinityTTL string `json:"session_affinity_ttl"`
+}
+
+func normalizeRoutingStrategy(val string) string {
+	s := strings.ToLower(strings.TrimSpace(val))
+	switch s {
+	case "", "round-robin", "roundrobin", "rr":
+		return "round-robin"
+	case "weighted-round-robin", "weightedroundrobin", "wrr":
+		return "weighted-round-robin"
+	case "fill-first", "fillfirst", "ff":
+		return "fill-first"
+	case "smart", "smart-routing":
+		return "smart"
+	case "pace", "pace-routing":
+		return "pace"
+	case "priority":
+		return "priority"
+	default:
+		return ""
+	}
+}
+
+func normalizeRoutingTTL(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	switch val := v.(type) {
+	case string:
+		s := strings.TrimSpace(val)
+		if s == "" {
+			return ""
+		}
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil && n >= 0 {
+			return strconv.FormatInt(n, 10)
+		}
+		return ""
+	case float64:
+		if val >= 0 {
+			return strconv.FormatInt(int64(val), 10)
+		}
+		return ""
+	case int:
+		if val >= 0 {
+			return strconv.Itoa(val)
+		}
+		return ""
+	case int64:
+		if val >= 0 {
+			return strconv.FormatInt(val, 10)
+		}
+		return ""
+	default:
+		return ""
+	}
+}
+
+func readRoutingConfig(ctx context.Context, cpa *CpaClient) (*UpstreamRoutingConfig, error) {
+	var configResp map[string]interface{}
+	if err := cpa.RequestJSON(ctx, http.MethodGet, "/config", nil, "v0", &configResp); err != nil {
+		return nil, err
+	}
+	res := &UpstreamRoutingConfig{
+		Strategy:           "round-robin",
+		SessionAffinity:    false,
+		SessionAffinityTTL: "",
+	}
+	if rRaw, ok := configResp["routing"].(map[string]interface{}); ok && rRaw != nil {
+		if strat, ok := rRaw["strategy"].(string); ok {
+			if norm := normalizeRoutingStrategy(strat); norm != "" {
+				res.Strategy = norm
+			}
+		}
+		if aff, ok := rRaw["session-affinity"].(bool); ok {
+			res.SessionAffinity = aff
+		} else if aff, ok := rRaw["session_affinity"].(bool); ok {
+			res.SessionAffinity = aff
+		}
+		if ttl, exists := rRaw["session-affinity-ttl"]; exists {
+			res.SessionAffinityTTL = normalizeRoutingTTL(ttl)
+		} else if ttl, exists := rRaw["session_affinity_ttl"]; exists {
+			res.SessionAffinityTTL = normalizeRoutingTTL(ttl)
+		}
+	}
+	return res, nil
+}
+
+// HandleGetRuntimeConfig returns the snapshot of runtime config, routing, version, and usage stats wrapped in ok/value envelopes.
+func HandleGetRuntimeConfig(cpa *CpaClient) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+
+		var configData interface{}
+		configErr := cpa.RequestJSON(ctx, http.MethodGet, "/config", nil, "v0", &configData)
+
+		routingData, routingErr := readRoutingConfig(ctx, cpa)
+
+		var versionData interface{}
+		versionErr := cpa.RequestJSON(ctx, http.MethodGet, "/latest-version", nil, "v0", &versionData)
+
+		var usageStatsData interface{}
+		usageErr := cpa.RequestJSON(ctx, http.MethodGet, "/usage-statistics-enabled", nil, "v0", &usageStatsData)
+		if usageErr != nil {
+			if cfgMap, ok := configData.(map[string]interface{}); ok {
+				if val, exists := cfgMap["usage-statistics-enabled"]; exists {
+					usageStatsData = val
+					usageErr = nil
+				}
+			}
+		}
+
+		configWrap := gin.H{"ok": configErr == nil}
+		if configErr == nil {
+			configWrap["value"] = configData
+		} else {
+			configWrap["error"] = configErr.Error()
+		}
+
+		routingWrap := gin.H{"ok": routingErr == nil}
+		if routingErr == nil {
+			routingWrap["value"] = routingData
+		} else {
+			routingWrap["error"] = routingErr.Error()
+		}
+
+		versionWrap := gin.H{"ok": versionErr == nil}
+		if versionErr == nil {
+			versionWrap["value"] = versionData
+		} else {
+			versionWrap["error"] = versionErr.Error()
+		}
+
+		usageWrap := gin.H{"ok": usageErr == nil}
+		if usageErr == nil {
+			usageWrap["value"] = usageStatsData
+		} else {
+			usageWrap["error"] = usageErr.Error()
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"config":           configWrap,
+			"routing":          routingWrap,
+			"version":          versionWrap,
+			"usage_statistics": usageWrap,
+		})
+	}
+}
+
 // HandleGetUpstreamRouting reads upstream routing configuration from CPA.
 func HandleGetUpstreamRouting(cpa *CpaClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var routingData interface{}
-		if err := cpa.RequestJSON(c.Request.Context(), http.MethodGet, "/routing", nil, "v0", &routingData); err != nil {
+		ctx := c.Request.Context()
+		routingData, err := readRoutingConfig(ctx, cpa)
+		if err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("Failed to fetch CPA routing: %v", err)})
 			return
 		}
@@ -774,7 +1573,7 @@ func HandleGetUpstreamRouting(cpa *CpaClient) gin.HandlerFunc {
 func HandlePutUpstreamRouting(cpa *CpaClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var payload struct {
-			Strategy           string      `json:"strategy"`
+			Strategy           *string     `json:"strategy"`
 			SessionAffinity    *bool       `json:"session_affinity"`
 			SessionAffinityTTL interface{} `json:"session_affinity_ttl"`
 		}
@@ -784,19 +1583,24 @@ func HandlePutUpstreamRouting(cpa *CpaClient) gin.HandlerFunc {
 		}
 
 		patch := make(map[string]interface{})
-		if payload.Strategy != "" {
-			validStrategies := map[string]bool{"priority": true, "round-robin": true, "weighted-round-robin": true}
-			if !validStrategies[payload.Strategy] {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid routing strategy: must be priority, round-robin, or weighted-round-robin"})
+		if payload.Strategy != nil {
+			norm := normalizeRoutingStrategy(*payload.Strategy)
+			if norm == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid routing strategy: must be round-robin, weighted-round-robin, fill-first, smart, pace, or priority"})
 				return
 			}
-			patch["strategy"] = payload.Strategy
+			patch["strategy"] = norm
 		}
 		if payload.SessionAffinity != nil {
 			patch["session-affinity"] = *payload.SessionAffinity
 		}
 		if payload.SessionAffinityTTL != nil {
-			patch["session-affinity-ttl"] = payload.SessionAffinityTTL
+			patch["session-affinity-ttl"] = normalizeRoutingTTL(payload.SessionAffinityTTL)
+		}
+
+		if len(patch) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No routing fields to update"})
+			return
 		}
 
 		ctx := c.Request.Context()
@@ -814,11 +1618,11 @@ func HandlePutUpstreamRouting(cpa *CpaClient) gin.HandlerFunc {
 			return
 		}
 
-		var routingData interface{}
-		if err := cpa.RequestJSON(ctx, http.MethodGet, "/routing", nil, "v0", &routingData); err != nil {
-			routingData = patch
+		routingData, err := readRoutingConfig(ctx, cpa)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"routing": patch})
+			return
 		}
-
 		c.JSON(http.StatusOK, gin.H{"routing": routingData})
 	}
 }

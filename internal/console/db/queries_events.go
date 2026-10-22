@@ -358,6 +358,44 @@ WHERE id <= (SELECT MAX(id) FROM request_events) - ? OR ts < ?
 	return res.RowsAffected()
 }
 
+// EventWindowAggregateRow holds grouped request count for a window time slot.
+type EventWindowAggregateRow struct {
+	SlotStart int64 `json:"slot_start"`
+	Success   int64 `json:"success"`
+	Failed    int64 `json:"failed"`
+}
+
+// SelectEventsWindowAggregate groups request_events into time slots aligned to timezone offset.
+func (d *DB) SelectEventsWindowAggregate(ctx context.Context, tzOffset int64, bucketSeconds int64, minTs int64, maxTs int64) ([]EventWindowAggregateRow, error) {
+	query := `
+SELECT
+  ((ts + ?) - ((ts + ?) % ?)) - ? AS slot_start,
+  COALESCE(SUM(CASE WHEN status >= 200 AND status < 400 THEN 1 ELSE 0 END), 0) AS success,
+  COALESCE(SUM(CASE WHEN status >= 400 OR status = 0 THEN 1 ELSE 0 END), 0) AS failed
+FROM request_events
+WHERE ts >= ? AND ts < ?
+GROUP BY slot_start
+`
+	rows, err := d.QueryContext(ctx, query, tzOffset, tzOffset, bucketSeconds, tzOffset, minTs, maxTs)
+	if err != nil {
+		return nil, fmt.Errorf("select events window aggregate failed: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var list []EventWindowAggregateRow
+	for rows.Next() {
+		var r EventWindowAggregateRow
+		if err := rows.Scan(&r.SlotStart, &r.Success, &r.Failed); err != nil {
+			return nil, fmt.Errorf("scan window aggregate row failed: %w", err)
+		}
+		list = append(list, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration failed: %w", err)
+	}
+	return list, nil
+}
+
 // InsertErrorEvent logs an error event into error_events.
 func (d *DB) InsertErrorEvent(ctx context.Context, r *ErrorEventRow) (int64, error) {
 	query := `
@@ -536,8 +574,18 @@ func buildEventFilterWhere(params EventFilterParams) (string, []interface{}) {
 			provOr = append(provOr, fmt.Sprintf("auth_index IN (%s)", strings.Join(placeholders, ",")))
 		}
 		for _, mp := range params.ModelPatterns {
-			provOr = append(provOr, "model LIKE ?")
-			args = append(args, "%"+mp+"%")
+			if len(params.ExcludeAuths) > 0 {
+				exPlaceholders := make([]string, len(params.ExcludeAuths))
+				for i, ea := range params.ExcludeAuths {
+					exPlaceholders[i] = "?"
+					args = append(args, ea)
+				}
+				provOr = append(provOr, fmt.Sprintf("(model LIKE ? AND (auth_index IS NULL OR auth_index = '' OR auth_index NOT IN (%s)))", strings.Join(exPlaceholders, ",")))
+				args = append(args, "%"+mp+"%")
+			} else {
+				provOr = append(provOr, "model LIKE ?")
+				args = append(args, "%"+mp+"%")
+			}
 		}
 		for _, ap := range params.AuthPatterns {
 			provOr = append(provOr, "auth_index LIKE ?")

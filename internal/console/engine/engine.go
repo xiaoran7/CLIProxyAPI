@@ -57,9 +57,24 @@ func (e *Engine) Flusher() *OutboxFlusher {
 	return e.flusher
 }
 
+// SetProviderResolver assigns the provider resolution function on the outbox flusher.
+func (e *Engine) SetProviderResolver(fn func(model, authIndex string) string) {
+	if e != nil && e.flusher != nil {
+		e.flusher.SetProviderResolver(fn)
+	}
+}
+
 // Memory returns the in-memory state tracker.
 func (e *Engine) Memory() *MemoryState {
 	return e.mem
+}
+
+// PeekPendingEvents returns a copy of pending events from memory.
+func (e *Engine) PeekPendingEvents() []*db.RequestEventRow {
+	if e == nil || e.mem == nil {
+		return nil
+	}
+	return e.mem.PeekPendingEvents()
 }
 
 // Start launches the engine background flusher.

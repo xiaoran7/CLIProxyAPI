@@ -151,22 +151,7 @@ func registerConsoleRoutes(
 		rg.POST("/upstream-validations/manual", HandleManualValidation(eng))
 
 		// Direct runtime config snapshot
-		rg.GET("/runtime-config", func(c *gin.Context) {
-			ctx := c.Request.Context()
-			var configData interface{}
-			var routingData interface{}
-			var versionData interface{}
-
-			_ = cpa.RequestJSON(ctx, http.MethodGet, "/config", nil, "v0", &configData)
-			_ = cpa.RequestJSON(ctx, http.MethodGet, "/routing", nil, "v0", &routingData)
-			_ = cpa.RequestJSON(ctx, http.MethodGet, "/latest-version", nil, "v0", &versionData)
-
-			c.JSON(http.StatusOK, gin.H{
-				"config":  configData,
-				"routing": routingData,
-				"version": versionData,
-			})
-		})
+		rg.GET("/runtime-config", HandleGetRuntimeConfig(cpa))
 
 		// CPA loopback proxy routes
 		RegisterCpaRoutes(rg.Group("/cpa"), cpa, eng, providers)

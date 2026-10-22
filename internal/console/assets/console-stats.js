@@ -36,13 +36,21 @@
       return new Intl.DateTimeFormat(LOCALE, { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
     }
     function renderOperationsStrip() {
-      const accounts = upstreamLoaded ? cachedUpstream?.accounts : null;
-      const overall = cachedStatusSummary?.overall;
-      const availability = overall?.availability_7d_daily ?? overall?.availability_7d;
-      document.getElementById('ops-total-accounts').textContent = Array.isArray(accounts) ? String(accounts.length) : '--';
-      document.getElementById('ops-enabled-accounts').textContent = Array.isArray(accounts) ? String(accounts.filter(a => !a.disabled && a.status !== 'disabled' && !a.health?.blocked).length) : '--';
-      document.getElementById('ops-requests-24h').textContent = Number.isFinite(Number(overall?.requests_24h)) && overall?.requests_24h != null ? formatTokens(overall.requests_24h) : '--';
-      document.getElementById('ops-availability-7d').textContent = Number.isFinite(Number(availability)) && availability != null ? `${Number(availability).toFixed(1)}%` : '--';
+      try {
+        const accounts = upstreamLoaded ? cachedUpstream?.accounts : null;
+        const overall = cachedStatusSummary?.overall;
+        const availability = overall?.availability_7d_daily ?? overall?.availability_7d;
+        const elTotal = document.getElementById('ops-total-accounts');
+        if (elTotal) elTotal.textContent = Array.isArray(accounts) ? String(accounts.length) : '--';
+        const elEnabled = document.getElementById('ops-enabled-accounts');
+        if (elEnabled) elEnabled.textContent = Array.isArray(accounts) ? String(accounts.filter(a => !a.disabled && a.status !== 'disabled' && !a.health?.blocked).length) : '--';
+        const elReq = document.getElementById('ops-requests-24h');
+        if (elReq) elReq.textContent = Number.isFinite(Number(overall?.requests_24h)) && overall?.requests_24h != null ? formatTokens(overall.requests_24h) : '--';
+        const elAvail = document.getElementById('ops-availability-7d');
+        if (elAvail) elAvail.textContent = Number.isFinite(Number(availability)) && availability != null ? `${Number(availability).toFixed(1)}%` : '--';
+      } catch (err) {
+        console.warn('renderOperationsStrip non-fatal error:', err);
+      }
     }
     function statusHeartbeatBarsHtml(bars, totalCount, timeLabelCache = new Map()) {
       const slotCount = Math.max(totalCount, bars.length, 1);

@@ -66,3 +66,45 @@ func TestQuotaObservationPayloadExcludesCooldownState(t *testing.T) {
 		t.Fatalf("cooldown backoff leaked: %#v", payload)
 	}
 }
+
+func TestBuildAuthFileEntryLockedSupportsQuotaForWorkbuddyAndQoder(t *testing.T) {
+	h := &Handler{}
+	quotaCtx := authFileQuotaContext{
+		v8: true,
+	}
+
+	testCases := []struct {
+		provider     string
+		wantProvider string
+		wantPluginID string
+	}{
+		{provider: "workbuddy", wantProvider: "workbuddy", wantPluginID: "workbuddy"},
+		{provider: "workbuddy-cn", wantProvider: "workbuddy", wantPluginID: "workbuddy"},
+		{provider: "copilot-tencent", wantProvider: "workbuddy", wantPluginID: "workbuddy"},
+		{provider: "qoder", wantProvider: "qoder", wantPluginID: "qoder"},
+		{provider: "qoder-cn", wantProvider: "qoder", wantPluginID: "qoder"},
+	}
+
+	for _, tc := range testCases {
+		auth := &coreauth.Auth{
+			ID:       tc.provider + "-test",
+			Provider: tc.provider,
+			Attributes: map[string]string{
+				"path": "test/" + tc.provider + ".json",
+			},
+		}
+		entry := h.buildAuthFileEntryLocked(auth, quotaCtx)
+		if entry == nil {
+			t.Fatalf("entry is nil for provider %s", tc.provider)
+		}
+		if entry["supports_quota"] != true {
+			t.Fatalf("supports_quota is not true for provider %s: %#v", tc.provider, entry)
+		}
+		if entry["quota_provider"] != tc.wantProvider {
+			t.Fatalf("quota_provider = %v, want %v for %s", entry["quota_provider"], tc.wantProvider, tc.provider)
+		}
+		if entry["quota_plugin_id"] != tc.wantPluginID {
+			t.Fatalf("quota_plugin_id = %v, want %v for %s", entry["quota_plugin_id"], tc.wantPluginID, tc.provider)
+		}
+	}
+}

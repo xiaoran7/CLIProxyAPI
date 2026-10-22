@@ -731,9 +731,16 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quota authFileQu
 	pLower := strings.ToLower(strings.TrimSpace(auth.Provider))
 	if strings.HasPrefix(pLower, "workbuddy") || pLower == "copilot-tencent" {
 		entry["supports_quota"] = true
-		entry["quota_provider"] = auth.Provider
+		entry["quota_provider"] = "workbuddy"
 		if quota.v8 {
-			entry["quota_plugin_id"] = pLower
+			entry["quota_plugin_id"] = "workbuddy"
+		}
+	}
+	if strings.HasPrefix(pLower, "qoder") {
+		entry["supports_quota"] = true
+		entry["quota_provider"] = "qoder"
+		if quota.v8 {
+			entry["quota_plugin_id"] = "qoder"
 		}
 	}
 	// Declarative quota_probe is only executed by the v0 quota/fetch route.

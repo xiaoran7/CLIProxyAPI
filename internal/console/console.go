@@ -81,6 +81,18 @@ func InitSubsystem(cfg SubsystemConfig) (*Subsystem, error) {
 		return nil, fmt.Errorf("console: failed to initialize provider registry engine: %w", err)
 	}
 
+	// Connect provider resolver on engine outbox flusher
+	eng.SetProviderResolver(func(model, authIndex string) string {
+		return providers.InferProvider(model, authIndex).Key
+	})
+
+	// Trigger one-time async backfill of historical upstream daily stats providers from baselines
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = database.BackfillUpstreamDailyStatsProviders(ctx)
+	}()
+
 	// Start engine background flusher
 	eng.Start()
 

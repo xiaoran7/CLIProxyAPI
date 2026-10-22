@@ -222,6 +222,7 @@ type EventFilterParams struct {
 	AuthIndex     string
 	Provider      string
 	ProviderAuths []string
+	ExcludeAuths  []string
 	ModelPatterns []string
 	AuthPatterns  []string
 	Filter        string

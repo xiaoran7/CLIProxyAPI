@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 
@@ -260,17 +261,26 @@ type ProviderInferenceResult struct {
 	Source    string `json:"source"`
 }
 
+// AuthAccountInfo stores resolved upstream credential metadata.
+type AuthAccountInfo struct {
+	AuthIndex   string `json:"auth_index"`
+	ProviderKey string `json:"provider_key"`
+	Name        string `json:"name"`
+}
+
 // ProviderRegistryEngine coordinates in-memory provider matching.
 type ProviderRegistryEngine struct {
-	mu        sync.RWMutex
-	providers []*CompiledProvider
-	db        *db.DB
+	mu           sync.RWMutex
+	providers    []*CompiledProvider
+	db           *db.DB
+	authAccounts map[string]AuthAccountInfo // key is lowercase authIndex
 }
 
 // NewProviderRegistryEngine initializes and populates the registry engine.
 func NewProviderRegistryEngine(database *db.DB) (*ProviderRegistryEngine, error) {
 	pe := &ProviderRegistryEngine{
-		db: database,
+		db:           database,
+		authAccounts: make(map[string]AuthAccountInfo),
 	}
 	if err := pe.InitAndReload(context.Background()); err != nil {
 		return nil, err
@@ -335,8 +345,42 @@ func (pe *ProviderRegistryEngine) InitAndReload(ctx context.Context) error {
 		compiled = append(compiled, cp)
 	}
 
+	// Load persisted account baselines from database into memory
+	loadedAccounts := make(map[string]AuthAccountInfo)
+	if pe.db != nil {
+		baselines, err := pe.db.SelectBaselinesAll(ctx)
+		if err == nil {
+			for _, b := range baselines {
+				idx := strings.ToLower(strings.TrimSpace(b.AuthIndex))
+				if idx == "" {
+					continue
+				}
+				prov := ""
+				if b.Provider != nil {
+					prov = strings.ToLower(strings.TrimSpace(*b.Provider))
+				}
+				name := ""
+				if b.Name != nil {
+					name = strings.TrimSpace(*b.Name)
+				}
+				if prov != "" || name != "" {
+					loadedAccounts[idx] = AuthAccountInfo{
+						AuthIndex:   idx,
+						ProviderKey: prov,
+						Name:        name,
+					}
+				}
+			}
+		}
+	}
+
 	pe.mu.Lock()
 	pe.providers = compiled
+	if len(loadedAccounts) > 0 {
+		for k, v := range loadedAccounts {
+			pe.authAccounts[k] = v
+		}
+	}
 	pe.mu.Unlock()
 
 	return nil
@@ -379,6 +423,142 @@ func compilePatternList(raw string) []CompiledPattern {
 	return compiled
 }
 
+// RegisterAuthAccount registers or updates an authoritative upstream account mapping.
+func (pe *ProviderRegistryEngine) RegisterAuthAccount(authIndex, providerKey, name string) {
+	idx := strings.ToLower(strings.TrimSpace(authIndex))
+	if idx == "" {
+		return
+	}
+	prov := strings.ToLower(strings.TrimSpace(providerKey))
+	nm := strings.TrimSpace(name)
+
+	pe.mu.Lock()
+	defer pe.mu.Unlock()
+
+	existing, exists := pe.authAccounts[idx]
+	if exists {
+		if prov == "" {
+			prov = existing.ProviderKey
+		}
+		if nm == "" {
+			nm = existing.Name
+		}
+	}
+	pe.authAccounts[idx] = AuthAccountInfo{
+		AuthIndex:   idx,
+		ProviderKey: prov,
+		Name:        nm,
+	}
+}
+
+// RegisterAuthAccounts registers multiple authoritative upstream account mappings.
+func (pe *ProviderRegistryEngine) RegisterAuthAccounts(accounts []AuthAccountInfo) {
+	if len(accounts) == 0 {
+		return
+	}
+	pe.mu.Lock()
+	defer pe.mu.Unlock()
+
+	for _, a := range accounts {
+		idx := strings.ToLower(strings.TrimSpace(a.AuthIndex))
+		if idx == "" {
+			continue
+		}
+		prov := strings.ToLower(strings.TrimSpace(a.ProviderKey))
+		nm := strings.TrimSpace(a.Name)
+		existing, exists := pe.authAccounts[idx]
+		if exists {
+			if prov == "" {
+				prov = existing.ProviderKey
+			}
+			if nm == "" {
+				nm = existing.Name
+			}
+		}
+		pe.authAccounts[idx] = AuthAccountInfo{
+			AuthIndex:   idx,
+			ProviderKey: prov,
+			Name:        nm,
+		}
+	}
+}
+
+// GetAuthAccount retrieves account metadata for a specific auth_index.
+func (pe *ProviderRegistryEngine) GetAuthAccount(authIndex string) (AuthAccountInfo, bool) {
+	idx := strings.ToLower(strings.TrimSpace(authIndex))
+	if idx == "" {
+		return AuthAccountInfo{}, false
+	}
+	pe.mu.RLock()
+	defer pe.mu.RUnlock()
+
+	info, ok := pe.authAccounts[idx]
+	return info, ok
+}
+
+// GetProviderAuthIndexes returns all registered auth_index hashes mapped to a provider.
+func (pe *ProviderRegistryEngine) GetProviderAuthIndexes(providerKey string) []string {
+	targetProv := strings.ToLower(strings.TrimSpace(providerKey))
+	if targetProv == "" || targetProv == "all" {
+		return nil
+	}
+	pe.mu.RLock()
+	defer pe.mu.RUnlock()
+
+	var res []string
+	for idx, acc := range pe.authAccounts {
+		if strings.EqualFold(acc.ProviderKey, targetProv) {
+			res = append(res, idx)
+		}
+	}
+	sort.Strings(res)
+	return res
+}
+
+// GetExcludeAuthIndexes returns all registered auth_index hashes belonging to other known providers.
+func (pe *ProviderRegistryEngine) GetExcludeAuthIndexes(providerKey string) []string {
+	targetProv := strings.ToLower(strings.TrimSpace(providerKey))
+	if targetProv == "" || targetProv == "all" {
+		return nil
+	}
+	pe.mu.RLock()
+	defer pe.mu.RUnlock()
+
+	var res []string
+	for idx, acc := range pe.authAccounts {
+		if acc.ProviderKey != "" && !strings.EqualFold(acc.ProviderKey, targetProv) {
+			res = append(res, idx)
+		}
+	}
+	sort.Strings(res)
+	return res
+}
+
+// GetAllAuthAccounts returns a copy of all registered account mappings.
+func (pe *ProviderRegistryEngine) GetAllAuthAccounts() map[string]AuthAccountInfo {
+	pe.mu.RLock()
+	defer pe.mu.RUnlock()
+
+	copyMap := make(map[string]AuthAccountInfo, len(pe.authAccounts))
+	for k, v := range pe.authAccounts {
+		copyMap[k] = v
+	}
+	return copyMap
+}
+
+func (pe *ProviderRegistryEngine) getProviderLabelLocked(key string) string {
+	k := strings.ToLower(strings.TrimSpace(key))
+	if k == "" {
+		return ""
+	}
+	for _, cp := range pe.providers {
+		if cp.ProviderKey == k {
+			return cp.Label
+		}
+	}
+	return ""
+}
+
 // InferProvider identifies the AI provider from model name and/or auth_index.
 func (pe *ProviderRegistryEngine) InferProvider(model, authIndex string) ProviderInferenceResult {
 	modelStr := strings.ToLower(strings.TrimSpace(model))
@@ -387,7 +567,23 @@ func (pe *ProviderRegistryEngine) InferProvider(model, authIndex string) Provide
 	pe.mu.RLock()
 	defer pe.mu.RUnlock()
 
-	// 1. Evaluate auth_patterns first, ordered by sort_order
+	// 0. Check authoritative registered upstream accounts first (highest precedence)
+	if authStr != "" {
+		if acc, found := pe.authAccounts[authStr]; found && acc.ProviderKey != "" {
+			label := pe.getProviderLabelLocked(acc.ProviderKey)
+			if label == "" {
+				label = acc.ProviderKey
+			}
+			return ProviderInferenceResult{
+				Key:       acc.ProviderKey,
+				Label:     label,
+				MatchedBy: "auth",
+				Source:    "account",
+			}
+		}
+	}
+
+	// 1. Evaluate auth_patterns next, ordered by sort_order
 	if authStr != "" {
 		for _, cp := range pe.providers {
 			for _, pat := range cp.AuthPatterns {
@@ -438,20 +634,9 @@ func (pe *ProviderRegistryEngine) InferModelProviderLabel(model string) string {
 
 // GetProviderLabel returns provider label by provider key.
 func (pe *ProviderRegistryEngine) GetProviderLabel(key string) string {
-	k := strings.ToLower(strings.TrimSpace(key))
-	if k == "" {
-		return ""
-	}
-
 	pe.mu.RLock()
 	defer pe.mu.RUnlock()
-
-	for _, cp := range pe.providers {
-		if cp.ProviderKey == k {
-			return cp.Label
-		}
-	}
-	return ""
+	return pe.getProviderLabelLocked(key)
 }
 
 // GetProviderGroupLabel returns display name for dashboard grouping.

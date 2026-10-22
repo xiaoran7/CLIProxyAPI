@@ -105,6 +105,18 @@ func (m *MemoryState) DrainPendingEvents() []*db.RequestEventRow {
 	return events
 }
 
+// PeekPendingEvents returns a copy of pending events without clearing them.
+func (m *MemoryState) PeekPendingEvents() []*db.RequestEventRow {
+	m.pendingMu.Lock()
+	defer m.pendingMu.Unlock()
+	if len(m.pendingEvents) == 0 {
+		return nil
+	}
+	cp := make([]*db.RequestEventRow, len(m.pendingEvents))
+	copy(cp, m.pendingEvents)
+	return cp
+}
+
 // GetTodayUsageForKey returns total tokens consumed today (preloaded + live).
 func (m *MemoryState) GetTodayUsageForKey(keyID int64) int64 {
 	m.mu.Lock()

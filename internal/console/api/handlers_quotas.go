@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -223,7 +224,24 @@ type CachedAccountQuota struct {
 var (
 	accountQuotaCacheMu sync.RWMutex
 	accountQuotaCache   = make(map[string]CachedAccountQuota)
+
+	probeThrottleMu sync.Mutex
+	probeLastTime   = make(map[string]time.Time)
 )
+
+func shouldProbeAccount(key string, minInterval time.Duration) bool {
+	if key == "" {
+		return false
+	}
+	probeThrottleMu.Lock()
+	defer probeThrottleMu.Unlock()
+	last, ok := probeLastTime[key]
+	if ok && time.Since(last) < minInterval {
+		return false
+	}
+	probeLastTime[key] = time.Now()
+	return true
+}
 
 const (
 	defaultAuthPriority = 0
@@ -240,28 +258,6 @@ var cooldownReasonLabels = map[string]string{
 	"not_found":            "资源未找到",
 	"model_not_supported":  "模型不受支持",
 	"transient_error":      "上游暂时出错",
-}
-
-func formatCooldownRemaining(seconds int) string {
-	if seconds <= 0 {
-		return "计时已到期"
-	}
-	if seconds < 60 {
-		return fmt.Sprintf("%d 秒", seconds)
-	}
-	minutes := (seconds + 59) / 60
-	if minutes < 60 {
-		return fmt.Sprintf("%d 分钟", minutes)
-	}
-	hours := minutes / 60
-	restMin := minutes % 60
-	if hours >= 24 {
-		return fmt.Sprintf("%d 天 %d 小时", hours/24, hours%24)
-	}
-	if restMin > 0 {
-		return fmt.Sprintf("%d 小时 %d 分钟", hours, restMin)
-	}
-	return fmt.Sprintf("%d 小时", hours)
 }
 
 func computeHealth(file CpaAuthFile) UpstreamAccountHealth {
@@ -312,7 +308,7 @@ func computeHealth(file CpaAuthFile) UpstreamAccountHealth {
 			reasonLabel = "冷却限制"
 		}
 
-		remText := formatCooldownRemaining(minRemaining)
+		remText := formatCooldownRemaining(int64(minRemaining))
 		detail := fmt.Sprintf("%s · %s · 最早结束约 %s", reasonLabel, scopeLabel, remText)
 
 		cdSummary := &UpstreamCooldownSummary{
@@ -441,7 +437,7 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 
 		if !force {
 			upstreamCacheMu.RLock()
-			if cachedUpstreamQuotasResp != nil && time.Since(cachedUpstreamAt) < 30*time.Second {
+			if cachedUpstreamQuotasResp != nil && time.Since(cachedUpstreamAt) < 10*time.Second {
 				resp := cachedUpstreamQuotasResp
 				upstreamCacheMu.RUnlock()
 				c.JSON(http.StatusOK, resp)
@@ -458,17 +454,177 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 		var compatResp CpaOpenAICompatResponse
 		_ = cpa.RequestJSON(ctx, http.MethodGet, "/openai-compatibility", nil, "v0", &compatResp)
 
-		// 3. Fetch today's aggregated usage stats from SQLite
-		dailyStats, err := eng.DB().SelectUpstreamDailyAgg(ctx)
-		if err != nil {
-			dailyStats = []db.UpstreamDailyStatRow{}
-		}
-		statsMap := make(map[string]db.UpstreamDailyStatRow)
-		for _, s := range dailyStats {
-			statsMap[s.AuthIndex] = s
+		// If refresh was requested, concurrently probe active credentials (with 10s per-credential throttle)
+		if force && eng != nil {
+			var wg sync.WaitGroup
+			sem := make(chan struct{}, 6)
+			for _, f := range authFilesResp.Files {
+				prov := strings.ToLower(strings.TrimSpace(f.Provider))
+				if prov == "" {
+					prov = strings.ToLower(strings.TrimSpace(f.Type))
+				}
+				if prov != "antigravity" && prov != "codex" && prov != "workbuddy" && prov != "workbuddy-cn" {
+					continue
+				}
+				if f.Disabled || f.Status == "disabled" {
+					continue
+				}
+				key := f.AuthIndex
+				if key == "" {
+					key = f.Name
+				}
+				if !shouldProbeAccount(key, 10*time.Second) {
+					continue
+				}
+				wg.Add(1)
+				go func(file CpaAuthFile, p string) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+					fetchCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+					defer cancel()
+					_, _, _, _ = fetchSingleAccountQuota(fetchCtx, eng, cpa, file.AuthIndex, p, file.ProjectID, file.Email, file.Name)
+				}(f, prov)
+			}
+			wg.Wait()
 		}
 
-		// 4. Fetch pending validation challenges from SQLite
+		// 3. Hydrate quota groups from SQLite quota_snapshots if available
+		var dbHydratedMap map[string][]CpaQuotaGroup
+		var dbHydratedTimes map[string]int64
+		if eng != nil && eng.DB() != nil {
+			since48h := time.Now().Add(-48 * time.Hour).Unix()
+			if snapshots, err := eng.DB().SelectLatestQuotaSnapshots(ctx, since48h); err == nil && len(snapshots) > 0 {
+				dbHydratedMap, dbHydratedTimes = hydrateQuotaGroupsFromSnapshots(snapshots)
+			}
+		}
+
+		// 4. Background probe for active credentials lacking recent quotas (non-blocking)
+		if !force && eng != nil {
+			var probeFiles []CpaAuthFile
+			for _, f := range authFilesResp.Files {
+				prov := strings.ToLower(strings.TrimSpace(f.Provider))
+				if prov == "" {
+					prov = strings.ToLower(strings.TrimSpace(f.Type))
+				}
+				if prov != "antigravity" && prov != "codex" && prov != "workbuddy" && prov != "workbuddy-cn" {
+					continue
+				}
+				if f.Disabled || f.Status == "disabled" {
+					continue
+				}
+				accountQuotaCacheMu.RLock()
+				cached1, found1 := accountQuotaCache[f.AuthIndex]
+				cached2, found2 := accountQuotaCache[f.Name]
+				accountQuotaCacheMu.RUnlock()
+
+				isStale := false
+				if !found1 && !found2 {
+					isStale = true
+				} else {
+					var lastUpdate time.Time
+					if found1 && cached1.UpdatedAt.After(lastUpdate) {
+						lastUpdate = cached1.UpdatedAt
+					}
+					if found2 && cached2.UpdatedAt.After(lastUpdate) {
+						lastUpdate = cached2.UpdatedAt
+					}
+					if lastUpdate.IsZero() || time.Since(lastUpdate) > 60*time.Second {
+						isStale = true
+					}
+				}
+				key := f.AuthIndex
+				if key == "" {
+					key = f.Name
+				}
+				if isStale && shouldProbeAccount(key, 30*time.Second) {
+					probeFiles = append(probeFiles, f)
+				}
+			}
+			if len(probeFiles) > 0 {
+				go func(pList []CpaAuthFile) {
+					sem := make(chan struct{}, 4)
+					var pWg sync.WaitGroup
+					for _, file := range pList {
+						pWg.Add(1)
+						go func(fl CpaAuthFile) {
+							defer pWg.Done()
+							sem <- struct{}{}
+							defer func() { <-sem }()
+							pCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+							defer cancel()
+							p := strings.ToLower(strings.TrimSpace(fl.Provider))
+							if p == "" {
+								p = strings.ToLower(strings.TrimSpace(fl.Type))
+							}
+							_, _, _, _ = fetchSingleAccountQuota(pCtx, eng, cpa, fl.AuthIndex, p, fl.ProjectID, fl.Email, fl.Name)
+						}(file)
+					}
+					pWg.Wait()
+					InvalidateUpstreamQuotaCache()
+				}(probeFiles)
+			}
+		}
+
+		// 5. Fetch authentic local usage statistics from SQLite
+		todayDate := engine.ShanghaiDate(time.Now())
+		todayStats, err := eng.DB().SelectUpstreamDailyForDate(ctx, todayDate)
+		if err != nil {
+			todayStats = []db.UpstreamDailyStatRow{}
+		}
+		todayStatsMap := make(map[string]db.UpstreamDailyStatRow)
+		for _, s := range todayStats {
+			todayStatsMap[s.AuthIndex] = s
+		}
+
+		fiveHoursAgo := time.Now().Add(-5 * time.Hour).Unix()
+		windowStatsMap, err := eng.DB().SelectUpstreamWindowStats(ctx, fiveHoursAgo)
+		if err != nil {
+			windowStatsMap = make(map[string]db.UpstreamWindowStat)
+		}
+
+		lifetimeStats, err := eng.DB().SelectUpstreamDailyAgg(ctx)
+		if err != nil {
+			lifetimeStats = []db.UpstreamDailyStatRow{}
+		}
+		lifetimeStatsMap := make(map[string]db.UpstreamDailyStatRow)
+		for _, s := range lifetimeStats {
+			lifetimeStatsMap[s.AuthIndex] = s
+		}
+
+		populateLocalStats := func(item *UpstreamAccountItem, key, altKey string) {
+			if stat, ok := todayStatsMap[key]; ok {
+				item.TodayTokens = stat.TotalTokens
+				item.TodayRequests = stat.Requests
+			} else if altKey != "" {
+				if stat, ok := todayStatsMap[altKey]; ok {
+					item.TodayTokens = stat.TotalTokens
+					item.TodayRequests = stat.Requests
+				}
+			}
+
+			if wStat, ok := windowStatsMap[key]; ok {
+				item.FiveHourTokens = wStat.Tokens
+				item.FiveHourRequests = wStat.Requests
+			} else if altKey != "" {
+				if wStat, ok := windowStatsMap[altKey]; ok {
+					item.FiveHourTokens = wStat.Tokens
+					item.FiveHourRequests = wStat.Requests
+				}
+			}
+
+			if lStat, ok := lifetimeStatsMap[key]; ok {
+				item.LifetimeTokens = lStat.TotalTokens
+				item.LifetimeRequests = lStat.Requests
+			} else if altKey != "" {
+				if lStat, ok := lifetimeStatsMap[altKey]; ok {
+					item.LifetimeTokens = lStat.TotalTokens
+					item.LifetimeRequests = lStat.Requests
+				}
+			}
+		}
+
+		// 6. Fetch pending validation challenges from SQLite
 		pendingVals, err := eng.DB().SelectValidations(ctx, "pending")
 		if err != nil {
 			pendingVals = []db.UpstreamValidationRow{}
@@ -560,6 +716,49 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 				}
 				accountQuotaCacheMu.RUnlock()
 
+				if len(groups) == 0 && dbHydratedMap != nil {
+					if hGroups, found := dbHydratedMap[f.AuthIndex]; found && len(hGroups) > 0 {
+						groups = hGroups
+						planType = "standard"
+						planName = "标准包"
+						var snapTime time.Time
+						if ts, ok := dbHydratedTimes[f.AuthIndex]; ok && ts > 0 {
+							snapTime = time.Unix(ts, 0)
+						} else {
+							snapTime = time.Now().Add(-2 * time.Hour)
+						}
+						accountQuotaCacheMu.Lock()
+						accountQuotaCache[f.AuthIndex] = CachedAccountQuota{
+							Groups:    groups,
+							PlanType:  planType,
+							PlanName:  planName,
+							UpdatedAt: snapTime,
+						}
+						if fname != "" {
+							accountQuotaCache[fname] = accountQuotaCache[f.AuthIndex]
+						}
+						accountQuotaCacheMu.Unlock()
+					} else if hGroups, found := dbHydratedMap[fname]; found && len(hGroups) > 0 {
+						groups = hGroups
+						planType = "standard"
+						planName = "标准包"
+						var snapTime time.Time
+						if ts, ok := dbHydratedTimes[fname]; ok && ts > 0 {
+							snapTime = time.Unix(ts, 0)
+						} else {
+							snapTime = time.Now().Add(-2 * time.Hour)
+						}
+						accountQuotaCacheMu.Lock()
+						accountQuotaCache[fname] = CachedAccountQuota{
+							Groups:    groups,
+							PlanType:  planType,
+							PlanName:  planName,
+							UpdatedAt: snapTime,
+						}
+						accountQuotaCacheMu.Unlock()
+					}
+				}
+
 				if prov == "antigravity" && len(f.Cooldowns) > 0 && len(groups) > 0 {
 					groups = reconcileAntigravityQuotaGroups(groups, f.Cooldowns)
 				}
@@ -585,10 +784,7 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 				UpdatedAt:   nowMs,
 			}
 
-			if stat, ok := statsMap[f.AuthIndex]; ok {
-				item.TodayTokens = stat.TotalTokens
-				item.TodayRequests = stat.Requests
-			}
+			populateLocalStats(&item, f.AuthIndex, fname)
 
 			if val, ok := valMap[f.AuthIndex]; ok {
 				vCopy := val
@@ -661,6 +857,14 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 				}
 				accountQuotaCacheMu.RUnlock()
 
+				if len(compGroups) == 0 && dbHydratedMap != nil {
+					if hGroups, found := dbHydratedMap[authIdx]; found && len(hGroups) > 0 {
+						compGroups = hGroups
+					} else if hGroups, found := dbHydratedMap[fname]; found && len(hGroups) > 0 {
+						compGroups = hGroups
+					}
+				}
+
 				item := UpstreamAccountItem{
 					ID:          fname,
 					Filename:    fname,
@@ -686,10 +890,7 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 					UpdatedAt: nowMs,
 				}
 
-				if stat, ok := statsMap[authIdx]; ok {
-					item.TodayTokens = stat.TotalTokens
-					item.TodayRequests = stat.Requests
-				}
+				populateLocalStats(&item, authIdx, fname)
 
 				if val, ok := valMap[authIdx]; ok {
 					vCopy := val
@@ -717,6 +918,12 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 					if prov == "" {
 						prov = provRes.Key
 					}
+					var bGroups []CpaQuotaGroup
+					if dbHydratedMap != nil {
+						if hGroups, found := dbHydratedMap[b.AuthIndex]; found && len(hGroups) > 0 {
+							bGroups = hGroups
+						}
+					}
 					item := UpstreamAccountItem{
 						ID:          b.AuthIndex,
 						Filename:    b.AuthIndex,
@@ -730,13 +937,10 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 						AuthIndex:   b.AuthIndex,
 						PlanType:    "standard",
 						PlanName:    prov,
-						Groups:      []CpaQuotaGroup{},
+						Groups:      bGroups,
 						UpdatedAt:   nowMs,
 					}
-					if stat, ok := statsMap[b.AuthIndex]; ok {
-						item.TodayTokens = stat.TotalTokens
-						item.TodayRequests = stat.Requests
-					}
+					populateLocalStats(&item, b.AuthIndex, "")
 					if val, ok := valMap[b.AuthIndex]; ok {
 						vCopy := val
 						item.Validation = &vCopy
@@ -769,6 +973,7 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 				Groups:      []CpaQuotaGroup{},
 				UpdatedAt:   nowMs,
 			}
+			populateLocalStats(&item, item.AuthIndex, "")
 			accounts = append(accounts, item)
 		}
 
@@ -929,10 +1134,14 @@ func formatResetCountdown(isoTime string) string {
 	return "即将重置"
 }
 
-func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) map[string][]CpaQuotaGroup {
+func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) (map[string][]CpaQuotaGroup, map[string]int64) {
 	authMap := make(map[string][]db.QuotaSnapshotRow)
+	latestTSMap := make(map[string]int64)
 	for _, s := range snapshots {
 		authMap[s.AuthIndex] = append(authMap[s.AuthIndex], s)
+		if s.TS > latestTSMap[s.AuthIndex] {
+			latestTSMap[s.AuthIndex] = s.TS
+		}
 	}
 
 	res := make(map[string][]CpaQuotaGroup)
@@ -1033,7 +1242,81 @@ func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) map[string
 		})
 		res[authIdx] = groups
 	}
-	return res
+	return res, latestTSMap
+}
+
+func extractFloat(val any) (float64, bool) {
+	if val == nil {
+		return 0, false
+	}
+	switch v := val.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case uint:
+		return float64(v), true
+	case uint64:
+		return float64(v), true
+	case json.Number:
+		if f, err := v.Float64(); err == nil {
+			return f, true
+		}
+	case string:
+		v = strings.TrimSpace(v)
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f, true
+		}
+	}
+	return 0, false
+}
+
+func normalizeFractionAndPercent(f float64) (*float64, *int) {
+	if f > 1.0 {
+		return normalizePercentAndFraction(f)
+	}
+	if f < 0 {
+		f = 0
+	}
+	pct := int(math.Round(f * 100.0))
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	return &f, &pct
+}
+
+func normalizePercentAndFraction(p float64) (*float64, *int) {
+	if p < 0 {
+		p = 0
+	}
+	if p > 100 {
+		p = 100
+	}
+	pct := int(math.Round(p))
+	frac := p / 100.0
+	return &frac, &pct
+}
+
+func normalizeUsedPercent(used float64) (*float64, *int) {
+	if used > 1.0 {
+		rem := 100.0 - used
+		return normalizePercentAndFraction(rem)
+	}
+	remFrac := 1.0 - used
+	return normalizeFractionAndPercent(remFrac)
+}
+
+func normalizeUsedFraction(used float64) (*float64, *int) {
+	return normalizeUsedPercent(used)
 }
 
 func parseAntigravityQuotaGroups(raw []byte) []CpaQuotaGroup {
@@ -1123,12 +1406,23 @@ func parseAntigravityQuotaGroups(raw []byte) []CpaQuotaGroup {
 			if v, ok := bMap["window"].(string); ok && strings.TrimSpace(v) != "" {
 				win = strings.TrimSpace(v)
 			}
-			if win == "" {
-				bLower := strings.ToLower(fmt.Sprintf("%s %s", bID, bDisp))
-				if strings.Contains(bLower, "5h") || strings.Contains(bLower, "5 hour") || strings.Contains(bLower, "five") {
-					win = "5h"
-				} else if strings.Contains(bLower, "weekly") || strings.Contains(bLower, "week") {
-					win = "weekly"
+
+			bLower := strings.ToLower(fmt.Sprintf("%s %s %s", bID, bDisp, win))
+			if strings.Contains(bLower, "weekly") || strings.Contains(bLower, "week") {
+				win = "weekly"
+				if bDisp == "" {
+					bDisp = "Weekly Limit"
+				}
+				if bID == "" {
+					bID = fmt.Sprintf("%s-week", gName)
+				}
+			} else {
+				win = "5h"
+				if bDisp == "" {
+					bDisp = "5-Hour Limit"
+				}
+				if bID == "" {
+					bID = fmt.Sprintf("%s-5h", gName)
 				}
 			}
 
@@ -1138,46 +1432,37 @@ func parseAntigravityQuotaGroups(raw []byte) []CpaQuotaGroup {
 			}
 
 			resetTime := ""
-			if rt, ok := bMap["resetTime"].(string); ok {
+			if rt, ok := bMap["resetTime"].(string); ok && rt != "" {
 				resetTime = rt
-			} else if rt, ok := bMap["reset_time"].(string); ok {
+			} else if rt, ok := bMap["reset_time"].(string); ok && rt != "" {
 				resetTime = rt
+			} else if rt, ok := bMap["resetTimeSnake"].(string); ok && rt != "" {
+				resetTime = rt
+			} else if f, ok := extractFloat(bMap["resetTime"]); ok && f > 1000000000 {
+				resetTime = time.Unix(int64(f), 0).UTC().Format(time.RFC3339)
+			} else if f, ok := extractFloat(bMap["reset_time"]); ok && f > 1000000000 {
+				resetTime = time.Unix(int64(f), 0).UTC().Format(time.RFC3339)
 			}
 
 			var remFrac *float64
 			var remPct *int
 
-			if rf, ok := bMap["remainingFraction"].(float64); ok {
-				remFrac = &rf
-				pct := int(math.Round(rf * 100))
-				if pct < 0 {
-					pct = 0
-				}
-				if pct > 100 {
-					pct = 100
-				}
-				remPct = &pct
-			} else if rf, ok := bMap["remaining_fraction"].(float64); ok {
-				remFrac = &rf
-				pct := int(math.Round(rf * 100))
-				if pct < 0 {
-					pct = 0
-				}
-				if pct > 100 {
-					pct = 100
-				}
-				remPct = &pct
-			} else if rp, ok := bMap["remaining_percent"].(float64); ok {
-				pct := int(math.Round(rp))
-				if pct < 0 {
-					pct = 0
-				}
-				if pct > 100 {
-					pct = 100
-				}
-				remPct = &pct
-				frac := rp / 100.0
-				remFrac = &frac
+			if f, ok := extractFloat(bMap["remainingFraction"]); ok {
+				remFrac, remPct = normalizeFractionAndPercent(f)
+			} else if f, ok := extractFloat(bMap["remaining_fraction"]); ok {
+				remFrac, remPct = normalizeFractionAndPercent(f)
+			} else if f, ok := extractFloat(bMap["remainingPercent"]); ok {
+				remFrac, remPct = normalizePercentAndFraction(f)
+			} else if f, ok := extractFloat(bMap["remaining_percent"]); ok {
+				remFrac, remPct = normalizePercentAndFraction(f)
+			} else if f, ok := extractFloat(bMap["usedPercent"]); ok {
+				remFrac, remPct = normalizeUsedPercent(f)
+			} else if f, ok := extractFloat(bMap["used_percent"]); ok {
+				remFrac, remPct = normalizeUsedPercent(f)
+			} else if f, ok := extractFloat(bMap["usedFraction"]); ok {
+				remFrac, remPct = normalizeUsedFraction(f)
+			} else if f, ok := extractFloat(bMap["used_fraction"]); ok {
+				remFrac, remPct = normalizeUsedFraction(f)
 			}
 
 			countdown := formatResetCountdown(resetTime)
@@ -1213,53 +1498,101 @@ func parseCodexQuotaGroups(raw []byte) ([]CpaQuotaGroup, string, string) {
 	planType := "plus"
 	if pt, ok := root["plan_type"].(string); ok && pt != "" {
 		planType = strings.ToLower(pt)
+	} else if pt, ok := root["planType"].(string); ok && pt != "" {
+		planType = strings.ToLower(pt)
 	}
 	planName := strings.ToUpper(planType)
 
 	var primaryMap, secondaryMap map[string]any
+	findWindows := func(m map[string]any) (map[string]any, map[string]any) {
+		if m == nil {
+			return nil, nil
+		}
+		var p, s map[string]any
+		for _, k := range []string{"primary_window", "primaryWindow", "primary", "five_hour", "5h", "rolling"} {
+			if sub, ok := m[k].(map[string]any); ok {
+				p = sub
+				break
+			}
+		}
+		for _, k := range []string{"secondary_window", "secondaryWindow", "secondary", "weekly", "week"} {
+			if sub, ok := m[k].(map[string]any); ok {
+				s = sub
+				break
+			}
+		}
+		return p, s
+	}
+
 	if rl, ok := root["rate_limit"].(map[string]any); ok {
-		primaryMap, _ = rl["primary_window"].(map[string]any)
-		secondaryMap, _ = rl["secondary_window"].(map[string]any)
+		primaryMap, secondaryMap = findWindows(rl)
 	} else if rl, ok := root["rate_limits"].(map[string]any); ok {
-		primaryMap, _ = rl["primary_window"].(map[string]any)
-		secondaryMap, _ = rl["secondary_window"].(map[string]any)
+		primaryMap, secondaryMap = findWindows(rl)
+	}
+	if primaryMap == nil && secondaryMap == nil {
+		primaryMap, secondaryMap = findWindows(root)
 	}
 
 	parseWindow := func(wMap map[string]any, defaultID, defaultWindow, defaultName string) *CpaQuotaBucket {
 		if wMap == nil {
 			return nil
 		}
-		var remPct int = 100
-		if usedPct, ok := wMap["used_percent"].(float64); ok {
-			remPct = int(math.Round((1.0 - usedPct) * 100))
-			if remPct < 0 {
-				remPct = 0
-			}
-			if remPct > 100 {
-				remPct = 100
-			}
+		var remFrac *float64
+		var remPct *int
+
+		if f, ok := extractFloat(wMap["remaining_percent"]); ok {
+			remFrac, remPct = normalizePercentAndFraction(f)
+		} else if f, ok := extractFloat(wMap["remainingPercent"]); ok {
+			remFrac, remPct = normalizePercentAndFraction(f)
+		} else if f, ok := extractFloat(wMap["remaining_fraction"]); ok {
+			remFrac, remPct = normalizeFractionAndPercent(f)
+		} else if f, ok := extractFloat(wMap["remainingFraction"]); ok {
+			remFrac, remPct = normalizeFractionAndPercent(f)
+		} else if f, ok := extractFloat(wMap["used_percent"]); ok {
+			remFrac, remPct = normalizeUsedPercent(f)
+		} else if f, ok := extractFloat(wMap["usedPercent"]); ok {
+			remFrac, remPct = normalizeUsedPercent(f)
+		} else if f, ok := extractFloat(wMap["used_fraction"]); ok {
+			remFrac, remPct = normalizeUsedFraction(f)
+		} else if f, ok := extractFloat(wMap["usedFraction"]); ok {
+			remFrac, remPct = normalizeUsedFraction(f)
+		} else {
+			defaultFrac, defaultPct := 1.0, 100
+			remFrac, remPct = &defaultFrac, &defaultPct
 		}
 
 		var resetTimeStr string
-		if resetAt, ok := wMap["reset_at"].(float64); ok && resetAt > 0 {
+		if resetAt, ok := extractFloat(wMap["reset_at"]); ok && resetAt > 0 {
 			resetTimeStr = time.Unix(int64(resetAt), 0).UTC().Format(time.RFC3339)
-		} else if resetSec, ok := wMap["reset_after_seconds"].(float64); ok && resetSec > 0 {
+		} else if resetAt, ok := extractFloat(wMap["resetAt"]); ok && resetAt > 0 {
+			resetTimeStr = time.Unix(int64(resetAt), 0).UTC().Format(time.RFC3339)
+		} else if resetSec, ok := extractFloat(wMap["reset_after_seconds"]); ok && resetSec > 0 {
 			resetTimeStr = time.Now().UTC().Add(time.Duration(resetSec) * time.Second).Format(time.RFC3339)
+		} else if resetSec, ok := extractFloat(wMap["resetAfterSeconds"]); ok && resetSec > 0 {
+			resetTimeStr = time.Now().UTC().Add(time.Duration(resetSec) * time.Second).Format(time.RFC3339)
+		} else if rt, ok := wMap["reset_time"].(string); ok && rt != "" {
+			resetTimeStr = rt
+		} else if rt, ok := wMap["resetTime"].(string); ok && rt != "" {
+			resetTimeStr = rt
 		}
 
 		countdown := formatResetCountdown(resetTimeStr)
-		frac := float64(remPct) / 100.0
+
+		disabled := false
+		if remPct != nil && *remPct <= 0 {
+			disabled = true
+		}
 
 		return &CpaQuotaBucket{
 			BucketID:          defaultID,
 			Window:            defaultWindow,
 			Name:              defaultName,
-			RemainingFraction: &frac,
-			RemainingPercent:  &remPct,
+			RemainingFraction: remFrac,
+			RemainingPercent:  remPct,
 			ResetTime:         resetTimeStr,
 			ResetTimeSnake:    resetTimeStr,
 			ResetCountdown:    countdown,
-			Disabled:          remPct <= 0,
+			Disabled:          disabled,
 		}
 	}
 
