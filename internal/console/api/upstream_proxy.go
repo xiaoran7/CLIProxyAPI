@@ -337,7 +337,7 @@ func HandleUpstreamProxy(cfg RouterConfig) gin.HandlerFunc {
 	}
 }
 
-func verifySecretCandidate(candidate, adminSecret, cpaSecret string) bool {
+func verifySecretCandidate(candidate string, allowedSecrets ...string) bool {
 	candidate = strings.TrimSpace(candidate)
 	if candidate == "" {
 		return false
@@ -359,5 +359,10 @@ func verifySecretCandidate(candidate, adminSecret, cpaSecret string) bool {
 		return false
 	}
 
-	return match(adminSecret) || match(cpaSecret)
+	for _, s := range allowedSecrets {
+		if match(s) {
+			return true
+		}
+	}
+	return false
 }

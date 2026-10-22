@@ -141,3 +141,157 @@ func TestReconcileAntigravityQuotaGroups(t *testing.T) {
 		}
 	})
 }
+
+func TestParseAntigravityQuotaGroups(t *testing.T) {
+	t.Parallel()
+
+	rawJSON := []byte(`{
+		"groups": [
+			{
+				"name": "models/gemini",
+				"displayName": "GEMINI Models",
+				"buckets": [
+					{
+						"bucketId": "gemini-5h",
+						"displayName": "5-Hour Limit",
+						"window": "5h",
+						"remainingFraction": 0.5,
+						"disabled": false,
+						"resetTime": "2026-10-22T18:00:00Z"
+					},
+					{
+						"bucketId": "gemini-week",
+						"displayName": "Weekly Limit",
+						"window": "weekly",
+						"remainingFraction": 1.0,
+						"disabled": false,
+						"resetTime": "2026-10-29T12:00:00Z"
+					}
+				]
+			},
+			{
+				"name": "models/claude",
+				"displayName": "CLAUDE Models",
+				"buckets": [
+					{
+						"bucketId": "claude-5h",
+						"displayName": "5-Hour Limit",
+						"window": "5h",
+						"remainingFraction": 1.0,
+						"disabled": true,
+						"resetTime": "2026-10-22T18:00:00Z"
+					}
+				]
+			}
+		]
+	}`)
+
+	groups := parseAntigravityQuotaGroups(rawJSON)
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(groups))
+	}
+
+	// Verify Gemini 5h is 50%
+	if len(groups[0].Buckets) != 2 {
+		t.Fatalf("expected 2 buckets in gemini, got %d", len(groups[0].Buckets))
+	}
+	b0 := groups[0].Buckets[0]
+	if b0.RemainingPercent == nil || *b0.RemainingPercent != 50 {
+		t.Errorf("gemini 5h remainingPercent = %v, want 50", b0.RemainingPercent)
+	}
+	if b0.Disabled {
+		t.Errorf("gemini 5h should not be disabled")
+	}
+
+	// Verify Claude 5h is disabled: true
+	if len(groups[1].Buckets) != 1 {
+		t.Fatalf("expected 1 bucket in claude, got %d", len(groups[1].Buckets))
+	}
+	bClaude := groups[1].Buckets[0]
+	if !bClaude.Disabled {
+		t.Errorf("claude 5h should be marked disabled: true")
+	}
+}
+
+func TestParseCodexQuotaGroups(t *testing.T) {
+	t.Parallel()
+
+	rawJSON := []byte(`{
+		"plan_type": "plus",
+		"rate_limit": {
+			"primary_window": {
+				"used_percent": 0.35,
+				"reset_after_seconds": 3600
+			},
+			"secondary_window": {
+				"used_percent": 0.8,
+				"reset_after_seconds": 86400
+			}
+		}
+	}`)
+
+	groups, planType, planName := parseCodexQuotaGroups(rawJSON)
+	if planType != "plus" || planName != "PLUS" {
+		t.Errorf("expected plus/PLUS, got %s/%s", planType, planName)
+	}
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(groups))
+	}
+	if len(groups[0].Buckets) != 2 {
+		t.Fatalf("expected 2 buckets, got %d", len(groups[0].Buckets))
+	}
+
+	// Primary window: 1.0 - 0.35 = 65% remaining
+	b5h := groups[0].Buckets[0]
+	if b5h.RemainingPercent == nil || *b5h.RemainingPercent != 65 {
+		t.Errorf("5h remainingPercent = %v, want 65", b5h.RemainingPercent)
+	}
+
+	// Secondary window: 1.0 - 0.8 = 20% remaining
+	bWeekly := groups[0].Buckets[1]
+	if bWeekly.RemainingPercent == nil || *bWeekly.RemainingPercent != 20 {
+		t.Errorf("weekly remainingPercent = %v, want 20", bWeekly.RemainingPercent)
+	}
+}
+
+func TestComputeHealthModelCooldownNotBlockingCredential(t *testing.T) {
+	t.Parallel()
+
+	// Model-scoped cooldown should NOT set Blocked: true
+	fileModelCooling := CpaAuthFile{
+		Name:     "antigravity-01.json",
+		Provider: "antigravity",
+		Status:   "active",
+		Cooldowns: []CpaCooldownRecord{
+			{
+				Scope:            "models",
+				ModelKey:         "claude-3-5-sonnet",
+				RemainingSeconds: 3600,
+			},
+		},
+	}
+	hModel := computeHealth(fileModelCooling)
+	if hModel.Blocked {
+		t.Errorf("model-scoped cooldown should NOT mark entire credential as blocked")
+	}
+	if hModel.Cooldown == nil || hModel.Cooldown.Scope != "models" {
+		t.Errorf("expected Cooldown info to be populated with scope 'models'")
+	}
+
+	// Credential-scoped cooldown MUST set Blocked: true
+	fileCredCooling := CpaAuthFile{
+		Name:     "antigravity-02.json",
+		Provider: "antigravity",
+		Status:   "active",
+		Cooldowns: []CpaCooldownRecord{
+			{
+				Scope:            "credential",
+				RemainingSeconds: 7200,
+			},
+		},
+	}
+	hCred := computeHealth(fileCredCooling)
+	if !hCred.Blocked {
+		t.Errorf("credential-scoped cooldown MUST mark credential as blocked")
+	}
+}
