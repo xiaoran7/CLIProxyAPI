@@ -1202,6 +1202,8 @@ func HandleGetErrors(eng *engine.Engine, providers *ProviderRegistryEngine) gin.
 			if a != "" {
 				if name, ok := baselineMap[a]; ok && name != "" {
 					authName = name
+				} else if acc, ok := providers.GetAuthAccount(a); ok && acc.Name != "" {
+					authName = acc.Name
 				} else {
 					shortAuth := a
 					if len(shortAuth) > 8 {
