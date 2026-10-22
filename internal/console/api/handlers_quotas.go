@@ -429,6 +429,72 @@ func resolveDisplayName(file CpaAuthFile) string {
 	return file.AuthIndex
 }
 
+// SyncAuthFilesToBaselines synchronizes auth files and openai-compatibility credentials
+// into the ProviderRegistryEngine in-memory registry and persists them to upstream_auth_baselines in SQLite.
+func SyncAuthFilesToBaselines(ctx context.Context, eng *engine.Engine, providers *ProviderRegistryEngine, authFiles []CpaAuthFile, compat []CpaOpenAICompatProvider) {
+	if providers == nil {
+		return
+	}
+
+	var baselines []db.UpstreamAuthBaselineRow
+
+	for _, f := range authFiles {
+		authIndex := strings.TrimSpace(f.AuthIndex)
+		if authIndex == "" {
+			continue
+		}
+		prov := strings.ToLower(strings.TrimSpace(f.Provider))
+		if prov == "" {
+			prov = strings.ToLower(strings.TrimSpace(f.Type))
+		}
+		dispName := resolveDisplayName(f)
+
+		providers.RegisterAuthAccount(authIndex, prov, dispName)
+
+		pCopy := prov
+		nCopy := dispName
+		baselines = append(baselines, db.UpstreamAuthBaselineRow{
+			AuthIndex: authIndex,
+			Name:      &nCopy,
+			Provider:  &pCopy,
+		})
+	}
+
+	for _, comp := range compat {
+		provName := strings.ToLower(strings.TrimSpace(comp.Name))
+		for idx, keyEntry := range comp.APIKeyEntries {
+			authIdx := strings.TrimSpace(keyEntry.AuthIndex)
+			if authIdx == "" {
+				authIdx = fmt.Sprintf("%s_%d", provName, idx)
+			}
+			dispName := strings.TrimSpace(keyEntry.Note)
+			if dispName == "" {
+				prefixLen := 8
+				if len(authIdx) < prefixLen {
+					prefixLen = len(authIdx)
+				}
+				dispName = fmt.Sprintf("%s 渠道 %s", comp.Name, authIdx[:prefixLen])
+			}
+
+			providers.RegisterAuthAccount(authIdx, provName, dispName)
+
+			pCopy := provName
+			nCopy := dispName
+			baselines = append(baselines, db.UpstreamAuthBaselineRow{
+				AuthIndex: authIdx,
+				Name:      &nCopy,
+				Provider:  &pCopy,
+			})
+		}
+	}
+
+	if len(baselines) > 0 && eng != nil && eng.DB() != nil {
+		if err := eng.DB().UpsertBaselines(ctx, baselines); err == nil {
+			_ = eng.DB().BackfillUpstreamDailyStatsProviders(ctx)
+		}
+	}
+}
+
 // HandleGetUpstreamQuotas returns all upstream credentials and quota status
 func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *ProviderRegistryEngine) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -453,6 +519,9 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 		// 2. Fetch openai-compatibility providers from CPA loopback
 		var compatResp CpaOpenAICompatResponse
 		_ = cpa.RequestJSON(ctx, http.MethodGet, "/openai-compatibility", nil, "v0", &compatResp)
+
+		// Synchronize credentials to in-memory provider registry and persist baselines to SQLite
+		SyncAuthFilesToBaselines(ctx, eng, providers, authFilesResp.Files, compatResp.Compatibility)
 
 		// If refresh was requested, concurrently probe active credentials (with 10s per-credential throttle)
 		if force && eng != nil {

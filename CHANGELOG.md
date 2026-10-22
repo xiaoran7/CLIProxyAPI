@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Home Cluster Rebalance Handoff Protocol (#6832)**: Planned cluster balance state handoff and fencing lifecycle for distributed gateway nodes.
   - **Vertex AI Per-Model OpenAPI Route Routing**: Configurable per-model and per-credential OpenAPI routing endpoints and capabilities across Vertex AI executors.
   - **Sign-in with ChatGPT (SIWC) OAuth Management Endpoints**: Native endpoints for SIWC code exchanges, account linking, and token validation.
+- **Standalone Node.js Gate Decommission & Archive (`AGENTS.md`)**:
+  - Formally retired and archived the external Node.js gateway repository (`Project/gate`), with all multi-tenant API key authentication, rate limiting (RPM), token quotas, model whitelists, and Aozora UI management dashboard fully unified into CPA native embedded subsystem (`internal/console/`).
+  - Completed decommission and archival of `gate.service` on the `us-zenix` sandbox host (`systemctl disable --now gate.service`), remapped CPA container ports to natively bind `127.0.0.1:8316`, `127.0.0.1:8317`, `100.107.77.33:8317`, and `0.0.0.0:8315`, and backed up historical databases.
+  - Retired the legacy cross-repository static file synchronization red line from `cliproxyapi` to `gate`.
 - **Management APICall Force Refresh & Automated 401 Interception (`internal/api/handlers/management/api_tools.go`, `api_tools_test.go`)**:
   - Added support for `force_refresh: true` in the JSON body and `?refresh=1`/`?force_refresh=true` in query parameters to force re-acquisition of OAuth access tokens (bypassing the cached token expiry timestamp) when querying upstream quota endpoints.
   - Implemented automated 401 `UNAUTHENTICATED` error interception for `$TOKEN$`-interpolated management API calls: if an upstream endpoint (such as Google Cloud Code quota API) rejects the access token with HTTP 401, CPA automatically executes a single-flight token refresh, updates in-memory and on-disk credentials via `coreauth.Store`, re-substitutes the fresh token, and retries the upstream request once seamlessly.
