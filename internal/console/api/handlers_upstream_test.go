@@ -446,3 +446,46 @@ func TestResolveWindowPreset(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleGetUpstreamAuthStats(t *testing.T) {
+	t.Parallel()
+
+	srv := setupUpstreamMockServer()
+	defer srv.Close()
+
+	r, _, cleanup := setupMockRouter(t, srv.URL)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/console/api/upstream-auth-stats?range=all", nil)
+	req.Header.Set("Authorization", "Bearer test-admin-secret")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		TimeRange string                 `json:"time_range"`
+		Items     []AuthStatResponseItem `json:"items"`
+		AuthStats []AuthStatResponseItem `json:"auth_stats"`
+		Total     int                    `json:"total"`
+		Summary   map[string]interface{} `json:"summary"`
+	}
+
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+
+	if resp.Total == 0 || len(resp.Items) == 0 {
+		t.Fatalf("expected non-empty items/auth_stats, got %d", resp.Total)
+	}
+
+	if len(resp.Items) != len(resp.AuthStats) {
+		t.Errorf("expected items and auth_stats to have same length, got %d vs %d", len(resp.Items), len(resp.AuthStats))
+	}
+
+	if resp.Summary == nil {
+		t.Errorf("expected summary to be non-nil")
+	}
+}

@@ -143,7 +143,7 @@ func registerConsoleRoutes(
 		rg.PUT("/openrouter/accounts/:id", HandleUpdateOpenRouterAccount(cpa))
 		rg.DELETE("/openrouter/accounts/:id", HandleDeleteOpenRouterAccount(cpa))
 		rg.GET("/quota-snapshots", HandleGetQuotaSnapshots(eng))
-		rg.GET("/upstream-auth-stats", HandleGetUpstreamAuthStats(eng, providers))
+		rg.GET("/upstream-auth-stats", HandleGetUpstreamAuthStats(eng, cpa, providers))
 		rg.GET("/upstream-validations", HandleGetValidations(eng))
 		rg.POST("/upstream-validations/:id/resolve", HandleResolveValidation(eng))
 		rg.POST("/upstream-validations/:id/dismiss", HandleDismissValidation(eng))

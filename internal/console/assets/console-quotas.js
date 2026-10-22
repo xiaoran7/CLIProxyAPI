@@ -2024,8 +2024,9 @@
       const archiveContainer = document.getElementById('upstream-stats-archive-container');
       const tbody = document.getElementById('upstream-stats-table-body');
       const data = cachedUpstreamStats;
+      const rawItems = (data && (Array.isArray(data.items) ? data.items : (Array.isArray(data.auth_stats) ? data.auth_stats : null))) || [];
 
-      if (!data || !Array.isArray(data.items) || data.items.length === 0) {
+      if (!data || rawItems.length === 0) {
         if (container) {
           container.innerHTML = `<div style="grid-column: 1 / -1; text-align:center; padding:36px 16px; color:var(--text-dim);">${t('quotas.emptyUsageStats')}</div>`;
         }
@@ -2039,14 +2040,14 @@
 
       const filterVal = (document.getElementById('upstream-stats-filter')?.value || '').trim().toLowerCase();
       const filteredItems = filterVal
-        ? data.items.filter(it => {
-            const name = String(it.name || '').toLowerCase();
-            const provider = String(it.provider || '').toLowerCase();
+        ? rawItems.filter(it => {
+            const name = String(it.display_name || it.name || '').toLowerCase();
+            const provider = String(it.provider_label || it.provider || '').toLowerCase();
             const model = String(it.last_model || '').toLowerCase();
             const id = String(it.auth_index || '').toLowerCase();
             return name.includes(filterVal) || provider.includes(filterVal) || model.includes(filterVal) || id.includes(filterVal);
           })
-        : data.items;
+        : rawItems;
 
       if (filteredItems.length === 0) {
         if (container) {
