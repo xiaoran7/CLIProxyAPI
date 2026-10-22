@@ -10,17 +10,19 @@ import (
 // AdminAuthMiddleware validates the management secret for console admin endpoints.
 // It checks Authorization: Bearer <secret>, custom headers (x-admin-key, x-management-key),
 // the GateAdminTokenCookie, or query token, supporting constant-time string comparison and bcrypt hashes.
-func AdminAuthMiddleware(adminSecret string, cpaSecret ...string) gin.HandlerFunc {
-	secondSecret := ""
-	if len(cpaSecret) > 0 {
-		secondSecret = cpaSecret[0]
+func AdminAuthMiddleware(adminSecret string, additionalSecrets ...string) gin.HandlerFunc {
+	var candidateSecrets []string
+	if s := strings.TrimSpace(adminSecret); s != "" {
+		candidateSecrets = append(candidateSecrets, s)
+	}
+	for _, sec := range additionalSecrets {
+		if s := strings.TrimSpace(sec); s != "" {
+			candidateSecrets = append(candidateSecrets, s)
+		}
 	}
 
 	return func(c *gin.Context) {
-		trimmedAdmin := strings.TrimSpace(adminSecret)
-		trimmedCpa := strings.TrimSpace(secondSecret)
-
-		if trimmedAdmin == "" && trimmedCpa == "" {
+		if len(candidateSecrets) == 0 {
 			// If no management secret is configured, allow requests from loopback/localhost only
 			clientIP := c.ClientIP()
 			if clientIP == "127.0.0.1" || clientIP == "::1" || clientIP == "localhost" {
@@ -62,7 +64,7 @@ func AdminAuthMiddleware(adminSecret string, cpaSecret ...string) gin.HandlerFun
 			}
 		}
 
-		if token == "" || !verifySecretCandidate(token, trimmedAdmin, trimmedCpa) {
+		if token == "" || !verifySecretCandidate(token, candidateSecrets...) {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error": "Unauthorized: invalid or missing management secret",
 			})

@@ -141,7 +141,9 @@ func HandleUpstreamProxy(cfg RouterConfig) gin.HandlerFunc {
 			candidate = strings.TrimSpace(c.GetHeader("x-management-key"))
 		}
 
-		isAuthenticated := verifySecretCandidate(candidate, cfg.AdminSecret, cfg.CpaSecret)
+		allAllowed := []string{cfg.AdminSecret, cfg.CpaSecret}
+		allAllowed = append(allAllowed, cfg.AdditionalSecrets...)
+		isAuthenticated := verifySecretCandidate(candidate, allAllowed...)
 
 		// 2. Query token exchange: if valid query token, set HttpOnly cookie and redirect to strip token
 		if queryToken != "" && isAuthenticated {

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 // Config holds runtime configuration options for the Console subsystem.
@@ -23,6 +25,11 @@ type SubsystemConfig = Config
 
 // DefaultConfig returns default configuration populated from environment and file heuristics.
 func DefaultConfig() Config {
+	_ = godotenv.Load()
+	if cwd, err := os.Getwd(); err == nil {
+		_ = godotenv.Load(filepath.Join(cwd, ".env"))
+	}
+
 	enabled := true
 	if val := os.Getenv("CONSOLE_ENABLED"); val != "" {
 		if b, err := strconv.ParseBool(val); err == nil {

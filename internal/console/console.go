@@ -178,25 +178,47 @@ func ServerOptions(cfg SubsystemConfig) []api.ServerOption {
 
 	// 2. Router configurator
 	routerConfigurator := func(r *gin.Engine, handlers *sdkhandlers.BaseAPIHandler, serverCfg *serverconfig.Config) {
+		adminSecret := sub.cfg.AdminSecret
+		if adminSecret == "" {
+			adminSecret = os.Getenv("CONSOLE_ADMIN_SECRET")
+		}
+		if adminSecret == "" {
+			adminSecret = os.Getenv("GATE_ADMIN_SECRET")
+		}
+		if adminSecret == "" {
+			adminSecret = os.Getenv("ADMIN_SECRET")
+		}
+
+		var additionalSecrets []string
+		cpaPort := sub.cfg.CpaPort
+		cpaHost := sub.cfg.CpaHost
+
+		if serverCfg != nil {
+			if serverCfg.RemoteManagement.SecretKey != "" {
+				if adminSecret == "" {
+					adminSecret = serverCfg.RemoteManagement.SecretKey
+				} else if serverCfg.RemoteManagement.SecretKey != adminSecret {
+					additionalSecrets = append(additionalSecrets, serverCfg.RemoteManagement.SecretKey)
+				}
+			}
+			if serverCfg.Port > 0 {
+				cpaPort = serverCfg.Port
+			}
+			if serverCfg.Host != "" && serverCfg.Host != "0.0.0.0" {
+				cpaHost = serverCfg.Host
+			}
+		}
+
 		// Inherit CPA management secret and port from cliproxyapi server configuration if available
 		routerCfg := consoleapi.RouterConfig{
-			AdminSecret: sub.cfg.AdminSecret,
-			CpaHost:     sub.cfg.CpaHost,
-			CpaPort:     sub.cfg.CpaPort,
-			CpaSecret:   loopbackSecret,
+			AdminSecret:       adminSecret,
+			CpaHost:           cpaHost,
+			CpaPort:           cpaPort,
+			CpaSecret:         loopbackSecret,
+			AdditionalSecrets: additionalSecrets,
 		}
 
 		if serverCfg != nil {
-			if routerCfg.AdminSecret == "" {
-				routerCfg.AdminSecret = serverCfg.RemoteManagement.SecretKey
-			}
-			if serverCfg.Port > 0 {
-				routerCfg.CpaPort = serverCfg.Port
-			}
-			if serverCfg.Host != "" && serverCfg.Host != "0.0.0.0" {
-				routerCfg.CpaHost = serverCfg.Host
-			}
-
 			// Reconcile and import API keys defined in CPA server configuration into Console database
 			if len(serverCfg.APIKeys) > 0 {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

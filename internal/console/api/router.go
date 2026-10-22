@@ -9,10 +9,11 @@ import (
 
 // RouterConfig defines the parameters required to initialize the Console routes.
 type RouterConfig struct {
-	AdminSecret string
-	CpaHost     string
-	CpaPort     int
-	CpaSecret   string
+	AdminSecret       string
+	CpaHost           string
+	CpaPort           int
+	CpaSecret         string
+	AdditionalSecrets []string
 }
 
 // RegisterRoutes sets up all Console, Member, System, and CPA management routes on the router.
@@ -28,9 +29,9 @@ func RegisterRoutes(r *gin.Engine, eng *engine.Engine, cfg RouterConfig, pricing
 	registerMemberRoutes(r.Group("/api/member"), eng, pricing, providers)
 
 	// 3. Console management endpoints (authenticated via management secret)
-	registerConsoleRoutes(r.Group("/console/api"), eng, cfg.AdminSecret, cfg.CpaSecret, cpaClient, pricing, providers)
+	registerConsoleRoutes(r.Group("/console/api"), eng, cfg.AdminSecret, cfg.CpaSecret, cfg.AdditionalSecrets, cpaClient, pricing, providers)
 	// Compatibility alias for legacy admin frontend
-	registerConsoleRoutes(r.Group("/admin/api"), eng, cfg.AdminSecret, cfg.CpaSecret, cpaClient, pricing, providers)
+	registerConsoleRoutes(r.Group("/admin/api"), eng, cfg.AdminSecret, cfg.CpaSecret, cfg.AdditionalSecrets, cpaClient, pricing, providers)
 
 	// 4. Upstream management proxy routes (/admin/upstream and /console/upstream)
 	RegisterUpstreamProxyRoutes(r, cfg)
@@ -89,11 +90,14 @@ func registerConsoleRoutes(
 	rg *gin.RouterGroup,
 	eng *engine.Engine,
 	adminSecret, cpaSecret string,
+	additionalSecrets []string,
 	cpa *CpaClient,
 	pricing *PricingEngine,
 	providers *ProviderRegistryEngine,
 ) {
-	rg.Use(AdminAuthMiddleware(adminSecret, cpaSecret))
+	allSecrets := []string{cpaSecret}
+	allSecrets = append(allSecrets, additionalSecrets...)
+	rg.Use(AdminAuthMiddleware(adminSecret, allSecrets...))
 	{
 		// Keys management
 		rg.GET("/keys", HandleGetKeys(eng))
