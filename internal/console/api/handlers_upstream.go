@@ -580,25 +580,32 @@ var (
 )
 
 var runtimeFactsWindows = []RuntimeFactsWindowPreset{
-	{ID: "3h20m", Label: "近 3 小时 20 分", ShortLabel: "3h20m", WindowMinutes: 200, BucketMinutes: 10, BucketCount: 20},
-	{ID: "5h", Label: "近 5 小时", ShortLabel: "5h", WindowMinutes: 300, BucketMinutes: 10, BucketCount: 30},
+	{ID: "1h", Label: "近 1 小时", ShortLabel: "1h", WindowMinutes: 60, BucketMinutes: 5, BucketCount: 12},
+	{ID: "6h", Label: "近 6 小时", ShortLabel: "6h", WindowMinutes: 360, BucketMinutes: 15, BucketCount: 24},
 	{ID: "1d", Label: "近 1 天", ShortLabel: "1d", WindowMinutes: 1440, BucketMinutes: 60, BucketCount: 24},
 	{ID: "3d", Label: "近 3 天", ShortLabel: "3d", WindowMinutes: 4320, BucketMinutes: 180, BucketCount: 24},
 	{ID: "7d", Label: "近 7 天", ShortLabel: "7d", WindowMinutes: 10080, BucketMinutes: 360, BucketCount: 28},
 	{ID: "30d", Label: "近 30 天", ShortLabel: "30d", WindowMinutes: 43200, BucketMinutes: 1440, BucketCount: 30},
 }
 
+// legacyWindowPresets maintains backward compatibility for historical presets.
+var legacyWindowPresets = []RuntimeFactsWindowPreset{
+	{ID: "3h20m", Label: "近 3 小时 20 分", ShortLabel: "3h20m", WindowMinutes: 200, BucketMinutes: 10, BucketCount: 20},
+	{ID: "5h", Label: "近 5 小时", ShortLabel: "5h", WindowMinutes: 300, BucketMinutes: 10, BucketCount: 30},
+}
+
 func resolveWindowPreset(windowParam string) RuntimeFactsWindowPreset {
 	norm := strings.ToLower(strings.TrimSpace(windowParam))
 	switch norm {
-	case "1h":
-		norm = "3h20m"
-	case "6h":
-		norm = "5h"
 	case "12h", "24h":
 		norm = "1d"
 	}
 	for _, w := range runtimeFactsWindows {
+		if strings.EqualFold(w.ID, norm) {
+			return w
+		}
+	}
+	for _, w := range legacyWindowPresets {
 		if strings.EqualFold(w.ID, norm) {
 			return w
 		}
@@ -1328,8 +1335,8 @@ func HandleGetRuntimeFacts(eng *engine.Engine, cpa *CpaClient, providers *Provid
 		})
 
 		// Decide throughput buckets:
-		// Gate local buckets are authoritative; if empty and CPA has window traffic, fall back to CPA ring buffer
-		useLocal := hasLocalTraffic || !hasWindowTraffic || matchedPreset.ID != "3h20m"
+		// Gate local buckets are authoritative; if empty and CPA has window traffic, fall back to CPA ring buffer when bucket granularity matches
+		useLocal := hasLocalTraffic || !hasWindowTraffic || matchedPreset.BucketMinutes != 10
 		var finalBuckets []RecentBucket
 		var finalSource string
 		if useLocal {

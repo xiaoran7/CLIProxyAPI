@@ -6,11 +6,13 @@
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-  const DEFAULT_WINDOW = '3h20m';
+  const DEFAULT_WINDOW = '1h';
   const getSavedWindow = () => {
     try {
       const saved = localStorage.getItem('gate_ovw_window');
-      if (['3h20m', '5h', '1d', '3d', '7d', '30d'].includes(saved)) return saved;
+      if (saved === '3h20m') return '1h';
+      if (saved === '5h') return '6h';
+      if (['1h', '6h', '1d', '3d', '7d', '30d'].includes(saved)) return saved;
     } catch (_) {}
     return DEFAULT_WINDOW;
   };
@@ -272,13 +274,15 @@
     let labelIndices = [];
     if (len <= 10) {
       labelIndices = Array.from({ length: len }, (_, i) => i);
-    } else if (len === 20) { // 3h20m (每10分钟)
+    } else if (len === 12) { // 1h (每5分钟)
+      labelIndices = [0, 2, 4, 6, 8, 10, 11];
+    } else if (len === 20) { // 3h20m (每10分钟, legacy)
       labelIndices = [0, 5, 10, 15, 19];
-    } else if (len === 24) { // 1d (每小时) 或 3d (每3小时)
+    } else if (len === 24) { // 6h (每15分钟), 1d (每小时) 或 3d (每3小时)
       labelIndices = [0, 4, 8, 12, 16, 20, 23];
     } else if (len === 28) { // 7d (每天4桶，每6小时)
       labelIndices = [0, 4, 8, 12, 16, 20, 24, 27];
-    } else if (len === 30) { // 5h (每10分钟) 或 30d (每天1桶)
+    } else if (len === 30) { // 30d (每天1桶) 或 5h (每10分钟, legacy)
       labelIndices = [0, 5, 10, 15, 20, 25, 29];
     } else {
       const step = Math.max(1, Math.floor(len / 6));
@@ -708,8 +712,8 @@
     const holder = $('ovw-window-switcher');
     if (!holder) return;
     const available = state.facts?.available_windows || [
-      { id: '3h20m', short_label: '3h20m', label: t('overview.runtimeWindow3h20mLabel') },
-      { id: '5h', short_label: '5h', label: t('overview.runtimeWindow5hLabel') },
+      { id: '1h', short_label: '1h', label: t('overview.runtimeWindow1hLabel') },
+      { id: '6h', short_label: '6h', label: t('overview.runtimeWindow6hLabel') },
       { id: '1d', short_label: '1d', label: t('overview.runtimeWindow1dLabel') },
       { id: '3d', short_label: '3d', label: t('overview.runtimeWindow3dLabel') },
       { id: '7d', short_label: '7d', label: t('stats.range7Days') },
@@ -718,7 +722,8 @@
 
     holder.innerHTML = available.map(w => {
       const isActive = (state.window || DEFAULT_WINDOW) === w.id;
-      return `<button type="button" class="ovw-window-btn ${isActive ? 'active' : ''}" data-window-id="${escapeHtml(w.id)}" title="${escapeHtml(w.label || w.id)}">${escapeHtml(w.short_label || w.id)}</button>`;
+      const titleLabel = (w.window_minutes ? fmtWindow(w.window_minutes) : '') || w.label || w.id;
+      return `<button type="button" class="ovw-window-btn ${isActive ? 'active' : ''}" data-window-id="${escapeHtml(w.id)}" title="${escapeHtml(titleLabel)}">${escapeHtml(w.short_label || w.id)}</button>`;
     }).join('');
 
     holder.querySelectorAll('.ovw-window-btn').forEach(btn => {

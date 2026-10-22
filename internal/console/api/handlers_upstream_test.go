@@ -419,18 +419,18 @@ func TestResolveWindowPreset(t *testing.T) {
 		expectedCount  int
 		expectedBucket int
 	}{
-		{"3h20m", "3h20m", 20, 10},
-		{"1h", "3h20m", 20, 10}, // alias
-		{"5h", "5h", 30, 10},
-		{"6h", "5h", 30, 10}, // alias
+		{"1h", "1h", 12, 5},
+		{"6h", "6h", 24, 15},
 		{"1d", "1d", 24, 60},
 		{"12h", "1d", 24, 60}, // alias
 		{"24h", "1d", 24, 60}, // alias
 		{"3d", "3d", 24, 180},
 		{"7d", "7d", 28, 360},
 		{"30d", "30d", 30, 1440},
-		{"unknown", "3h20m", 20, 10}, // fallback
-		{"", "3h20m", 20, 10},        // default
+		{"3h20m", "3h20m", 20, 10}, // legacy preset
+		{"5h", "5h", 30, 10},       // legacy preset
+		{"unknown", "1h", 12, 5},   // fallback
+		{"", "1h", 12, 5},          // default
 	}
 
 	for _, tt := range tests {
