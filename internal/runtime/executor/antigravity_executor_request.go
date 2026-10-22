@@ -68,7 +68,7 @@ func (e *AntigravityExecutor) buildRequest(ctx context.Context, auth *cliproxyau
 	}
 
 	isClaudeModel := strings.Contains(modelName, "claude")
-	useAntigravitySchema := isClaudeModel || strings.Contains(modelName, "gemini-3-pro") || strings.Contains(modelName, "gemini-3.1-pro")
+	useAntigravitySchema := isClaudeModel || strings.Contains(modelName, "gemini-3")
 	var (
 		bodyReader io.Reader
 		payloadLog []byte

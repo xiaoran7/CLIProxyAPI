@@ -1223,23 +1223,26 @@ func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) (map[strin
 			if r.WindowName != nil {
 				winName = *r.WindowName
 			}
-			parts := strings.Split(winName, ":")
-			grpName := "Quota"
-			win := "5h"
-			if len(parts) >= 2 {
-				grpName = parts[0]
-				win = parts[1]
-			} else if len(parts) == 1 && parts[0] != "" {
-				win = parts[0]
+			var grpName, win string
+			if strings.Contains(winName, ":") {
+				parts := strings.SplitN(winName, ":", 2)
+				grpName = strings.TrimSpace(parts[0])
+				win = strings.TrimSpace(parts[1])
+			} else if strings.Contains(winName, " - ") {
+				parts := strings.SplitN(winName, " - ", 2)
+				grpName = strings.TrimSpace(parts[0])
+				win = strings.TrimSpace(parts[1])
+			} else {
+				win = winName
 			}
 
-			if grpName == "<nil>" || grpName == "" {
+			if grpName == "" || grpName == "<nil>" || grpName == "Quota" {
 				wLower := strings.ToLower(winName)
 				if strings.Contains(wLower, "gemini") {
 					grpName = "Gemini Models"
-				} else if strings.Contains(wLower, "claude") {
+				} else if strings.Contains(wLower, "claude") || strings.Contains(wLower, "gpt") || strings.Contains(wLower, "3p") {
 					grpName = "Claude Models"
-				} else if r.Provider == "codex" {
+				} else if strings.Contains(wLower, "codex") || r.Provider == "codex" {
 					grpName = "Codex"
 				} else {
 					grpName = "Standard"
@@ -1252,7 +1255,7 @@ func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) (map[strin
 			if strings.Contains(gLower, "gemini") {
 				canonicalName = "models/gemini"
 				dispName = "Gemini Models"
-			} else if strings.Contains(gLower, "claude") {
+			} else if strings.Contains(gLower, "claude") || strings.Contains(gLower, "gpt") || strings.Contains(gLower, "3p") {
 				canonicalName = "models/claude"
 				dispName = "Claude Models"
 			} else if strings.Contains(gLower, "codex") {
@@ -1275,11 +1278,17 @@ func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) (map[strin
 			}
 			countdown := formatResetCountdown(resetTimeStr)
 
+			wLower := strings.ToLower(win)
+			isWeekly := strings.Contains(wLower, "week")
+			is5h := strings.Contains(wLower, "5h") || strings.Contains(wLower, "five") || strings.Contains(wLower, "hour")
+
 			bucketName := win
-			if win == "5h" {
-				bucketName = "5-Hour Limit"
-			} else if win == "weekly" {
+			if isWeekly {
+				win = "weekly"
 				bucketName = "Weekly Limit Remaining"
+			} else if is5h || win == "" {
+				win = "5h"
+				bucketName = "5-Hour Limit"
 			}
 
 			bkt := CpaQuotaBucket{
@@ -1300,6 +1309,14 @@ func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) (map[strin
 		var groups []CpaQuotaGroup
 		for cName, bkts := range groupBuckets {
 			sort.Slice(bkts, func(i, j int) bool {
+				iIs5h := bkts[i].Window == "5h" || strings.Contains(strings.ToLower(bkts[i].Name), "5h") || strings.Contains(strings.ToLower(bkts[i].Name), "five")
+				jIs5h := bkts[j].Window == "5h" || strings.Contains(strings.ToLower(bkts[j].Name), "5h") || strings.Contains(strings.ToLower(bkts[j].Name), "five")
+				if iIs5h && !jIs5h {
+					return true
+				}
+				if !iIs5h && jIs5h {
+					return false
+				}
 				return bkts[i].Window < bkts[j].Window
 			})
 			groups = append(groups, CpaQuotaGroup{
@@ -1309,6 +1326,14 @@ func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) (map[strin
 			})
 		}
 		sort.Slice(groups, func(i, j int) bool {
+			iIsGemini := strings.Contains(strings.ToLower(groups[i].Name), "gemini") || strings.Contains(strings.ToLower(groups[i].DisplayName), "gemini")
+			jIsGemini := strings.Contains(strings.ToLower(groups[j].Name), "gemini") || strings.Contains(strings.ToLower(groups[j].DisplayName), "gemini")
+			if iIsGemini && !jIsGemini {
+				return true
+			}
+			if !iIsGemini && jIsGemini {
+				return false
+			}
 			return groups[i].DisplayName < groups[j].DisplayName
 		})
 		res[authIdx] = groups
@@ -1551,9 +1576,31 @@ func parseAntigravityQuotaGroups(raw []byte) []CpaQuotaGroup {
 			})
 		}
 		if len(grp.Buckets) > 0 {
+			sort.Slice(grp.Buckets, func(i, j int) bool {
+				iIs5h := grp.Buckets[i].Window == "5h" || strings.Contains(strings.ToLower(grp.Buckets[i].Name), "5h") || strings.Contains(strings.ToLower(grp.Buckets[i].Name), "five")
+				jIs5h := grp.Buckets[j].Window == "5h" || strings.Contains(strings.ToLower(grp.Buckets[j].Name), "5h") || strings.Contains(strings.ToLower(grp.Buckets[j].Name), "five")
+				if iIs5h && !jIs5h {
+					return true
+				}
+				if !iIs5h && jIs5h {
+					return false
+				}
+				return grp.Buckets[i].Window < grp.Buckets[j].Window
+			})
 			res = append(res, grp)
 		}
 	}
+	sort.Slice(res, func(i, j int) bool {
+		iIsGemini := strings.Contains(strings.ToLower(res[i].Name), "gemini") || strings.Contains(strings.ToLower(res[i].DisplayName), "gemini")
+		jIsGemini := strings.Contains(strings.ToLower(res[j].Name), "gemini") || strings.Contains(strings.ToLower(res[j].DisplayName), "gemini")
+		if iIsGemini && !jIsGemini {
+			return true
+		}
+		if !iIsGemini && jIsGemini {
+			return false
+		}
+		return res[i].DisplayName < res[j].DisplayName
+	})
 	return res
 }
 
@@ -2004,14 +2051,13 @@ func reconcileAntigravityQuotaGroups(groups []CpaQuotaGroup, cooldowns []CpaCool
 			hasCredCd = true
 		} else if cd.Scope == "model" {
 			mk := strings.ToLower(strings.TrimSpace(cd.ModelKey))
-			if strings.Contains(mk, "claude") || strings.Contains(mk, "gpt") ||
-				strings.Contains(mk, "sonnet") || strings.Contains(mk, "opus") ||
-				strings.Contains(mk, "haiku") {
-				claudeCds = append(claudeCds, cd)
-			}
-			if strings.Contains(mk, "gemini") || strings.Contains(mk, "flash") ||
-				(strings.Contains(mk, "pro") && !strings.Contains(mk, "claude")) {
+			isGemini := strings.Contains(mk, "gemini") || strings.Contains(mk, "flash") ||
+				(strings.Contains(mk, "pro") && !strings.Contains(mk, "claude"))
+			if isGemini {
 				geminiCds = append(geminiCds, cd)
+			} else {
+				// All non-Gemini models (Claude, GPT, DeepSeek, Llama, Qwen, etc.) share the Antigravity 3P quota pool
+				claudeCds = append(claudeCds, cd)
 			}
 		}
 	}
@@ -2024,16 +2070,16 @@ func reconcileAntigravityQuotaGroups(groups []CpaQuotaGroup, cooldowns []CpaCool
 	for i, grp := range groups {
 		gCopy := grp
 		gName := strings.ToLower(fmt.Sprintf("%s %s %s", grp.GroupID, grp.DisplayName, grp.Name))
-		isClaude := strings.Contains(gName, "claude") || strings.Contains(gName, "gpt")
 		isGemini := strings.Contains(gName, "gemini")
+		isClaude := !isGemini || strings.Contains(gName, "claude") || strings.Contains(gName, "gpt")
 
 		var targetCds []CpaCooldownRecord
 		if hasCredCd {
 			targetCds = activeCds
-		} else if isClaude {
-			targetCds = claudeCds
 		} else if isGemini {
 			targetCds = geminiCds
+		} else if isClaude {
+			targetCds = claudeCds
 		}
 
 		if len(targetCds) == 0 {

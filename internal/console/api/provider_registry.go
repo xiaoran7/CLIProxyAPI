@@ -234,6 +234,57 @@ var InitialProviderRegistry = []SeedProvider{
 		},
 		SortOrder: 110,
 	},
+	{
+		ProviderKey: "meta",
+		Label:       "Meta (Llama)",
+		ModelPatterns: []PatternItem{
+			{P: "llama", Anchor: ""},
+			{P: "meta/", Anchor: ""},
+		},
+		AuthPatterns: []PatternItem{
+			{P: "meta", Anchor: ""},
+			{P: "llama", Anchor: ""},
+		},
+		SortOrder: 120,
+	},
+	{
+		ProviderKey: "xai",
+		Label:       "xAI (Grok)",
+		ModelPatterns: []PatternItem{
+			{P: "grok", Anchor: ""},
+		},
+		AuthPatterns: []PatternItem{
+			{P: "xai", Anchor: ""},
+			{P: "grok", Anchor: ""},
+		},
+		SortOrder: 130,
+	},
+	{
+		ProviderKey: "mistral",
+		Label:       "Mistral AI",
+		ModelPatterns: []PatternItem{
+			{P: "mistral", Anchor: ""},
+			{P: "mixtral", Anchor: ""},
+			{P: "codestral", Anchor: ""},
+			{P: "pixtral", Anchor: ""},
+		},
+		AuthPatterns: []PatternItem{
+			{P: "mistral", Anchor: ""},
+		},
+		SortOrder: 140,
+	},
+	{
+		ProviderKey: "minimax",
+		Label:       "MiniMax 海螺",
+		ModelPatterns: []PatternItem{
+			{P: "minimax", Anchor: ""},
+			{P: "abab", Anchor: ""},
+		},
+		AuthPatterns: []PatternItem{
+			{P: "minimax", Anchor: ""},
+		},
+		SortOrder: 150,
+	},
 }
 
 // CompiledPattern holds a compiled regex for pattern evaluation.

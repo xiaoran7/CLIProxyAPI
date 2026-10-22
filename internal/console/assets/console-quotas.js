@@ -792,10 +792,10 @@
           return (a.provider || '').toLowerCase() === filter;
         }
         const prov = (a.provider || '').toLowerCase();
-        return prov === 'codex' || prov === 'antigravity' || prov === 'workbuddy' || prov === 'workbuddy-cn' || prov === 'openrouter' || prov === 'opencode';
+        return prov === 'codex' || prov === 'antigravity' || prov === 'workbuddy' || prov === 'workbuddy-cn' || prov === 'qoder' || prov === 'qoder-cn' || prov === 'openrouter' || prov === 'opencode' || Boolean(a.supports_quota || a.quota_provider || a.quota_plugin_id);
       });
 
-      const filterLabel = filter === 'all' ? t('quotas.filter.all') : (filter === 'antigravity' ? 'Antigravity' : (filter === 'codex' ? 'Codex' : (filter === 'claude' ? 'Claude' : (filter === 'workbuddy' ? 'WorkBuddy' : (filter === 'openrouter' ? 'OpenRouter' : (filter === 'opencode' ? 'OpenCode' : filter))))));
+      const filterLabel = filter === 'all' ? t('quotas.filter.all') : (filter === 'antigravity' ? 'Antigravity' : (filter === 'codex' ? 'Codex' : (filter === 'claude' ? 'Claude' : (filter === 'workbuddy' ? 'WorkBuddy' : (filter === 'qoder' ? 'Qoder' : (filter === 'openrouter' ? 'OpenRouter' : (filter === 'opencode' ? 'OpenCode' : filter)))))));
       if (accounts.length === 0) {
         showToast(t('quotas.noQueryableCredentials', { filterLabel: filterLabel }), 'warning');
         return;
@@ -864,6 +864,9 @@
       } else if (f === 'workbuddy' || f === 'workbuddy-cn') {
         btn.textContent = t('quotas.refreshAllWorkBuddyQuota');
         btn.title = t('quotas.refreshAllWorkBuddyQuotaTitle');
+      } else if (f === 'qoder' || f === 'qoder-cn') {
+        btn.textContent = t('quotas.refreshAllQoderQuota');
+        btn.title = t('quotas.refreshAllQoderQuotaTitle');
       } else if (f === 'openrouter') {
         btn.textContent = t('quotas.refreshAllOpenRouterQuota');
         btn.title = t('quotas.refreshAllOpenRouterQuotaTitle');
@@ -1248,10 +1251,10 @@
                 if (gname.includes('gemini') || bname.includes('gemini') || bid.includes('gemini')) {
                   if (isWeekly) geminiWeeklyBucket = bkt;
                   else if (!gemini5hBucket || is5h) gemini5hBucket = bkt;
-                } else if (gname.includes('claude') || bname.includes('claude') || bid.includes('claude') || gname.includes('gpt') || bname.includes('gpt')) {
+                } else if (gname.includes('claude') || bname.includes('claude') || bid.includes('claude') || gname.includes('gpt') || bname.includes('gpt') || gname.includes('3p')) {
                   if (isWeekly) claudeWeeklyBucket = bkt;
                   else if (!claude5hBucket || is5h) claude5hBucket = bkt;
-                } else if (!gname.includes('claude') && !gname.includes('gpt') && !gname.includes('3p')) {
+                } else if (acc.provider === 'codex') {
                   if (isWeekly) codexWeeklyBucket = bkt;
                   else if (!codex5hBucket || is5h) codex5hBucket = bkt;
                 } else {
@@ -1259,6 +1262,12 @@
                   else if (!claude5hBucket) claude5hBucket = bkt;
                 }
               }
+            }
+
+            if (acc.provider === 'antigravity') {
+              if (gemini5hBucket) fallbackBucket = gemini5hBucket;
+              else if (geminiWeeklyBucket) fallbackBucket = geminiWeeklyBucket;
+              else if (claude5hBucket) fallbackBucket = claude5hBucket;
             }
 
             // 构建精细的双指示条渲染
@@ -1321,9 +1330,10 @@
               else if (pct <= 50) { cls = 'meter-medium'; col = '#f59e0b'; }
 
               const expInfo = getWorkBuddyExpirationInfo(acc);
+              const title = expInfo.tooltip || t('quotas.workbuddy.officialPointsTooltip', { remainCredits: remainCredits, totalCredits: totalCredits });
 
               metersHtml = `
-                <div class="compact-meter-wrap" style="display:flex; flex-direction:column; justify-content:center; gap:3px;" title="${escapeHtml(expInfo.tooltip || t('quotas.workbuddy.officialPointsTooltip', { remainCredits: remainCredits, totalCredits: totalCredits }))}">
+                <div class="compact-meter-wrap" title="${escapeHtml(title)}">
                   <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
                     <span style="color:var(--text-muted); font-size:10.5px;">${t('quotas.workbuddy.packPoints')}</span>
                     <span style="font-family:var(--mono); font-weight:700; color:${col};">
@@ -1333,37 +1343,24 @@
                   <div class="quota-meter-bar" style="height:4px;">
                     <div class="quota-meter-fill ${cls}" style="width: ${pct}%"></div>
                   </div>
-                  <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--text-dim); font-family:var(--mono);">
-                    <span>${t('quotas.points.totalPoints', { toLocaleString: totalCredits.toLocaleString(LOCALE) })}</span>
-                    <span>${t('quotas.points.usedLabel', { value: usedCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) })}</span>
-                  </div>
-                  <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; color:var(--text-dim); font-family:var(--mono); margin-top:1px; padding-top:2px; border-top:1px dashed var(--border-subtle, rgba(0,0,0,0.06));" title="${escapeHtml(expInfo.tooltip)}">
-                    <span>${expInfo.isAllLongTerm ? t('quotas.points.quotaLabel') : (expInfo.hasMultiplePackages ? `${t('quotas.workbuddy.batchedExpiry')} <span style="font-size:9px; opacity:0.8;">(${t('quotas.workbuddy.packageCountTightSuffix', { packageCount: expInfo.packageCount })}</span>` : t('quotas.workbuddy.expiresAt'))}</span>
-                    <span style="color:${expInfo.color}; font-weight:600;">
-                      ${expInfo.hasMultiplePackages && !expInfo.isAllLongTerm ? `${t('quotas.workbuddy.firstBatchLabel')} ` : ''}${escapeHtml(expInfo.shortText)}${expInfo.countdown ? ` <span style="font-size:9px; font-weight:normal; opacity:0.85;">(${escapeHtml(expInfo.countdown)})</span>` : ''}
-                    </span>
-                  </div>
                 </div>
               `;
             } else if (!Number.isFinite(fallbackBucket?.remaining_percent)) {
               metersHtml = `<div class="account-quota-unknown">${t('quotas.quotaUnknownCpa')}</div>`;
             } else if (acc.provider === 'antigravity') {
-              const hasClaude = claude5hBucket && Number.isFinite(claude5hBucket.remaining_percent);
-              const hasGemini = gemini5hBucket && Number.isFinite(gemini5hBucket.remaining_percent);
+              const hasGemini5h = gemini5hBucket && Number.isFinite(gemini5hBucket.remaining_percent);
+              const hasGeminiWeekly = geminiWeeklyBucket && Number.isFinite(geminiWeeklyBucket.remaining_percent);
 
-              const buildAntigravityMeter = (bkt, weeklyBkt, defaultLabel, rollingTipKey) => {
+              const buildAntigravityMeter = (bkt, weeklyBkt, defaultLabel, isWeeklyMeter = false) => {
                 if (!bkt || !Number.isFinite(bkt.remaining_percent)) return '';
-                const isClaude = defaultLabel.toLowerCase().includes('claude');
-                const isGemini = defaultLabel.toLowerCase().includes('gemini');
                 const isModelCooling = health.cooldown && health.cooldown.scope === 'models' && (
-                  (isClaude && (health.cooldown.model_keys || []).some(k => /claude|gpt|sonnet|opus|haiku/i.test(k))) ||
-                  (isGemini && (health.cooldown.model_keys || []).some(k => /gemini|flash/i.test(k) && !/claude/i.test(k)))
+                  (health.cooldown.model_keys || []).some(k => /gemini|flash/i.test(k) && !/claude/i.test(k))
                 );
 
                 const rawRem = bkt.remaining_percent;
                 const isBktDisabled = bkt.disabled === true;
                 const weeklyRem = (weeklyBkt && Number.isFinite(weeklyBkt.remaining_percent)) ? weeklyBkt.remaining_percent : null;
-                const isWeeklyBottleneck = weeklyRem !== null && (isBktDisabled || weeklyRem < rawRem);
+                const isWeeklyBottleneck = !isWeeklyMeter && weeklyRem !== null && (isBktDisabled || weeklyRem < rawRem);
                 const effectiveRem = isBktDisabled ? 0 : (isWeeklyBottleneck ? weeklyRem : rawRem);
 
                 let rem = isModelCooling ? 0 : effectiveRem;
@@ -1371,25 +1368,12 @@
                 if (rem <= 25) { cls = 'meter-low'; col = '#ef4444'; }
                 else if (rem <= 60) { cls = 'meter-medium'; col = '#f59e0b'; }
 
-                let txt = '';
-                if (isModelCooling) {
-                  txt = escapeHtml(health.cooldown.remaining_text ? t('quotas.bucket.cooldownResume', { time: health.cooldown.remaining_text }) : t('quotas.bucket.cooling'));
-                } else if (isBktDisabled || (weeklyRem !== null && weeklyRem <= 0)) {
-                  const rTime = weeklyBkt?.reset_time || bkt?.reset_time;
-                  const rCd = weeklyBkt?.reset_countdown || bkt?.reset_countdown;
-                  txt = (rTime || rCd) ? t('quotas.bucket.weeklyExhaustedWithReset', { reset: escapeHtml(rCd || formatResetAbs(rTime)) }) : t('quotas.bucket.weeklyExhausted');
-                } else if (isWeeklyBottleneck) {
-                  const rTime = weeklyBkt?.reset_time || bkt?.reset_time;
-                  const rCd = weeklyBkt?.reset_countdown || bkt?.reset_countdown;
-                  txt = (rTime || rCd) ? t('quotas.bucket.weeklyBottleneckWithReset', { reset: escapeHtml(rCd || formatResetAbs(rTime)) }) : t('quotas.bucket.weeklyBottleneck', { percent: weeklyRem });
-                } else if (bkt?.reset_time || bkt?.reset_countdown) {
-                  txt = escapeHtml(bkt.reset_countdown || (formatResetAbs(bkt.reset_time) + t('quotas.actionRefresh')));
-                } else {
-                  txt = t('quotas.bucket.pendingActivation');
+                let title = isWeeklyMeter ? t('quotas.bucket.geminiWeeklyTotal') : t('quotas.bucket.geminiRolling5h');
+                if (bkt?.reset_time || bkt?.reset_countdown) {
+                  const cd = bkt.reset_countdown || formatResetAbs(bkt.reset_time);
+                  title += ` (${cd})`;
                 }
-
-                let title = t(rollingTipKey);
-                if (weeklyBkt && Number.isFinite(weeklyBkt.remaining_percent)) {
+                if (weeklyBkt && Number.isFinite(weeklyBkt.remaining_percent) && !isWeeklyMeter) {
                   const cdSuffix = weeklyBkt.reset_countdown ? t('quotas.bucket.weeklyCountdownSuffix', { time: weeklyBkt.reset_countdown }) : '';
                   title += t('quotas.bucket.weeklyRemainingDetail', { percent: weeklyBkt.remaining_percent, countdown: cdSuffix });
                 }
@@ -1404,42 +1388,35 @@
                 return `
                   <div class="compact-meter-wrap" title="${escapeHtml(title)}">
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
-                      <span style="color:var(--text-muted); font-size:10.5px;">${escapeHtml(defaultLabel)}</span>
+                      <span style="display:inline-flex; align-items:center; gap:4px;">
+                        <span class="quota-pool-badge pool-gemini">Gemini</span>
+                        <span style="color:var(--text-muted); font-size:10px;">${escapeHtml(defaultLabel)}</span>
+                      </span>
                       <span style="font-family:var(--mono); font-weight:700; color:${col};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem })}${suffixTag}</span>
                     </div>
                     <div class="quota-meter-bar" style="height:4px;">
                       <div class="quota-meter-fill ${cls}" style="width: ${rem}%"></div>
                     </div>
-                    <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); text-align:right;" ${bkt?.reset_time ? `data-reset-time="${escapeHtml(bkt.reset_time)}"` : ''}>${txt}</span>
                   </div>
                 `;
               };
 
-              if (hasClaude && hasGemini) {
-                // 双主力模型组均存在：展示 Claude 5h 与 Gemini 5h，并在悬浮提示中展示对应周限额
-                metersHtml = `
-                  ${buildAntigravityMeter(claude5hBucket, claudeWeeklyBucket, 'Claude 5h', 'quotas.bucket.claudeRolling5h')}
-                  ${buildAntigravityMeter(gemini5hBucket, geminiWeeklyBucket, 'Gemini 5h', 'quotas.bucket.geminiRolling5h')}
-                `;
-              } else if (hasClaude) {
-                const col2Html = claudeWeeklyBucket && Number.isFinite(claudeWeeklyBucket.remaining_percent)
-                  ? buildAntigravityMeter(claudeWeeklyBucket, null, t('quotas.bucket.claudeWeekly'), 'quotas.bucket.claudeWeeklyTotal')
+              if (hasGemini5h) {
+                // 简短展示专属：严格只展示 Gemini 的 5h 与周额度，标明池子标识
+                const col2Html = hasGeminiWeekly
+                  ? buildAntigravityMeter(geminiWeeklyBucket, null, t('quotas.bucket.weeklyLimit'), true)
                   : '';
                 metersHtml = `
-                  ${buildAntigravityMeter(claude5hBucket, claudeWeeklyBucket, 'Claude 5h', 'quotas.bucket.claudeRolling5h')}
+                  ${buildAntigravityMeter(gemini5hBucket, geminiWeeklyBucket, t('quotas.bucket.fiveHourLimit'), false)}
                   ${col2Html}
                 `;
-              } else if (hasGemini) {
-                const col2Html = geminiWeeklyBucket && Number.isFinite(geminiWeeklyBucket.remaining_percent)
-                  ? buildAntigravityMeter(geminiWeeklyBucket, null, t('quotas.bucket.geminiWeekly'), 'quotas.bucket.geminiWeeklyTotal')
-                  : '';
+              } else if (hasGeminiWeekly) {
                 metersHtml = `
-                  ${buildAntigravityMeter(gemini5hBucket, geminiWeeklyBucket, 'Gemini 5h', 'quotas.bucket.geminiRolling5h')}
-                  ${col2Html}
+                  ${buildAntigravityMeter(geminiWeeklyBucket, null, t('quotas.bucket.weeklyLimit'), true)}
                 `;
               } else if (fallbackBucket && Number.isFinite(fallbackBucket.remaining_percent)) {
                 metersHtml = `
-                  ${buildAntigravityMeter(fallbackBucket, null, formatBucketLabel(fallbackBucket.name, fallbackBucket.window) || '5h 额度', 'quotas.bucket.claudeRolling5h')}
+                  ${buildAntigravityMeter(fallbackBucket, null, formatBucketLabel(fallbackBucket.name, fallbackBucket.window) || '5h 额度', false)}
                 `;
               } else {
                 metersHtml = cooldownCompactNotice + `<div class="account-quota-unknown">${t('quotas.quotaUnknownUpstream')}</div>`;
@@ -1455,7 +1432,11 @@
                 let cls1 = 'meter-high'; let col1 = '#10b981';
                 if (rem1 <= 25) { cls1 = 'meter-low'; col1 = '#ef4444'; }
                 else if (rem1 <= 60) { cls1 = 'meter-medium'; col1 = '#f59e0b'; }
-                const txt1 = (b1?.reset_time || b1?.reset_countdown) ? escapeHtml(b1.reset_countdown || (formatResetAbs(b1.reset_time) + t('quotas.actionRefresh'))) : t('quotas.bucket.pendingActivation');
+
+                let title1 = t('quotas.bucket.codexRolling5h');
+                if (b1?.reset_time || b1?.reset_countdown) {
+                  title1 += ` (${b1.reset_countdown || formatResetAbs(b1.reset_time)})`;
+                }
 
                 let col2Html = '';
                 if (b2 && Number.isFinite(b2.remaining_percent)) {
@@ -1463,32 +1444,40 @@
                   let cls2 = 'meter-high'; let col2 = '#10b981';
                   if (rem2 <= 25) { cls2 = 'meter-low'; col2 = '#ef4444'; }
                   else if (rem2 <= 60) { cls2 = 'meter-medium'; col2 = '#f59e0b'; }
-                  const txt2 = (b2?.reset_time || b2?.reset_countdown) ? escapeHtml(b2.reset_countdown || (formatResetAbs(b2.reset_time) + t('quotas.actionRefresh'))) : t('quotas.bucket.pendingActivation');
+
+                  let title2 = t('quotas.bucket.codexWeekly');
+                  if (b2?.reset_time || b2?.reset_countdown) {
+                    title2 += ` (${b2.reset_countdown || formatResetAbs(b2.reset_time)})`;
+                  }
 
                   col2Html = `
-                    <div class="compact-meter-wrap" title="${t('quotas.bucket.codexWeekly')}">
+                    <div class="compact-meter-wrap" title="${escapeHtml(title2)}">
                       <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
-                        <span style="color:var(--text-muted); font-size:10.5px;">${t('quotas.bucket.weeklyLimit')}</span>
+                        <span style="display:inline-flex; align-items:center; gap:4px;">
+                          <span class="quota-pool-badge pool-codex">Codex</span>
+                          <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.weeklyLimit')}</span>
+                        </span>
                         <span style="font-family:var(--mono); font-weight:700; color:${col2};">${t('quotas.bucket.secondRemainingPercent', { rem2: rem2 })}</span>
                       </div>
                       <div class="quota-meter-bar" style="height:4px;">
                         <div class="quota-meter-fill ${cls2}" style="width: ${rem2}%"></div>
                       </div>
-                      <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); text-align:right;" ${b2?.reset_time ? `data-reset-time="${escapeHtml(b2.reset_time)}"` : ''}>${txt2}</span>
                     </div>
                   `;
                 }
 
                 metersHtml = `
-                  <div class="compact-meter-wrap" title="${t('quotas.bucket.codexRolling5h')}">
+                  <div class="compact-meter-wrap" title="${escapeHtml(title1)}">
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
-                      <span style="color:var(--text-muted); font-size:10.5px;">${t('quotas.bucket.fiveHourLimit')}</span>
+                      <span style="display:inline-flex; align-items:center; gap:4px;">
+                        <span class="quota-pool-badge pool-codex">Codex</span>
+                        <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.fiveHourLimit')}</span>
+                      </span>
                       <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
                     </div>
                     <div class="quota-meter-bar" style="height:4px;">
                       <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
                     </div>
-                    <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); text-align:right;" ${b1?.reset_time ? `data-reset-time="${escapeHtml(b1.reset_time)}"` : ''}>${txt1}</span>
                   </div>
                   ${col2Html}
                 `;
@@ -1500,10 +1489,14 @@
               if (rem1 <= 25) { cls1 = 'meter-low'; col1 = '#ef4444'; }
               else if (rem1 <= 60) { cls1 = 'meter-medium'; col1 = '#f59e0b'; }
               const bname = formatBucketLabel(b1.name, b1.window) || t('quotas.bucket.standardQuota');
-              const txt1 = (b1?.reset_time || b1?.reset_countdown) ? escapeHtml(b1.reset_countdown || (formatResetAbs(b1.reset_time) + t('quotas.actionRefresh'))) : t('quotas.bucket.pendingActivation');
+
+              let title1 = bname;
+              if (b1?.reset_time || b1?.reset_countdown) {
+                title1 += ` (${b1.reset_countdown || formatResetAbs(b1.reset_time)})`;
+              }
 
               metersHtml = `
-                <div class="compact-meter-wrap">
+                <div class="compact-meter-wrap" title="${escapeHtml(title1)}">
                   <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
                     <span style="color:var(--text-muted); font-size:10.5px;">${escapeHtml(bname)}</span>
                     <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
@@ -1511,7 +1504,6 @@
                   <div class="quota-meter-bar" style="height:4px;">
                     <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
                   </div>
-                  <span style="font-family:var(--mono); font-size:10px; color:var(--text-dim); text-align:right;" ${b1?.reset_time ? `data-reset-time="${escapeHtml(b1.reset_time)}"` : ''}>${txt1}</span>
                 </div>
               `;
             } else {
@@ -1612,9 +1604,49 @@
             const prioCls = prio >= 20 ? 'p-high' : (prio >= 10 ? 'p-normal' : 'p-low');
 
             // 渲染模型组
-            const groupsHtml = (acc.groups || []).filter(grp => Array.isArray(grp.buckets) && grp.buckets.some(bkt => Number.isFinite(bkt.remaining_percent))).map(grp => {
-              const gname = escapeHtml(grp.name);
-              const bucketsHtml = (grp.buckets || []).filter(bkt => Number.isFinite(bkt.remaining_percent)).map(bkt => {
+            const sortedGroups = [...(acc.groups || [])].filter(grp => Array.isArray(grp.buckets) && grp.buckets.some(bkt => Number.isFinite(bkt.remaining_percent)));
+            sortedGroups.sort((a, b) => {
+              const aLow = String(a.name || '').toLowerCase();
+              const bLow = String(b.name || '').toLowerCase();
+              const aIsGemini = aLow.includes('gemini');
+              const bIsGemini = bLow.includes('gemini');
+              if (aIsGemini && !bIsGemini) return -1;
+              if (!aIsGemini && bIsGemini) return 1;
+              return 0;
+            });
+
+            const groupsHtml = sortedGroups.map(grp => {
+              const gnameLower = String(grp.name || '').toLowerCase();
+              const isGemini = gnameLower.includes('gemini');
+              const isClaude = gnameLower.includes('claude') || gnameLower.includes('gpt') || gnameLower.includes('3p');
+              const isCodex = gnameLower.includes('codex') || acc.provider === 'codex';
+
+              let poolBadge = '';
+              let displayTitle = escapeHtml(grp.name);
+              let displayDesc = '';
+
+              if (isGemini) {
+                poolBadge = `<span class="quota-pool-badge pool-gemini">Gemini</span>`;
+                displayTitle = t('quotas.group.geminiModels');
+                displayDesc = t('quotas.group.geminiDesc');
+              } else if (isClaude) {
+                poolBadge = `<span class="quota-pool-badge pool-claude">Claude / GPT</span>`;
+                displayTitle = t('quotas.group.claudeModels');
+                displayDesc = t('quotas.group.claudeDesc');
+              } else if (isCodex) {
+                poolBadge = `<span class="quota-pool-badge pool-codex">Codex</span>`;
+              }
+
+              const sortedBuckets = [...(grp.buckets || [])].filter(bkt => Number.isFinite(bkt.remaining_percent));
+              sortedBuckets.sort((a, b) => {
+                const aIs5h = (a.window === '5h') || String(a.name || '').toLowerCase().includes('5h') || String(a.name || '').toLowerCase().includes('five');
+                const bIs5h = (b.window === '5h') || String(b.name || '').toLowerCase().includes('5h') || String(b.name || '').toLowerCase().includes('five');
+                if (aIs5h && !bIs5h) return -1;
+                if (!aIs5h && bIs5h) return 1;
+                return 0;
+              });
+
+              const bucketsHtml = sortedBuckets.map(bkt => {
                 const isBktDisabled = bkt.disabled === true;
                 const rem = isBktDisabled ? 0 : bkt.remaining_percent;
                 let meterClass = 'meter-high';
@@ -1657,7 +1689,13 @@
 
               return `
                 <div class="model-group-section">
-                  <div class="model-group-title">${gname}</div>
+                  <div class="model-group-header">
+                    <div class="model-group-title-wrap">
+                      ${poolBadge}
+                      <span class="model-group-title">${displayTitle}</span>
+                    </div>
+                    ${displayDesc ? `<span class="model-group-desc">${escapeHtml(displayDesc)}</span>` : ''}
+                  </div>
                   ${bucketsHtml}
                 </div>
               `;

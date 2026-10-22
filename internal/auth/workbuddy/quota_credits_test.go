@@ -2,8 +2,10 @@ package workbuddy
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
@@ -165,5 +167,52 @@ func TestApplyCatalogHeadersAddsUserID(t *testing.T) {
 	ApplyCatalogHeaders(reqAnon, anon, "tok")
 	if got := reqAnon.Header.Get("X-User-Id"); got != "" {
 		t.Errorf("X-User-Id for anonymous = %q, want empty", got)
+	}
+}
+
+func TestQueryQuotaDynamicPackageDiscovery(t *testing.T) {
+	customCode := "TCACA_code_999_DynamicDiscovered"
+	var receivedDynamicCodeInPaidQuery bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case MeterUserResourceSummaryPath:
+			_, _ = w.Write([]byte(`{"code":0,"data":{"IsPaidUser":true,"Packages":[{"PackageCode":"` + customCode + `","CycleTotalCapacity":"200.00"}]}}`))
+		case MeterPaidPackagesPath:
+			body, _ := io.ReadAll(r.Body)
+			if strings.Contains(string(body), customCode) {
+				receivedDynamicCodeInPaidQuery = true
+			}
+			_, _ = w.Write([]byte(`{"code":0,"data":{"TotalCount":1,"Accounts":[{"PackageCode":"` + customCode + `","CapacityType":"1","CycleCapacityRemain":"150.00","DeductionEndTime":1900000000000}]}}`))
+		case MeterFreePackagesPath:
+			_, _ = w.Write([]byte(`{"code":0,"data":{"TotalCount":0,"Accounts":[]}}`))
+		case UserPointsPath:
+			_, _ = w.Write([]byte(`{"code":0,"data":{"total_points":200,"remaining_points":150}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	auth := newQuotaTestAuth(server, "workbuddy")
+	res, err := QueryQuota(context.Background(), server.Client(), auth)
+	if err != nil {
+		t.Fatalf("QueryQuota error: %v", err)
+	}
+
+	if !receivedDynamicCodeInPaidQuery {
+		t.Errorf("expected dynamic package code %q to be included in MeterPaidPackages request", customCode)
+	}
+
+	var hasExpiresAt bool
+	for _, m := range res.Summary {
+		if m.Key == "expires_at" || m.Key == "runs_out_at" {
+			hasExpiresAt = true
+			break
+		}
+	}
+	if !hasExpiresAt {
+		t.Errorf("expected expires_at or runs_out_at in quota summary from dynamic package query")
 	}
 }

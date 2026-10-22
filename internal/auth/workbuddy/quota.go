@@ -228,6 +228,30 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 			dayStr := nowBeijing.Format("2006-01-02")
 			nowMs := now.UnixMilli()
 
+			// Dynamically combine builtin package codes with codes active on the account
+			activePaidCodes := make([]string, 0, len(paidPackageCodes)+len(countedCodes))
+			activePaidCodes = append(activePaidCodes, paidPackageCodes...)
+			activePaidSet := make(map[string]bool, len(paidPackageCodes))
+			for _, c := range paidPackageCodes {
+				activePaidSet[c] = true
+			}
+
+			activeFreeCodes := make([]string, 0, len(freePackageCodes)+len(countedCodes))
+			activeFreeCodes = append(activeFreeCodes, freePackageCodes...)
+			activeFreeSet := make(map[string]bool, len(freePackageCodes))
+			for _, c := range freePackageCodes {
+				activeFreeSet[c] = true
+			}
+
+			for code := range countedCodes {
+				if !activePaidSet[code] && !activeFreeSet[code] {
+					activePaidCodes = append(activePaidCodes, code)
+					activePaidSet[code] = true
+					activeFreeCodes = append(activeFreeCodes, code)
+					activeFreeSet[code] = true
+				}
+			}
+
 			type meterPackageCall struct {
 				path  string
 				extra map[string]any
@@ -236,14 +260,14 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 				{
 					path: MeterPaidPackagesPath,
 					extra: map[string]any{
-						"PackageCodes":  paidPackageCodes,
+						"PackageCodes":  activePaidCodes,
 						"NeedRenewInfo": true,
 					},
 				},
 				{
 					path: MeterFreePackagesPath,
 					extra: map[string]any{
-						"PackageCodes":         freePackageCodes,
+						"PackageCodes":         activeFreeCodes,
 						"SlicePeriodStartTime": dayStr + " 00:00:00",
 						"SlicePeriodEndTime":   dayStr + " 23:59:59",
 					},

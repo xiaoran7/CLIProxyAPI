@@ -442,3 +442,98 @@ func TestHydrateQuotaGroupsFromSnapshots(t *testing.T) {
 		t.Errorf("expected both gemini and claude groups to be hydrated, got gemini=%v, claude=%v", geminiFound, claudeFound)
 	}
 }
+
+func TestHydrateQuotaGroupsFromSnapshots_HyphenDelimitedAndGeminiFirst(t *testing.T) {
+	t.Parallel()
+
+	resetTS := time.Now().Add(2 * time.Hour).Unix()
+	gemini5h := "Gemini Models - Five Hour Limit Remaining"
+	geminiWeek := "Gemini Models - Weekly Limit Remaining"
+	claude5h := "Claude and GPT models - Five Hour Limit Remaining"
+	claudeWeek := "Claude and GPT models - Weekly Limit Remaining"
+
+	snapshots := []db.QuotaSnapshotRow{
+		{
+			AuthIndex:        "antigravity-hyphen",
+			Provider:         "antigravity",
+			WindowName:       &claude5h,
+			RemainingPercent: 100,
+			ResetAt:          &resetTS,
+			TS:               1729600010,
+		},
+		{
+			AuthIndex:        "antigravity-hyphen",
+			Provider:         "antigravity",
+			WindowName:       &geminiWeek,
+			RemainingPercent: 90,
+			ResetAt:          &resetTS,
+			TS:               1729600010,
+		},
+		{
+			AuthIndex:        "antigravity-hyphen",
+			Provider:         "antigravity",
+			WindowName:       &gemini5h,
+			RemainingPercent: 54,
+			ResetAt:          &resetTS,
+			TS:               1729600010,
+		},
+		{
+			AuthIndex:        "antigravity-hyphen",
+			Provider:         "antigravity",
+			WindowName:       &claudeWeek,
+			RemainingPercent: 95,
+			ResetAt:          &resetTS,
+			TS:               1729600010,
+		},
+	}
+
+	resultMap, _ := hydrateQuotaGroupsFromSnapshots(snapshots)
+	groups, ok := resultMap["antigravity-hyphen"]
+	if !ok || len(groups) != 2 {
+		t.Fatalf("expected 2 groups for antigravity-hyphen, got %v", len(groups))
+	}
+
+	var geminiGroup, claudeGroup *CpaQuotaGroup
+	for i := range groups {
+		if groups[i].Name == "models/gemini" {
+			geminiGroup = &groups[i]
+		} else if groups[i].Name == "models/claude" {
+			claudeGroup = &groups[i]
+		}
+	}
+
+	if geminiGroup == nil {
+		t.Fatalf("expected models/gemini group to be present")
+	}
+	if claudeGroup == nil {
+		t.Fatalf("expected models/claude group to be present")
+	}
+
+	// 2. Bucket 0 in Gemini MUST be 5h
+	if len(geminiGroup.Buckets) != 2 {
+		t.Fatalf("expected 2 buckets in gemini group, got %d", len(geminiGroup.Buckets))
+	}
+	if geminiGroup.Buckets[0].Window != "5h" {
+		t.Errorf("expected gemini bucket 0 to be 5h, got %q", geminiGroup.Buckets[0].Window)
+	}
+	if *geminiGroup.Buckets[0].RemainingPercent != 54 {
+		t.Errorf("expected gemini 5h remainingPercent = 54, got %v", *geminiGroup.Buckets[0].RemainingPercent)
+	}
+	if geminiGroup.Buckets[1].Window != "weekly" {
+		t.Errorf("expected gemini bucket 1 to be weekly, got %q", geminiGroup.Buckets[1].Window)
+	}
+	if *geminiGroup.Buckets[1].RemainingPercent != 90 {
+		t.Errorf("expected gemini weekly remainingPercent = 90, got %v", *geminiGroup.Buckets[1].RemainingPercent)
+	}
+
+	// 3. Bucket 0 in Claude MUST be 5h
+	if len(claudeGroup.Buckets) != 2 {
+		t.Fatalf("expected 2 buckets in claude group, got %d", len(claudeGroup.Buckets))
+	}
+	if claudeGroup.Buckets[0].Window != "5h" {
+		t.Errorf("expected claude bucket 0 to be 5h, got %q", claudeGroup.Buckets[0].Window)
+	}
+	if *claudeGroup.Buckets[0].RemainingPercent != 100 {
+		t.Errorf("expected claude 5h remainingPercent = 100, got %v", *claudeGroup.Buckets[0].RemainingPercent)
+	}
+}

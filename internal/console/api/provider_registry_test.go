@@ -161,3 +161,45 @@ func TestSyncAuthFilesToBaselines(t *testing.T) {
 		t.Errorf("expected name 'Primary OpenRouter', got %q", orAcc.Name)
 	}
 }
+
+func TestInitialProviderRegistry_ExpandedSeeds(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_expanded_seeds.db")
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	pe, err := NewProviderRegistryEngine(database)
+	if err != nil {
+		t.Fatalf("failed to create provider registry engine: %v", err)
+	}
+
+	testCases := []struct {
+		model       string
+		expectedKey string
+	}{
+		{"llama-3.3-70b-instruct", "meta"},
+		{"meta/llama-3.1-405b", "meta"},
+		{"grok-2-vision-1212", "xai"},
+		{"grok-beta", "xai"},
+		{"mistral-large-2411", "mistral"},
+		{"codestral-2501", "mistral"},
+		{"pixtral-large-2411", "mistral"},
+		{"minimax-text-01", "minimax"},
+		{"abab6.5s-chat", "minimax"},
+	}
+
+	for _, tc := range testCases {
+		res := pe.InferProvider(tc.model, "")
+		if res.Key != tc.expectedKey {
+			t.Errorf("model %q: expected provider %q, got %q", tc.model, tc.expectedKey, res.Key)
+		}
+		if res.MatchedBy != "model" {
+			t.Errorf("model %q: expected matched_by 'model', got %q", tc.model, res.MatchedBy)
+		}
+	}
+}
