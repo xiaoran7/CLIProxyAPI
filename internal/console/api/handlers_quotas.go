@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -73,9 +75,10 @@ type CpaQuotaSummaryItem struct {
 
 // CpaQuotaGroup represents a group of quota buckets
 type CpaQuotaGroup struct {
+	GroupID     string           `json:"group_id,omitempty"`
 	DisplayName string           `json:"displayName"`
 	Name        string           `json:"name"`
-	Description string           `json:"description"`
+	Description string           `json:"description,omitempty"`
 	Buckets     []CpaQuotaBucket `json:"buckets"`
 }
 
@@ -84,15 +87,19 @@ type CpaQuotaBucket struct {
 	BucketID          string   `json:"bucket_id"`
 	Window            string   `json:"window"`
 	Name              string   `json:"name"`
-	Description       string   `json:"description"`
-	Unit              string   `json:"unit"`
-	TotalCapacity     *float64 `json:"total_capacity"`
-	RemainCapacity    *float64 `json:"remain_capacity"`
-	UsedCapacity      *float64 `json:"used_capacity"`
-	RemainingFraction *float64 `json:"remainingFraction"`
-	RemainingPercent  *int     `json:"remaining_percent"`
-	ResetTime         string   `json:"resetTime"`
-	ExpiresAt         string   `json:"expires_at"`
+	Description       string   `json:"description,omitempty"`
+	Unit              string   `json:"unit,omitempty"`
+	TotalCapacity     *float64 `json:"total_capacity,omitempty"`
+	RemainCapacity    *float64 `json:"remain_capacity,omitempty"`
+	UsedCapacity      *float64 `json:"used_capacity,omitempty"`
+	RemainingFraction *float64 `json:"remainingFraction,omitempty"`
+	RemainingPercent  *int     `json:"remaining_percent,omitempty"`
+	ResetTime         string   `json:"resetTime,omitempty"`
+	ResetTimeSnake    string   `json:"reset_time,omitempty"`
+	ResetCountdown    string   `json:"reset_countdown,omitempty"`
+	Disabled          bool     `json:"disabled"`
+	UsedPercent       *float64 `json:"used_percent,omitempty"`
+	ExpiresAt         string   `json:"expires_at,omitempty"`
 }
 
 // CpaOpenAICompatResponse represents CPA /v0/management/openai-compatibility
@@ -199,6 +206,20 @@ func InvalidateUpstreamQuotaCache() {
 	cachedUpstreamQuotasResp = nil
 	cachedUpstreamAt = time.Time{}
 }
+
+// CachedAccountQuota stores parsed on-demand quota snapshots in memory
+type CachedAccountQuota struct {
+	Groups    []CpaQuotaGroup
+	PlanType  string
+	PlanName  string
+	RawError  string
+	UpdatedAt time.Time
+}
+
+var (
+	accountQuotaCacheMu sync.RWMutex
+	accountQuotaCache   = make(map[string]CachedAccountQuota)
+)
 
 const (
 	defaultAuthPriority = 0
@@ -307,7 +328,7 @@ func computeHealth(file CpaAuthFile) UpstreamAccountHealth {
 			State:    "cooldown",
 			Label:    "冷却中",
 			Detail:   detail,
-			Blocked:  true,
+			Blocked:  hasCredentialScope,
 			Cooldown: cdSummary,
 		}
 	}
@@ -507,8 +528,37 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 			var groups []CpaQuotaGroup
 			if f.Quota != nil && len(f.Quota.Groups) > 0 {
 				groups = f.Quota.Groups
+				if prov == "antigravity" && len(f.Cooldowns) > 0 {
+					groups = reconcileAntigravityQuotaGroups(groups, f.Cooldowns)
+				}
 				planType = "standard"
 				planName = "标准包"
+			}
+
+			if len(groups) == 0 {
+				accountQuotaCacheMu.RLock()
+				if cached, found := accountQuotaCache[f.AuthIndex]; found && len(cached.Groups) > 0 {
+					groups = cached.Groups
+					if cached.PlanType != "" {
+						planType = cached.PlanType
+					}
+					if cached.PlanName != "" {
+						planName = cached.PlanName
+					}
+				} else if cached, found := accountQuotaCache[fname]; found && len(cached.Groups) > 0 {
+					groups = cached.Groups
+					if cached.PlanType != "" {
+						planType = cached.PlanType
+					}
+					if cached.PlanName != "" {
+						planName = cached.PlanName
+					}
+				}
+				accountQuotaCacheMu.RUnlock()
+
+				if prov == "antigravity" && len(f.Cooldowns) > 0 && len(groups) > 0 {
+					groups = reconcileAntigravityQuotaGroups(groups, f.Cooldowns)
+				}
 			}
 
 			item := UpstreamAccountItem{
@@ -584,6 +634,29 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 					healthLabel = "已停用"
 				}
 
+				compPlanType := "standard"
+				compPlanName := provName
+				var compGroups []CpaQuotaGroup
+				accountQuotaCacheMu.RLock()
+				if cached, found := accountQuotaCache[authIdx]; found && len(cached.Groups) > 0 {
+					compGroups = cached.Groups
+					if cached.PlanType != "" {
+						compPlanType = cached.PlanType
+					}
+					if cached.PlanName != "" {
+						compPlanName = cached.PlanName
+					}
+				} else if cached, found := accountQuotaCache[fname]; found && len(cached.Groups) > 0 {
+					compGroups = cached.Groups
+					if cached.PlanType != "" {
+						compPlanType = cached.PlanType
+					}
+					if cached.PlanName != "" {
+						compPlanName = cached.PlanName
+					}
+				}
+				accountQuotaCacheMu.RUnlock()
+
 				item := UpstreamAccountItem{
 					ID:          fname,
 					Filename:    fname,
@@ -603,9 +676,9 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 					Weight:    weight,
 					Note:      keyEntry.Note,
 					AuthIndex: authIdx,
-					PlanType:  "standard",
-					PlanName:  provName,
-					Groups:    []CpaQuotaGroup{},
+					PlanType:  compPlanType,
+					PlanName:  compPlanName,
+					Groups:    compGroups,
 					UpdatedAt: nowMs,
 				}
 
@@ -822,8 +895,427 @@ func HandlePutUpstreamAuthStatus(cpa *CpaClient) gin.HandlerFunc {
 	}
 }
 
+func formatResetCountdown(isoTime string) string {
+	if strings.TrimSpace(isoTime) == "" {
+		return ""
+	}
+	t, err := time.Parse(time.RFC3339, isoTime)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339Nano, isoTime)
+		if err != nil {
+			return ""
+		}
+	}
+	diff := time.Until(t)
+	if diff <= 0 {
+		return "即将重置"
+	}
+	days := int(diff.Hours()) / 24
+	hours := int(diff.Hours()) % 24
+	mins := int(diff.Minutes()) % 60
+	if days > 0 {
+		return fmt.Sprintf("%d 天 %d 小时", days, hours)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%d 小时 %d 分", hours, mins)
+	}
+	if mins > 0 {
+		return fmt.Sprintf("%d 分钟", mins)
+	}
+	return "即将重置"
+}
+
+func parseAntigravityQuotaGroups(raw []byte) []CpaQuotaGroup {
+	if len(raw) == 0 {
+		return nil
+	}
+	var root map[string]any
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil
+	}
+	rawGroups, ok := root["groups"].([]any)
+	if !ok || len(rawGroups) == 0 {
+		return nil
+	}
+
+	var res []CpaQuotaGroup
+	for _, rg := range rawGroups {
+		grpMap, ok := rg.(map[string]any)
+		if !ok {
+			continue
+		}
+		gName := fmt.Sprintf("%v", grpMap["name"])
+		gDisp := fmt.Sprintf("%v", grpMap["displayName"])
+		if gDisp == "" || gDisp == "<nil>" {
+			gDisp = gName
+		}
+		gDesc := ""
+		if grpMap["description"] != nil {
+			gDesc = fmt.Sprintf("%v", grpMap["description"])
+		}
+
+		grp := CpaQuotaGroup{
+			Name:        gName,
+			DisplayName: gDisp,
+			Description: gDesc,
+		}
+
+		rawBuckets, _ := grpMap["buckets"].([]any)
+		for _, rb := range rawBuckets {
+			bMap, ok := rb.(map[string]any)
+			if !ok {
+				continue
+			}
+			bID := fmt.Sprintf("%v", bMap["bucketId"])
+			if bID == "" || bID == "<nil>" {
+				bID = fmt.Sprintf("%v", bMap["bucket_id"])
+			}
+			if bID == "<nil>" {
+				bID = ""
+			}
+
+			bDisp := fmt.Sprintf("%v", bMap["displayName"])
+			if bDisp == "" || bDisp == "<nil>" {
+				bDisp = fmt.Sprintf("%v", bMap["name"])
+			}
+			if bDisp == "<nil>" {
+				bDisp = ""
+			}
+
+			win := fmt.Sprintf("%v", bMap["window"])
+			if win == "<nil>" {
+				win = ""
+			}
+
+			disabled := false
+			if d, ok := bMap["disabled"].(bool); ok {
+				disabled = d
+			}
+
+			resetTime := ""
+			if rt, ok := bMap["resetTime"].(string); ok {
+				resetTime = rt
+			} else if rt, ok := bMap["reset_time"].(string); ok {
+				resetTime = rt
+			}
+
+			var remFrac *float64
+			var remPct *int
+
+			if rf, ok := bMap["remainingFraction"].(float64); ok {
+				remFrac = &rf
+				pct := int(math.Round(rf * 100))
+				if pct < 0 {
+					pct = 0
+				}
+				if pct > 100 {
+					pct = 100
+				}
+				remPct = &pct
+			} else if rf, ok := bMap["remaining_fraction"].(float64); ok {
+				remFrac = &rf
+				pct := int(math.Round(rf * 100))
+				if pct < 0 {
+					pct = 0
+				}
+				if pct > 100 {
+					pct = 100
+				}
+				remPct = &pct
+			} else if rp, ok := bMap["remaining_percent"].(float64); ok {
+				pct := int(math.Round(rp))
+				remPct = &pct
+				frac := rp / 100.0
+				remFrac = &frac
+			}
+
+			countdown := formatResetCountdown(resetTime)
+
+			grp.Buckets = append(grp.Buckets, CpaQuotaBucket{
+				BucketID:          bID,
+				Window:            win,
+				Name:              bDisp,
+				RemainingFraction: remFrac,
+				RemainingPercent:  remPct,
+				ResetTime:         resetTime,
+				ResetTimeSnake:    resetTime,
+				ResetCountdown:    countdown,
+				Disabled:          disabled,
+			})
+		}
+		if len(grp.Buckets) > 0 {
+			res = append(res, grp)
+		}
+	}
+	return res
+}
+
+func parseCodexQuotaGroups(raw []byte) ([]CpaQuotaGroup, string, string) {
+	if len(raw) == 0 {
+		return nil, "free", "免费版"
+	}
+	var root map[string]any
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil, "free", "免费版"
+	}
+
+	planType := "plus"
+	if pt, ok := root["plan_type"].(string); ok && pt != "" {
+		planType = strings.ToLower(pt)
+	}
+	planName := strings.ToUpper(planType)
+
+	var primaryMap, secondaryMap map[string]any
+	if rl, ok := root["rate_limit"].(map[string]any); ok {
+		primaryMap, _ = rl["primary_window"].(map[string]any)
+		secondaryMap, _ = rl["secondary_window"].(map[string]any)
+	} else if rl, ok := root["rate_limits"].(map[string]any); ok {
+		primaryMap, _ = rl["primary_window"].(map[string]any)
+		secondaryMap, _ = rl["secondary_window"].(map[string]any)
+	}
+
+	parseWindow := func(wMap map[string]any, defaultID, defaultWindow, defaultName string) *CpaQuotaBucket {
+		if wMap == nil {
+			return nil
+		}
+		var remPct int = 100
+		if usedPct, ok := wMap["used_percent"].(float64); ok {
+			remPct = int(math.Round((1.0 - usedPct) * 100))
+			if remPct < 0 {
+				remPct = 0
+			}
+			if remPct > 100 {
+				remPct = 100
+			}
+		}
+
+		var resetTimeStr string
+		if resetAt, ok := wMap["reset_at"].(float64); ok && resetAt > 0 {
+			resetTimeStr = time.Unix(int64(resetAt), 0).UTC().Format(time.RFC3339)
+		} else if resetSec, ok := wMap["reset_after_seconds"].(float64); ok && resetSec > 0 {
+			resetTimeStr = time.Now().UTC().Add(time.Duration(resetSec) * time.Second).Format(time.RFC3339)
+		}
+
+		countdown := formatResetCountdown(resetTimeStr)
+		frac := float64(remPct) / 100.0
+
+		return &CpaQuotaBucket{
+			BucketID:          defaultID,
+			Window:            defaultWindow,
+			Name:              defaultName,
+			RemainingFraction: &frac,
+			RemainingPercent:  &remPct,
+			ResetTime:         resetTimeStr,
+			ResetTimeSnake:    resetTimeStr,
+			ResetCountdown:    countdown,
+			Disabled:          remPct <= 0,
+		}
+	}
+
+	var buckets []CpaQuotaBucket
+	if b := parseWindow(primaryMap, "codex-5h", "5h", "5 Hour Limit Remaining"); b != nil {
+		buckets = append(buckets, *b)
+	}
+	if b := parseWindow(secondaryMap, "codex-weekly", "weekly", "Weekly Limit Remaining"); b != nil {
+		buckets = append(buckets, *b)
+	}
+
+	if len(buckets) == 0 {
+		return nil, planType, planName
+	}
+
+	return []CpaQuotaGroup{
+		{
+			Name:        "codex",
+			DisplayName: "Codex",
+			Buckets:     buckets,
+		},
+	}, planType, planName
+}
+
+func fetchSingleAccountQuota(ctx context.Context, eng *engine.Engine, cpa *CpaClient, authIndex, provider, projectId, email, filename string) ([]CpaQuotaGroup, string, string, error) {
+	prov := strings.ToLower(strings.TrimSpace(provider))
+	var groups []CpaQuotaGroup
+	planType := "standard"
+	planName := "标准包"
+
+	if prov == "antigravity" {
+		targetProject := strings.TrimSpace(projectId)
+		if targetProject == "" {
+			targetProject = "aicode-consumers"
+			var authFilesResp CpaAuthFilesResponse
+			if err := cpa.RequestJSON(ctx, http.MethodGet, "/auth-files", nil, "v0", &authFilesResp); err == nil {
+				for _, f := range authFilesResp.Files {
+					if (authIndex != "" && strings.EqualFold(strings.TrimSpace(f.AuthIndex), authIndex)) ||
+						(filename != "" && (strings.EqualFold(f.Name, filename) || strings.EqualFold(f.ID, filename))) {
+						if pID := strings.TrimSpace(f.ProjectID); pID != "" {
+							targetProject = pID
+						}
+						if email == "" && f.Email != "" {
+							email = f.Email
+						}
+						break
+					}
+				}
+			}
+		}
+
+		apiCallBody, _ := json.Marshal(map[string]interface{}{
+			"authIndex": authIndex,
+			"method":    "POST",
+			"url":       "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+			"header": map[string]string{
+				"Authorization": "Bearer $TOKEN$",
+				"Content-Type":  "application/json",
+				"User-Agent":    "antigravity/cli/1.3.6 (aidev_client; os_type=darwin; arch=arm64)",
+			},
+			"data": fmt.Sprintf(`{"project":%q}`, targetProject),
+		})
+
+		resp, err := cpa.Request(ctx, http.MethodPost, "/api-call", apiCallBody, "application/json", "v0")
+		if err != nil {
+			return nil, "", "", fmt.Errorf("antigravity quota probe failed: %w", err)
+		}
+
+		var callWrapper struct {
+			StatusCode int                 `json:"status_code"`
+			Header     map[string][]string `json:"header"`
+			Body       string              `json:"body"`
+			Response   json.RawMessage     `json:"response"`
+		}
+		if err := json.Unmarshal(resp.Bytes, &callWrapper); err != nil {
+			return nil, "", "", fmt.Errorf("unmarshal api-call response failed: %w", err)
+		}
+		if callWrapper.StatusCode != http.StatusOK {
+			return nil, "", "", fmt.Errorf("upstream returned HTTP %d: %s", callWrapper.StatusCode, callWrapper.Body)
+		}
+
+		var rawUpstream []byte
+		if strings.TrimSpace(callWrapper.Body) != "" {
+			rawUpstream = []byte(callWrapper.Body)
+		} else if len(callWrapper.Response) > 0 {
+			rawUpstream = callWrapper.Response
+		}
+
+		groups = parseAntigravityQuotaGroups(rawUpstream)
+		planType = "standard"
+		planName = "Google Cloud"
+
+	} else if prov == "codex" {
+		apiCallBody, _ := json.Marshal(map[string]interface{}{
+			"authIndex": authIndex,
+			"method":    "GET",
+			"url":       "https://chatgpt.com/backend-api/wham/usage",
+			"header": map[string]string{
+				"Authorization": "Bearer $TOKEN$",
+				"Content-Type":  "application/json",
+				"User-Agent":    "codex-tui/0.149.1 (Mac OS 24.1.0; arm64)",
+			},
+		})
+
+		resp, err := cpa.Request(ctx, http.MethodPost, "/api-call", apiCallBody, "application/json", "v0")
+		if err != nil {
+			return nil, "", "", fmt.Errorf("codex quota probe failed: %w", err)
+		}
+
+		var callWrapper struct {
+			StatusCode int                 `json:"status_code"`
+			Header     map[string][]string `json:"header"`
+			Body       string              `json:"body"`
+			Response   json.RawMessage     `json:"response"`
+		}
+		if err := json.Unmarshal(resp.Bytes, &callWrapper); err != nil {
+			return nil, "", "", fmt.Errorf("unmarshal api-call response failed: %w", err)
+		}
+		if callWrapper.StatusCode != http.StatusOK {
+			return nil, "", "", fmt.Errorf("upstream returned HTTP %d: %s", callWrapper.StatusCode, callWrapper.Body)
+		}
+
+		var rawUpstream []byte
+		if strings.TrimSpace(callWrapper.Body) != "" {
+			rawUpstream = []byte(callWrapper.Body)
+		} else if len(callWrapper.Response) > 0 {
+			rawUpstream = callWrapper.Response
+		}
+
+		var pType, pName string
+		groups, pType, pName = parseCodexQuotaGroups(rawUpstream)
+		if pType != "" {
+			planType = pType
+		}
+		if pName != "" {
+			planName = pName
+		}
+
+	} else if prov == "workbuddy" || prov == "workbuddy-cn" {
+		reqBody, _ := json.Marshal(map[string]string{"authIndex": authIndex})
+		_, _ = cpa.Request(ctx, http.MethodPost, "/quota/fetch", reqBody, "application/json", "v0")
+
+		var authFilesResp CpaAuthFilesResponse
+		if err := cpa.RequestJSON(ctx, http.MethodGet, "/auth-files", nil, "v0", &authFilesResp); err == nil {
+			for _, f := range authFilesResp.Files {
+				if (authIndex != "" && strings.EqualFold(strings.TrimSpace(f.AuthIndex), authIndex)) ||
+					(filename != "" && (strings.EqualFold(f.Name, filename) || strings.EqualFold(f.ID, filename))) {
+					if f.Quota != nil && len(f.Quota.Groups) > 0 {
+						groups = f.Quota.Groups
+						planType = "standard"
+						planName = "标准包"
+					}
+					break
+				}
+			}
+		}
+	}
+
+	if len(groups) > 0 {
+		accountQuotaCacheMu.Lock()
+		cached := CachedAccountQuota{
+			Groups:    groups,
+			PlanType:  planType,
+			PlanName:  planName,
+			UpdatedAt: time.Now(),
+		}
+		if authIndex != "" {
+			accountQuotaCache[authIndex] = cached
+		}
+		if filename != "" {
+			accountQuotaCache[filename] = cached
+		}
+		accountQuotaCacheMu.Unlock()
+
+		if eng != nil && eng.DB() != nil {
+			nowUnix := time.Now().Unix()
+			for _, g := range groups {
+				for _, b := range g.Buckets {
+					if b.RemainingPercent != nil {
+						winName := fmt.Sprintf("%s:%s", g.Name, b.Window)
+						var resetAt *int64
+						if b.ResetTime != "" {
+							if t, err := time.Parse(time.RFC3339, b.ResetTime); err == nil {
+								u := t.Unix()
+								resetAt = &u
+							}
+						}
+						_, _ = eng.DB().InsertQuotaSnapshot(ctx, &db.QuotaSnapshotRow{
+							TS:               nowUnix,
+							AuthIndex:        authIndex,
+							Provider:         prov,
+							AccountEmail:     &email,
+							WindowName:       &winName,
+							RemainingPercent: float64(*b.RemainingPercent),
+							ResetAt:          resetAt,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return groups, planType, planName, nil
+}
+
 // HandlePostUpstreamAuthActivateWindow triggers on-demand quota probe for an upstream credential
-func HandlePostUpstreamAuthActivateWindow(cpa *CpaClient) gin.HandlerFunc {
+func HandlePostUpstreamAuthActivateWindow(eng *engine.Engine, cpa *CpaClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var payload struct {
 			Filename  string `json:"filename"`
@@ -858,41 +1350,123 @@ func HandlePostUpstreamAuthActivateWindow(cpa *CpaClient) gin.HandlerFunc {
 			_, _ = cpa.Request(ctx, http.MethodPost, "/auth-files/refresh", refreshBody, "application/json", "v0")
 		}
 
-		if prov == "workbuddy" || prov == "workbuddy-cn" {
-			reqBody, _ := json.Marshal(map[string]string{"authIndex": authIdx})
-			_, _ = cpa.Request(ctx, http.MethodPost, "/quota/fetch", reqBody, "application/json", "v0")
-		} else if prov == "codex" {
-			apiCallBody, _ := json.Marshal(map[string]interface{}{
-				"authIndex": authIdx,
-				"method":    "GET",
-				"url":       "https://chatgpt.com/backend-api/wham/usage",
-				"header": map[string]string{
-					"Authorization": "Bearer $TOKEN$",
-					"Content-Type":  "application/json",
-					"User-Agent":    "codex-tui/0.149.1 (Mac OS 24.1.0; arm64)",
-				},
-			})
-			_, _ = cpa.Request(ctx, http.MethodPost, "/api-call", apiCallBody, "application/json", "v0")
-		} else if prov == "antigravity" {
-			apiCallBody, _ := json.Marshal(map[string]interface{}{
-				"authIndex": authIdx,
-				"method":    "POST",
-				"url":       "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
-				"header": map[string]string{
-					"Authorization": "Bearer $TOKEN$",
-					"Content-Type":  "application/json",
-					"User-Agent":    "antigravity/cli/1.3.6 (aidev_client; os_type=darwin; arch=arm64)",
-				},
-				"data": `{"project":"aicode-consumers"}`,
-			})
-			_, _ = cpa.Request(ctx, http.MethodPost, "/api-call", apiCallBody, "application/json", "v0")
-		}
-
+		groups, planType, planName, err := fetchSingleAccountQuota(ctx, eng, cpa, authIdx, prov, "", "", fname)
 		InvalidateUpstreamQuotaCache()
 
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"error":   err.Error(),
+				"message": fmt.Sprintf("拉取上游额度失败: %v", err),
+			})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "已向上游查询额度；5 小时窗口由实际模型请求决定",
+			"success":   true,
+			"message":   "已成功拉取上游额度",
+			"groups":    groups,
+			"plan_type": planType,
+			"plan_name": planName,
 		})
 	}
+}
+
+// reconcileAntigravityQuotaGroups reconciles raw Antigravity upstream quota groups
+// with active conductor cooldowns.
+func reconcileAntigravityQuotaGroups(groups []CpaQuotaGroup, cooldowns []CpaCooldownRecord) []CpaQuotaGroup {
+	var activeCds []CpaCooldownRecord
+	hasCredCd := false
+	var claudeCds []CpaCooldownRecord
+	var geminiCds []CpaCooldownRecord
+
+	for _, cd := range cooldowns {
+		if cd.RemainingSeconds <= 0 {
+			continue
+		}
+		activeCds = append(activeCds, cd)
+		if cd.Scope == "credential" {
+			hasCredCd = true
+		} else if cd.Scope == "model" {
+			mk := strings.ToLower(strings.TrimSpace(cd.ModelKey))
+			if strings.Contains(mk, "claude") || strings.Contains(mk, "gpt") ||
+				strings.Contains(mk, "sonnet") || strings.Contains(mk, "opus") ||
+				strings.Contains(mk, "haiku") {
+				claudeCds = append(claudeCds, cd)
+			}
+			if strings.Contains(mk, "gemini") || strings.Contains(mk, "flash") ||
+				(strings.Contains(mk, "pro") && !strings.Contains(mk, "claude")) {
+				geminiCds = append(geminiCds, cd)
+			}
+		}
+	}
+
+	if !hasCredCd && len(claudeCds) == 0 && len(geminiCds) == 0 {
+		return groups
+	}
+
+	reconciled := make([]CpaQuotaGroup, len(groups))
+	for i, grp := range groups {
+		gCopy := grp
+		gName := strings.ToLower(fmt.Sprintf("%s %s %s", grp.GroupID, grp.DisplayName, grp.Name))
+		isClaude := strings.Contains(gName, "claude") || strings.Contains(gName, "gpt")
+		isGemini := strings.Contains(gName, "gemini")
+
+		var targetCds []CpaCooldownRecord
+		if hasCredCd {
+			targetCds = activeCds
+		} else if isClaude {
+			targetCds = claudeCds
+		} else if isGemini {
+			targetCds = geminiCds
+		}
+
+		if len(targetCds) == 0 {
+			reconciled[i] = gCopy
+			continue
+		}
+
+		maxRem := 0
+		var latestRetryStr string
+		for _, cd := range targetCds {
+			if cd.RemainingSeconds > maxRem {
+				maxRem = cd.RemainingSeconds
+			}
+			if cd.RetryAt != "" && cd.RetryAt > latestRetryStr {
+				latestRetryStr = cd.RetryAt
+			}
+		}
+
+		bktCopies := make([]CpaQuotaBucket, len(grp.Buckets))
+		for j, bkt := range grp.Buckets {
+			bCopy := bkt
+			bName := strings.ToLower(fmt.Sprintf("%s %s %s %s", bkt.BucketID, bkt.Name, bkt.Description, bkt.Window))
+			is5h := strings.Contains(bName, "5h") || strings.Contains(bName, "5 hour") || strings.Contains(bName, "five")
+			isWeekly := strings.Contains(bName, "weekly") || strings.Contains(bName, "week")
+
+			isBlocked := false
+			if hasCredCd {
+				isBlocked = true
+			} else if maxRem > 5*3600 {
+				// Cooldown > 5h implies weekly rate limit exhaustion. All buckets blocked.
+				isBlocked = true
+			} else if is5h || !isWeekly {
+				isBlocked = true
+			}
+
+			if isBlocked {
+				zeroFrac := float64(0)
+				zeroPct := 0
+				bCopy.RemainingFraction = &zeroFrac
+				bCopy.RemainingPercent = &zeroPct
+				if latestRetryStr != "" {
+					bCopy.ResetTime = latestRetryStr
+				}
+			}
+			bktCopies[j] = bCopy
+		}
+		gCopy.Buckets = bktCopies
+		reconciled[i] = gCopy
+	}
+	return reconciled
 }

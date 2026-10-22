@@ -145,6 +145,13 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
 		} else {
 			s.managementRoutesEnabled.Store(true)
 		}
+	} else if s.localPassword != "" {
+		s.registerManagementRoutes()
+		if s.managementRoutesEnabled.CompareAndSwap(false, true) {
+			log.Info("management routes enabled via local management password")
+		} else {
+			s.managementRoutesEnabled.Store(true)
+		}
 	} else {
 		switch {
 		case prevSecretEmpty && !newSecretEmpty:

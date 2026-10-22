@@ -1735,3 +1735,121 @@ func TestAPICallAntigravity401AutoRetry(t *testing.T) {
 		t.Fatalf("saved access_token = %v, want antigravity-auto-retry-fresh-token", saved.Metadata["access_token"])
 	}
 }
+
+func TestReconcileAntigravityQuotaResponse(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	retryAt45h := now.Add(45 * time.Hour)
+
+	mockRawResp := `{
+		"groups": [
+			{
+				"name": "models/gemini",
+				"label": "GEMINI Models",
+				"buckets": [
+					{"id": "gemini-5h", "label": "5 Hour Limit", "remainingFraction": 1.0, "resetTime": "2026-10-22T17:00:00Z"},
+					{"id": "gemini-week", "label": "Weekly Limit", "remainingFraction": 1.0, "resetTime": "2026-10-29T12:00:00Z"}
+				]
+			},
+			{
+				"name": "models/claude",
+				"label": "CLAUDE and GPT Models",
+				"buckets": [
+					{"id": "claude-5h", "label": "5-Hour Limit", "remainingFraction": 1.0, "resetTime": "2026-10-22T17:00:00Z"},
+					{"id": "claude-week", "label": "Weekly Limit", "remainingFraction": 1.0, "resetTime": "2026-10-29T12:00:00Z"}
+				]
+			}
+		]
+	}`
+
+	t.Run("ClaudeModelCooldown45h_OverridesWeeklyAnd5hToZero", func(t *testing.T) {
+		auth := &coreauth.Auth{
+			ID:       "ag-claude-cd@example.com",
+			Provider: "antigravity",
+			ModelStates: map[string]*coreauth.ModelState{
+				"claude-3-5-sonnet": {
+					Unavailable:    true,
+					NextRetryAfter: retryAt45h,
+					LastError:      &coreauth.Error{HTTPStatus: 429, Message: "RESOURCE_EXHAUSTED"},
+				},
+			},
+		}
+
+		reconciled := reconcileAntigravityQuotaResponse(auth, []byte(mockRawResp), now)
+		var result map[string]any
+		if err := json.Unmarshal(reconciled, &result); err != nil {
+			t.Fatalf("unmarshal error: %v", err)
+		}
+
+		groups := result["groups"].([]any)
+		if len(groups) != 2 {
+			t.Fatalf("expected 2 groups, got %d", len(groups))
+		}
+
+		// Gemini group must remain 1.0
+		geminiGrp := groups[0].(map[string]any)
+		for _, b := range geminiGrp["buckets"].([]any) {
+			bMap := b.(map[string]any)
+			if frac, _ := bMap["remainingFraction"].(float64); frac != 1.0 {
+				t.Errorf("gemini bucket %v remainingFraction = %v, want 1.0", bMap["id"], frac)
+			}
+		}
+
+		// Claude group: both weekly and 5h must be reconciled to 0.0 with retryAt45h resetTime
+		claudeGrp := groups[1].(map[string]any)
+		for _, b := range claudeGrp["buckets"].([]any) {
+			bMap := b.(map[string]any)
+			if frac, _ := bMap["remainingFraction"].(float64); frac != 0.0 {
+				t.Errorf("claude bucket %v remainingFraction = %v, want 0.0", bMap["id"], frac)
+			}
+			if resetTime, _ := bMap["resetTime"].(string); resetTime != retryAt45h.Format(time.RFC3339) {
+				t.Errorf("claude bucket %v resetTime = %v, want %v", bMap["id"], resetTime, retryAt45h.Format(time.RFC3339))
+			}
+		}
+	})
+
+	t.Run("CredentialLevelCooldown_OverridesAllGroups", func(t *testing.T) {
+		credRetry := now.Add(2 * time.Hour)
+		auth := &coreauth.Auth{
+			ID:             "ag-cred-cd@example.com",
+			Provider:       "antigravity",
+			Status:         coreauth.StatusError,
+			Unavailable:    true,
+			NextRetryAfter: credRetry,
+			LastError:      &coreauth.Error{HTTPStatus: 429, Message: "QUOTA_EXHAUSTED"},
+		}
+
+		reconciled := reconcileAntigravityQuotaResponse(auth, []byte(mockRawResp), now)
+		var result map[string]any
+		if err := json.Unmarshal(reconciled, &result); err != nil {
+			t.Fatalf("unmarshal error: %v", err)
+		}
+
+		groups := result["groups"].([]any)
+		for _, g := range groups {
+			grp := g.(map[string]any)
+			for _, b := range grp["buckets"].([]any) {
+				bMap := b.(map[string]any)
+				if frac, _ := bMap["remainingFraction"].(float64); frac != 0.0 {
+					t.Errorf("bucket %v remainingFraction = %v, want 0.0", bMap["id"], frac)
+				}
+				if resetTime, _ := bMap["resetTime"].(string); resetTime != credRetry.Format(time.RFC3339) {
+					t.Errorf("bucket %v resetTime = %v, want %v", bMap["id"], resetTime, credRetry.Format(time.RFC3339))
+				}
+			}
+		}
+	})
+
+	t.Run("NoCooldown_Unchanged", func(t *testing.T) {
+		auth := &coreauth.Auth{
+			ID:       "ag-healthy@example.com",
+			Provider: "antigravity",
+		}
+
+		reconciled := reconcileAntigravityQuotaResponse(auth, []byte(mockRawResp), now)
+		if string(reconciled) != mockRawResp {
+			t.Errorf("expected unchanged response without cooldowns")
+		}
+	})
+}

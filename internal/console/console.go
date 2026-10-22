@@ -2,6 +2,8 @@ package console
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -163,6 +165,17 @@ func ServerOptions(cfg SubsystemConfig) []api.ServerOption {
 	// 1. Accounting and security middleware
 	gatewayMW := middleware.Gateway(sub.engine)
 
+	// Generate or resolve dedicated high-entropy loopback token for CPA local management bypass
+	loopbackSecret := sub.cfg.CpaSecret
+	if loopbackSecret == "" || strings.HasPrefix(loopbackSecret, "$2a$") || strings.HasPrefix(loopbackSecret, "$2b$") || strings.HasPrefix(loopbackSecret, "$2y$") {
+		b := make([]byte, 24)
+		if _, errRand := rand.Read(b); errRand == nil {
+			loopbackSecret = hex.EncodeToString(b)
+		} else {
+			loopbackSecret = fmt.Sprintf("cpa_loopback_%d", time.Now().UnixNano())
+		}
+	}
+
 	// 2. Router configurator
 	routerConfigurator := func(r *gin.Engine, handlers *sdkhandlers.BaseAPIHandler, serverCfg *serverconfig.Config) {
 		// Inherit CPA management secret and port from cliproxyapi server configuration if available
@@ -170,15 +183,12 @@ func ServerOptions(cfg SubsystemConfig) []api.ServerOption {
 			AdminSecret: sub.cfg.AdminSecret,
 			CpaHost:     sub.cfg.CpaHost,
 			CpaPort:     sub.cfg.CpaPort,
-			CpaSecret:   sub.cfg.CpaSecret,
+			CpaSecret:   loopbackSecret,
 		}
 
 		if serverCfg != nil {
 			if routerCfg.AdminSecret == "" {
 				routerCfg.AdminSecret = serverCfg.RemoteManagement.SecretKey
-			}
-			if routerCfg.CpaSecret == "" {
-				routerCfg.CpaSecret = serverCfg.RemoteManagement.SecretKey
 			}
 			if serverCfg.Port > 0 {
 				routerCfg.CpaPort = serverCfg.Port
@@ -229,6 +239,7 @@ func ServerOptions(cfg SubsystemConfig) []api.ServerOption {
 	}
 
 	return []api.ServerOption{
+		api.WithLocalManagementPassword(loopbackSecret),
 		api.WithMiddleware(gatewayMW...),
 		api.WithRouterConfigurator(routerConfigurator),
 	}

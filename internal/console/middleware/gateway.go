@@ -14,17 +14,24 @@ import (
 func ShouldSkipGateway(path string) bool {
 	if strings.HasPrefix(path, "/console") ||
 		strings.HasPrefix(path, "/admin") ||
+		strings.HasPrefix(path, "/member") ||
 		strings.HasPrefix(path, "/v0/management") ||
 		strings.HasPrefix(path, "/v8/management") ||
+		strings.HasPrefix(path, "/api/member") ||
 		strings.HasPrefix(path, "/anthropic/") ||
 		strings.HasPrefix(path, "/codex/") ||
 		strings.HasPrefix(path, "/antigravity/") ||
+		strings.HasPrefix(path, "/devin/") ||
 		strings.HasPrefix(path, "/oauth") ||
 		strings.HasPrefix(path, "/auth") ||
+		path == "/callback" ||
 		path == "/management.html" ||
+		strings.HasPrefix(path, "/management/") ||
 		path == "/healthz" ||
 		path == "/readyz" ||
 		path == "/metrics" ||
+		path == "/api/status/quota" ||
+		strings.HasPrefix(path, "/api/status/quota") ||
 		path == "/favicon.ico" ||
 		path == "/" {
 		return true

@@ -776,7 +776,8 @@
       }
       const filter = (activeUpstreamFilter || 'all').toLowerCase();
       const accounts = (cachedUpstream.accounts || []).filter(a => {
-        if (a.disabled || a.status === 'disabled' || a.health?.blocked) return false;
+        if (a.disabled || a.status === 'disabled') return false;
+        if (a.health?.blocked && a.health?.cooldown?.scope !== 'models') return false;
         if (filter !== 'all') {
           if (filter === 'workbuddy') {
             const p = (a.provider || '').toLowerCase();
@@ -1219,6 +1220,7 @@
             const isDisabled = Boolean(acc.disabled || acc.status === 'disabled');
             const health = acc.health || {};
             const isBlocked = health.blocked === true;
+            const isCredentialBlocked = isBlocked && (!health.cooldown || health.cooldown.scope === 'credential' || health.cooldown.scope === 'credential_and_models');
             const prio = normalizeAuthPriority(acc.priority);
             const prioCls = prio >= 20 ? 'p-high' : (prio >= 10 ? 'p-normal' : 'p-low');
 
@@ -1255,12 +1257,16 @@
 
             // 构建精细的双指示条渲染
             let metersHtml = '';
-            if (isBlocked) {
+            let cooldownCompactNotice = '';
+            if (health.cooldown && health.cooldown.scope === 'models') {
+              cooldownCompactNotice = `<div style="font-size:10px; color:#d97706; margin-bottom:2px; font-family:var(--mono);">${escapeHtml(health.detail || health.label)}</div>`;
+            }
+            if (isCredentialBlocked && !gemini5hBucket && !claude5hBucket && !codex5hBucket) {
               metersHtml = `<div class="account-health-warning">${escapeHtml(health.detail || health.label || t('quotas.cpaCredentialUnavailable'))} ${t('quotas.quotaHiddenSuffix')}</div>`;
             } else if (acc.raw_error) {
               metersHtml = `<div class="account-health-warning" style="color:var(--danger); font-size:11px;" title="${escapeHtml(acc.raw_error)}">${escapeHtml(acc.raw_error)}</div>`;
             } else if ((acc.provider === 'antigravity' && !Number.isFinite(gemini5hBucket?.remaining_percent) && !Number.isFinite(claude5hBucket?.remaining_percent)) || (acc.provider === 'codex' && !Number.isFinite(codex5hBucket?.remaining_percent))) {
-              metersHtml = `<div class="account-quota-unknown">${t('quotas.quotaUnknownUpstream')}</div>`;
+              metersHtml = cooldownCompactNotice + `<div class="account-quota-unknown">${t('quotas.quotaUnknownUpstream')}</div>`;
             } else if (acc.provider === 'opencode') {
               const todayCount = Number.isFinite(acc.today_requests) ? acc.today_requests : 0;
               const todayTokens = Number.isFinite(acc.today_tokens) ? acc.today_tokens : 0;
@@ -1341,22 +1347,59 @@
 
               const buildAntigravityMeter = (bkt, weeklyBkt, defaultLabel, rollingTipKey) => {
                 if (!bkt || !Number.isFinite(bkt.remaining_percent)) return '';
-                const rem = bkt.remaining_percent;
+                const isClaude = defaultLabel.toLowerCase().includes('claude');
+                const isGemini = defaultLabel.toLowerCase().includes('gemini');
+                const isModelCooling = health.cooldown && health.cooldown.scope === 'models' && (
+                  (isClaude && (health.cooldown.model_keys || []).some(k => /claude|gpt|sonnet|opus|haiku/i.test(k))) ||
+                  (isGemini && (health.cooldown.model_keys || []).some(k => /gemini|flash/i.test(k) && !/claude/i.test(k)))
+                );
+
+                const rawRem = bkt.remaining_percent;
+                const isBktDisabled = bkt.disabled === true;
+                const weeklyRem = (weeklyBkt && Number.isFinite(weeklyBkt.remaining_percent)) ? weeklyBkt.remaining_percent : null;
+                const isWeeklyBottleneck = weeklyRem !== null && (isBktDisabled || weeklyRem < rawRem);
+                const effectiveRem = isBktDisabled ? 0 : (isWeeklyBottleneck ? weeklyRem : rawRem);
+
+                let rem = isModelCooling ? 0 : effectiveRem;
                 let cls = 'meter-high'; let col = '#10b981';
                 if (rem <= 25) { cls = 'meter-low'; col = '#ef4444'; }
                 else if (rem <= 60) { cls = 'meter-medium'; col = '#f59e0b'; }
-                const txt = (bkt?.reset_time || bkt?.reset_countdown) ? escapeHtml(bkt.reset_countdown || (formatResetAbs(bkt.reset_time) + t('quotas.actionRefresh'))) : t('quotas.bucket.pendingActivation');
+
+                let txt = '';
+                if (isModelCooling) {
+                  txt = escapeHtml(health.cooldown.remaining_text ? t('quotas.bucket.cooldownResume', { time: health.cooldown.remaining_text }) : t('quotas.bucket.cooling'));
+                } else if (isBktDisabled || (weeklyRem !== null && weeklyRem <= 0)) {
+                  const rTime = weeklyBkt?.reset_time || bkt?.reset_time;
+                  const rCd = weeklyBkt?.reset_countdown || bkt?.reset_countdown;
+                  txt = (rTime || rCd) ? t('quotas.bucket.weeklyExhaustedWithReset', { reset: escapeHtml(rCd || formatResetAbs(rTime)) }) : t('quotas.bucket.weeklyExhausted');
+                } else if (isWeeklyBottleneck) {
+                  const rTime = weeklyBkt?.reset_time || bkt?.reset_time;
+                  const rCd = weeklyBkt?.reset_countdown || bkt?.reset_countdown;
+                  txt = (rTime || rCd) ? t('quotas.bucket.weeklyBottleneckWithReset', { reset: escapeHtml(rCd || formatResetAbs(rTime)) }) : t('quotas.bucket.weeklyBottleneck', { percent: weeklyRem });
+                } else if (bkt?.reset_time || bkt?.reset_countdown) {
+                  txt = escapeHtml(bkt.reset_countdown || (formatResetAbs(bkt.reset_time) + t('quotas.actionRefresh')));
+                } else {
+                  txt = t('quotas.bucket.pendingActivation');
+                }
 
                 let title = t(rollingTipKey);
                 if (weeklyBkt && Number.isFinite(weeklyBkt.remaining_percent)) {
-                  title += ` (${t('quotas.bucket.weeklyRemaining')} ${weeklyBkt.remaining_percent}%)`;
+                  const cdSuffix = weeklyBkt.reset_countdown ? t('quotas.bucket.weeklyCountdownSuffix', { time: weeklyBkt.reset_countdown }) : '';
+                  title += t('quotas.bucket.weeklyRemainingDetail', { percent: weeklyBkt.remaining_percent, countdown: cdSuffix });
                 }
+                if (isBktDisabled) {
+                  title += t('quotas.bucket.upstreamDisabledNotice');
+                } else if (isWeeklyBottleneck) {
+                  title += t('quotas.bucket.bottleneckConstraintNotice', { rem5h: rawRem, remWeekly: weeklyRem });
+                }
+
+                const suffixTag = (isWeeklyBottleneck && !isModelCooling && !isBktDisabled) ? ` <span style="font-size:9px; font-weight:normal; opacity:0.85;">${t('quotas.bucket.tagWeeklyBottleneck')}</span>` : (isBktDisabled ? ` <span style="font-size:9px; font-weight:normal; opacity:0.85;">${t('quotas.bucket.tagExhausted')}</span>` : '');
 
                 return `
                   <div class="compact-meter-wrap" title="${escapeHtml(title)}">
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
                       <span style="color:var(--text-muted); font-size:10.5px;">${escapeHtml(defaultLabel)}</span>
-                      <span style="font-family:var(--mono); font-weight:700; color:${col};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem })}</span>
+                      <span style="font-family:var(--mono); font-weight:700; color:${col};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem })}${suffixTag}</span>
                     </div>
                     <div class="quota-meter-bar" style="height:4px;">
                       <div class="quota-meter-fill ${cls}" style="width: ${rem}%"></div>
@@ -1475,11 +1518,11 @@
                         ${escapeHtml(accountTitle)}
                       </span>
                       ${isDisabled ? `<span class="chip chip-red" style="font-size:10px; padding:1px 5px; line-height:1.2; white-space:nowrap; flex-shrink:0;">${t('quotas.disabledBadge')}</span>` : ''}
-                      ${isBlocked && !isDisabled ? `<span class="chip chip-red" style="font-size:10px; padding:1px 5px; line-height:1.2;">${escapeHtml(health.label)}</span>` : ''}
+                      ${isBlocked && !isDisabled ? `<span class="chip ${health.cooldown && health.cooldown.scope === 'models' ? 'chip-orange' : 'chip-red'}" style="font-size:10px; padding:1px 5px; line-height:1.2; ${health.cooldown && health.cooldown.scope === 'models' ? 'background:rgba(245,158,11,0.15); color:#d97706; border:1px solid rgba(245,158,11,0.3);' : ''}">${escapeHtml(health.label)}</span>` : ''}
                       ${hasValidation ? `<span class="chip chip-red" style="font-size:10px; padding:1px 5px; line-height:1.2; white-space:nowrap; flex-shrink:0; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); animation:pulse 2s infinite;">${t('quotas.validation.needGoogleBadge')}</span>` : ''}
                     </div>
                     <div style="font-size:10.5px; font-family:var(--mono); color:var(--text-dim);">
-                      ID: ${acc.auth_index ? escapeHtml(String(acc.auth_index).slice(0, 12)) : '—'} ${isBlocked ? '' : `· <span class="account-card-plan ${planClass}" style="padding:0 5px; font-size:9.5px;">${escapeHtml(acc.plan_name || acc.plan_type)}</span>`}
+                      ID: ${acc.auth_index ? escapeHtml(String(acc.auth_index).slice(0, 12)) : '—'} ${isCredentialBlocked ? '' : `· <span class="account-card-plan ${planClass}" style="padding:0 5px; font-size:9.5px;">${escapeHtml(acc.plan_name || acc.plan_type)}</span>`}
                     </div>
                   </div>
                 </div>
@@ -1497,7 +1540,7 @@
                       ${t('quotas.validation.verifiedBadge')}
                     </button>
                   ` : ''}
-                  ${isBlocked ? '' : `<button class="priority-btn" style="color:#2563eb; border-color:rgba(37,99,235,0.3); background:rgba(37,99,235,0.06); padding:3px 9px; font-size:11px;" data-filename="${safeFilename}" data-provider="${escapeHtml(acc.provider || '')}" data-authindex="${escapeHtml(acc.auth_index || '')}" onclick="triggerActivateQuotaWindow(this.dataset.filename, this.dataset.provider, this.dataset.authindex)" title="${t('quotas.requeryQuotaTitle')}">
+                  ${isDisabled ? '' : `<button class="priority-btn" style="color:#2563eb; border-color:rgba(37,99,235,0.3); background:rgba(37,99,235,0.06); padding:3px 9px; font-size:11px;" data-filename="${safeFilename}" data-provider="${escapeHtml(acc.provider || '')}" data-authindex="${escapeHtml(acc.auth_index || '')}" onclick="triggerActivateQuotaWindow(this.dataset.filename, this.dataset.provider, this.dataset.authindex)" title="${t('quotas.requeryQuotaTitle')}">
                     ${t('quotas.refreshQuotaBtn')}
                   </button>`}
                   <button class="priority-btn" style="padding:3px 8px; font-size:11px;" data-filename="${safeFilename}" onclick="openPriorityModal(this.dataset.filename)" title="${t('quotas.priority.adjustTitle')}">
@@ -1523,8 +1566,9 @@
             const isDisabled = Boolean(acc.disabled || acc.status === 'disabled');
             const health = acc.health || {};
             const isBlocked = health.blocked === true;
+            const isCredentialBlocked = isBlocked && (!health.cooldown || health.cooldown.scope === 'credential' || health.cooldown.scope === 'credential_and_models');
             const stRaw = String(acc.status || '').toLowerCase();
-            const stColor = (isBlocked || isDisabled || stRaw.includes('error') || stRaw.includes('invalid')) ? 'var(--danger)' : 'var(--success)';
+            const stColor = (isCredentialBlocked || isDisabled || stRaw.includes('error') || stRaw.includes('invalid')) ? 'var(--danger)' : (health.cooldown && health.cooldown.scope === 'models' ? '#d97706' : 'var(--success)');
             const prio = normalizeAuthPriority(acc.priority);
             const prioCls = prio >= 20 ? 'p-high' : (prio >= 10 ? 'p-normal' : 'p-low');
 
@@ -1532,18 +1576,20 @@
             const groupsHtml = (acc.groups || []).filter(grp => Array.isArray(grp.buckets) && grp.buckets.some(bkt => Number.isFinite(bkt.remaining_percent))).map(grp => {
               const gname = escapeHtml(grp.name);
               const bucketsHtml = (grp.buckets || []).filter(bkt => Number.isFinite(bkt.remaining_percent)).map(bkt => {
-                const rem = bkt.remaining_percent;
+                const isBktDisabled = bkt.disabled === true;
+                const rem = isBktDisabled ? 0 : bkt.remaining_percent;
                 let meterClass = 'meter-high';
                 let remColor = '#10b981';
                 if (rem <= 25) { meterClass = 'meter-low'; remColor = '#ef4444'; }
                 else if (rem <= 60) { meterClass = 'meter-medium'; remColor = '#f59e0b'; }
 
                 const bktDispName = formatBucketLabel(bkt.name, bkt.window);
+                const disabledTag = isBktDisabled ? ` <span style="font-size:10px; font-weight:normal; opacity:0.85;">${t('quotas.bucket.tagUpstreamDisabled')}</span>` : '';
 
                 return `
                   <div class="quota-meter-row">
                     <div class="quota-meter-header">
-                      <span class="quota-window-name">${escapeHtml(bktDispName)}</span>
+                      <span class="quota-window-name">${escapeHtml(bktDispName)}${disabledTag}</span>
                       <span class="quota-window-rem" style="color:${remColor};">${t('quotas.bucket.remainingPercent', { rem: rem })}</span>
                     </div>
                     <div class="quota-meter-bar">
@@ -1583,7 +1629,12 @@
             const safeValUrl = valInfo && valInfo.validation_url ? escapeHtml(valInfo.validation_url) : '';
 
             let quotaSectionHtml = '';
-            if (isBlocked) {
+            let cooldownBanner = '';
+            if (health.cooldown && health.cooldown.scope === 'models') {
+              cooldownBanner = `<div class="account-health-warning" style="margin-bottom:8px; font-size:11.5px; background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.3); color:#d97706;">${escapeHtml(health.detail || health.label)}</div>`;
+            }
+
+            if (isCredentialBlocked && !groupsHtml) {
               quotaSectionHtml = `<div class="account-health-warning">${escapeHtml(health.detail || health.label || t('quotas.cpaCredentialUnavailable'))} ${t('quotas.quotaHiddenSuffix')}</div>`;
             } else if (acc.provider === 'opencode') {
               const todayCount = Number.isFinite(acc.today_requests) ? acc.today_requests : 0;
@@ -1707,11 +1758,11 @@
                 </div>
               `;
             } else if (groupsHtml) {
-              quotaSectionHtml = groupsHtml;
+              quotaSectionHtml = cooldownBanner + groupsHtml;
             } else if (acc.raw_error) {
               quotaSectionHtml = `<div class="account-health-warning" style="color:var(--danger);">${escapeHtml(acc.raw_error)}</div>`;
             } else {
-              quotaSectionHtml = `<div class="account-quota-unknown">${t('quotas.quotaUnknownCpa')}</div>`;
+              quotaSectionHtml = cooldownBanner + `<div class="account-quota-unknown">${t('quotas.quotaUnknownCpa')}</div>`;
             }
 
             const accountCardTitle = (acc.display_name || acc.email || acc.filename || '').replace(/\.json$/i, '');
@@ -1727,7 +1778,7 @@
                         <span class="provider-pill ${brand.pillClass}">${escapeHtml(brand.name)}</span>
                         <span class="priority-badge ${prioCls}" title="${t('quotas.priority.valueHint')}">P${prio}</span>
                         ${isDisabled ? `<span class="chip chip-red" style="font-size:10.5px; padding:1px 6px; line-height:1.2; white-space:nowrap; flex-shrink:0;">${t('quotas.disabledBadge')}</span>` : ''}
-                        ${isBlocked && !isDisabled ? `<span class="chip chip-red" style="font-size:10.5px; padding:1px 6px; line-height:1.2;">${escapeHtml(health.label)}</span>` : ''}
+                        ${isBlocked && !isDisabled ? `<span class="chip ${health.cooldown && health.cooldown.scope === 'models' ? 'chip-orange' : 'chip-red'}" style="font-size:10.5px; padding:1px 6px; line-height:1.2; ${health.cooldown && health.cooldown.scope === 'models' ? 'background:rgba(245,158,11,0.15); color:#d97706; border:1px solid rgba(245,158,11,0.3);' : ''}">${escapeHtml(health.label)}</span>` : ''}
                         ${hasValidation ? `<span class="chip chip-red" style="font-size:10.5px; padding:1px 6px; line-height:1.2; white-space:nowrap; flex-shrink:0; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); animation:pulse 2s infinite;">${t('quotas.validation.needGoogleBadge')}</span>` : ''}
                       </div>
                       <div class="account-card-email" title="${escapeHtml(cardFullTip)}">${escapeHtml(accountCardTitle)}</div>
@@ -1742,14 +1793,14 @@
                         ${t('quotas.validation.verifiedBadge')}
                       </button>
                     ` : ''}
-                    ${isBlocked ? '' : `<button class="priority-btn" style="color:#2563eb; border-color:rgba(37,99,235,0.35); background:rgba(37,99,235,0.06);" data-filename="${safeFilename}" data-provider="${escapeHtml(acc.provider || '')}" data-authindex="${escapeHtml(acc.auth_index || '')}" onclick="triggerActivateQuotaWindow(this.dataset.filename, this.dataset.provider, this.dataset.authindex)" title="${t('quotas.requeryQuotaTitle')}">
+                    ${isDisabled ? '' : `<button class="priority-btn" style="color:#2563eb; border-color:rgba(37,99,235,0.35); background:rgba(37,99,235,0.06);" data-filename="${safeFilename}" data-provider="${escapeHtml(acc.provider || '')}" data-authindex="${escapeHtml(acc.auth_index || '')}" onclick="triggerActivateQuotaWindow(this.dataset.filename, this.dataset.provider, this.dataset.authindex)" title="${t('quotas.requeryQuotaTitle')}">
                       ${t('quotas.refreshQuotaBtn')}
                     </button>`}
                     <button class="priority-btn" data-filename="${safeFilename}" onclick="openPriorityModal(this.dataset.filename)" title="${t('quotas.priority.adjustAccountTitle')}">
                       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
                       ${t('quotas.priority.adjustBtn')}
                     </button>
-                    ${isBlocked ? '' : `<span class="account-card-plan ${planClass}">${escapeHtml(acc.plan_name || acc.plan_type)}</span>`}
+                    ${isCredentialBlocked ? '' : `<span class="account-card-plan ${planClass}">${escapeHtml(acc.plan_name || acc.plan_type)}</span>`}
                   </div>
                 </div>
                 <div class="account-card-subinfo">

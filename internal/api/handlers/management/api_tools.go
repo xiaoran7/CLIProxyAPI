@@ -287,11 +287,160 @@ func (h *Handler) APICall(c *gin.Context) {
 		}
 	}
 
+	if auth != nil && strings.EqualFold(strings.TrimSpace(auth.Provider), "antigravity") &&
+		strings.Contains(urlStr, "retrieveUserQuotaSummary") && resp.StatusCode == http.StatusOK {
+		respBody = reconcileAntigravityQuotaResponse(auth, respBody, time.Now().UTC())
+	}
+
 	c.JSON(http.StatusOK, apiCallResponse{
 		StatusCode: resp.StatusCode,
 		Header:     resp.Header,
 		Body:       string(respBody),
 	})
+}
+
+// reconcileAntigravityQuotaResponse reconciles optimistic or stale upstream Google PA
+// quota summaries with the runtime conductor's ground truth (active 429 / cooldown state).
+func reconcileAntigravityQuotaResponse(auth *coreauth.Auth, respBody []byte, now time.Time) []byte {
+	if auth == nil || len(respBody) == 0 {
+		return respBody
+	}
+	cooldowns := coreauth.CooldownSnapshotForAuth(auth, now)
+	if len(cooldowns) == 0 {
+		return respBody
+	}
+
+	var quotaResp map[string]any
+	if err := json.Unmarshal(respBody, &quotaResp); err != nil {
+		return respBody
+	}
+
+	groups, ok := quotaResp["groups"].([]any)
+	if !ok || len(groups) == 0 {
+		return respBody
+	}
+
+	hasCredCooldown := false
+	var credRetryAt time.Time
+	var credRemainingSec int64
+
+	var claudeCooldowns []coreauth.CooldownView
+	var geminiCooldowns []coreauth.CooldownView
+
+	for _, cd := range cooldowns {
+		if cd.RemainingSeconds <= 0 && (cd.RetryAt.IsZero() || !cd.RetryAt.After(now)) {
+			continue
+		}
+		if cd.Scope == "credential" {
+			hasCredCooldown = true
+			if cd.RetryAt.After(credRetryAt) {
+				credRetryAt = cd.RetryAt
+				credRemainingSec = cd.RemainingSeconds
+			}
+		} else if cd.Scope == "model" {
+			mKey := strings.ToLower(strings.TrimSpace(cd.ModelKey))
+			if strings.Contains(mKey, "claude") || strings.Contains(mKey, "gpt") ||
+				strings.Contains(mKey, "sonnet") || strings.Contains(mKey, "opus") ||
+				strings.Contains(mKey, "haiku") {
+				claudeCooldowns = append(claudeCooldowns, cd)
+			}
+			if strings.Contains(mKey, "gemini") || strings.Contains(mKey, "flash") ||
+				(strings.Contains(mKey, "pro") && !strings.Contains(mKey, "claude")) {
+				geminiCooldowns = append(geminiCooldowns, cd)
+			}
+		}
+	}
+
+	if !hasCredCooldown && len(claudeCooldowns) == 0 && len(geminiCooldowns) == 0 {
+		return respBody
+	}
+
+	for _, rawGrp := range groups {
+		grp, okGrp := rawGrp.(map[string]any)
+		if !okGrp {
+			continue
+		}
+		gName := strings.ToLower(fmt.Sprintf("%v %v %v %v", grp["label"], grp["displayName"], grp["name"], grp["id"]))
+		isClaude := strings.Contains(gName, "claude") || strings.Contains(gName, "gpt")
+		isGemini := strings.Contains(gName, "gemini")
+
+		var targetCooldowns []coreauth.CooldownView
+		if hasCredCooldown {
+			targetCooldowns = append(targetCooldowns, coreauth.CooldownView{
+				Scope:            "credential",
+				RetryAt:          credRetryAt,
+				RemainingSeconds: credRemainingSec,
+			})
+		} else if isClaude {
+			targetCooldowns = claudeCooldowns
+		} else if isGemini {
+			targetCooldowns = geminiCooldowns
+		}
+
+		if len(targetCooldowns) == 0 {
+			continue
+		}
+
+		var maxRemaining int64
+		var latestRetry time.Time
+		for _, cd := range targetCooldowns {
+			if cd.RemainingSeconds > maxRemaining {
+				maxRemaining = cd.RemainingSeconds
+			}
+			if cd.RetryAt.After(latestRetry) {
+				latestRetry = cd.RetryAt
+			}
+		}
+		if latestRetry.IsZero() && maxRemaining > 0 {
+			latestRetry = now.Add(time.Duration(maxRemaining) * time.Second)
+		}
+		retryAtStr := latestRetry.UTC().Format(time.RFC3339)
+
+		buckets, okBuckets := grp["buckets"].([]any)
+		if !okBuckets {
+			continue
+		}
+
+		for _, rawBkt := range buckets {
+			bkt, okBkt := rawBkt.(map[string]any)
+			if !okBkt {
+				continue
+			}
+			bName := strings.ToLower(fmt.Sprintf("%v %v %v %v %v %v", bkt["label"], bkt["displayName"], bkt["name"], bkt["id"], bkt["window"], bkt["description"]))
+			isWeekly := strings.Contains(bName, "weekly") || strings.Contains(bName, "week")
+			is5h := strings.Contains(bName, "5h") || strings.Contains(bName, "5 hour") || strings.Contains(bName, "five")
+
+			if hasCredCooldown {
+				bkt["remainingFraction"] = float64(0)
+				bkt["remaining_fraction"] = float64(0)
+				if retryAtStr != "" {
+					bkt["resetTime"] = retryAtStr
+					bkt["reset_time"] = retryAtStr
+				}
+			} else if maxRemaining > 5*3600 {
+				// Cooldown > 5 hours implies weekly limit exhaustion (e.g. 45h 429 rate limit).
+				// All buckets for this model family are blocked.
+				bkt["remainingFraction"] = float64(0)
+				bkt["remaining_fraction"] = float64(0)
+				if retryAtStr != "" {
+					bkt["resetTime"] = retryAtStr
+					bkt["reset_time"] = retryAtStr
+				}
+			} else if is5h || !isWeekly {
+				bkt["remainingFraction"] = float64(0)
+				bkt["remaining_fraction"] = float64(0)
+				if retryAtStr != "" {
+					bkt["resetTime"] = retryAtStr
+					bkt["reset_time"] = retryAtStr
+				}
+			}
+		}
+	}
+	reconciled, errMarshal := json.Marshal(quotaResp)
+	if errMarshal != nil {
+		return respBody
+	}
+	return reconciled
 }
 
 func firstNonEmptyString(values ...*string) string {

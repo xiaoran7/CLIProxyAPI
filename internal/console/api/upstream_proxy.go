@@ -274,12 +274,12 @@ func HandleUpstreamProxy(cfg RouterConfig) gin.HandlerFunc {
 
 		// Provide loopback authorization token to CPA
 		effectiveSecret := candidate
-		if effectiveSecret == "" {
+		if effectiveSecret == "" || strings.HasPrefix(effectiveSecret, "$2a$") || strings.HasPrefix(effectiveSecret, "$2b$") || strings.HasPrefix(effectiveSecret, "$2y$") {
 			if !strings.HasPrefix(cfg.CpaSecret, "$2a$") && !strings.HasPrefix(cfg.CpaSecret, "$2b$") && !strings.HasPrefix(cfg.CpaSecret, "$2y$") {
 				effectiveSecret = cfg.CpaSecret
 			}
 		}
-		if effectiveSecret == "" {
+		if effectiveSecret == "" || strings.HasPrefix(effectiveSecret, "$2a$") || strings.HasPrefix(effectiveSecret, "$2b$") || strings.HasPrefix(effectiveSecret, "$2y$") {
 			if !strings.HasPrefix(cfg.AdminSecret, "$2a$") && !strings.HasPrefix(cfg.AdminSecret, "$2b$") && !strings.HasPrefix(cfg.AdminSecret, "$2y$") {
 				effectiveSecret = cfg.AdminSecret
 			}

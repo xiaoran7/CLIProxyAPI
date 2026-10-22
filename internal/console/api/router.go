@@ -129,7 +129,7 @@ func registerConsoleRoutes(
 		rg.PUT("/upstream-auth/batch", HandlePutUpstreamAuthBatch(cpa))
 		rg.PUT("/upstream-auth/priority", HandlePutUpstreamAuthPriority(cpa))
 		rg.PUT("/upstream-auth/status", HandlePutUpstreamAuthStatus(cpa))
-		rg.POST("/upstream-auth/activate-window", HandlePostUpstreamAuthActivateWindow(cpa))
+		rg.POST("/upstream-auth/activate-window", HandlePostUpstreamAuthActivateWindow(eng, cpa))
 		rg.GET("/runtime-facts", HandleGetRuntimeFacts(eng, cpa, providers))
 		rg.GET("/models", HandleGetCpaModels(eng, cpa, providers))
 		rg.GET("/models/catalog", HandleGetCpaModels(eng, cpa, providers))

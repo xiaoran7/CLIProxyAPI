@@ -1874,7 +1874,7 @@
       }
       const params = new URLSearchParams(window.location.search);
       const urlKey = params.get('key');
-      if (urlKey && (urlKey.startsWith('sk-') || urlKey.length < 24)) return urlKey.trim();
+      if (urlKey && urlKey.startsWith('sk-')) return urlKey.trim();
       return localStorage.getItem('gate_member_key') || (isMemberAuth() ? getStoredToken() : '');
     }
 
@@ -1905,7 +1905,7 @@
     function saveAuthSecret() {
       const val = document.getElementById('auth-secret-input').value.trim();
       if (!val) { showToast(t('runtime.manageSecretRequired'), 'error'); return; }
-      if (val.startsWith('sk-') || val.length < 24) {
+      if (window.location.pathname.startsWith('/member') || val.startsWith('sk-')) {
         localStorage.setItem('gate_member_key', val);
         adminSecretStore.clear();
         document.cookie = 'gate_admin_token=; path=/; max-age=0; SameSite=Lax';
@@ -2834,7 +2834,7 @@
     const initialKey = urlParams.get('key');
     if (initialKey) {
       const trimmed = initialKey.trim();
-      if (trimmed.startsWith('sk-') || trimmed.length < 24) {
+      if (trimmed.startsWith('sk-') || window.location.pathname.startsWith('/member')) {
         // 成员 Key：低权限、可撤销，落 localStorage 便于刷新后仍生效
         localStorage.setItem('gate_member_key', trimmed);
       } else {
