@@ -2093,6 +2093,68 @@
       }
       return t('reset.hoursMinutes', { hours, mins });
     }
+    // 客户端极简紧凑重置倒计时（例如 2h 51m / 1d 9h / 45m / 长期 / 即将重置）
+    function formatCompactCountdownLive(targetTime) {
+      if (!targetTime) return '';
+      let target;
+      if (typeof targetTime === 'number') {
+        target = targetTime;
+      } else {
+        const s = String(targetTime).trim();
+        if (/^\d{10,}$/.test(s)) {
+          target = Number(s);
+        } else {
+          target = new Date(s).getTime();
+        }
+      }
+      if (Number.isNaN(target)) return '';
+      const now = Date.now();
+      const diff = target - now;
+      if (diff <= 0) return t('reset.soon');
+      const totalMins = Math.floor(diff / (1000 * 60));
+      const hours = Math.floor(totalMins / 60);
+      const mins = totalMins % 60;
+      if (hours >= 24) {
+        const days = Math.floor(hours / 24);
+        if (days >= 365) {
+          const years = Math.floor(days / 365);
+          if (years >= 2) return t('reset.compactLongTerm') || t('reset.longTerm');
+          return `${years}y`;
+        }
+        const remHours = hours % 24;
+        return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`;
+      }
+      if (hours > 0) {
+        return `${hours}h ${mins}m`;
+      }
+      return `${Math.max(1, mins)}m`;
+    }
+    window.formatCompactCountdownLive = formatCompactCountdownLive;
+
+    // 兼容 ISO 时间与后端纯文本倒计时的极简格式化
+    function formatCompactCountdown(targetTime, fallbackCountdown) {
+      if (targetTime) {
+        const res = formatCompactCountdownLive(targetTime);
+        if (res) return res;
+      }
+      if (!fallbackCountdown || typeof fallbackCountdown !== 'string') return '';
+      let str = fallbackCountdown.trim();
+      const dMatch = str.match(/(\d+)\s*天/);
+      const hMatch = str.match(/(\d+)\s*小时/);
+      const mMatch = str.match(/(\d+)\s*分/);
+      if (dMatch || hMatch || mMatch) {
+        if (dMatch && parseInt(dMatch[1], 10) >= 365 * 2) {
+          return t('reset.compactLongTerm') || t('reset.longTerm');
+        }
+        const parts = [];
+        if (dMatch) parts.push(`${dMatch[1]}d`);
+        if (hMatch) parts.push(`${hMatch[1]}h`);
+        if (mMatch && !dMatch) parts.push(`${mMatch[1]}m`);
+        return parts.join(' ');
+      }
+      return str;
+    }
+    window.formatCompactCountdown = formatCompactCountdown;
     function updateLiveCountdowns() {
       const nodes = document.querySelectorAll('[data-reset-time]');
       nodes.forEach(el => {
@@ -2101,6 +2163,17 @@
         const text = formatResetCountdownLive(timeStr);
         if (text && el.textContent !== text) {
           el.textContent = text;
+        }
+      });
+      const compactNodes = document.querySelectorAll('[data-reset-time-compact]');
+      compactNodes.forEach(el => {
+        const timeStr = el.dataset.resetTimeCompact;
+        if (!timeStr) return;
+        const text = formatCompactCountdownLive(timeStr);
+        const valSpan = el.querySelector('.quota-reset-val');
+        const targetEl = valSpan || el;
+        if (text && targetEl.textContent !== text) {
+          targetEl.textContent = text;
         }
       });
     }

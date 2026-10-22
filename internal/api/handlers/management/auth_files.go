@@ -322,8 +322,15 @@ func matchesAuthFileLookup(auth *coreauth.Auth, name string, authIndex string) b
 	if auth == nil {
 		return false
 	}
-	if name != "" && strings.TrimSpace(auth.ID) != name && strings.TrimSpace(auth.FileName) != name {
-		return false
+	if name != "" {
+		id := strings.TrimSpace(auth.ID)
+		fn := strings.TrimSpace(auth.FileName)
+		nameNoExt := strings.TrimSuffix(name, ".json")
+		idMatch := id == name || strings.TrimSuffix(id, ".json") == nameNoExt
+		fileMatch := fn == name || strings.TrimSuffix(fn, ".json") == nameNoExt
+		if !idMatch && !fileMatch {
+			return false
+		}
 	}
 	if authIndex != "" && lockedAuthIndex(auth) != authIndex {
 		return false
@@ -341,10 +348,15 @@ func (h *Handler) lookupAuthFile(name string, authIndex string) (*coreauth.Auth,
 		if auth, ok := h.authManager.GetByID(name); ok {
 			return auth, true
 		}
+		nameNoExt := strings.TrimSuffix(name, ".json")
 		auths := h.authManager.List()
 		for _, auth := range auths {
-			if auth != nil && strings.TrimSpace(auth.FileName) == name {
-				return auth, true
+			if auth != nil {
+				fn := strings.TrimSpace(auth.FileName)
+				id := strings.TrimSpace(auth.ID)
+				if fn == name || strings.TrimSuffix(fn, ".json") == nameNoExt || id == name || strings.TrimSuffix(id, ".json") == nameNoExt {
+					return auth, true
+				}
 			}
 		}
 		return nil, false

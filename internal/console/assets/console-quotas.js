@@ -1281,6 +1281,32 @@
             if (health.cooldown && health.cooldown.scope === 'models') {
               cooldownCompactNotice = `<div style="font-size:10px; color:#d97706; margin-bottom:2px; font-family:var(--mono);">${escapeHtml(health.detail || health.label)}</div>`;
             }
+
+            const buildResetBadge = (bkt) => {
+              if (!bkt) return '';
+              const rTime = bkt.reset_time || bkt.resetTime || (typeof bkt.targetTs === 'number' ? bkt.targetTs : '');
+              const rCountdown = bkt.reset_countdown || bkt.countdown || '';
+              if (!rTime && !rCountdown) return '';
+              const fn = typeof formatCompactCountdown === 'function' ? formatCompactCountdown : (window.formatCompactCountdown || null);
+              const text = fn ? fn(rTime, rCountdown) : (rCountdown || '');
+              if (!text) return '';
+              const absFn = typeof formatResetAbs === 'function' ? formatResetAbs : (window.formatResetAbs || (s => s));
+              let absStr = '';
+              if (rTime) {
+                try {
+                  absStr = typeof rTime === 'number' ? new Date(rTime).toLocaleString() : absFn(rTime);
+                } catch (_) {}
+              }
+              const fullTip = absStr
+                ? (t('quotas.estimatedResetHint') + ': ' + absStr + (rCountdown ? ` (${rCountdown})` : ''))
+                : (t('quotas.estimatedResetHint') + ': ' + rCountdown);
+              const dataAttr = rTime ? `data-reset-time-compact="${escapeHtml(String(rTime))}"` : '';
+              return `
+                <span class="quota-reset-badge" ${dataAttr} title="${escapeHtml(fullTip)}">
+                  <svg class="quota-reset-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span class="quota-reset-val">${escapeHtml(text)}</span>
+                </span>
+              `;
+            };
             if (isCredentialBlocked && !gemini5hBucket && !claude5hBucket && !codex5hBucket) {
               metersHtml = `<div class="account-health-warning">${escapeHtml(health.detail || health.label || t('quotas.cpaCredentialUnavailable'))} ${t('quotas.quotaHiddenSuffix')}</div>`;
             } else if (acc.raw_error) {
@@ -1336,6 +1362,7 @@
 
               const expInfo = getWorkBuddyExpirationInfo(acc);
               const title = expInfo.tooltip || t('quotas.workbuddy.officialPointsTooltip', { remainCredits: remainCredits, totalCredits: totalCredits });
+              const wbResetBadge = expInfo.hasExpiration ? buildResetBadge({ reset_time: expInfo.targetTs, reset_countdown: expInfo.countdown }) : '';
 
               metersHtml = `
                 <div class="compact-meter-wrap" title="${escapeHtml(title)}">
@@ -1344,8 +1371,11 @@
                       <span class="quota-pool-badge pool-workbuddy">WorkBuddy</span>
                       <span style="color:var(--text-muted); font-size:10px;">${t('quotas.workbuddy.packPoints')}</span>
                     </span>
-                    <span style="font-family:var(--mono); font-weight:700; color:${col};">
-                      ${t('quotas.points.remainingPoints', { value: remainCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) })}
+                    <span style="display:inline-flex; align-items:center; gap:6px;">
+                      ${wbResetBadge}
+                      <span style="font-family:var(--mono); font-weight:700; color:${col};">
+                        ${t('quotas.points.remainingPoints', { value: remainCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) })}
+                      </span>
                     </span>
                   </div>
                   <div class="quota-meter-bar" style="height:4px;">
@@ -1362,6 +1392,7 @@
               else if (pct <= 50) { cls = 'meter-medium'; col = '#f59e0b'; }
 
               const pointsLabel = totalCredits > 0 ? `${remainCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 1})} / ${totalCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 1})}` : `${remainCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 1})} pts`;
+              const qoderResetBadge = buildResetBadge(fallbackBucket || acc);
 
               metersHtml = `
                 <div class="compact-meter-wrap" title="Qoder 资源额度点数 (${escapeHtml(pointsLabel)})">
@@ -1370,8 +1401,11 @@
                       <span class="quota-pool-badge pool-qoder">Qoder</span>
                       <span style="color:var(--text-muted); font-size:10px;">资源点数</span>
                     </span>
-                    <span style="font-family:var(--mono); font-weight:700; color:${col};">
-                      ${escapeHtml(pointsLabel)}
+                    <span style="display:inline-flex; align-items:center; gap:6px;">
+                      ${qoderResetBadge}
+                      <span style="font-family:var(--mono); font-weight:700; color:${col};">
+                        ${escapeHtml(pointsLabel)}
+                      </span>
                     </span>
                   </div>
                   <div class="quota-meter-bar" style="height:4px;">
@@ -1417,6 +1451,7 @@
                   title += t('quotas.bucket.bottleneckConstraintNotice', { rem5h: rawRem, remWeekly: weeklyRem });
                 }
 
+                const resetBadge = buildResetBadge(bkt);
                 return `
                   <div class="compact-meter-wrap" title="${escapeHtml(title)}">
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
@@ -1424,7 +1459,10 @@
                         <span class="quota-pool-badge pool-gemini">Gemini</span>
                         <span style="color:var(--text-muted); font-size:10px;">${escapeHtml(defaultLabel)}</span>
                       </span>
-                      <span style="font-family:var(--mono); font-weight:700; color:${col};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem })}</span>
+                      <span style="display:inline-flex; align-items:center; gap:6px;">
+                        ${resetBadge}
+                        <span style="font-family:var(--mono); font-weight:700; color:${col};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem })}</span>
+                      </span>
                     </div>
                     <div class="quota-meter-bar" style="height:4px;">
                       <div class="quota-meter-fill ${cls}" style="width: ${rem}%"></div>
@@ -1482,6 +1520,7 @@
                     title2 += ` (${b2.reset_countdown || formatResetAbs(b2.reset_time)})`;
                   }
 
+                  const resetBadge2 = buildResetBadge(b2);
                   col2Html = `
                     <div class="compact-meter-wrap" title="${escapeHtml(title2)}">
                       <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
@@ -1489,7 +1528,10 @@
                           <span class="quota-pool-badge pool-codex">Codex</span>
                           <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.weeklyLimit')}</span>
                         </span>
-                        <span style="font-family:var(--mono); font-weight:700; color:${col2};">${t('quotas.bucket.secondRemainingPercent', { rem2: rem2 })}</span>
+                        <span style="display:inline-flex; align-items:center; gap:6px;">
+                          ${resetBadge2}
+                          <span style="font-family:var(--mono); font-weight:700; color:${col2};">${t('quotas.bucket.secondRemainingPercent', { rem2: rem2 })}</span>
+                        </span>
                       </div>
                       <div class="quota-meter-bar" style="height:4px;">
                         <div class="quota-meter-fill ${cls2}" style="width: ${rem2}%"></div>
@@ -1498,6 +1540,7 @@
                   `;
                 }
 
+                const resetBadge1 = buildResetBadge(b1);
                 metersHtml = `
                   <div class="compact-meter-wrap" title="${escapeHtml(title1)}">
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
@@ -1505,7 +1548,10 @@
                         <span class="quota-pool-badge pool-codex">Codex</span>
                         <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.fiveHourLimit')}</span>
                       </span>
-                      <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
+                      <span style="display:inline-flex; align-items:center; gap:6px;">
+                        ${resetBadge1}
+                        <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
+                      </span>
                     </div>
                     <div class="quota-meter-bar" style="height:4px;">
                       <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
@@ -1543,6 +1589,7 @@
                     title2 += ` (${b2.reset_countdown || formatResetAbs(b2.reset_time)})`;
                   }
 
+                  const resetBadge2 = buildResetBadge(b2);
                   col2Html = `
                     <div class="compact-meter-wrap" title="${escapeHtml(title2)}">
                       <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
@@ -1550,7 +1597,10 @@
                           <span class="quota-pool-badge pool-claude">Claude</span>
                           <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.weeklyLimit')}</span>
                         </span>
-                        <span style="font-family:var(--mono); font-weight:700; color:${col2};">${t('quotas.bucket.secondRemainingPercent', { rem2: rem2 })}</span>
+                        <span style="display:inline-flex; align-items:center; gap:6px;">
+                          ${resetBadge2}
+                          <span style="font-family:var(--mono); font-weight:700; color:${col2};">${t('quotas.bucket.secondRemainingPercent', { rem2: rem2 })}</span>
+                        </span>
                       </div>
                       <div class="quota-meter-bar" style="height:4px;">
                         <div class="quota-meter-fill ${cls2}" style="width: ${rem2}%"></div>
@@ -1559,6 +1609,7 @@
                   `;
                 }
 
+                const resetBadge1 = buildResetBadge(b1);
                 metersHtml = `
                   <div class="compact-meter-wrap" title="${escapeHtml(title1)}">
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
@@ -1566,7 +1617,10 @@
                         <span class="quota-pool-badge pool-claude">Claude</span>
                         <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.fiveHourLimit')}</span>
                       </span>
-                      <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
+                      <span style="display:inline-flex; align-items:center; gap:6px;">
+                        ${resetBadge1}
+                        <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
+                      </span>
                     </div>
                     <div class="quota-meter-bar" style="height:4px;">
                       <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
@@ -1588,11 +1642,15 @@
                 title1 += ` (${b1.reset_countdown || formatResetAbs(b1.reset_time)})`;
               }
 
+              const resetBadge1 = buildResetBadge(b1);
               metersHtml = `
                 <div class="compact-meter-wrap" title="${escapeHtml(title1)}">
                   <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
                     <span style="color:var(--text-muted); font-size:10.5px;">${escapeHtml(bname)}</span>
-                    <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
+                    <span style="display:inline-flex; align-items:center; gap:6px;">
+                      ${resetBadge1}
+                      <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
+                    </span>
                   </div>
                   <div class="quota-meter-bar" style="height:4px;">
                     <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>

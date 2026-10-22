@@ -1122,7 +1122,12 @@ func (m *Manager) refreshAuthForRequestAtEpoch(ctx context.Context, id, failedAc
 		updated.StatusMessage = ""
 		updated.Unavailable = false
 		updated.RefreshFailures = 0
-		if updated.Status == StatusError || updated.Status == "" {
+		if updated.Disabled || updated.Status == StatusDisabled {
+			updated.Status = StatusDisabled
+			if updated.StatusMessage == "" {
+				updated.StatusMessage = "disabled"
+			}
+		} else if updated.Status == StatusError || updated.Status == "" {
 			updated.Status = StatusActive
 		}
 		_ = clearUnauthorizedModelStates(updated, now)

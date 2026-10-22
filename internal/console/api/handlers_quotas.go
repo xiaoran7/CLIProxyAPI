@@ -1239,7 +1239,20 @@ func HandlePutUpstreamAuthPriority(cpa *CpaClient) gin.HandlerFunc {
 		})
 
 		if !strings.HasPrefix(name, "openrouter-") {
-			_, _ = cpa.Request(ctx, http.MethodPatch, "/auth-files/fields", bodyBytes, "application/json", "v0")
+			resp, err := cpa.Request(ctx, http.MethodPatch, "/auth-files/fields", bodyBytes, "application/json", "v0")
+			if err != nil {
+				c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("Failed to update CPA auth fields: %v", err)})
+				return
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				var errResp map[string]interface{}
+				if json.Unmarshal(resp.Bytes, &errResp) == nil && errResp["error"] != nil {
+					c.JSON(resp.StatusCode, gin.H{"error": fmt.Sprintf("%v", errResp["error"])})
+				} else {
+					c.JSON(resp.StatusCode, gin.H{"error": fmt.Sprintf("core auth manager returned %d: %s", resp.StatusCode, string(resp.Bytes))})
+				}
+				return
+			}
 		}
 
 		InvalidateUpstreamQuotaCache()
@@ -1278,7 +1291,20 @@ func HandlePutUpstreamAuthStatus(cpa *CpaClient) gin.HandlerFunc {
 		})
 
 		if !strings.HasPrefix(name, "openrouter-") {
-			_, _ = cpa.Request(ctx, http.MethodPatch, "/auth-files/status", bodyBytes, "application/json", "v0")
+			resp, err := cpa.Request(ctx, http.MethodPatch, "/auth-files/status", bodyBytes, "application/json", "v0")
+			if err != nil {
+				c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("Failed to update CPA auth status: %v", err)})
+				return
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				var errResp map[string]interface{}
+				if json.Unmarshal(resp.Bytes, &errResp) == nil && errResp["error"] != nil {
+					c.JSON(resp.StatusCode, gin.H{"error": fmt.Sprintf("%v", errResp["error"])})
+				} else {
+					c.JSON(resp.StatusCode, gin.H{"error": fmt.Sprintf("core auth manager returned %d: %s", resp.StatusCode, string(resp.Bytes))})
+				}
+				return
+			}
 		}
 
 		InvalidateUpstreamQuotaCache()

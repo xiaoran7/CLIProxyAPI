@@ -2197,13 +2197,14 @@ func HandlePutUpstreamAuthBatch(cpa *CpaClient) gin.HandlerFunc {
 			}
 
 			var err error
+			var resp *CpaResponse
 			switch payload.Action {
 			case "enable":
 				b, _ := json.Marshal(map[string]interface{}{"name": name, "disabled": false})
-				_, err = cpa.Request(ctx, http.MethodPatch, "/auth-files/status", b, "application/json", "v0")
+				resp, err = cpa.Request(ctx, http.MethodPatch, "/auth-files/status", b, "application/json", "v0")
 			case "disable":
 				b, _ := json.Marshal(map[string]interface{}{"name": name, "disabled": true})
-				_, err = cpa.Request(ctx, http.MethodPatch, "/auth-files/status", b, "application/json", "v0")
+				resp, err = cpa.Request(ctx, http.MethodPatch, "/auth-files/status", b, "application/json", "v0")
 			case "priority":
 				prio := 0
 				if payload.Priority != nil {
@@ -2217,21 +2218,30 @@ func HandlePutUpstreamAuthBatch(cpa *CpaClient) gin.HandlerFunc {
 					}
 				}
 				b, _ := json.Marshal(map[string]interface{}{"name": name, "priority": prio})
-				_, err = cpa.Request(ctx, http.MethodPatch, "/auth-files/fields", b, "application/json", "v0")
+				resp, err = cpa.Request(ctx, http.MethodPatch, "/auth-files/fields", b, "application/json", "v0")
 			case "reset-cooldown":
 				authIdx := authIndexMap[name]
 				if authIdx == "" {
 					authIdx = name
 				}
 				b, _ := json.Marshal(map[string]string{"auth_index": authIdx})
-				_, err = cpa.Request(ctx, http.MethodPost, "/reset-quota", b, "application/json", "v0")
+				resp, err = cpa.Request(ctx, http.MethodPost, "/reset-quota", b, "application/json", "v0")
 			case "delete":
 				targetURL := fmt.Sprintf("/auth-files?name=%s", name)
-				_, err = cpa.Request(ctx, http.MethodDelete, targetURL, nil, "application/json", "v0")
+				resp, err = cpa.Request(ctx, http.MethodDelete, targetURL, nil, "application/json", "v0")
 			}
 
 			if err != nil {
 				results = append(results, BatchResultItem{Name: name, OK: false, Error: err.Error()})
+			} else if resp != nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+				errMsg := fmt.Sprintf("status %d", resp.StatusCode)
+				var errResp map[string]interface{}
+				if json.Unmarshal(resp.Bytes, &errResp) == nil && errResp["error"] != nil {
+					errMsg = fmt.Sprintf("%v", errResp["error"])
+				} else if len(resp.Bytes) > 0 {
+					errMsg = string(resp.Bytes)
+				}
+				results = append(results, BatchResultItem{Name: name, OK: false, Error: errMsg})
 			} else {
 				results = append(results, BatchResultItem{Name: name, OK: true})
 				succeeded++

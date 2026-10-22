@@ -122,10 +122,12 @@
     'reset.absDateTimeNoYear': { zh: '{month}月{day}日 {hh}:{mm}', en: '{month}/{day} {hh}:{mm}' },
     'reset.justReset': { zh: '刚刚重置', en: 'Just reset' },
     'reset.longTerm': { zh: '长期有效', en: 'Long-term validity' },
+    'reset.compactLongTerm': { zh: '长期', en: 'Long-term' },
     'reset.yearsMonths': { zh: '{years}年{remMonths}个月后', en: 'in {years}y {remMonths}m' },
     'reset.yearsOnly': { zh: '{years}年后', en: 'in {years}y' },
     'reset.daysHours': { zh: '{days}天{remHours}小时', en: 'in {days}d {remHours}h' },
     'reset.hoursMinutes': { zh: '{hours}小时{mins}分', en: 'in {hours}h {mins}m' },
+    'reset.soon': { zh: '即将重置', en: 'Resetting' },
 
     // ==== 成员面板（member.*）====
     'member.disabledStatus': { zh: '已禁用', en: 'Disabled' },

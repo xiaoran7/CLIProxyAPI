@@ -970,7 +970,12 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 				modelState = state
 				resetModelState(state, now)
 				updateAggregatedAvailability(auth, now)
-				if !hasModelError(auth, now) {
+				if auth.Disabled || auth.Status == StatusDisabled {
+					auth.Status = StatusDisabled
+					if auth.StatusMessage == "" {
+						auth.StatusMessage = "disabled"
+					}
+				} else if !hasModelError(auth, now) {
 					auth.LastError = nil
 					auth.StatusMessage = ""
 					auth.Status = StatusActive
@@ -1838,8 +1843,15 @@ func clearAuthStateOnSuccess(auth *Auth, now time.Time) {
 		return
 	}
 	auth.Unavailable = false
-	auth.Status = StatusActive
-	auth.StatusMessage = ""
+	if auth.Disabled || auth.Status == StatusDisabled {
+		auth.Status = StatusDisabled
+		if auth.StatusMessage == "" {
+			auth.StatusMessage = "disabled"
+		}
+	} else {
+		auth.Status = StatusActive
+		auth.StatusMessage = ""
+	}
 	auth.Quota.Exceeded = false
 	auth.Quota.Reason = ""
 	auth.Quota.NextRecoverAt = time.Time{}

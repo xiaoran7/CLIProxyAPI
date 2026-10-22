@@ -349,7 +349,12 @@ func (m *Manager) ReconcileRegistryModelStates(ctx context.Context, authID strin
 				auth.ModelStates = candidateAuth.ModelStates
 				if candidateChanged {
 					updateAggregatedAvailability(auth, now)
-					if !hasModelError(auth, now) {
+					if auth.Disabled || auth.Status == StatusDisabled {
+						auth.Status = StatusDisabled
+						if auth.StatusMessage == "" {
+							auth.StatusMessage = "disabled"
+						}
+					} else if !hasModelError(auth, now) {
 						auth.LastError = nil
 						auth.StatusMessage = ""
 						auth.Status = StatusActive

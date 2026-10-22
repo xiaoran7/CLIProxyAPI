@@ -310,16 +310,8 @@ func (h *Handler) PatchAuthFileFields(c *gin.Context) {
 
 	// Find auth by name or ID
 	var targetAuth *coreauth.Auth
-	if auth, ok := h.authManager.GetByID(name); ok {
+	if auth, ok := h.lookupAuthFile(name, ""); ok {
 		targetAuth = auth
-	} else {
-		auths := h.authManager.List()
-		for _, auth := range auths {
-			if auth.FileName == name {
-				targetAuth = auth
-				break
-			}
-		}
 	}
 
 	// Config-sourced credentials are managed through config endpoints, not as auth files.
