@@ -75,6 +75,7 @@ func TestBuildAuthFileEntryLockedSupportsQuotaForWorkbuddyAndQoder(t *testing.T)
 
 	testCases := []struct {
 		provider     string
+		authKind     string
 		wantProvider string
 		wantPluginID string
 	}{
@@ -83,15 +84,21 @@ func TestBuildAuthFileEntryLockedSupportsQuotaForWorkbuddyAndQoder(t *testing.T)
 		{provider: "copilot-tencent", wantProvider: "workbuddy", wantPluginID: "workbuddy"},
 		{provider: "qoder", wantProvider: "qoder", wantPluginID: "qoder"},
 		{provider: "qoder-cn", wantProvider: "qoder", wantPluginID: "qoder"},
+		{provider: "", authKind: "workbuddy", wantProvider: "workbuddy", wantPluginID: "workbuddy"},
+		{provider: "", authKind: "qoder", wantProvider: "qoder", wantPluginID: "qoder"},
 	}
 
 	for _, tc := range testCases {
+		attrs := map[string]string{
+			"path": "test/account.json",
+		}
+		if tc.authKind != "" {
+			attrs["auth_kind"] = tc.authKind
+		}
 		auth := &coreauth.Auth{
-			ID:       tc.provider + "-test",
-			Provider: tc.provider,
-			Attributes: map[string]string{
-				"path": "test/" + tc.provider + ".json",
-			},
+			ID:         "test-auth",
+			Provider:   tc.provider,
+			Attributes: attrs,
 		}
 		entry := h.buildAuthFileEntryLocked(auth, quotaCtx)
 		if entry == nil {

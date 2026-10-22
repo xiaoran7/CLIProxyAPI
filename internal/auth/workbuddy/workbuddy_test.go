@@ -207,6 +207,37 @@ func TestApplyHeaders(t *testing.T) {
 	}
 }
 
+func TestExtractAccessToken(t *testing.T) {
+	// 1. Metadata access_token with Bearer prefix
+	auth1 := &cliproxyauth.Auth{
+		Metadata: map[string]any{"access_token": "Bearer token-123"},
+	}
+	if got := AccessToken(auth1); got != "token-123" {
+		t.Errorf("AccessToken() = %q, want token-123", got)
+	}
+
+	// 2. Attributes api_key with bearer prefix
+	auth2 := &cliproxyauth.Auth{
+		Attributes: map[string]string{"api_key": "bearer key-456"},
+	}
+	if got := AccessToken(auth2); got != "key-456" {
+		t.Errorf("AccessToken() = %q, want key-456", got)
+	}
+
+	// 3. Attributes token
+	auth3 := &cliproxyauth.Auth{
+		Attributes: map[string]string{"token": "tok-789"},
+	}
+	if got := AccessToken(auth3); got != "tok-789" {
+		t.Errorf("AccessToken() = %q, want tok-789", got)
+	}
+
+	// 4. Nil auth
+	if got := AccessToken(nil); got != "" {
+		t.Errorf("AccessToken(nil) = %q, want empty", got)
+	}
+}
+
 func TestApplyHeaders_CN(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, "https://copilot.tencent.com/v2/chat/completions", nil)
 	if err != nil {
