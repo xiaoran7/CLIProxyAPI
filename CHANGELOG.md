@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Upstream v8.0.39 Feature Synchronization (`sdk/`, `internal/`)**:
+  - **Effective Outbound Service Tier Reporting (#6873)**: Captures post-translation, post-payload-rule service tier on `UsageReporter` and propagates `EffectiveServiceTier` through SDK usage records, plugin usage adapters, and Redis usage queue payloads.
+  - **Management OAuth Concurrency & Config Race Safety (#6871)**: Added `Handler.configSnapshot` to safely read `h.cfg` under `h.mu` during OAuth login handlers (Claude, Codex, Antigravity) and background callback waiters to eliminate data races during config saves.
+  - **Auth Directory Scanning Resilience (#6870)**: Preserves existing file-backed credentials, hash tracking, and file indexes when `os.ReadDir` encounters transient read errors during directory scanning.
+  - **Claude Prompt Overflow & Stop Reason Mapping (#6861, #6862, #6869)**: Added `context_length_exceeded` error code for Claude prompt overflow streaming errors. Mapped `model_context_window_exceeded` stop reasons to `length` in Chat Completions and `incomplete` with `max_output_tokens` in OpenAI Responses, preserving generated tokens, tool calls, and usage without triggering synthetic 400 errors.
+  - **Deferred Claude Web Search Call Continuity (#6868)**: Keeps unfinished `web_search_call` items in-progress across `tool_use` stops, enabling clean replay and continuation without synthetic empty results.
+  - **Vertex AI Regional Multi-Region Hosts (#6867)**: Routes multi-region `us` and `eu` locations to `https://aiplatform.{us,eu}.rep.googleapis.com` in native Gemini and OpenAPI builders.
+  - **Request-Scoped 401 Rule Token Protection (#6865)**: Evaluates request-scoped error rules before marking tokens rejected or scheduling unauthorized refreshes, preventing unwanted credential rejection on temporary cooldown rules.
+  - **Claude Cloak Mode Header Validation (#6863)**: Validates `cloak_mode: never` headers against configured defaults while preserving confirmed caller SDK headers.
+  - **Codex Bootstrap Buffering Overload Failover (#6856)**: Holds `response.metadata` during stream bootstrap buffering so moderation frames do not prematurely release uncommitted streams before overload rejections.
+  - **Gemini Responses Tool Reverse Identity Performance (#6846)**: Bypasses redundant JSON schema cleaning when constructing reverse identity tool maps, reducing latency and memory allocations.
+  - **Auth Snapshot Cooldown & Stale File Invalidation (#6844)**: Preserves runtime cooldowns across file snapshots and supports discarding stale unversioned file snapshots to allow re-reading updated file content.
+  - **OpenAI Responses WebSocket Reauthorization & Denied Status (#6843)**: Reauthorizes Responses WebSocket turns using cloned POST requests and supports explicit `denied` status in access and plugin layers.
+  - **Go Toolchain & Dependency Update**: Updated Go toolchain to 1.26.10, updated `go-git/v6` to `v6.0.0-alpha.5`, and updated crypto, net, and sys dependencies.
 - **Upstream v8.0.37 & v8.0.38 Feature Synchronization (`sdk/cliproxy/`, `internal/`)**:
   - **Codex Alpha Search & Specialized Tool Mode Reconciler (#6837)**: Preserves declared tool modes and reconciles original OAuth credentials when executing Alpha search and specialized Codex completions.
   - **Standalone Claude Reasoning Effort Preservation (#6835)**: Preserves standalone Claude reasoning effort across Codex and Anthropic requests through the `internal/thinking/` pipeline without stripping model effort configurations.

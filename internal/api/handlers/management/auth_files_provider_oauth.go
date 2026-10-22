@@ -58,8 +58,9 @@ func (h *Handler) RequestAnthropicToken(c *gin.Context) {
 		return
 	}
 
+	cfg := h.configSnapshot()
 	// Initialize Claude auth service
-	anthropicAuth := claude.NewClaudeAuth(h.cfg)
+	anthropicAuth := claude.NewClaudeAuth(cfg)
 
 	// Generate authorization URL (then override redirect_uri to reuse server port)
 	authURL, state, err := anthropicAuth.GenerateAuthURL(state, pkceCodes)
@@ -94,7 +95,7 @@ func (h *Handler) RequestAnthropicToken(c *gin.Context) {
 		}
 
 		// Helper: wait for callback file
-		waitFile := filepath.Join(h.cfg.AuthDir, fmt.Sprintf(".oauth-anthropic-%s.oauth", state))
+		waitFile := filepath.Join(cfg.AuthDir, fmt.Sprintf(".oauth-anthropic-%s.oauth", state))
 		waitForFile := func(path string, timeout time.Duration) (map[string]string, error) {
 			deadline := time.Now().Add(timeout)
 			for {
@@ -219,8 +220,9 @@ func (h *Handler) RequestCodexToken(c *gin.Context) {
 		return
 	}
 
+	cfg := h.configSnapshot()
 	// Initialize Codex auth service
-	openaiAuth := newCodexOAuthService(h.cfg)
+	openaiAuth := newCodexOAuthService(cfg)
 
 	// Generate authorization URL
 	authURL, err := openaiAuth.GenerateAuthURL(state, pkceCodes)
@@ -255,7 +257,7 @@ func (h *Handler) RequestCodexToken(c *gin.Context) {
 		}
 
 		// Wait for callback file
-		waitFile := filepath.Join(h.cfg.AuthDir, fmt.Sprintf(".oauth-codex-%s.oauth", state))
+		waitFile := filepath.Join(cfg.AuthDir, fmt.Sprintf(".oauth-codex-%s.oauth", state))
 		deadline := time.Now().Add(5 * time.Minute)
 		var code string
 		for {
@@ -364,7 +366,8 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 
 	fmt.Println("Initializing Antigravity authentication...")
 
-	authSvc := antigravity.NewAntigravityAuth(h.cfg, nil)
+	cfg := h.configSnapshot()
+	authSvc := antigravity.NewAntigravityAuth(cfg, nil)
 
 	state, errState := misc.GenerateRandomState()
 	if errState != nil {
@@ -400,7 +403,7 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 			defer stopCallbackForwarderInstance(antigravity.CallbackPort, forwarder)
 		}
 
-		waitFile := filepath.Join(h.cfg.AuthDir, fmt.Sprintf(".oauth-antigravity-%s.oauth", state))
+		waitFile := filepath.Join(cfg.AuthDir, fmt.Sprintf(".oauth-antigravity-%s.oauth", state))
 		deadline := time.Now().Add(5 * time.Minute)
 		var authCode string
 		for {
