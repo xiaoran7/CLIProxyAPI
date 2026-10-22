@@ -41,9 +41,10 @@ const (
 
 // WorkBuddy check-in specific API error codes.
 const (
-	wbCheckinAlready    = 1001 // Already checked in today
-	wbCheckinIneligible = 1002 // Account ineligible
-	wbCheckinEnded      = 1003 // Campaign ended
+	wbCheckinAlreadyLegacy = 1001  // Legacy code
+	wbCheckinAlready       = 10001 // Already checked in today (matching upstream code 10001)
+	wbCheckinIneligible    = 1002  // Account ineligible
+	wbCheckinEnded         = 1003  // Campaign ended
 )
 
 // Beijing fixed timezone (CST / UTC+8) for daily check-in boundaries.
@@ -158,7 +159,7 @@ func Checkin(ctx context.Context, client *http.Client, auth *cliproxyauth.Auth) 
 	if code != 0 {
 		msg := gjson.GetBytes(bodyStatus, "msg").String()
 		switch code {
-		case wbCheckinAlready:
+		case wbCheckinAlready, wbCheckinAlreadyLegacy:
 			result.Outcome = CheckinDone
 			result.Message = msg
 			return result, nil
@@ -171,6 +172,11 @@ func Checkin(ctx context.Context, client *http.Client, auth *cliproxyauth.Auth) 
 			result.Message = msg
 			return result, nil
 		default:
+			if strings.Contains(msg, "已签到") {
+				result.Outcome = CheckinDone
+				result.Message = msg
+				return result, nil
+			}
 			result.Outcome = CheckinFailed
 			result.Message = msg
 			return result, fmt.Errorf("workbuddy checkin status code %d: %s", code, msg)
@@ -227,7 +233,12 @@ func Checkin(ctx context.Context, client *http.Client, auth *cliproxyauth.Auth) 
 	claimMsg := gjson.GetBytes(bodyClaim, "msg").String()
 	if claimCode != 0 {
 		switch claimCode {
-		case wbCheckinAlready:
+		case wbCheckinAlready, wbCheckinAlreadyLegacy:
+			if strings.Contains(claimMsg, "处理中") || strings.Contains(claimMsg, "请勿重复操作") || strings.Contains(claimMsg, "系统繁忙") || strings.Contains(claimMsg, "稍后再试") {
+				result.Outcome = CheckinFailed
+				result.Message = claimMsg
+				return result, fmt.Errorf("workbuddy checkin pending: %s", claimMsg)
+			}
 			result.Outcome = CheckinDone
 			result.Streak = streakDays
 			result.Message = claimMsg
@@ -241,10 +252,22 @@ func Checkin(ctx context.Context, client *http.Client, auth *cliproxyauth.Auth) 
 			result.Message = claimMsg
 			return result, nil
 		default:
+			if strings.Contains(claimMsg, "已签到") {
+				result.Outcome = CheckinDone
+				result.Streak = streakDays
+				result.Message = claimMsg
+				return result, nil
+			}
 			result.Outcome = CheckinFailed
 			result.Message = claimMsg
 			return result, fmt.Errorf("workbuddy checkin claim error code %d: %s", claimCode, claimMsg)
 		}
+	}
+
+	if strings.Contains(claimMsg, "失败") {
+		result.Outcome = CheckinFailed
+		result.Message = claimMsg
+		return result, fmt.Errorf("workbuddy checkin failed: %s", claimMsg)
 	}
 
 	claimData := gjson.GetBytes(bodyClaim, "data")

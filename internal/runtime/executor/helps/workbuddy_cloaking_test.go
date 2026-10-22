@@ -320,3 +320,59 @@ func TestBackfillWorkBuddyReasoningContent(t *testing.T) {
 		t.Errorf("Existing reasoning_content was overwritten: got %q", rcWith)
 	}
 }
+
+func TestSanitizeWorkBuddyPromptWAF_AssistantHistoryAndDshGui(t *testing.T) {
+	dshGui := "You are interacting with the user through the DeepSeek Harness Web GUI whose URL the runtime context names. When the user refers to \"this page\", \"this GUI\", or \"this app\" without naming another target, they mean this GUI."
+	identityPrompt := "You are an AI agent powered by DeepSeek Harness."
+
+	input := []byte(`{
+		"messages": [
+			{"role": "system", "content": "` + dshGui + `"},
+			{"role": "user", "content": "` + identityPrompt + `"},
+			{"role": "assistant", "content": "` + identityPrompt + `\n` + dshGui + `"},
+			{"role": "user", "content": "Check github.com/deepseek-ai/deepseek-harness repository"},
+			{"role": "tool", "content": "` + identityPrompt + `"}
+		]
+	}`)
+
+	sanitized := SanitizeWorkBuddyPromptWAF(input)
+
+	// System prompt should have DSH GUI reworded and brand reduced
+	sysContent := gjson.GetBytes(sanitized, "messages.0.content").String()
+	if bytes.Contains([]byte(sysContent), []byte("DeepSeek Harness")) {
+		t.Errorf("System prompt still contains DeepSeek Harness: %s", sysContent)
+	}
+	if !bytes.Contains([]byte(sysContent), []byte("DeepSeek Web GUI whose URL is named in the runtime context")) {
+		t.Errorf("System prompt does not contain expected reworded GUI phrase: %s", sysContent)
+	}
+
+	// User prompt should preserve identity text as user data
+	userContent := gjson.GetBytes(sanitized, "messages.1.content").String()
+	if !bytes.Contains([]byte(userContent), []byte("powered by DeepSeek Harness")) {
+		t.Errorf("User prompt identity should remain untouched: %s", userContent)
+	}
+
+	// Assistant prompt in history should have identity rewritten and GUI reworded
+	asstContent := gjson.GetBytes(sanitized, "messages.2.content").String()
+	if bytes.Contains([]byte(asstContent), []byte("DeepSeek Harness")) {
+		t.Errorf("Assistant history still contains DeepSeek Harness: %s", asstContent)
+	}
+	if !bytes.Contains([]byte(asstContent), []byte("You are a helpful AI assistant.")) {
+		t.Errorf("Assistant history identity was not neutralized: %s", asstContent)
+	}
+	if !bytes.Contains([]byte(asstContent), []byte("DeepSeek Web GUI whose URL is named in the runtime context")) {
+		t.Errorf("Assistant history does not contain reworded GUI phrase: %s", asstContent)
+	}
+
+	// Hyphenated identifier in user prompt should remain untouched
+	userCodeContent := gjson.GetBytes(sanitized, "messages.3.content").String()
+	if !bytes.Contains([]byte(userCodeContent), []byte("deepseek-harness")) {
+		t.Errorf("Hyphenated path should be untouched: %s", userCodeContent)
+	}
+
+	// Tool message should remain untouched as tool output
+	toolContent := gjson.GetBytes(sanitized, "messages.4.content").String()
+	if !bytes.Contains([]byte(toolContent), []byte("powered by DeepSeek Harness")) {
+		t.Errorf("Tool content should remain untouched: %s", toolContent)
+	}
+}

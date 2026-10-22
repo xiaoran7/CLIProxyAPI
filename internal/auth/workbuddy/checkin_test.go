@@ -459,3 +459,93 @@ func TestCheckinEngine_CompensationPersistenceAndDeduplication(t *testing.T) {
 		t.Fatalf("expected stored compensation claimed for %s, got %+v", testAuth.ID, comp)
 	}
 }
+
+func TestWorkBuddyCheckin_ClaimResponses(t *testing.T) {
+	cases := []struct {
+		name            string
+		code            int
+		msg             string
+		expectedOutcome string
+		expectErr       bool
+	}{
+		{
+			name:            "already checked in upstream code 10001",
+			code:            10001,
+			msg:             "今日已完成签到",
+			expectedOutcome: CheckinDone,
+			expectErr:       false,
+		},
+		{
+			name:            "legacy already checked in code 1001",
+			code:            1001,
+			msg:             "already checked in",
+			expectedOutcome: CheckinDone,
+			expectErr:       false,
+		},
+		{
+			name:            "pending in-progress transaction on code 10001",
+			code:            10001,
+			msg:             "请求处理中，请勿重复操作",
+			expectedOutcome: CheckinFailed,
+			expectErr:       true,
+		},
+		{
+			name:            "failure text under code 0",
+			code:            0,
+			msg:             "签到领取失败，系统繁忙",
+			expectedOutcome: CheckinFailed,
+			expectErr:       true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/v2/billing/meter/checkin-activity-status":
+					resp := map[string]any{
+						"code": 0,
+						"msg":  "ok",
+						"data": map[string]any{
+							"active":           true,
+							"today_checked_in": false,
+						},
+					}
+					_ = json.NewEncoder(w).Encode(resp)
+				case "/v2/billing/meter/daily-checkin":
+					resp := map[string]any{
+						"code": tc.code,
+						"msg":  tc.msg,
+					}
+					_ = json.NewEncoder(w).Encode(resp)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			auth := &cliproxyauth.Auth{
+				ID:       "wb-cn-test-resp",
+				Provider: "workbuddy-cn",
+				Attributes: map[string]string{
+					"realm":    RealmCN,
+					"base_url": server.URL,
+				},
+				Metadata: map[string]any{
+					"access_token": "valid-token-123",
+				},
+			}
+
+			res, err := Checkin(context.Background(), server.Client(), auth)
+			if tc.expectErr && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !tc.expectErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if res.Outcome != tc.expectedOutcome {
+				t.Fatalf("expected outcome %q, got %q", tc.expectedOutcome, res.Outcome)
+			}
+		})
+	}
+}

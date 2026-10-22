@@ -17,12 +17,14 @@ const workbuddyFallbackReasoning = "[reasoning unavailable]"
 
 var (
 	workbuddyIdentityRegex               = regexp.MustCompile(`(?i)(You are\s+(?:an?\s+|the\s+)?(?:[\w.-]+\s+){0,3}?(?:agent|assistant|model|AI|LLM)?[\s,]*(?:powered by|built on|built by|created by|developed by|made by|trained by)[^\n]*?)(?:\.(?:[\s\r\n]|$)|$)`)
+	workbuddyDshGuiRegex                 = regexp.MustCompile(`(?i)(You are interacting with the user through the DeepSeek[ \t]+Harness[ \t]+Web[ \t]+GUI) whose URL the runtime context names\.`)
+	workbuddyBrandRegex                  = regexp.MustCompile(`(?i)DeepSeek[ \t]+Harness`)
 	workbuddyAnthropicBillingHeaderRegex = regexp.MustCompile(`(?i)x-anthropic-billing-header:[^;\r\n]*;?\s*`)
 	workbuddyCCKeyValRegex               = regexp.MustCompile(`(?i)\bcc_[a-z0-9_]+=[^;\r\n]*;?\s*`)
 )
 
 func sanitizeWorkBuddyIdentityString(text string) string {
-	return workbuddyIdentityRegex.ReplaceAllStringFunc(text, func(m string) string {
+	text = workbuddyIdentityRegex.ReplaceAllStringFunc(text, func(m string) string {
 		trailing := ""
 		for len(m) > 0 && (m[len(m)-1] == '\n' || m[len(m)-1] == '\r' || m[len(m)-1] == ' ' || m[len(m)-1] == '\t') {
 			trailing = string(m[len(m)-1]) + trailing
@@ -30,6 +32,9 @@ func sanitizeWorkBuddyIdentityString(text string) string {
 		}
 		return "You are a helpful AI assistant." + trailing
 	})
+	text = workbuddyDshGuiRegex.ReplaceAllString(text, "$1 whose URL is named in the runtime context.")
+	text = workbuddyBrandRegex.ReplaceAllString(text, "DeepSeek")
+	return text
 }
 
 // StripWorkBuddyForbiddenHeaders removes client billing and tracking headers
@@ -118,18 +123,19 @@ func SanitizeWorkBuddyPromptWAF(payload []byte) []byte {
 				}
 			}
 
-			// Cleanse DSH/framework identity sentences in system (and developer) turns.
+			// Cleanse DSH/framework identity sentences in system (and normalized developer) as well as assistant turns.
 			// Upstream Tencent/WorkBuddy WAF inspects contiguous phrases like:
-			// "You are an AI agent powered by DeepSeek Harness." or "You are a coding agent powered by ...".
-			// Rewriting to neutral assistant identity in system prompts avoids WAF 11128 interception,
-			// while leaving user/assistant/tool content untouched.
-			if role == "system" {
+			// "You are an AI agent powered by DeepSeek Harness." or DSH GUI description paragraphs.
+			// Multi-turn chat history with assistant identity sentences triggers WAF 11128 rejection (PR #574).
+			// Rewriting in system/developer/assistant turns avoids WAF 11128 interception,
+			// while leaving user/tool/function content untouched as user data.
+			if role == "system" || role == "assistant" {
 				content := msg.Get("content")
 				if content.Exists() {
 					if content.Type == gjson.String {
 						cStr := content.String()
-						if workbuddyIdentityRegex.MatchString(cStr) {
-							sanitizedContent := sanitizeWorkBuddyIdentityString(cStr)
+						sanitizedContent := sanitizeWorkBuddyIdentityString(cStr)
+						if sanitizedContent != cStr {
 							if updated, err := sjson.SetBytes(payload, pathPrefix+".content", sanitizedContent); err == nil {
 								payload = updated
 							}
@@ -138,8 +144,8 @@ func SanitizeWorkBuddyPromptWAF(payload []byte) []byte {
 						for j, part := range content.Array() {
 							if part.Get("type").String() == "text" {
 								tStr := part.Get("text").String()
-								if workbuddyIdentityRegex.MatchString(tStr) {
-									sanitizedPart := sanitizeWorkBuddyIdentityString(tStr)
+								sanitizedPart := sanitizeWorkBuddyIdentityString(tStr)
+								if sanitizedPart != tStr {
 									partPath := fmt.Sprintf("%s.content.%d.text", pathPrefix, j)
 									if updated, err := sjson.SetBytes(payload, partPath, sanitizedPart); err == nil {
 										payload = updated
