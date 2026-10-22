@@ -585,20 +585,26 @@ func extractAccessToken(auth *cliproxyauth.Auth) string {
 	if auth == nil {
 		return ""
 	}
+	keys := []string{"access_token", "token", "api_key", "personal_token"}
 	if auth.Metadata != nil {
-		if t, ok := auth.Metadata["access_token"].(string); ok && strings.TrimSpace(t) != "" {
-			return strings.TrimSpace(t)
-		}
-		if t, ok := auth.Metadata["token"].(string); ok && strings.TrimSpace(t) != "" {
-			return strings.TrimSpace(t)
+		for _, k := range keys {
+			if v, ok := auth.Metadata[k]; ok {
+				if t, ok := v.(string); ok && strings.TrimSpace(t) != "" {
+					t = strings.TrimSpace(t)
+					t = strings.TrimPrefix(t, "Bearer ")
+					t = strings.TrimPrefix(t, "bearer ")
+					return strings.TrimSpace(t)
+				}
+			}
 		}
 	}
 	if auth.Attributes != nil {
-		if t := strings.TrimSpace(auth.Attributes["api_key"]); t != "" {
-			return t
-		}
-		if t := strings.TrimSpace(auth.Attributes["access_token"]); t != "" {
-			return t
+		for _, k := range keys {
+			if t := strings.TrimSpace(auth.Attributes[k]); t != "" {
+				t = strings.TrimPrefix(t, "Bearer ")
+				t = strings.TrimPrefix(t, "bearer ")
+				return strings.TrimSpace(t)
+			}
 		}
 	}
 	return ""

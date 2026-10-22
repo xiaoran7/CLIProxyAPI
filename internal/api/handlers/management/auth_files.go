@@ -729,14 +729,15 @@ func (h *Handler) buildAuthFileEntryLocked(auth *coreauth.Auth, quota authFileQu
 		}
 	}
 	pLower := strings.ToLower(strings.TrimSpace(auth.Provider))
-	if strings.HasPrefix(pLower, "workbuddy") || pLower == "copilot-tencent" {
+	authKind := strings.ToLower(strings.TrimSpace(authAttribute(auth, "auth_kind")))
+	if strings.HasPrefix(pLower, "workbuddy") || pLower == "copilot-tencent" || authKind == "workbuddy" {
 		entry["supports_quota"] = true
 		entry["quota_provider"] = "workbuddy"
 		if quota.v8 {
 			entry["quota_plugin_id"] = "workbuddy"
 		}
 	}
-	if strings.HasPrefix(pLower, "qoder") {
+	if strings.HasPrefix(pLower, "qoder") || authKind == "qoder" {
 		entry["supports_quota"] = true
 		entry["quota_provider"] = "qoder"
 		if quota.v8 {
