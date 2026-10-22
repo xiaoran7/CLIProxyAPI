@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -161,6 +162,52 @@ func (d *DB) DeleteKey(ctx context.Context, id int64) error {
 	}
 
 	return tx.Commit()
+}
+
+// MarkKeyDeleted records an API key as explicitly deleted so reconciliation loops do not resurrect it.
+func (d *DB) MarkKeyDeleted(ctx context.Context, apiKey string) error {
+	trimmed := strings.TrimSpace(apiKey)
+	if trimmed == "" {
+		return nil
+	}
+	query := `INSERT OR REPLACE INTO deleted_keys (api_key, deleted_at) VALUES (?, datetime('now'))`
+	_, err := d.ExecContext(ctx, query, trimmed)
+	if err != nil {
+		return fmt.Errorf("mark key deleted failed: %w", err)
+	}
+	return nil
+}
+
+// UnmarkKeyDeleted removes an API key from the tombstone list when explicitly created.
+func (d *DB) UnmarkKeyDeleted(ctx context.Context, apiKey string) error {
+	trimmed := strings.TrimSpace(apiKey)
+	if trimmed == "" {
+		return nil
+	}
+	query := `DELETE FROM deleted_keys WHERE api_key = ?`
+	_, err := d.ExecContext(ctx, query, trimmed)
+	if err != nil {
+		return fmt.Errorf("unmark key deleted failed: %w", err)
+	}
+	return nil
+}
+
+// IsKeyDeleted returns whether an API key has been explicitly deleted.
+func (d *DB) IsKeyDeleted(ctx context.Context, apiKey string) (bool, error) {
+	trimmed := strings.TrimSpace(apiKey)
+	if trimmed == "" {
+		return false, nil
+	}
+	query := `SELECT 1 FROM deleted_keys WHERE api_key = ? LIMIT 1`
+	var found int
+	err := d.QueryRowContext(ctx, query, trimmed).Scan(&found)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, fmt.Errorf("check is key deleted failed: %w", err)
+	}
+	return found == 1, nil
 }
 
 // SelectAllQuotaRules returns all quota rules from the quota_rules table.

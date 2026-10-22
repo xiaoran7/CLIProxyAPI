@@ -928,3 +928,171 @@ func TestConsoleRequestLogsAndStatsPipeline(t *testing.T) {
 		t.Fatalf("invalid member status summary response: %+v", memberStatusResp)
 	}
 }
+
+func TestKeyTombstoneAndResurrectionPrevention(t *testing.T) {
+	r, eng, _, _, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	authHdr := "Bearer test-secret-12345"
+	ctx := context.Background()
+
+	// 1. Create a key
+	createPayload := map[string]interface{}{
+		"alias": "Ephemeral Key",
+	}
+	body, _ := json.Marshal(createPayload)
+	req := httptest.NewRequest(http.MethodPost, "/console/api/keys", bytes.NewReader(body))
+	req.Header.Set("Authorization", authHdr)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("create key failed: %d: %s", w.Code, w.Body.String())
+	}
+
+	var createResp struct {
+		Success bool   `json:"success"`
+		KeyID   int64  `json:"key_id"`
+		APIKey  string `json:"api_key"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &createResp)
+	rawKey := createResp.APIKey
+	keyID := createResp.KeyID
+
+	// Verify not marked deleted initially
+	isDel, err := eng.DB().IsKeyDeleted(ctx, rawKey)
+	if err != nil || isDel {
+		t.Fatalf("expected key not deleted initially, got isDel=%v, err=%v", isDel, err)
+	}
+
+	// 2. Delete the key via API
+	delReq := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/console/api/keys/%d", keyID), nil)
+	delReq.Header.Set("Authorization", authHdr)
+	delW := httptest.NewRecorder()
+	r.ServeHTTP(delW, delReq)
+	if delW.Code != http.StatusOK {
+		t.Fatalf("delete key failed: %d: %s", delW.Code, delW.Body.String())
+	}
+
+	// 3. Verify key is tombstoned
+	isDel, err = eng.DB().IsKeyDeleted(ctx, rawKey)
+	if err != nil || !isDel {
+		t.Fatalf("expected key tombstoned after deletion, got isDel=%v, err=%v", isDel, err)
+	}
+
+	// 4. Simulate reconciliation: check that tombstone prevents re-insert
+	if isDeleted, errDel := eng.DB().IsKeyDeleted(ctx, rawKey); errDel == nil && isDeleted {
+		// As expected, reconciliation skips it
+	} else {
+		t.Fatalf("expected reconciliation logic to skip tombstoned key")
+	}
+
+	// 5. Explicitly re-create key with custom raw key or unmark
+	err = eng.DB().UnmarkKeyDeleted(ctx, rawKey)
+	if err != nil {
+		t.Fatalf("unmark key deleted failed: %v", err)
+	}
+	isDel, err = eng.DB().IsKeyDeleted(ctx, rawKey)
+	if err != nil || isDel {
+		t.Fatalf("expected key no longer tombstoned after unmark, got %v", isDel)
+	}
+}
+
+func TestHandleUpdateQuotaRule_PreservesExistingFields(t *testing.T) {
+	r, eng, _, _, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	authHdr := "Bearer test-secret-12345"
+	ctx := context.Background()
+
+	// 1. Create Key with restricted model whitelist and specific quota settings
+	createPayload := map[string]interface{}{
+		"alias":           "Restricted Dev",
+		"enabled":         true,
+		"daily_limit":     750000,
+		"hard_ratio":      1.8,
+		"rpm_limit":       45,
+		"model_whitelist": []string{"claude-3-5-sonnet", "gpt-4o"},
+	}
+	body, _ := json.Marshal(createPayload)
+	req := httptest.NewRequest(http.MethodPost, "/console/api/keys", bytes.NewReader(body))
+	req.Header.Set("Authorization", authHdr)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("create key failed: %d: %s", w.Code, w.Body.String())
+	}
+
+	var createResp struct {
+		KeyID int64 `json:"key_id"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &createResp)
+	keyID := createResp.KeyID
+
+	// Verify initial quota rule in DB
+	initialRule, err := eng.DB().SelectQuotaRuleByKeyID(ctx, keyID)
+	if err != nil || initialRule == nil {
+		t.Fatalf("failed to query initial quota rule: %v", err)
+	}
+	if initialRule.ModelWhitelist != `["claude-3-5-sonnet","gpt-4o"]` {
+		t.Fatalf("expected initial whitelist ['claude-3-5-sonnet','gpt-4o'], got %s", initialRule.ModelWhitelist)
+	}
+	if initialRule.DailyLimit == nil || *initialRule.DailyLimit != 750000 {
+		t.Fatalf("expected daily_limit 750000, got %v", initialRule.DailyLimit)
+	}
+
+	// 2. Partial update: only update rpm_limit, omitting model_whitelist and daily_limit
+	partialBody := []byte(`{"rpm_limit":90}`)
+	updateReq := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/console/api/keys/%d/quota", keyID), bytes.NewReader(partialBody))
+	updateReq.Header.Set("Authorization", authHdr)
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateW := httptest.NewRecorder()
+	r.ServeHTTP(updateW, updateReq)
+	if updateW.Code != http.StatusOK {
+		t.Fatalf("partial update quota failed: %d: %s", updateW.Code, updateW.Body.String())
+	}
+
+	// 3. Verify that model_whitelist and daily_limit are preserved and NOT reset to "[]" or nil
+	updatedRule, err := eng.DB().SelectQuotaRuleByKeyID(ctx, keyID)
+	if err != nil || updatedRule == nil {
+		t.Fatalf("failed to query updated quota rule: %v", err)
+	}
+	if updatedRule.RPMLimit != 90 {
+		t.Fatalf("expected updated rpm_limit 90, got %d", updatedRule.RPMLimit)
+	}
+	if updatedRule.ModelWhitelist != `["claude-3-5-sonnet","gpt-4o"]` {
+		t.Fatalf("regression: model_whitelist was wiped out! expected ['claude-3-5-sonnet','gpt-4o'], got %s", updatedRule.ModelWhitelist)
+	}
+	if updatedRule.DailyLimit == nil || *updatedRule.DailyLimit != 750000 {
+		t.Fatalf("expected daily_limit 750000 to be preserved, got %v", updatedRule.DailyLimit)
+	}
+	if updatedRule.Enabled != 1 {
+		t.Fatalf("expected enabled 1 to be preserved, got %d", updatedRule.Enabled)
+	}
+	if updatedRule.HardRatio != 1.8 {
+		t.Fatalf("expected hard_ratio 1.8 to be preserved, got %f", updatedRule.HardRatio)
+	}
+
+	// 4. Explicit update: explicitly update model_whitelist to ["*"]
+	explicitBody := []byte(`{"model_whitelist":["*"]}`)
+	explicitReq := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/console/api/keys/%d/quota", keyID), bytes.NewReader(explicitBody))
+	explicitReq.Header.Set("Authorization", authHdr)
+	explicitReq.Header.Set("Content-Type", "application/json")
+	explicitW := httptest.NewRecorder()
+	r.ServeHTTP(explicitW, explicitReq)
+	if explicitW.Code != http.StatusOK {
+		t.Fatalf("explicit update quota failed: %d: %s", explicitW.Code, explicitW.Body.String())
+	}
+
+	finalRule, err := eng.DB().SelectQuotaRuleByKeyID(ctx, keyID)
+	if err != nil || finalRule == nil {
+		t.Fatalf("failed to query final quota rule: %v", err)
+	}
+	if finalRule.ModelWhitelist != `["*"]` {
+		t.Fatalf("expected model_whitelist ['*'], got %s", finalRule.ModelWhitelist)
+	}
+	if finalRule.RPMLimit != 90 {
+		t.Fatalf("expected rpm_limit 90 to be preserved when updating whitelist, got %d", finalRule.RPMLimit)
+	}
+}

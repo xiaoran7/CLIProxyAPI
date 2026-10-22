@@ -229,6 +229,10 @@ func ServerOptions(cfg SubsystemConfig) []api.ServerOption {
 					if trimmed == "" {
 						continue
 					}
+					// Do not resurrect keys explicitly deleted by administrators
+					if isDeleted, errDel := sub.db.IsKeyDeleted(ctx, trimmed); errDel == nil && isDeleted {
+						continue
+					}
 					if _, exists := sub.engine.ResolveKeyID(trimmed); !exists {
 						keyID, err := sub.db.InsertKey(ctx, trimmed, "CPA Config Key")
 						if err == nil && keyID > 0 {

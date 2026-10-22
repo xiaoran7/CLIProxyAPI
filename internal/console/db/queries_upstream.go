@@ -112,6 +112,85 @@ GROUP BY auth_index
 	return list, nil
 }
 
+// SelectUpstreamDailyForDate aggregates statistics for all auth_index credentials on a specific date.
+func (d *DB) SelectUpstreamDailyForDate(ctx context.Context, date string) ([]UpstreamDailyStatRow, error) {
+	query := `
+SELECT
+  auth_index,
+  SUM(requests) AS requests,
+  SUM(success_count) AS success_count,
+  SUM(failure_count) AS failure_count,
+  SUM(prompt_tokens) AS prompt_tokens,
+  SUM(completion_tokens) AS completion_tokens,
+  SUM(cached_tokens) AS cached_tokens,
+  SUM(total_tokens) AS total_tokens
+FROM upstream_daily_stats
+WHERE auth_index != '' AND date = ?
+GROUP BY auth_index
+`
+	rows, err := d.QueryContext(ctx, query, date)
+	if err != nil {
+		return nil, fmt.Errorf("select upstream daily for date failed: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var list []UpstreamDailyStatRow
+	for rows.Next() {
+		var r UpstreamDailyStatRow
+		if err := rows.Scan(
+			&r.AuthIndex, &r.Requests, &r.SuccessCount, &r.FailureCount,
+			&r.PromptTokens, &r.CompletionTokens, &r.CachedTokens, &r.TotalTokens,
+		); err != nil {
+			return nil, fmt.Errorf("scan upstream daily for date failed: %w", err)
+		}
+		list = append(list, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration failed: %w", err)
+	}
+	return list, nil
+}
+
+// UpstreamWindowStat holds aggregated traffic tokens and request counts in a time window.
+type UpstreamWindowStat struct {
+	Tokens   int64
+	Requests int64
+}
+
+// SelectUpstreamWindowStats returns token and request aggregates from request_events since sinceTS.
+func (d *DB) SelectUpstreamWindowStats(ctx context.Context, sinceTS int64) (map[string]UpstreamWindowStat, error) {
+	query := `
+SELECT auth_index, SUM(total_tokens), COUNT(1)
+FROM request_events
+WHERE ts >= ? AND auth_index != ''
+GROUP BY auth_index
+`
+	rows, err := d.QueryContext(ctx, query, sinceTS)
+	if err != nil {
+		return nil, fmt.Errorf("select upstream window stats failed: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	res := make(map[string]UpstreamWindowStat)
+	for rows.Next() {
+		var authIndex string
+		var tokens, reqs int64
+		if err := rows.Scan(&authIndex, &tokens, &reqs); err != nil {
+			return nil, fmt.Errorf("scan upstream window stats failed: %w", err)
+		}
+		if authIndex != "" {
+			res[authIndex] = UpstreamWindowStat{
+				Tokens:   tokens,
+				Requests: reqs,
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration failed: %w", err)
+	}
+	return res, nil
+}
+
 // SelectBaselinesAll retrieves all baseline rows.
 func (d *DB) SelectBaselinesAll(ctx context.Context) ([]UpstreamAuthBaselineRow, error) {
 	query := `SELECT auth_index, name, provider, base_requests, base_success_count, base_failure_count, base_prompt_tokens, base_completion_tokens, base_cached_tokens, base_total_tokens, updated_at FROM upstream_auth_baselines`
@@ -266,6 +345,58 @@ FROM quota_snapshots WHERE auth_index = ? AND ts >= ? ORDER BY ts ASC
 			v := resetAt.Int64
 			r.ResetAt = &v
 		}
+		list = append(list, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration failed: %w", err)
+	}
+	return list, nil
+}
+
+// SelectLatestQuotaSnapshots retrieves the most recent quota snapshot for each auth_index and window_name.
+func (d *DB) SelectLatestQuotaSnapshots(ctx context.Context, sinceTS int64) ([]QuotaSnapshotRow, error) {
+	query := `
+SELECT id, ts, auth_index, provider, account_email, window_name, remaining_percent, reset_at
+FROM quota_snapshots
+WHERE ts >= ?
+ORDER BY ts DESC
+`
+	rows, err := d.QueryContext(ctx, query, sinceTS)
+	if err != nil {
+		return nil, fmt.Errorf("select latest quota snapshots failed: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	seen := make(map[string]bool)
+	var list []QuotaSnapshotRow
+	for rows.Next() {
+		var r QuotaSnapshotRow
+		var email, winName sql.NullString
+		var resetAt sql.NullInt64
+		if err := rows.Scan(&r.ID, &r.TS, &r.AuthIndex, &r.Provider, &email, &winName, &r.RemainingPercent, &resetAt); err != nil {
+			return nil, fmt.Errorf("scan latest quota snapshot failed: %w", err)
+		}
+		if email.Valid {
+			v := email.String
+			r.AccountEmail = &v
+		}
+		if winName.Valid {
+			v := winName.String
+			r.WindowName = &v
+		}
+		if resetAt.Valid {
+			v := resetAt.Int64
+			r.ResetAt = &v
+		}
+
+		key := r.AuthIndex
+		if r.WindowName != nil {
+			key += "|" + *r.WindowName
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		list = append(list, r)
 	}
 	if err := rows.Err(); err != nil {

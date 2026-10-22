@@ -16,6 +16,11 @@ CREATE TABLE IF NOT EXISTS keys (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS deleted_keys (
+  api_key TEXT PRIMARY KEY,
+  deleted_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS quota_rules (
   key_id INTEGER PRIMARY KEY,
   enabled INTEGER NOT NULL DEFAULT 0,

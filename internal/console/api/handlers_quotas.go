@@ -152,6 +152,10 @@ type UpstreamAccountItem struct {
 	Groups            []CpaQuotaGroup           `json:"groups"`
 	TodayTokens       int64                     `json:"today_tokens"`
 	TodayRequests     int64                     `json:"today_requests"`
+	FiveHourTokens    int64                     `json:"five_hour_tokens"`
+	FiveHourRequests  int64                     `json:"five_hour_requests"`
+	LifetimeTokens    int64                     `json:"lifetime_tokens"`
+	LifetimeRequests  int64                     `json:"lifetime_requests"`
 	RawError          *string                   `json:"raw_error"`
 	UpdatedAt         int64                     `json:"updated_at"`
 	Validation        *db.UpstreamValidationRow `json:"validation,omitempty"`
@@ -925,6 +929,113 @@ func formatResetCountdown(isoTime string) string {
 	return "即将重置"
 }
 
+func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) map[string][]CpaQuotaGroup {
+	authMap := make(map[string][]db.QuotaSnapshotRow)
+	for _, s := range snapshots {
+		authMap[s.AuthIndex] = append(authMap[s.AuthIndex], s)
+	}
+
+	res := make(map[string][]CpaQuotaGroup)
+	for authIdx, rows := range authMap {
+		groupBuckets := make(map[string][]CpaQuotaBucket)
+		groupDispNames := make(map[string]string)
+
+		for _, r := range rows {
+			winName := ""
+			if r.WindowName != nil {
+				winName = *r.WindowName
+			}
+			parts := strings.Split(winName, ":")
+			grpName := "Quota"
+			win := "5h"
+			if len(parts) >= 2 {
+				grpName = parts[0]
+				win = parts[1]
+			} else if len(parts) == 1 && parts[0] != "" {
+				win = parts[0]
+			}
+
+			if grpName == "<nil>" || grpName == "" {
+				wLower := strings.ToLower(winName)
+				if strings.Contains(wLower, "gemini") {
+					grpName = "Gemini Models"
+				} else if strings.Contains(wLower, "claude") {
+					grpName = "Claude Models"
+				} else if r.Provider == "codex" {
+					grpName = "Codex"
+				} else {
+					grpName = "Standard"
+				}
+			}
+
+			dispName := grpName
+			gLower := strings.ToLower(grpName)
+			canonicalName := grpName
+			if strings.Contains(gLower, "gemini") {
+				canonicalName = "models/gemini"
+				dispName = "Gemini Models"
+			} else if strings.Contains(gLower, "claude") {
+				canonicalName = "models/claude"
+				dispName = "Claude Models"
+			} else if strings.Contains(gLower, "codex") {
+				canonicalName = "codex"
+				dispName = "Codex"
+			}
+
+			remPct := int(math.Round(r.RemainingPercent))
+			if remPct < 0 {
+				remPct = 0
+			}
+			if remPct > 100 {
+				remPct = 100
+			}
+			frac := float64(remPct) / 100.0
+
+			var resetTimeStr string
+			if r.ResetAt != nil && *r.ResetAt > 0 {
+				resetTimeStr = time.Unix(*r.ResetAt, 0).UTC().Format(time.RFC3339)
+			}
+			countdown := formatResetCountdown(resetTimeStr)
+
+			bucketName := "5 Hour Limit Remaining"
+			if win == "weekly" {
+				bucketName = "Weekly Limit Remaining"
+			}
+
+			bkt := CpaQuotaBucket{
+				BucketID:          fmt.Sprintf("%s:%s", canonicalName, win),
+				Window:            win,
+				Name:              bucketName,
+				RemainingFraction: &frac,
+				RemainingPercent:  &remPct,
+				ResetTime:         resetTimeStr,
+				ResetTimeSnake:    resetTimeStr,
+				ResetCountdown:    countdown,
+				Disabled:          remPct <= 0,
+			}
+			groupBuckets[canonicalName] = append(groupBuckets[canonicalName], bkt)
+			groupDispNames[canonicalName] = dispName
+		}
+
+		var groups []CpaQuotaGroup
+		for cName, bkts := range groupBuckets {
+			sort.Slice(bkts, func(i, j int) bool {
+				return bkts[i].Window < bkts[j].Window
+			})
+			groups = append(groups, CpaQuotaGroup{
+				Name:        cName,
+				DisplayName: groupDispNames[cName],
+				Buckets:     bkts,
+			})
+		}
+		sort.Slice(groups, func(i, j int) bool {
+			return groups[i].DisplayName < groups[j].DisplayName
+		})
+		res[authIdx] = groups
+	}
+	return res
+}
+
 func parseAntigravityQuotaGroups(raw []byte) []CpaQuotaGroup {
 	if len(raw) == 0 {
 		return nil
@@ -944,14 +1055,41 @@ func parseAntigravityQuotaGroups(raw []byte) []CpaQuotaGroup {
 		if !ok {
 			continue
 		}
-		gName := fmt.Sprintf("%v", grpMap["name"])
-		gDisp := fmt.Sprintf("%v", grpMap["displayName"])
-		if gDisp == "" || gDisp == "<nil>" {
+
+		var gName, gDisp string
+		if v, ok := grpMap["displayName"].(string); ok && strings.TrimSpace(v) != "" {
+			gDisp = strings.TrimSpace(v)
+		}
+		if v, ok := grpMap["name"].(string); ok && strings.TrimSpace(v) != "" {
+			gName = strings.TrimSpace(v)
+		}
+		if (gName == "" || gName == "<nil>") && gDisp != "" && gDisp != "<nil>" {
+			gName = gDisp
+		}
+		if (gDisp == "" || gDisp == "<nil>") && gName != "" && gName != "<nil>" {
 			gDisp = gName
 		}
+
+		gLower := strings.ToLower(fmt.Sprintf("%s %s", gName, gDisp))
+		if strings.Contains(gLower, "gemini") {
+			if gName == "" || gName == "<nil>" || gName == "Model Group" {
+				gName = "models/gemini"
+			}
+			if gDisp == "" || gDisp == "<nil>" {
+				gDisp = "Gemini Models"
+			}
+		} else if strings.Contains(gLower, "claude") {
+			if gName == "" || gName == "<nil>" || gName == "Model Group" {
+				gName = "models/claude"
+			}
+			if gDisp == "" || gDisp == "<nil>" {
+				gDisp = "Claude Models"
+			}
+		}
+
 		gDesc := ""
-		if grpMap["description"] != nil {
-			gDesc = fmt.Sprintf("%v", grpMap["description"])
+		if v, ok := grpMap["description"].(string); ok {
+			gDesc = v
 		}
 
 		grp := CpaQuotaGroup{
@@ -966,25 +1104,32 @@ func parseAntigravityQuotaGroups(raw []byte) []CpaQuotaGroup {
 			if !ok {
 				continue
 			}
-			bID := fmt.Sprintf("%v", bMap["bucketId"])
-			if bID == "" || bID == "<nil>" {
-				bID = fmt.Sprintf("%v", bMap["bucket_id"])
-			}
-			if bID == "<nil>" {
-				bID = ""
+
+			var bID string
+			if v, ok := bMap["bucketId"].(string); ok && strings.TrimSpace(v) != "" {
+				bID = strings.TrimSpace(v)
+			} else if v, ok := bMap["bucket_id"].(string); ok && strings.TrimSpace(v) != "" {
+				bID = strings.TrimSpace(v)
 			}
 
-			bDisp := fmt.Sprintf("%v", bMap["displayName"])
-			if bDisp == "" || bDisp == "<nil>" {
-				bDisp = fmt.Sprintf("%v", bMap["name"])
-			}
-			if bDisp == "<nil>" {
-				bDisp = ""
+			var bDisp string
+			if v, ok := bMap["displayName"].(string); ok && strings.TrimSpace(v) != "" {
+				bDisp = strings.TrimSpace(v)
+			} else if v, ok := bMap["name"].(string); ok && strings.TrimSpace(v) != "" {
+				bDisp = strings.TrimSpace(v)
 			}
 
-			win := fmt.Sprintf("%v", bMap["window"])
-			if win == "<nil>" {
-				win = ""
+			var win string
+			if v, ok := bMap["window"].(string); ok && strings.TrimSpace(v) != "" {
+				win = strings.TrimSpace(v)
+			}
+			if win == "" {
+				bLower := strings.ToLower(fmt.Sprintf("%s %s", bID, bDisp))
+				if strings.Contains(bLower, "5h") || strings.Contains(bLower, "5 hour") || strings.Contains(bLower, "five") {
+					win = "5h"
+				} else if strings.Contains(bLower, "weekly") || strings.Contains(bLower, "week") {
+					win = "weekly"
+				}
 			}
 
 			disabled := false
@@ -1024,6 +1169,12 @@ func parseAntigravityQuotaGroups(raw []byte) []CpaQuotaGroup {
 				remPct = &pct
 			} else if rp, ok := bMap["remaining_percent"].(float64); ok {
 				pct := int(math.Round(rp))
+				if pct < 0 {
+					pct = 0
+				}
+				if pct > 100 {
+					pct = 100
+				}
 				remPct = &pct
 				frac := rp / 100.0
 				remFrac = &frac

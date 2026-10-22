@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -256,6 +257,9 @@ func HandleCreateKey(eng *engine.Engine) gin.HandlerFunc {
 			return
 		}
 
+		// Clear tombstone in case a previously deleted key is intentionally re-created
+		_ = database.UnmarkKeyDeleted(ctx, rawKey)
+
 		// Configure initial quota rule
 		enabledInt := 0
 		if payload.Enabled != nil && *payload.Enabled {
@@ -400,8 +404,9 @@ func HandleUpdateKeyAlias(eng *engine.Engine) gin.HandlerFunc {
 	}
 }
 
-// HandleDeleteKey permanently deletes an API key and associated quota rules.
-func HandleDeleteKey(eng *engine.Engine) gin.HandlerFunc {
+// HandleDeleteKey permanently deletes an API key and associated quota rules,
+// recording a tombstone and syncing deletion to CPA management if available.
+func HandleDeleteKey(eng *engine.Engine, cpa ...*CpaClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		idStr := c.Param("id")
 		keyID, err := strconv.ParseInt(idStr, 10, 64)
@@ -411,9 +416,24 @@ func HandleDeleteKey(eng *engine.Engine) gin.HandlerFunc {
 		}
 
 		ctx := c.Request.Context()
+
+		var rawKey string
+		if keyRow, errSelect := eng.DB().SelectKeyByID(ctx, keyID); errSelect == nil && keyRow != nil {
+			rawKey = keyRow.APIKey
+		}
+
 		if err := eng.DB().DeleteKey(ctx, keyID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to delete key: %v", err)})
 			return
+		}
+
+		if rawKey != "" {
+			_ = eng.DB().MarkKeyDeleted(ctx, rawKey)
+			for _, client := range cpa {
+				if client != nil {
+					_ = client.RequestJSON(ctx, http.MethodDelete, "/management/api-keys?value="+url.QueryEscape(rawKey), nil, "v0", nil)
+				}
+			}
 		}
 
 		_ = eng.ReloadState(ctx)
@@ -435,7 +455,7 @@ type QuotaUpdatePayload struct {
 	ModelGroup     string      `json:"model_group"`
 }
 
-// HandleUpdateQuotaRule updates or creates the quota rule for a specific key.
+// HandleUpdateQuotaRule updates or creates the quota rule for a specific key while preserving unspecified fields.
 func HandleUpdateQuotaRule(eng *engine.Engine) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		idStr := c.Param("id")
@@ -451,19 +471,40 @@ func HandleUpdateQuotaRule(eng *engine.Engine) gin.HandlerFunc {
 			return
 		}
 
+		ctx := c.Request.Context()
+		existingRule, _ := eng.DB().SelectQuotaRuleByKeyID(ctx, keyID)
+
 		enabledInt := 0
-		if payload.Enabled != nil && *payload.Enabled {
-			enabledInt = 1
+		if payload.Enabled != nil {
+			if *payload.Enabled {
+				enabledInt = 1
+			}
+		} else if existingRule != nil {
+			enabledInt = existingRule.Enabled
 		}
 
 		hardRatio := 1.2
 		if payload.HardRatio != nil && *payload.HardRatio > 0 {
 			hardRatio = *payload.HardRatio
+		} else if existingRule != nil && existingRule.HardRatio > 0 {
+			hardRatio = existingRule.HardRatio
 		}
 
 		rpmLimit := 0
 		if payload.RPMLimit != nil && *payload.RPMLimit >= 0 {
 			rpmLimit = *payload.RPMLimit
+		} else if existingRule != nil {
+			rpmLimit = existingRule.RPMLimit
+		}
+
+		dailyLimit := payload.DailyLimit
+		if dailyLimit == nil && existingRule != nil {
+			dailyLimit = existingRule.DailyLimit
+		}
+
+		modelGroup := payload.ModelGroup
+		if modelGroup == "" && existingRule != nil {
+			modelGroup = existingRule.ModelGroup
 		}
 
 		whitelistStr := "[]"
@@ -478,22 +519,32 @@ func HandleUpdateQuotaRule(eng *engine.Engine) gin.HandlerFunc {
 				}
 				b, _ := json.Marshal(strs)
 				whitelistStr = string(b)
+			case []string:
+				var strs []string
+				for _, item := range v {
+					if s := strings.TrimSpace(item); s != "" {
+						strs = append(strs, s)
+					}
+				}
+				b, _ := json.Marshal(strs)
+				whitelistStr = string(b)
 			case string:
 				whitelistStr = v
 			}
+		} else if existingRule != nil {
+			whitelistStr = existingRule.ModelWhitelist
 		}
 
 		rule := &db.QuotaRuleRow{
 			KeyID:          keyID,
 			Enabled:        enabledInt,
-			DailyLimit:     payload.DailyLimit,
+			DailyLimit:     dailyLimit,
 			HardRatio:      hardRatio,
 			RPMLimit:       rpmLimit,
 			ModelWhitelist: whitelistStr,
-			ModelGroup:     payload.ModelGroup,
+			ModelGroup:     modelGroup,
 		}
 
-		ctx := c.Request.Context()
 		if err := eng.DB().UpsertQuotaRule(ctx, rule); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to update quota rule: %v", err)})
 			return

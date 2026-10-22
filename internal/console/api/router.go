@@ -105,7 +105,7 @@ func registerConsoleRoutes(
 		rg.GET("/keys/:id/reveal", HandleRevealKey(eng))
 		rg.POST("/keys/:id/rotate", HandleRotateKey(eng))
 		rg.PUT("/keys/:id/alias", HandleUpdateKeyAlias(eng))
-		rg.DELETE("/keys/:id", HandleDeleteKey(eng))
+		rg.DELETE("/keys/:id", HandleDeleteKey(eng, cpa))
 		rg.PUT("/keys/:id/quota", HandleUpdateQuotaRule(eng))
 		rg.DELETE("/keys/:id/quota", HandleDeleteQuotaRule(eng))
 
