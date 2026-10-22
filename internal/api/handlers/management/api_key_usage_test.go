@@ -140,3 +140,67 @@ func TestGetAPIKeyUsage_GroupsOpenAICompatibleByCompatName(t *testing.T) {
 		t.Fatalf("vast totals = %d/%d, want 1/0", vastEntry.Success, vastEntry.Failed)
 	}
 }
+
+func TestMergeRecentRequestBuckets_TimeAligned(t *testing.T) {
+	dst := []coreauth.RecentRequestBucket{
+		{Time: "10:00", Success: 5, Failed: 1},
+		{Time: "10:10", Success: 10, Failed: 2},
+	}
+	src := []coreauth.RecentRequestBucket{
+		{Time: "10:10", Success: 3, Failed: 1},
+		{Time: "10:20", Success: 7, Failed: 0},
+	}
+
+	merged := mergeRecentRequestBuckets(dst, src)
+	if len(merged) != 3 {
+		t.Fatalf("merged len = %d, want 3", len(merged))
+	}
+
+	byTime := make(map[string]coreauth.RecentRequestBucket, len(merged))
+	for _, b := range merged {
+		byTime[b.Time] = b
+	}
+
+	if b, ok := byTime["10:00"]; !ok || b.Success != 5 || b.Failed != 1 {
+		t.Fatalf("bucket 10:00 = %+v, want 5/1", b)
+	}
+	if b, ok := byTime["10:10"]; !ok || b.Success != 13 || b.Failed != 3 {
+		t.Fatalf("bucket 10:10 = %+v, want 13/3", b)
+	}
+	if b, ok := byTime["10:20"]; !ok || b.Success != 7 || b.Failed != 0 {
+		t.Fatalf("bucket 10:20 = %+v, want 7/0", b)
+	}
+}
+
+func TestMergeRecentRequestBuckets_FallbackOffset(t *testing.T) {
+	dst := []coreauth.RecentRequestBucket{
+		{Success: 1, Failed: 0},
+		{Success: 2, Failed: 0},
+	}
+	src := []coreauth.RecentRequestBucket{
+		{Success: 3, Failed: 1},
+	}
+
+	merged := mergeRecentRequestBuckets(dst, src)
+	if len(merged) != 2 {
+		t.Fatalf("merged len = %d, want 2", len(merged))
+	}
+	if merged[0].Success != 1 || merged[0].Failed != 0 {
+		t.Fatalf("bucket[0] = %+v, want 1/0", merged[0])
+	}
+	if merged[1].Success != 5 || merged[1].Failed != 1 {
+		t.Fatalf("bucket[1] = %+v, want 5/1", merged[1])
+	}
+}
+
+func TestMergeRecentRequestBuckets_Empty(t *testing.T) {
+	sample := []coreauth.RecentRequestBucket{
+		{Time: "10:00", Success: 1, Failed: 0},
+	}
+	if got := mergeRecentRequestBuckets(nil, sample); len(got) != 1 || got[0].Success != 1 {
+		t.Fatalf("merge nil dst failed: %+v", got)
+	}
+	if got := mergeRecentRequestBuckets(sample, nil); len(got) != 1 || got[0].Success != 1 {
+		t.Fatalf("merge nil src failed: %+v", got)
+	}
+}

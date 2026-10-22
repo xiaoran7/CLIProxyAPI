@@ -1221,7 +1221,7 @@
           compactContainer.style.display = 'flex';
           compactContainer.innerHTML = filtered.map(acc => {
             const safeFilename = escapeHtml(acc.filename || acc.id || '');
-            const brand = getProviderBrand(acc.provider);
+            const brand = getProviderBrand(acc.provider, acc.display_name || acc.name);
             const planType = (acc.plan_type || 'free').toLowerCase();
             let planClass = 'plan-free';
             if (planType.includes('pro') || planType.includes('ultra')) planClass = 'plan-pro';
@@ -1681,7 +1681,7 @@
           cardsContainer.style.display = 'grid';
           cardsContainer.innerHTML = filtered.map(acc => {
             const safeFilename = escapeHtml(acc.filename || acc.id || '');
-            const brand = getProviderBrand(acc.provider);
+            const brand = getProviderBrand(acc.provider, acc.display_name || acc.name);
             const planType = (acc.plan_type || 'free').toLowerCase();
             let planClass = 'plan-free';
             if (planType.includes('pro') || planType.includes('ultra')) planClass = 'plan-pro';
@@ -2177,7 +2177,7 @@
       let activeCardsHtml = '';
       if (activeItems.length > 0) {
         activeCardsHtml = activeItems.map(it => {
-          const brand = getProviderBrand(it.provider);
+          const brand = getProviderBrand(it.provider, it.display_name || it.name);
           const prio = normalizeAuthPriority(it.priority);
           const prioCls = prio >= 20 ? 'p-high' : (prio >= 10 ? 'p-normal' : 'p-low');
           const isDisabled = Boolean(it.disabled || it.status === 'disabled');
@@ -2411,7 +2411,7 @@
           const wasOpen = Boolean(archiveContainer.querySelector('.deleted-accounts-archive')?.open);
 
           const rowsHtml = deletedItems.map(it => {
-            const brand = getProviderBrand(it.provider);
+            const brand = getProviderBrand(it.provider, it.display_name || it.name);
             const pStats = it.period_stats || {};
             const tok5hStr = formatTokens(pStats.tokens_5h || 0);
             const tok24hStr = formatTokens(pStats.tokens_24h || 0);

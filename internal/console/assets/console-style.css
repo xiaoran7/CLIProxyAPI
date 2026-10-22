@@ -491,6 +491,10 @@
       background: #3f3f46;
       color: #fff;
     }
+    .provider-icon-custom {
+      background: linear-gradient(135deg, #0ea5e9, #6366f1);
+      color: #fff;
+    }
 
     /* 显式品牌提供商胶囊徽章 */
     .provider-pill {
@@ -544,6 +548,11 @@
       background: rgba(186, 215, 242, 0.5);
       color: var(--text-muted);
       border-color: rgba(186, 215, 242, 0.5);
+    }
+    .provider-pill-custom {
+      background: rgba(14, 165, 233, 0.12);
+      color: #0284c7;
+      border-color: rgba(14, 165, 233, 0.28);
     }
 
     /* 优先级金标与调整按钮 */
@@ -2559,6 +2568,7 @@
     .provider-pill-stepfun { color: #0284c7; }
     .provider-pill-workbuddy { color: #0d7a42; }
     .provider-pill-qoder { color: #d95800; }
+    .provider-pill-custom { color: #0284c7; }
     .priority-badge { color: #8d5708; }
     .priority-badge.p-high { color: #b22f39; }
     .priority-badge.p-normal { color: #1b66a6; }

@@ -192,7 +192,7 @@
       if (typeof cachedUpstream !== 'undefined' && Array.isArray(cachedUpstream?.accounts)) {
         for (const acc of cachedUpstream.accounts) {
           if (acc?.provider && acc.provider !== 'unknown' && !provMap.has(acc.provider)) {
-            const brand = getProviderBrand(acc.provider);
+            const brand = getProviderBrand(acc.provider, acc.display_name || acc.name);
             provMap.set(acc.provider, brand.name || acc.provider);
           }
         }
@@ -408,11 +408,11 @@
 
       // 上游承接账号
       const shortAuth = ev.auth_index ? ev.auth_index.slice(0, 8) : '';
-      const authBrand = getProviderBrand(resolveEventProvider(ev));
       let authName = ev.auth_name || (ev.auth_index ? getAuthDisplayName(ev.auth_index) : '') || '';
       if (authName && typeof authName === 'string') {
         authName = authName.replace(/\.json$/i, '');
       }
+      const authBrand = getProviderBrand(resolveEventProvider(ev), authName);
       if (ev.auth_index && (!authName || authName === ev.auth_index)) {
         authName = (authBrand && authBrand.id !== 'other')
           ? t('logs.channelByShortAuth', { name: authBrand.name, shortAuth: shortAuth })
@@ -676,11 +676,11 @@
         // 上游账号与凭据身份直观展示
         const shortAuth = ev.auth_index ? ev.auth_index.slice(0, 16) : '';
         const shortId = ev.auth_index ? ev.auth_index.slice(0, 8) : '';
-        const brand = getProviderBrand(resolveEventProvider(ev));
         let authName = ev.auth_name || (ev.auth_index ? getAuthDisplayName(ev.auth_index) : '') || '';
-      if (authName && typeof authName === 'string') {
-        authName = authName.replace(/\.json$/i, '');
-      }
+        if (authName && typeof authName === 'string') {
+          authName = authName.replace(/\.json$/i, '');
+        }
+        const brand = getProviderBrand(resolveEventProvider(ev), authName);
         if (ev.auth_index && (!authName || authName === ev.auth_index)) {
           authName = (brand && brand.id !== 'other')
             ? t('logs.channelByShortId', { name: brand.name, shortId: shortId })

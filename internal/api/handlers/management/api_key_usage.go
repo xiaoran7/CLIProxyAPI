@@ -22,20 +22,46 @@ func mergeRecentRequestBuckets(dst, src []coreauth.RecentRequestBucket) []coreau
 	if len(src) == 0 {
 		return dst
 	}
-	if len(dst) != len(src) {
-		n := len(dst)
-		if len(src) < n {
-			n = len(src)
+	hasTime := false
+	for _, b := range dst {
+		if b.Time != "" {
+			hasTime = true
+			break
 		}
-		for i := 0; i < n; i++ {
-			dst[i].Success += src[i].Success
-			dst[i].Failed += src[i].Failed
+	}
+	if !hasTime {
+		for _, b := range src {
+			if b.Time != "" {
+				hasTime = true
+				break
+			}
+		}
+	}
+	if hasTime {
+		byTime := make(map[string]int, len(dst))
+		for i, b := range dst {
+			if b.Time != "" {
+				byTime[b.Time] = i
+			}
+		}
+		for _, b := range src {
+			if idx, ok := byTime[b.Time]; ok {
+				dst[idx].Success += b.Success
+				dst[idx].Failed += b.Failed
+			} else if b.Time != "" {
+				byTime[b.Time] = len(dst)
+				dst = append(dst, b)
+			}
 		}
 		return dst
 	}
-	for i := range dst {
-		dst[i].Success += src[i].Success
-		dst[i].Failed += src[i].Failed
+	n := len(dst)
+	if len(src) < n {
+		n = len(src)
+	}
+	for i := 1; i <= n; i++ {
+		dst[len(dst)-i].Success += src[len(src)-i].Success
+		dst[len(dst)-i].Failed += src[len(src)-i].Failed
 	}
 	return dst
 }

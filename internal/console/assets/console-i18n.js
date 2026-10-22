@@ -164,6 +164,8 @@
     'provider.qoderCnShort': { zh: '灵码', en: 'Lingma' },
     'provider.qwen': { zh: 'Qwen 通义千问', en: 'Qwen' },
     'provider.stepfun': { zh: '阶跃星辰 StepFun', en: 'StepFun' },
+    'provider.upstreamChannel': { zh: '上游渠道', en: 'Upstream Channel' },
+    'provider.customChannel': { zh: '自定义渠道', en: 'Custom Channel' },
     'provider.workbuddy': { zh: '腾讯 WorkBuddy', en: 'WorkBuddy' },
     'provider.xai': { zh: 'xAI (Grok)', en: 'xAI (Grok)' },
 

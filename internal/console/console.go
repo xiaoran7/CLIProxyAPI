@@ -268,6 +268,38 @@ func ServerOptions(cfg SubsystemConfig) []api.ServerOption {
 					sub.logger.Infof("console: reconciled %d keys from CPA configuration", reconciled)
 				}
 			}
+
+			// Reconcile and proactively register OpenAI compatibility channels into ProviderRegistryEngine
+			if len(serverCfg.OpenAICompatibility) > 0 {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				var compatList []consoleapi.CpaOpenAICompatProvider
+				for _, c := range serverCfg.OpenAICompatibility {
+					var keyEntries []consoleapi.CpaOpenAICompatKeyEntry
+					for _, k := range c.APIKeyEntries {
+						keyEntries = append(keyEntries, consoleapi.CpaOpenAICompatKeyEntry{
+							APIKey: k.APIKey,
+							Weight: k.Weight,
+						})
+					}
+					var models []consoleapi.CpaOpenAICompatModel
+					for _, m := range c.Models {
+						models = append(models, consoleapi.CpaOpenAICompatModel{
+							Name:  m.Name,
+							Alias: m.Alias,
+						})
+					}
+					compatList = append(compatList, consoleapi.CpaOpenAICompatProvider{
+						Name:          c.Name,
+						Disabled:      c.Disabled,
+						BaseURL:       c.BaseURL,
+						APIKeyEntries: keyEntries,
+						Models:        models,
+					})
+				}
+				consoleapi.SyncOpenAICompatConfig(ctx, sub.engine, sub.providers, compatList)
+				sub.logger.Infof("console: reconciled %d custom channels from OpenAICompatibility configuration", len(compatList))
+			}
 		}
 
 		// Register API, system, and member routes

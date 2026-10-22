@@ -203,3 +203,117 @@ func TestInitialProviderRegistry_ExpandedSeeds(t *testing.T) {
 		}
 	}
 }
+
+func TestProviderRegistryEngine_CustomChannels(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_custom_channels.db")
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	pe, err := NewProviderRegistryEngine(database)
+	if err != nil {
+		t.Fatalf("failed to create provider registry engine: %v", err)
+	}
+
+	// 1. Register a custom channel name directly
+	pe.RegisterChannel("compat:siliconflow", "SiliconFlow")
+	if label := pe.GetChannelLabel("compat:siliconflow"); label != "SiliconFlow" {
+		t.Errorf("expected channel label 'SiliconFlow', got %q", label)
+	}
+	if grpLabel := pe.GetProviderGroupLabel("compat:siliconflow", ""); grpLabel != "SiliconFlow" {
+		t.Errorf("expected group label 'SiliconFlow', got %q", grpLabel)
+	}
+
+	// 2. Register an auth account belonging to a compatibility channel
+	sfAuth := "sf_auth_12345678"
+	pe.RegisterAuthAccount(sfAuth, "openai-compatibility", "SiliconFlow")
+
+	res := pe.InferProvider("deepseek-ai/DeepSeek-V3", sfAuth)
+	if res.Key != "compat:siliconflow" {
+		t.Errorf("expected key 'compat:siliconflow', got %q", res.Key)
+	}
+	if res.Label != "SiliconFlow" {
+		t.Errorf("expected label 'SiliconFlow', got %q", res.Label)
+	}
+	if res.MatchedBy != "auth" || res.Source != "account" {
+		t.Errorf("expected matched_by 'auth' and source 'account', got %s/%s", res.MatchedBy, res.Source)
+	}
+
+	// 3. Test unknown auth_index produces channel-specific key instead of generic "other"
+	unmatchedAuth := "a1b2c3d4e5f67890"
+	resUnknown := pe.InferProvider("unknown-custom-model", unmatchedAuth)
+	if resUnknown.Key != "upstream:a1b2c3d4" {
+		t.Errorf("expected key 'upstream:a1b2c3d4', got %q", resUnknown.Key)
+	}
+	if resUnknown.Label != "Upstream a1b2c3d4" {
+		t.Errorf("expected label 'Upstream a1b2c3d4', got %q", resUnknown.Label)
+	}
+	if resUnknown.MatchedBy != "auth" || resUnknown.Source != "channel" {
+		t.Errorf("expected matched_by 'auth' and source 'channel', got %s/%s", resUnknown.MatchedBy, resUnknown.Source)
+	}
+
+	// 4. Test completely empty model and auth_index falls back to other
+	resEmpty := pe.InferProvider("", "")
+	if resEmpty.Key != UnknownProviderKey {
+		t.Errorf("expected key %q, got %q", UnknownProviderKey, resEmpty.Key)
+	}
+	if resEmpty.Label != UnknownProviderLabel {
+		t.Errorf("expected label %q, got %q", UnknownProviderLabel, resEmpty.Label)
+	}
+}
+
+func TestSyncOpenAICompatConfig_CustomChannels(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_compat_sync.db")
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	pe, err := NewProviderRegistryEngine(database)
+	if err != nil {
+		t.Fatalf("failed to create provider registry engine: %v", err)
+	}
+
+	compatList := []CpaOpenAICompatProvider{
+		{
+			Name: "SiliconFlow",
+			APIKeyEntries: []CpaOpenAICompatKeyEntry{
+				{APIKey: "sk-sf-test-key-12345"},
+			},
+		},
+		{
+			Name: "Local Ollama",
+			// Keyless provider
+			BaseURL: "http://localhost:11434/v1",
+		},
+	}
+
+	ctx := context.Background()
+	SyncOpenAICompatConfig(ctx, nil, pe, compatList)
+
+	// Verify channel names registered in memory
+	if label := pe.GetChannelLabel("compat:siliconflow"); label != "SiliconFlow" {
+		t.Errorf("expected channel 'compat:siliconflow' to be 'SiliconFlow', got %q", label)
+	}
+	if label := pe.GetChannelLabel("compat:local_ollama"); label != "Local Ollama" {
+		t.Errorf("expected channel 'compat:local_ollama' to be 'Local Ollama', got %q", label)
+	}
+
+	// Verify keyless provider has in-memory account
+	ollamaAcc, found := pe.GetAuthAccount("compat_local_ollama")
+	if !found {
+		t.Fatalf("expected 'compat_local_ollama' account to be registered")
+	}
+	if ollamaAcc.Name != "Local Ollama" {
+		t.Errorf("expected name 'Local Ollama', got %q", ollamaAcc.Name)
+	}
+}

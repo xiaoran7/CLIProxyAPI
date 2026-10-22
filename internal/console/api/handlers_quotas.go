@@ -486,7 +486,7 @@ func SyncAuthFilesToBaselines(ctx context.Context, eng *engine.Engine, providers
 			if authIdx == "" {
 				authIdx = fmt.Sprintf("compat_%s", strings.ToLower(strings.ReplaceAll(compName, " ", "_")))
 			}
-			dispName := fmt.Sprintf("%s 渠道", compName)
+			dispName := compName
 			providers.RegisterAuthAccount(authIdx, provName, dispName)
 
 			pCopy := provName
@@ -504,11 +504,15 @@ func SyncAuthFilesToBaselines(ctx context.Context, eng *engine.Engine, providers
 				}
 				dispName := strings.TrimSpace(keyEntry.Note)
 				if dispName == "" {
-					prefixLen := 8
-					if len(authIdx) < prefixLen {
-						prefixLen = len(authIdx)
+					if len(comp.APIKeyEntries) == 1 {
+						dispName = compName
+					} else {
+						prefixLen := 8
+						if len(authIdx) < prefixLen {
+							prefixLen = len(authIdx)
+						}
+						dispName = fmt.Sprintf("%s %s", compName, authIdx[:prefixLen])
 					}
-					dispName = fmt.Sprintf("%s 渠道 %s", compName, authIdx[:prefixLen])
 				}
 
 				providers.RegisterAuthAccount(authIdx, provName, dispName)

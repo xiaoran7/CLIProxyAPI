@@ -124,6 +124,20 @@ func (m *Manager) Register(ctx context.Context, auth *Auth) (*Auth, error) {
 	auth.RegistrationEpoch = m.authEpochs[auth.ID]
 	if existing, exists := m.auths[auth.ID]; exists && existing != nil {
 		auth.CredentialVersion = max(auth.CredentialVersion, existing.CredentialVersion) + 1
+		if !auth.indexAssigned && auth.Index == "" {
+			auth.Index = existing.Index
+			auth.indexAssigned = existing.indexAssigned
+		}
+		if auth.Success == 0 && auth.Failed == 0 {
+			auth.Success = existing.Success
+			auth.Failed = existing.Failed
+		}
+		if auth.recentRequests == (recentRequestRing{}) {
+			auth.recentRequests = existing.recentRequests
+		}
+		if len(auth.ModelStates) == 0 && len(existing.ModelStates) > 0 {
+			auth.ModelStates = existing.ModelStates
+		}
 	} else if auth.CredentialVersion == 0 {
 		auth.CredentialVersion = 1
 	}
@@ -598,6 +612,20 @@ func (m *Manager) Load(ctx context.Context) error {
 			auth.CredentialVersion = max(auth.CredentialVersion, prev.CredentialVersion)
 			if CredentialsChanged(prev, auth) {
 				auth.CredentialVersion++
+			}
+			if !auth.indexAssigned && auth.Index == "" {
+				auth.Index = prev.Index
+				auth.indexAssigned = prev.indexAssigned
+			}
+			if auth.Success == 0 && auth.Failed == 0 {
+				auth.Success = prev.Success
+				auth.Failed = prev.Failed
+			}
+			if auth.recentRequests == (recentRequestRing{}) {
+				auth.recentRequests = prev.recentRequests
+			}
+			if len(auth.ModelStates) == 0 && len(prev.ModelStates) > 0 {
+				auth.ModelStates = prev.ModelStates
 			}
 		}
 		if auth.CredentialVersion == 0 {

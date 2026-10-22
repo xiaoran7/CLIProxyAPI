@@ -118,7 +118,7 @@
       const groups = (summary && Array.isArray(summary.provider_groups)) ? summary.provider_groups : [];
       for (const g of groups) {
         const provKey = g.provider || g.group_id;
-        const brand = getProviderBrand(provKey);
+        const brand = getProviderBrand(provKey, g.name);
         const health = statusGroupDot(g.health_dot, g.health_title);
         const meta = [];
         if (g.accounts > 0) {
@@ -698,7 +698,7 @@
       for (const p of providers) {
         const pctMax = Math.max(2, Math.round((p.total_tokens / maxVal) * 100));
         const sharePct = totalAllProvidersTokens > 0 ? ((p.total_tokens / totalAllProvidersTokens) * 100).toFixed(1) : '0.0';
-        const brand = getProviderBrand(p.provider);
+        const brand = getProviderBrand(p.provider, p.display_name);
         const avgPerReq = p.avg_tokens_per_request || (p.requests > 0 ? Math.round(p.total_tokens / p.requests) : 0);
         const cacheHitRate = p.cache_hit_rate || 0;
 

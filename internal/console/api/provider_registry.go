@@ -705,9 +705,28 @@ func (pe *ProviderRegistryEngine) InferProvider(model, authIndex string) Provide
 		}
 	}
 
+	// 3. Fallback to channel prefix if authIndex is present but unmapped
+	if authStr != "" {
+		prefix := authStr
+		if len(prefix) > 8 {
+			prefix = prefix[:8]
+		}
+		channelKey := fmt.Sprintf("upstream:%s", prefix)
+		label := pe.channelNames[channelKey]
+		if label == "" {
+			label = fmt.Sprintf("Upstream %s", prefix)
+		}
+		return ProviderInferenceResult{
+			Key:       channelKey,
+			Label:     label,
+			MatchedBy: "auth",
+			Source:    "channel",
+		}
+	}
+
 	return ProviderInferenceResult{
-		Key:       "",
-		Label:     "",
+		Key:       UnknownProviderKey,
+		Label:     UnknownProviderLabel,
 		MatchedBy: "none",
 		Source:    "",
 	}
@@ -716,7 +735,7 @@ func (pe *ProviderRegistryEngine) InferProvider(model, authIndex string) Provide
 // InferModelProviderLabel returns display label inferred purely from model name.
 func (pe *ProviderRegistryEngine) InferModelProviderLabel(model string) string {
 	res := pe.InferProvider(model, "")
-	if res.Label != "" {
+	if res.Label != "" && res.Key != UnknownProviderKey {
 		return res.Label
 	}
 	return OtherModelLabel
