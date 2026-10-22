@@ -787,12 +787,17 @@
           }
           if (filter === 'qoder') {
             const p = (a.provider || '').toLowerCase();
-            return p === 'qoder' || p === 'qoder-cn';
+            return p.startsWith('qoder');
           }
           return (a.provider || '').toLowerCase() === filter;
         }
         const prov = (a.provider || '').toLowerCase();
-        return prov === 'codex' || prov === 'antigravity' || prov === 'workbuddy' || prov === 'workbuddy-cn' || prov === 'qoder' || prov === 'qoder-cn' || prov === 'openrouter' || prov === 'opencode' || Boolean(a.supports_quota || a.quota_provider || a.quota_plugin_id);
+        return prov === 'codex' || prov === 'antigravity' || prov === 'claude' ||
+          prov === 'workbuddy' || prov === 'workbuddy-cn' ||
+          prov === 'qoder' || prov === 'qoder-cn' || prov === 'qoder-intl' || prov === 'qoder-en' ||
+          prov === 'copilot-tencent' || prov === 'kimi' || prov === 'xai' || prov === 'devin' ||
+          prov === 'openrouter' || prov === 'opencode' ||
+          Boolean(a.supports_quota || a.quota_provider || a.quota_plugin_id);
       });
 
       const filterLabel = filter === 'all' ? t('quotas.filter.all') : (filter === 'antigravity' ? 'Antigravity' : (filter === 'codex' ? 'Codex' : (filter === 'claude' ? 'Claude' : (filter === 'workbuddy' ? 'WorkBuddy' : (filter === 'qoder' ? 'Qoder' : (filter === 'openrouter' ? 'OpenRouter' : (filter === 'opencode' ? 'OpenCode' : filter)))))));
@@ -1335,9 +1340,38 @@
               metersHtml = `
                 <div class="compact-meter-wrap" title="${escapeHtml(title)}">
                   <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
-                    <span style="color:var(--text-muted); font-size:10.5px;">${t('quotas.workbuddy.packPoints')}</span>
+                    <span style="display:inline-flex; align-items:center; gap:4px;">
+                      <span class="quota-pool-badge pool-workbuddy">WorkBuddy</span>
+                      <span style="color:var(--text-muted); font-size:10px;">${t('quotas.workbuddy.packPoints')}</span>
+                    </span>
                     <span style="font-family:var(--mono); font-weight:700; color:${col};">
                       ${t('quotas.points.remainingPoints', { value: remainCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) })}
+                    </span>
+                  </div>
+                  <div class="quota-meter-bar" style="height:4px;">
+                    <div class="quota-meter-fill ${cls}" style="width: ${pct}%"></div>
+                  </div>
+                </div>
+              `;
+            } else if (acc.provider && acc.provider.toLowerCase().startsWith('qoder')) {
+              const remainCredits = Number(acc.remaining_credits) || 0;
+              const totalCredits = Number(acc.total_credits) || 0;
+              const pct = totalCredits > 0 ? Math.max(0, Math.min(100, Math.round((remainCredits / totalCredits) * 1000) / 10)) : (remainCredits > 0 ? 100 : (fallbackBucket && Number.isFinite(fallbackBucket.remaining_percent) ? fallbackBucket.remaining_percent : 0));
+              let cls = 'meter-high'; let col = '#10b981';
+              if (pct <= 20) { cls = 'meter-low'; col = '#ef4444'; }
+              else if (pct <= 50) { cls = 'meter-medium'; col = '#f59e0b'; }
+
+              const pointsLabel = totalCredits > 0 ? `${remainCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 1})} / ${totalCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 1})}` : `${remainCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 1})} pts`;
+
+              metersHtml = `
+                <div class="compact-meter-wrap" title="Qoder 资源额度点数 (${escapeHtml(pointsLabel)})">
+                  <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+                    <span style="display:inline-flex; align-items:center; gap:4px;">
+                      <span class="quota-pool-badge pool-qoder">Qoder</span>
+                      <span style="color:var(--text-muted); font-size:10px;">资源点数</span>
+                    </span>
+                    <span style="font-family:var(--mono); font-weight:700; color:${col};">
+                      ${escapeHtml(pointsLabel)}
                     </span>
                   </div>
                   <div class="quota-meter-bar" style="height:4px;">
@@ -1469,6 +1503,67 @@
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
                       <span style="display:inline-flex; align-items:center; gap:4px;">
                         <span class="quota-pool-badge pool-codex">Codex</span>
+                        <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.fiveHourLimit')}</span>
+                      </span>
+                      <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
+                    </div>
+                    <div class="quota-meter-bar" style="height:4px;">
+                      <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
+                    </div>
+                  </div>
+                  ${col2Html}
+                `;
+              }
+            } else if (acc.provider === 'claude') {
+              const b1 = (claude5hBucket && Number.isFinite(claude5hBucket.remaining_percent)) ? claude5hBucket : fallbackBucket;
+              const b2 = claudeWeeklyBucket;
+
+              if (!b1 || !Number.isFinite(b1.remaining_percent)) {
+                metersHtml = cooldownCompactNotice + `<div class="account-quota-unknown">${t('quotas.quotaUnknownUpstream')}</div>`;
+              } else {
+                const rem1 = b1.remaining_percent;
+                let cls1 = 'meter-high'; let col1 = '#10b981';
+                if (rem1 <= 25) { cls1 = 'meter-low'; col1 = '#ef4444'; }
+                else if (rem1 <= 60) { cls1 = 'meter-medium'; col1 = '#f59e0b'; }
+
+                let title1 = 'Claude 5-Hour Limit';
+                if (b1?.reset_time || b1?.reset_countdown) {
+                  title1 += ` (${b1.reset_countdown || formatResetAbs(b1.reset_time)})`;
+                }
+
+                let col2Html = '';
+                if (b2 && Number.isFinite(b2.remaining_percent)) {
+                  const rem2 = b2.remaining_percent;
+                  let cls2 = 'meter-high'; let col2 = '#10b981';
+                  if (rem2 <= 25) { cls2 = 'meter-low'; col2 = '#ef4444'; }
+                  else if (rem2 <= 60) { cls2 = 'meter-medium'; col2 = '#f59e0b'; }
+
+                  let title2 = 'Claude 7-Day Limit';
+                  if (b2?.reset_time || b2?.reset_countdown) {
+                    title2 += ` (${b2.reset_countdown || formatResetAbs(b2.reset_time)})`;
+                  }
+
+                  col2Html = `
+                    <div class="compact-meter-wrap" title="${escapeHtml(title2)}">
+                      <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+                        <span style="display:inline-flex; align-items:center; gap:4px;">
+                          <span class="quota-pool-badge pool-claude">Claude</span>
+                          <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.weeklyLimit')}</span>
+                        </span>
+                        <span style="font-family:var(--mono); font-weight:700; color:${col2};">${t('quotas.bucket.secondRemainingPercent', { rem2: rem2 })}</span>
+                      </div>
+                      <div class="quota-meter-bar" style="height:4px;">
+                        <div class="quota-meter-fill ${cls2}" style="width: ${rem2}%"></div>
+                      </div>
+                    </div>
+                  `;
+                }
+
+                metersHtml = `
+                  <div class="compact-meter-wrap" title="${escapeHtml(title1)}">
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+                      <span style="display:inline-flex; align-items:center; gap:4px;">
+                        <span class="quota-pool-badge pool-claude">Claude</span>
                         <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.fiveHourLimit')}</span>
                       </span>
                       <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
@@ -1618,6 +1713,8 @@
               const isGemini = gnameLower.includes('gemini');
               const isClaude = gnameLower.includes('claude') || gnameLower.includes('gpt') || gnameLower.includes('3p');
               const isCodex = gnameLower.includes('codex') || acc.provider === 'codex';
+              const isQoder = gnameLower.includes('qoder') || (acc.provider && acc.provider.toLowerCase().startsWith('qoder'));
+              const isWorkbuddy = gnameLower.includes('workbuddy') || (acc.provider && acc.provider.toLowerCase().startsWith('workbuddy'));
 
               let poolBadge = '';
               let displayTitle = escapeHtml(grp.name);
@@ -1633,6 +1730,10 @@
                 displayDesc = t('quotas.group.claudeDesc');
               } else if (isCodex) {
                 poolBadge = `<span class="quota-pool-badge pool-codex">Codex</span>`;
+              } else if (isQoder) {
+                poolBadge = `<span class="quota-pool-badge pool-qoder">Qoder</span>`;
+              } else if (isWorkbuddy) {
+                poolBadge = `<span class="quota-pool-badge pool-workbuddy">WorkBuddy</span>`;
               }
 
               const sortedBuckets = [...(grp.buckets || [])].filter(bkt => Number.isFinite(bkt.remaining_percent));

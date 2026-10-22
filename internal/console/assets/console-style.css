@@ -748,6 +748,16 @@
       color: #059669;
       border: 1px solid rgba(16, 185, 129, 0.3);
     }
+    .quota-pool-badge.pool-qoder {
+      background: rgba(139, 92, 246, 0.12);
+      color: #7c3aed;
+      border: 1px solid rgba(139, 92, 246, 0.3);
+    }
+    .quota-pool-badge.pool-workbuddy {
+      background: rgba(59, 130, 246, 0.12);
+      color: #2563eb;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
     .quota-meter-row {
       display: flex;
       flex-direction: column;

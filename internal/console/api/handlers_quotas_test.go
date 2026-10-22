@@ -387,6 +387,154 @@ func TestComputeHealthModelCooldownNotBlockingCredential(t *testing.T) {
 	}
 }
 
+func TestParseClaudeQuotaGroups(t *testing.T) {
+	t.Parallel()
+
+	rawJSON := []byte(`{
+		"five_hour": {
+			"utilization": 0.25,
+			"resets_at": "2026-10-22T18:00:00Z"
+		},
+		"seven_day": {
+			"utilization": 0.60,
+			"resets_at": "2026-10-28T00:00:00Z"
+		},
+		"seven_day_sonnet": {
+			"utilization": 0.10,
+			"resets_at": "2026-10-28T00:00:00Z"
+		}
+	}`)
+
+	groups := parseClaudeQuotaGroups(rawJSON)
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(groups))
+	}
+	if groups[0].DisplayName != "Claude 模型" {
+		t.Errorf("expected Claude 模型, got %s", groups[0].DisplayName)
+	}
+	if len(groups[0].Buckets) != 3 {
+		t.Fatalf("expected 3 buckets, got %d", len(groups[0].Buckets))
+	}
+
+	// 5h bucket: 1.0 - 0.25 = 75%
+	b5h := groups[0].Buckets[0]
+	if b5h.Window != "5h" {
+		t.Errorf("expected window '5h', got %s", b5h.Window)
+	}
+	if b5h.RemainingPercent == nil || *b5h.RemainingPercent != 75 {
+		t.Errorf("expected 75%% remaining, got %v", b5h.RemainingPercent)
+	}
+
+	// 7d bucket: 1.0 - 0.60 = 40%
+	b7d := groups[0].Buckets[1]
+	if b7d.Window != "weekly" {
+		t.Errorf("expected window 'weekly', got %s", b7d.Window)
+	}
+	if b7d.RemainingPercent == nil || *b7d.RemainingPercent != 40 {
+		t.Errorf("expected 40%% remaining, got %v", b7d.RemainingPercent)
+	}
+}
+
+func TestParsePluginQuotaResponse(t *testing.T) {
+	t.Parallel()
+
+	rawJSON := []byte(`{
+		"subscription": {
+			"plan": "Qoder Global (en) · Pro"
+		},
+		"summary": [
+			{"key": "points_remain", "label": "Available Points", "value": 850.5},
+			{"key": "points_total", "label": "Total Quota", "value": 1000.0},
+			{"key": "points_used", "label": "Used Quota", "value": 149.5}
+		],
+		"groups": [
+			{
+				"displayName": "Qoder Resource Quota",
+				"buckets": [
+					{
+						"window": "monthly",
+						"remainingFraction": 0.8505,
+						"description": "Monthly Resource Quota",
+						"resetTime": "2026-11-01T00:00:00Z"
+					}
+				]
+			}
+		]
+	}`)
+
+	groups, planType, planName := parsePluginQuotaResponse(rawJSON, "qoder")
+	if planType != "pro" {
+		t.Errorf("expected planType 'pro', got %q", planType)
+	}
+	if planName != "Qoder Global (en) · Pro" {
+		t.Errorf("expected planName, got %q", planName)
+	}
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(groups))
+	}
+	if len(groups[0].Buckets) != 1 {
+		t.Fatalf("expected 1 bucket, got %d", len(groups[0].Buckets))
+	}
+
+	b := groups[0].Buckets[0]
+	if b.RemainingPercent == nil || *b.RemainingPercent != 85 {
+		t.Errorf("expected 85%% remaining, got %v", b.RemainingPercent)
+	}
+	if b.TotalCapacity == nil || *b.TotalCapacity != 1000.0 {
+		t.Errorf("expected total capacity 1000.0, got %v", b.TotalCapacity)
+	}
+	if b.RemainCapacity == nil || *b.RemainCapacity != 850.5 {
+		t.Errorf("expected remain capacity 850.5, got %v", b.RemainCapacity)
+	}
+
+	tot, rem, used, exp := extractAccountCredits(groups)
+	if tot == nil || *tot != 1000.0 {
+		t.Errorf("expected 1000 total credits, got %v", tot)
+	}
+	if rem == nil || *rem != 850.5 {
+		t.Errorf("expected 850.5 remaining credits, got %v", rem)
+	}
+	if used == nil || *used != 149.5 {
+		t.Errorf("expected 149.5 used credits, got %v", used)
+	}
+	if exp != "2026-11-01T00:00:00Z" {
+		t.Errorf("expected expiration timestamp, got %q", exp)
+	}
+}
+
+func TestIsSupportedQuotaProvider(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		prov     string
+		file     CpaAuthFile
+		expected bool
+	}{
+		{"antigravity", CpaAuthFile{}, true},
+		{"codex", CpaAuthFile{}, true},
+		{"claude", CpaAuthFile{}, true},
+		{"workbuddy", CpaAuthFile{}, true},
+		{"workbuddy-cn", CpaAuthFile{}, true},
+		{"qoder", CpaAuthFile{}, true},
+		{"qoder-cn", CpaAuthFile{}, true},
+		{"qoder-intl", CpaAuthFile{}, true},
+		{"copilot-tencent", CpaAuthFile{}, true},
+		{"kimi", CpaAuthFile{}, true},
+		{"xai", CpaAuthFile{}, true},
+		{"devin", CpaAuthFile{}, true},
+		{"generic", CpaAuthFile{SupportsQuota: true}, true},
+		{"custom", CpaAuthFile{QuotaProvider: "plugin-xyz"}, true},
+		{"unknown", CpaAuthFile{}, false},
+	}
+
+	for _, tc := range testCases {
+		res := isSupportedQuotaProvider(tc.prov, tc.file)
+		if res != tc.expected {
+			t.Errorf("provider %q expected %v, got %v", tc.prov, tc.expected, res)
+		}
+	}
+}
+
 func TestHydrateQuotaGroupsFromSnapshots(t *testing.T) {
 	t.Parallel()
 

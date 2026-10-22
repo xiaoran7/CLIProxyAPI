@@ -1586,12 +1586,44 @@ func buildProviderGroups(rows []db.RequestEventRow, providers *ProviderRegistryE
 	for _, r := range rows {
 		provRes := providers.InferProvider(r.Model, r.AuthIndex)
 		provKey := provRes.Key
-		if provKey == "" || provKey == "unknown" {
-			provKey = UnknownProviderKey
+		provLabel := provRes.Label
+
+		// If unclassified or generic 'other', check auth_index to separate custom upstreams by channel
+		if provKey == "" || provKey == "unknown" || provKey == UnknownProviderKey {
+			authClean := strings.TrimSpace(r.AuthIndex)
+			if authClean != "" {
+				if acc, ok := providers.GetAuthAccount(authClean); ok && (acc.ProviderKey != "" || acc.Name != "") {
+					if acc.ProviderKey != "" && acc.ProviderKey != "openai-compatibility" && acc.ProviderKey != UnknownProviderKey {
+						provKey = acc.ProviderKey
+					} else if acc.Name != "" {
+						provKey = fmt.Sprintf("compat:%s", strings.ToLower(strings.ReplaceAll(acc.Name, " ", "_")))
+					} else {
+						prefix := authClean
+						if len(prefix) > 8 {
+							prefix = prefix[:8]
+						}
+						provKey = fmt.Sprintf("upstream:%s", prefix)
+					}
+					if provLabel == "" {
+						provLabel = acc.Name
+					}
+				} else {
+					prefix := authClean
+					if len(prefix) > 8 {
+						prefix = prefix[:8]
+					}
+					provKey = fmt.Sprintf("upstream:%s", prefix)
+					provLabel = fmt.Sprintf("上游渠道 %s", prefix)
+				}
+			} else {
+				provKey = UnknownProviderKey
+				provLabel = UnknownProviderLabel
+			}
 		}
+
 		g, exists := groups[provKey]
 		if !exists {
-			label := providers.GetProviderGroupLabel(provKey, provRes.Label)
+			label := providers.GetProviderGroupLabel(provKey, provLabel)
 			g = &groupEntry{
 				key:      provKey,
 				name:     label,

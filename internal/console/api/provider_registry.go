@@ -325,6 +325,7 @@ type ProviderRegistryEngine struct {
 	providers    []*CompiledProvider
 	db           *db.DB
 	authAccounts map[string]AuthAccountInfo // key is lowercase authIndex
+	channelNames map[string]string          // key is lowercase channelKey or provKey -> display label
 }
 
 // NewProviderRegistryEngine initializes and populates the registry engine.
@@ -332,6 +333,7 @@ func NewProviderRegistryEngine(database *db.DB) (*ProviderRegistryEngine, error)
 	pe := &ProviderRegistryEngine{
 		db:           database,
 		authAccounts: make(map[string]AuthAccountInfo),
+		channelNames: make(map[string]string),
 	}
 	if err := pe.InitAndReload(context.Background()); err != nil {
 		return nil, err
@@ -597,6 +599,29 @@ func (pe *ProviderRegistryEngine) GetAllAuthAccounts() map[string]AuthAccountInf
 	return copyMap
 }
 
+// RegisterChannel registers or updates a custom channel display name mapping.
+func (pe *ProviderRegistryEngine) RegisterChannel(channelKey, label string) {
+	k := strings.ToLower(strings.TrimSpace(channelKey))
+	lbl := strings.TrimSpace(label)
+	if k == "" || lbl == "" {
+		return
+	}
+	pe.mu.Lock()
+	defer pe.mu.Unlock()
+	pe.channelNames[k] = lbl
+}
+
+// GetChannelLabel returns the registered channel display label or empty string.
+func (pe *ProviderRegistryEngine) GetChannelLabel(channelKey string) string {
+	k := strings.ToLower(strings.TrimSpace(channelKey))
+	if k == "" {
+		return ""
+	}
+	pe.mu.RLock()
+	defer pe.mu.RUnlock()
+	return pe.channelNames[k]
+}
+
 func (pe *ProviderRegistryEngine) getProviderLabelLocked(key string) string {
 	k := strings.ToLower(strings.TrimSpace(key))
 	if k == "" {
@@ -620,13 +645,27 @@ func (pe *ProviderRegistryEngine) InferProvider(model, authIndex string) Provide
 
 	// 0. Check authoritative registered upstream accounts first (highest precedence)
 	if authStr != "" {
-		if acc, found := pe.authAccounts[authStr]; found && acc.ProviderKey != "" {
-			label := pe.getProviderLabelLocked(acc.ProviderKey)
+		if acc, found := pe.authAccounts[authStr]; found && (acc.ProviderKey != "" || acc.Name != "") {
+			key := acc.ProviderKey
+			if key == "" || key == "openai-compatibility" {
+				if acc.Name != "" {
+					key = fmt.Sprintf("compat:%s", strings.ToLower(strings.ReplaceAll(acc.Name, " ", "_")))
+				} else {
+					key = UnknownProviderKey
+				}
+			}
+			label := pe.getProviderLabelLocked(key)
 			if label == "" {
-				label = acc.ProviderKey
+				if chLabel, chOk := pe.channelNames[key]; chOk && chLabel != "" {
+					label = chLabel
+				} else if acc.Name != "" {
+					label = acc.Name
+				} else {
+					label = key
+				}
 			}
 			return ProviderInferenceResult{
-				Key:       acc.ProviderKey,
+				Key:       key,
 				Label:     label,
 				MatchedBy: "auth",
 				Source:    "account",
@@ -703,9 +742,22 @@ func (pe *ProviderRegistryEngine) GetProviderGroupLabel(key, fallbackName string
 	if label != "" {
 		return label
 	}
+	if chLabel := pe.GetChannelLabel(k); chLabel != "" {
+		return chLabel
+	}
 	fb := strings.TrimSpace(fallbackName)
-	if fb != "" {
+	if fb != "" && fb != UnknownProviderLabel && fb != "未知上游" {
 		return fb
+	}
+	if strings.HasPrefix(k, "compat:") {
+		name := strings.TrimPrefix(k, "compat:")
+		if len(name) > 0 {
+			return strings.ToUpper(name[:1]) + name[1:]
+		}
+	}
+	if strings.HasPrefix(k, "upstream:") {
+		prefix := strings.TrimPrefix(k, "upstream:")
+		return fmt.Sprintf("上游渠道 %s", prefix)
 	}
 	return UnknownProviderLabel
 }
