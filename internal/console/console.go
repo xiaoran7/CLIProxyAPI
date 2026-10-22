@@ -21,6 +21,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/middleware"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
 	sdkhandlers "github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
+	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/sirupsen/logrus"
 )
 
@@ -165,6 +166,92 @@ func (s *Subsystem) Providers() *consoleapi.ProviderRegistryEngine {
 	return s.providers
 }
 
+// HydrateCoreAuthManager populates in-memory credential throughput ring buffers and lifetime counters from SQLite.
+func (s *Subsystem) HydrateCoreAuthManager(ctx context.Context, mgr *coreauth.Manager) error {
+	if s == nil || s.db == nil || mgr == nil {
+		return nil
+	}
+
+	// 1. Query rolling 200-minute window for recent 10-minute buckets
+	now := time.Now()
+	sinceTS := now.Add(-210 * time.Minute).Unix()
+	bucketRows, err := s.db.SelectRecentAuthBuckets(ctx, sinceTS)
+	if err != nil {
+		s.logger.WithError(err).Warn("console: failed to query recent auth buckets for hydration")
+	}
+
+	// 2. Query lifetime daily stats and baselines
+	dailyAgg, errDaily := s.db.SelectUpstreamDailyAgg(ctx)
+	if errDaily != nil {
+		s.logger.WithError(errDaily).Warn("console: failed to query daily agg for auth hydration")
+	}
+
+	baselines, errBase := s.db.SelectBaselinesAll(ctx)
+	if errBase != nil {
+		s.logger.WithError(errBase).Warn("console: failed to query baselines for auth hydration")
+	}
+
+	type authAccum struct {
+		success int64
+		failed  int64
+		buckets []coreauth.AuthBucketStat
+	}
+	accumMap := make(map[string]*authAccum)
+	getOrCreate := func(idx string) *authAccum {
+		acc, ok := accumMap[idx]
+		if !ok {
+			acc = &authAccum{}
+			accumMap[idx] = acc
+		}
+		return acc
+	}
+
+	for _, b := range baselines {
+		if b.AuthIndex != "" {
+			acc := getOrCreate(b.AuthIndex)
+			acc.success += b.BaseSuccessCount
+			acc.failed += b.BaseFailureCount
+		}
+	}
+
+	for _, d := range dailyAgg {
+		if d.AuthIndex != "" {
+			acc := getOrCreate(d.AuthIndex)
+			acc.success += d.SuccessCount
+			acc.failed += d.FailureCount
+		}
+	}
+
+	for _, b := range bucketRows {
+		if b.AuthIndex != "" {
+			acc := getOrCreate(b.AuthIndex)
+			acc.buckets = append(acc.buckets, coreauth.AuthBucketStat{
+				BucketID: b.BucketID,
+				Success:  b.Success,
+				Failed:   b.Failed,
+			})
+		}
+	}
+
+	if len(accumMap) == 0 {
+		return nil
+	}
+
+	updates := make([]coreauth.AuthStatsUpdate, 0, len(accumMap))
+	for authIndex, acc := range accumMap {
+		updates = append(updates, coreauth.AuthStatsUpdate{
+			AuthIndex: authIndex,
+			Success:   acc.success,
+			Failed:    acc.failed,
+			Buckets:   acc.buckets,
+		})
+	}
+
+	mgr.HydrateStats(updates)
+	s.logger.Infof("console: hydrated stats for %d upstream credentials", len(updates))
+	return nil
+}
+
 // ServerOptions produces the api.ServerOption slice for hook registration.
 func ServerOptions(cfg SubsystemConfig) []api.ServerOption {
 	if !cfg.Enabled {
@@ -307,6 +394,18 @@ func ServerOptions(cfg SubsystemConfig) []api.ServerOption {
 
 		// Register static UI and backward compatibility assets
 		assets.RegisterUI(r)
+
+		// Connect persistent stats hydrator to core auth manager and perform initial background hydration
+		if handlers != nil && handlers.AuthManager != nil {
+			handlers.AuthManager.SetStatsHydrator(sub.HydrateCoreAuthManager)
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+				if errHydrate := sub.HydrateCoreAuthManager(ctx, handlers.AuthManager); errHydrate != nil {
+					sub.logger.WithError(errHydrate).Warn("console: initial auth manager stats hydration failed")
+				}
+			}()
+		}
 
 		sub.logger.Info("console routes and static UI registered successfully")
 	}

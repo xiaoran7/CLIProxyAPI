@@ -146,6 +146,9 @@ func (h *Handler) ListAuthFiles(c *gin.Context) {
 	if host != nil {
 		quota.pluginIDs = host.QuotaProviderPluginIDs(c.Request.Context())
 	}
+	if h.authManager != nil {
+		_ = h.authManager.EnsureStatsHydrated(c.Request.Context())
+	}
 	auths := h.authManager.List()
 	observedAt := time.Now().UTC()
 	cooldownsKnown := !h.authManager.HomeEnabled()

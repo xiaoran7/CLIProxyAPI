@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -167,6 +168,24 @@ type resultPolicyHolder struct {
 	policy ResultPolicy
 }
 
+// AuthBucketStat records a single 10-minute bucket's aggregated counts.
+type AuthBucketStat struct {
+	BucketID int64
+	Success  int64
+	Failed   int64
+}
+
+// AuthStatsUpdate holds lifetime and recent bucket metrics for one auth index.
+type AuthStatsUpdate struct {
+	AuthIndex string
+	Success   int64
+	Failed    int64
+	Buckets   []AuthBucketStat
+}
+
+// StatsHydrator fetches persistent metrics and applies them to the auth manager.
+type StatsHydrator func(ctx context.Context, mgr *Manager) error
+
 // Manager orchestrates auth lifecycle, selection, execution, and persistence.
 type Manager struct {
 	store                     Store
@@ -180,6 +199,9 @@ type Manager struct {
 	selectorMu                sync.Mutex
 	configCooldownMu          sync.Mutex
 	syncSchedulerMu           sync.Mutex
+	statsHydrator             StatsHydrator
+	lastStatsHydratedAt       time.Time
+	statsHydrateMu            sync.Mutex
 	// executionSeq stamps upstream dispatches with a monotonic sequence used
 	// to reject cooldown clears from executions dispatched before the cooldown.
 	executionSeq       atomic.Uint64
@@ -312,4 +334,92 @@ func (m *Manager) SessionCache() *SessionCache {
 		return sa.Cache()
 	}
 	return nil
+}
+
+// SetStatsHydrator registers a hydrator callback to populate auth statistics from persistent storage.
+func (m *Manager) SetStatsHydrator(hydrator StatsHydrator) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.statsHydrator = hydrator
+	m.mu.Unlock()
+}
+
+// EnsureStatsHydrated triggers the registered stats hydrator if not recently hydrated.
+func (m *Manager) EnsureStatsHydrated(ctx context.Context) error {
+	if m == nil {
+		return nil
+	}
+	m.mu.RLock()
+	hydrator := m.statsHydrator
+	last := m.lastStatsHydratedAt
+	m.mu.RUnlock()
+
+	if hydrator == nil {
+		return nil
+	}
+
+	m.statsHydrateMu.Lock()
+	defer m.statsHydrateMu.Unlock()
+
+	m.mu.RLock()
+	last = m.lastStatsHydratedAt
+	m.mu.RUnlock()
+
+	// Rate-limit hydration to avoid hitting DB unnecessarily within 30 seconds
+	if !last.IsZero() && time.Since(last) < 30*time.Second {
+		return nil
+	}
+
+	if err := hydrator(ctx, m); err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	m.lastStatsHydratedAt = time.Now()
+	m.mu.Unlock()
+	return nil
+}
+
+// HydrateStats updates in-memory lifetime and recent bucket metrics for matching credentials.
+func (m *Manager) HydrateStats(updates []AuthStatsUpdate) {
+	if m == nil || len(updates) == 0 {
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Build lookup maps by Auth.EnsureIndex(), Auth.ID, and Auth.FileName
+	indexMap := make(map[string]*Auth, len(m.auths)*3)
+	for _, auth := range m.auths {
+		if auth == nil {
+			continue
+		}
+		if idx := auth.EnsureIndex(); idx != "" {
+			indexMap[idx] = auth
+		}
+		if id := strings.TrimSpace(auth.ID); id != "" {
+			indexMap[id] = auth
+		}
+		if fn := strings.TrimSpace(auth.FileName); fn != "" {
+			indexMap[fn] = auth
+		}
+	}
+
+	for _, update := range updates {
+		key := strings.TrimSpace(update.AuthIndex)
+		if key == "" {
+			continue
+		}
+		auth, ok := indexMap[key]
+		if !ok || auth == nil {
+			continue
+		}
+		auth.HydrateLifetimeStats(update.Success, update.Failed)
+		for _, b := range update.Buckets {
+			auth.HydrateRecentBucket(b.BucketID, b.Success, b.Failed)
+		}
+	}
 }

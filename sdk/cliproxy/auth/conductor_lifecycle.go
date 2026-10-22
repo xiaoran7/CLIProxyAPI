@@ -128,13 +128,13 @@ func (m *Manager) Register(ctx context.Context, auth *Auth) (*Auth, error) {
 			auth.Index = existing.Index
 			auth.indexAssigned = existing.indexAssigned
 		}
-		if auth.Success == 0 && auth.Failed == 0 {
+		if existing.Success > auth.Success {
 			auth.Success = existing.Success
+		}
+		if existing.Failed > auth.Failed {
 			auth.Failed = existing.Failed
 		}
-		if auth.recentRequests == (recentRequestRing{}) {
-			auth.recentRequests = existing.recentRequests
-		}
+		auth.recentRequests.mergeFrom(&existing.recentRequests)
 		if len(auth.ModelStates) == 0 && len(existing.ModelStates) > 0 {
 			auth.ModelStates = existing.ModelStates
 		}
@@ -617,13 +617,13 @@ func (m *Manager) Load(ctx context.Context) error {
 				auth.Index = prev.Index
 				auth.indexAssigned = prev.indexAssigned
 			}
-			if auth.Success == 0 && auth.Failed == 0 {
+			if prev.Success > auth.Success {
 				auth.Success = prev.Success
+			}
+			if prev.Failed > auth.Failed {
 				auth.Failed = prev.Failed
 			}
-			if auth.recentRequests == (recentRequestRing{}) {
-				auth.recentRequests = prev.recentRequests
-			}
+			auth.recentRequests.mergeFrom(&prev.recentRequests)
 			if len(auth.ModelStates) == 0 && len(prev.ModelStates) > 0 {
 				auth.ModelStates = prev.ModelStates
 			}

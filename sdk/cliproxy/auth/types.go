@@ -396,6 +396,65 @@ func (a *Auth) recordRecentRequest(now time.Time, success bool) {
 	bucket.failed++
 }
 
+// HydrateRecentBucket populates or updates an individual 10-minute throughput bucket.
+func (a *Auth) HydrateRecentBucket(bucketID, success, failed int64) {
+	if a == nil || bucketID <= 0 {
+		return
+	}
+	idx := recentRequestBucketIndex(bucketID)
+	bucket := &a.recentRequests.buckets[idx]
+	if bucket.bucketID == 0 || bucket.bucketID < bucketID {
+		bucket.bucketID = bucketID
+		bucket.success = success
+		bucket.failed = failed
+		return
+	}
+	if bucket.bucketID == bucketID {
+		if success > bucket.success {
+			bucket.success = success
+		}
+		if failed > bucket.failed {
+			bucket.failed = failed
+		}
+	}
+}
+
+// HydrateLifetimeStats updates lifetime success and failure counts without lowering them.
+func (a *Auth) HydrateLifetimeStats(success, failed int64) {
+	if a == nil {
+		return
+	}
+	if success > a.Success {
+		a.Success = success
+	}
+	if failed > a.Failed {
+		a.Failed = failed
+	}
+}
+
+func (r *recentRequestRing) mergeFrom(other *recentRequestRing) {
+	if r == nil || other == nil {
+		return
+	}
+	for i := 0; i < recentRequestBucketCount; i++ {
+		src := other.buckets[i]
+		if src.bucketID <= 0 {
+			continue
+		}
+		dst := &r.buckets[i]
+		if dst.bucketID == 0 || dst.bucketID < src.bucketID {
+			*dst = src
+		} else if dst.bucketID == src.bucketID {
+			if src.success > dst.success {
+				dst.success = src.success
+			}
+			if src.failed > dst.failed {
+				dst.failed = src.failed
+			}
+		}
+	}
+}
+
 func (a *Auth) RecentRequestsSnapshot(now time.Time) []RecentRequestBucket {
 	out := make([]RecentRequestBucket, 0, recentRequestBucketCount)
 	if a == nil {

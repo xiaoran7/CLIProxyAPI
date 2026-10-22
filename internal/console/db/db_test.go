@@ -194,3 +194,79 @@ func TestDB_NullableColumnsHandling(t *testing.T) {
 		t.Fatalf("SelectQuotaRuleByKeyID failed on NULL fields: %v", err)
 	}
 }
+
+func TestDB_SelectRecentAuthBuckets(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_recent_buckets.db")
+
+	database, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	now := time.Now().Unix()
+	bucketID1 := now / 600
+	bucketID2 := bucketID1 - 1
+
+	// Insert events for auth_1 (2 success, 1 failure in bucket 1)
+	_, _ = database.InsertRequestEvent(ctx, &RequestEventRow{
+		TS:        bucketID1*600 + 10,
+		Status:    200,
+		AuthIndex: "auth_1",
+	})
+	_, _ = database.InsertRequestEvent(ctx, &RequestEventRow{
+		TS:        bucketID1*600 + 50,
+		Status:    200,
+		AuthIndex: "auth_1",
+	})
+	_, _ = database.InsertRequestEvent(ctx, &RequestEventRow{
+		TS:        bucketID1*600 + 100,
+		Status:    500,
+		AuthIndex: "auth_1",
+	})
+
+	// Insert event for auth_1 in bucket 2 (1 success)
+	_, _ = database.InsertRequestEvent(ctx, &RequestEventRow{
+		TS:        bucketID2*600 + 20,
+		Status:    200,
+		AuthIndex: "auth_1",
+	})
+
+	// Insert event with empty auth_index (should be ignored)
+	_, _ = database.InsertRequestEvent(ctx, &RequestEventRow{
+		TS:        bucketID1*600 + 30,
+		Status:    200,
+		AuthIndex: "",
+	})
+
+	sinceTS := (bucketID2 - 1) * 600
+	buckets, err := database.SelectRecentAuthBuckets(ctx, sinceTS)
+	if err != nil {
+		t.Fatalf("SelectRecentAuthBuckets failed: %v", err)
+	}
+
+	if len(buckets) != 2 {
+		t.Fatalf("expected 2 buckets, got %d: %+v", len(buckets), buckets)
+	}
+
+	for _, b := range buckets {
+		if b.AuthIndex != "auth_1" {
+			t.Fatalf("unexpected auth_index: %s", b.AuthIndex)
+		}
+		if b.BucketID == bucketID1 {
+			if b.Success != 2 || b.Failed != 1 {
+				t.Fatalf("bucketID1 counts = S:%d F:%d, want 2/1", b.Success, b.Failed)
+			}
+		} else if b.BucketID == bucketID2 {
+			if b.Success != 1 || b.Failed != 0 {
+				t.Fatalf("bucketID2 counts = S:%d F:%d, want 1/0", b.Success, b.Failed)
+			}
+		} else {
+			t.Fatalf("unexpected bucketID: %d", b.BucketID)
+		}
+	}
+}

@@ -94,6 +94,7 @@ func (h *Handler) GetAPIKeyUsage(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "core auth manager unavailable"})
 		return
 	}
+	_ = manager.EnsureStatsHydrated(c.Request.Context())
 
 	now := time.Now()
 	out := make(map[string]map[string]apiKeyUsageEntry)
