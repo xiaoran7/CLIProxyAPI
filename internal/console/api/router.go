@@ -100,7 +100,7 @@ func registerConsoleRoutes(
 	rg.Use(AdminAuthMiddleware(adminSecret, allSecrets...))
 	{
 		// Keys management
-		rg.GET("/keys", HandleGetKeys(eng))
+		rg.GET("/keys", HandleGetKeys(eng, pricing))
 		rg.POST("/keys", HandleCreateKey(eng))
 		rg.GET("/keys/:id/reveal", HandleRevealKey(eng))
 		rg.POST("/keys/:id/rotate", HandleRotateKey(eng))

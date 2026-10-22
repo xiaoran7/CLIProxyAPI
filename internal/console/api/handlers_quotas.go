@@ -1135,33 +1135,61 @@ func parseCodexQuotaGroups(raw []byte) ([]CpaQuotaGroup, string, string) {
 
 func fetchSingleAccountQuota(ctx context.Context, eng *engine.Engine, cpa *CpaClient, authIndex, provider, projectId, email, filename string) ([]CpaQuotaGroup, string, string, error) {
 	prov := strings.ToLower(strings.TrimSpace(provider))
+	targetProject := strings.TrimSpace(projectId)
+	authIdx := strings.TrimSpace(authIndex)
+	fname := strings.TrimSpace(filename)
+
+	// If any critical routing identifier is missing, resolve it from /auth-files
+	if authIdx == "" || prov == "" || (prov == "antigravity" && targetProject == "") {
+		var authFilesResp CpaAuthFilesResponse
+		if err := cpa.RequestJSON(ctx, http.MethodGet, "/auth-files", nil, "v0", &authFilesResp); err == nil {
+			for _, f := range authFilesResp.Files {
+				match := false
+				if authIdx != "" && strings.EqualFold(strings.TrimSpace(f.AuthIndex), authIdx) {
+					match = true
+				} else if fname != "" && (strings.EqualFold(f.Name, fname) || strings.EqualFold(f.ID, fname)) {
+					match = true
+				}
+				if match {
+					if authIdx == "" && strings.TrimSpace(f.AuthIndex) != "" {
+						authIdx = strings.TrimSpace(f.AuthIndex)
+					}
+					if fname == "" && f.Name != "" {
+						fname = f.Name
+					}
+					if prov == "" {
+						p := f.Provider
+						if p == "" {
+							p = f.Type
+						}
+						prov = strings.ToLower(strings.TrimSpace(p))
+					}
+					if targetProject == "" && strings.TrimSpace(f.ProjectID) != "" {
+						targetProject = strings.TrimSpace(f.ProjectID)
+					}
+					if email == "" && f.Email != "" {
+						email = f.Email
+					}
+					break
+				}
+			}
+		}
+	}
+
+	if prov == "antigravity" && targetProject == "" {
+		targetProject = "aicode-consumers"
+	}
+
 	var groups []CpaQuotaGroup
 	planType := "standard"
 	planName := "标准包"
 
 	if prov == "antigravity" {
-		targetProject := strings.TrimSpace(projectId)
-		if targetProject == "" {
-			targetProject = "aicode-consumers"
-			var authFilesResp CpaAuthFilesResponse
-			if err := cpa.RequestJSON(ctx, http.MethodGet, "/auth-files", nil, "v0", &authFilesResp); err == nil {
-				for _, f := range authFilesResp.Files {
-					if (authIndex != "" && strings.EqualFold(strings.TrimSpace(f.AuthIndex), authIndex)) ||
-						(filename != "" && (strings.EqualFold(f.Name, filename) || strings.EqualFold(f.ID, filename))) {
-						if pID := strings.TrimSpace(f.ProjectID); pID != "" {
-							targetProject = pID
-						}
-						if email == "" && f.Email != "" {
-							email = f.Email
-						}
-						break
-					}
-				}
-			}
+		if authIdx == "" {
+			return nil, "", "", fmt.Errorf("unable to resolve auth_index for %s", fname)
 		}
-
 		apiCallBody, _ := json.Marshal(map[string]interface{}{
-			"authIndex": authIndex,
+			"authIndex": authIdx,
 			"method":    "POST",
 			"url":       "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
 			"header": map[string]string{
@@ -1202,8 +1230,11 @@ func fetchSingleAccountQuota(ctx context.Context, eng *engine.Engine, cpa *CpaCl
 		planName = "Google Cloud"
 
 	} else if prov == "codex" {
+		if authIdx == "" {
+			return nil, "", "", fmt.Errorf("unable to resolve auth_index for %s", fname)
+		}
 		apiCallBody, _ := json.Marshal(map[string]interface{}{
-			"authIndex": authIndex,
+			"authIndex": authIdx,
 			"method":    "GET",
 			"url":       "https://chatgpt.com/backend-api/wham/usage",
 			"header": map[string]string{
@@ -1248,14 +1279,14 @@ func fetchSingleAccountQuota(ctx context.Context, eng *engine.Engine, cpa *CpaCl
 		}
 
 	} else if prov == "workbuddy" || prov == "workbuddy-cn" {
-		reqBody, _ := json.Marshal(map[string]string{"authIndex": authIndex})
+		reqBody, _ := json.Marshal(map[string]string{"authIndex": authIdx})
 		_, _ = cpa.Request(ctx, http.MethodPost, "/quota/fetch", reqBody, "application/json", "v0")
 
 		var authFilesResp CpaAuthFilesResponse
 		if err := cpa.RequestJSON(ctx, http.MethodGet, "/auth-files", nil, "v0", &authFilesResp); err == nil {
 			for _, f := range authFilesResp.Files {
-				if (authIndex != "" && strings.EqualFold(strings.TrimSpace(f.AuthIndex), authIndex)) ||
-					(filename != "" && (strings.EqualFold(f.Name, filename) || strings.EqualFold(f.ID, filename))) {
+				if (authIdx != "" && strings.EqualFold(strings.TrimSpace(f.AuthIndex), authIdx)) ||
+					(fname != "" && (strings.EqualFold(f.Name, fname) || strings.EqualFold(f.ID, fname))) {
 					if f.Quota != nil && len(f.Quota.Groups) > 0 {
 						groups = f.Quota.Groups
 						planType = "standard"
@@ -1275,8 +1306,14 @@ func fetchSingleAccountQuota(ctx context.Context, eng *engine.Engine, cpa *CpaCl
 			PlanName:  planName,
 			UpdatedAt: time.Now(),
 		}
+		if authIdx != "" {
+			accountQuotaCache[authIdx] = cached
+		}
 		if authIndex != "" {
 			accountQuotaCache[authIndex] = cached
+		}
+		if fname != "" {
+			accountQuotaCache[fname] = cached
 		}
 		if filename != "" {
 			accountQuotaCache[filename] = cached
@@ -1298,7 +1335,7 @@ func fetchSingleAccountQuota(ctx context.Context, eng *engine.Engine, cpa *CpaCl
 						}
 						_, _ = eng.DB().InsertQuotaSnapshot(ctx, &db.QuotaSnapshotRow{
 							TS:               nowUnix,
-							AuthIndex:        authIndex,
+							AuthIndex:        authIdx,
 							Provider:         prov,
 							AccountEmail:     &email,
 							WindowName:       &winName,
@@ -1341,6 +1378,29 @@ func HandlePostUpstreamAuthActivateWindow(eng *engine.Engine, cpa *CpaClient) gi
 		}
 
 		ctx := c.Request.Context()
+
+		// Resolve missing auth_index or provider from /auth-files if possible
+		if authIdx == "" && fname != "" {
+			var authFilesResp CpaAuthFilesResponse
+			if err := cpa.RequestJSON(ctx, http.MethodGet, "/auth-files", nil, "v0", &authFilesResp); err == nil {
+				for _, f := range authFilesResp.Files {
+					if strings.EqualFold(f.Name, fname) || strings.EqualFold(f.ID, fname) {
+						if f.AuthIndex != "" {
+							authIdx = strings.TrimSpace(f.AuthIndex)
+						}
+						if prov == "" {
+							p := f.Provider
+							if p == "" {
+								p = f.Type
+							}
+							prov = strings.ToLower(strings.TrimSpace(p))
+						}
+						break
+					}
+				}
+			}
+		}
+
 		if authIdx != "" {
 			resetBody, _ := json.Marshal(map[string]string{"auth_index": authIdx})
 			_, _ = cpa.Request(ctx, http.MethodPost, "/reset-quota", resetBody, "application/json", "v0")

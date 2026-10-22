@@ -31,6 +31,45 @@
       return [];
     }
 
+    function normalizeKey(k) {
+      if (!k || typeof k !== 'object') return k;
+      const id = k.key_id != null ? k.key_id : (k.id != null ? k.id : null);
+      const alias = k.key_alias != null ? k.key_alias : (k.alias != null ? k.alias : '');
+      const quota = k.quota || {};
+      const todayTokens = typeof k.today_usage === 'number' ? k.today_usage : (k.today_usage?.tokens != null ? Number(k.today_usage.tokens) : 0);
+      const todayReqs = typeof k.today_requests === 'number' ? k.today_requests : (k.today_usage?.requests != null ? Number(k.today_usage.requests) : 0);
+      const allTimeTokens = typeof k.all_time_usage === 'number' ? k.all_time_usage : (k.all_time?.tokens != null ? Number(k.all_time.tokens) : 0);
+      const allTimeReqs = typeof k.all_time_requests === 'number' ? k.all_time_requests : (k.all_time?.requests != null ? Number(k.all_time.requests) : 0);
+      const enabled = k.enabled != null ? Boolean(k.enabled) : Boolean(quota.enabled);
+      const dailyLimit = k.daily_limit != null ? Number(k.daily_limit) : (quota.daily_limit != null ? Number(quota.daily_limit) : 0);
+      const hardRatio = k.hard_ratio != null ? Number(k.hard_ratio) : (quota.hard_ratio != null ? Number(quota.hard_ratio) : 1.2);
+      const rpmLimit = k.rpm_limit != null ? Number(k.rpm_limit) : (quota.rpm_limit != null ? Number(quota.rpm_limit) : 0);
+      const hardLimit = k.hard_limit != null ? Number(k.hard_limit) : (dailyLimit > 0 ? Math.floor(dailyLimit * hardRatio) : 0);
+      const isBlocked = k.is_blocked != null ? Boolean(k.is_blocked) : (enabled && dailyLimit > 0 && todayTokens >= hardLimit);
+      const modelWhitelist = k.model_whitelist != null ? k.model_whitelist : (quota.model_whitelist || []);
+
+      return {
+        ...k,
+        key_id: id,
+        id: id,
+        key_alias: alias,
+        alias: alias,
+        today_usage: todayTokens,
+        today_requests: todayReqs,
+        all_time_usage: allTimeTokens,
+        all_time_requests: allTimeReqs,
+        enabled: enabled,
+        daily_limit: dailyLimit,
+        hard_ratio: hardRatio,
+        hard_limit: hardLimit,
+        rpm_limit: rpmLimit,
+        is_blocked: isBlocked,
+        model_whitelist: modelWhitelist,
+        cost_usd: Number(k.cost_usd) || 0,
+        cache_hit_rate: Number(k.cache_hit_rate) || 0,
+      };
+    }
+
     // 2. 获取 Key 列表 (带 SWR 缓存与即时持久化)
     async function fetchKeysData(force = false) {
       if (!force && cachedKeys.length > 0 && (Date.now() - cachedKeysLoadedAt) < 10000) {
@@ -45,7 +84,7 @@
         }
         if (!res.ok) return;
         const data = await res.json();
-        cachedKeys = data.keys || [];
+        cachedKeys = (data.keys || []).map(normalizeKey);
         cachedKeysLoadedAt = Date.now();
         persistKeysToStorage(cachedKeys);
         renderKeysTable(cachedKeys);
@@ -67,7 +106,8 @@
         return;
       }
       let html = '';
-      for (const k of keys) {
+      for (const rawK of keys) {
+        const k = normalizeKey(rawK);
         const hardLimit = Number(k.hard_limit) || (k.daily_limit ? Math.floor(Number(k.daily_limit) * (Number(k.hard_ratio) || 1.2)) : 0);
         const usage = Number(k.today_usage) || 0;
         const ratio = hardLimit > 0 ? Math.max(0, Math.min(1, usage / hardLimit)) : 0;

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,7 +35,7 @@ func MaskAPIKey(raw string) string {
 }
 
 // HandleGetKeys returns a list of all API keys with active quotas and live usage stats.
-func HandleGetKeys(eng *engine.Engine) gin.HandlerFunc {
+func HandleGetKeys(eng *engine.Engine, pricing *PricingEngine) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		database := eng.DB()
@@ -62,15 +63,35 @@ func HandleGetKeys(eng *engine.Engine) gin.HandlerFunc {
 		}
 
 		type KeyItemResponse struct {
-			ID         int64  `json:"id"`
-			DisplayKey string `json:"display_key"`
-			Alias      string `json:"alias"`
-			Active     int    `json:"active"`
-			CreatedAt  string `json:"created_at"`
-			UpdatedAt  string `json:"updated_at"`
-			Quota      gin.H  `json:"quota"`
-			TodayUsage gin.H  `json:"today_usage"`
-			AllTime    gin.H  `json:"all_time"`
+			ID               int64    `json:"id"`
+			KeyID            int64    `json:"key_id"`
+			DisplayKey       string   `json:"display_key"`
+			Alias            string   `json:"alias"`
+			KeyAlias         string   `json:"key_alias"`
+			Active           int      `json:"active"`
+			CreatedAt        string   `json:"created_at"`
+			UpdatedAt        string   `json:"updated_at"`
+			Enabled          bool     `json:"enabled"`
+			DailyLimit       int64    `json:"daily_limit"`
+			HardRatio        float64  `json:"hard_ratio"`
+			RPMLimit         int      `json:"rpm_limit"`
+			HardLimit        int64    `json:"hard_limit"`
+			IsBlocked        bool     `json:"is_blocked"`
+			ModelWhitelist   []string `json:"model_whitelist"`
+			ModelGroup       string   `json:"model_group"`
+			TodayUsage       int64    `json:"today_usage"`
+			TodayRequests    int64    `json:"today_requests"`
+			AllTimeUsage     int64    `json:"all_time_usage"`
+			AllTimeRequests  int64    `json:"all_time_requests"`
+			PromptTokens     int64    `json:"prompt_tokens"`
+			CompletionTokens int64    `json:"completion_tokens"`
+			CachedTokens     int64    `json:"cached_tokens"`
+			CacheHitRate     float64  `json:"cache_hit_rate"`
+			CostUSD          float64  `json:"cost_usd"`
+			SavingsUSD       float64  `json:"savings_usd"`
+			Quota            gin.H    `json:"quota"`
+			TodayUsageObj    gin.H    `json:"today_usage_details,omitempty"`
+			AllTimeObj       gin.H    `json:"all_time_details,omitempty"`
 		}
 
 		var items []KeyItemResponse
@@ -89,19 +110,29 @@ func HandleGetKeys(eng *engine.Engine) gin.HandlerFunc {
 
 			allTimeTokens := int64(0)
 			allTimeRequests := int64(0)
+			promptTokens := int64(0)
+			completionTokens := int64(0)
+			cachedTokens := int64(0)
 			if stat, ok := allTimeStats[k.ID]; ok && stat != nil {
 				allTimeTokens = stat.TotalTokens
 				allTimeRequests = stat.Requests
+				promptTokens = stat.PromptTokens
+				completionTokens = stat.CompletionTokens
+				cachedTokens = stat.CachedTokens
 			}
 
 			hardRatio := 1.2
 			rpmLimit := 0
 			var dailyLimit *int64
+			dailyLimitVal := int64(0)
 			enabled := false
 			modelGroup := ""
 			if hasRule {
 				enabled = r.Enabled == 1
 				dailyLimit = r.DailyLimit
+				if dailyLimit != nil {
+					dailyLimitVal = *dailyLimit
+				}
 				if r.HardRatio > 0 {
 					hardRatio = r.HardRatio
 				}
@@ -109,13 +140,56 @@ func HandleGetKeys(eng *engine.Engine) gin.HandlerFunc {
 				modelGroup = r.ModelGroup
 			}
 
+			hardLimit := int64(0)
+			if dailyLimitVal > 0 {
+				hardLimit = int64(float64(dailyLimitVal) * hardRatio)
+			}
+			isBlocked := enabled && dailyLimitVal > 0 && todayTokens >= hardLimit
+
+			costUSD := float64(0)
+			savingsUSD := float64(0)
+			if pricing != nil {
+				costRes := pricing.CalculateModelCost("default", promptTokens, completionTokens, cachedTokens)
+				costUSD = costRes.CostUSD
+				savingsUSD = costRes.SavingsUSD
+			}
+
+			promptBase := promptTokens
+			if cachedTokens > promptBase {
+				promptBase = cachedTokens
+			}
+			cacheHitRate := float64(0)
+			if promptBase > 0 {
+				cacheHitRate = math.Round((float64(cachedTokens)/float64(promptBase))*1000) / 10
+			}
+
 			items = append(items, KeyItemResponse{
-				ID:         k.ID,
-				DisplayKey: MaskAPIKey(k.APIKey),
-				Alias:      k.Alias,
-				Active:     k.Active,
-				CreatedAt:  k.CreatedAt.Format("2006-01-02 15:04:05"),
-				UpdatedAt:  k.UpdatedAt.Format("2006-01-02 15:04:05"),
+				ID:               k.ID,
+				KeyID:            k.ID,
+				DisplayKey:       MaskAPIKey(k.APIKey),
+				Alias:            k.Alias,
+				KeyAlias:         k.Alias,
+				Active:           k.Active,
+				CreatedAt:        k.CreatedAt.Format("2006-01-02 15:04:05"),
+				UpdatedAt:        k.UpdatedAt.Format("2006-01-02 15:04:05"),
+				Enabled:          enabled,
+				DailyLimit:       dailyLimitVal,
+				HardRatio:        hardRatio,
+				RPMLimit:         rpmLimit,
+				HardLimit:        hardLimit,
+				IsBlocked:        isBlocked,
+				ModelWhitelist:   whitelist,
+				ModelGroup:       modelGroup,
+				TodayUsage:       todayTokens,
+				TodayRequests:    todayRequests,
+				AllTimeUsage:     allTimeTokens,
+				AllTimeRequests:  allTimeRequests,
+				PromptTokens:     promptTokens,
+				CompletionTokens: completionTokens,
+				CachedTokens:     cachedTokens,
+				CacheHitRate:     cacheHitRate,
+				CostUSD:          costUSD,
+				SavingsUSD:       savingsUSD,
 				Quota: gin.H{
 					"enabled":         enabled,
 					"daily_limit":     dailyLimit,
@@ -124,11 +198,11 @@ func HandleGetKeys(eng *engine.Engine) gin.HandlerFunc {
 					"model_whitelist": whitelist,
 					"model_group":     modelGroup,
 				},
-				TodayUsage: gin.H{
+				TodayUsageObj: gin.H{
 					"tokens":   todayTokens,
 					"requests": todayRequests,
 				},
-				AllTime: gin.H{
+				AllTimeObj: gin.H{
 					"tokens":   allTimeTokens,
 					"requests": allTimeRequests,
 				},

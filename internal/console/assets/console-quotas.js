@@ -758,7 +758,7 @@
         try {
           data = text ? JSON.parse(text) : {};
         } catch (_) {}
-        if (!res.ok) throw new Error(data.error || t('quotas.quotaQueryFailed'));
+        if (!res.ok || data.success === false) throw new Error(data.message || data.error || t('quotas.quotaQueryFailed'));
         showToast(t('quotas.quotaQueryDoneToast'), 'success');
         // 前端主动触发刷新获取最新配额与重置时刻
         await fetchUpstreamQuotas(true);
