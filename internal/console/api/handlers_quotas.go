@@ -1275,8 +1275,10 @@ func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) (map[strin
 			}
 			countdown := formatResetCountdown(resetTimeStr)
 
-			bucketName := "5 Hour Limit Remaining"
-			if win == "weekly" {
+			bucketName := win
+			if win == "5h" {
+				bucketName = "5-Hour Limit"
+			} else if win == "weekly" {
 				bucketName = "Weekly Limit Remaining"
 			}
 
