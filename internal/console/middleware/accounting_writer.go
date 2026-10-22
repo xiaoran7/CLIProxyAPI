@@ -34,8 +34,9 @@ func AccountingMiddleware(eng *engine.Engine) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		// Skip Console management routes, native CPA management, OAuth, and static health endpoints
-		if ShouldSkipGateway(path) {
+		// Skip Console management routes, native CPA management, OAuth, static health endpoints,
+		// and non-inference utility/discovery requests (e.g. GET /v1/models, OPTIONS, HEAD).
+		if ShouldSkipGateway(path) || IsDiscoveryOrUtilityRequest(c.Request.Method, path) {
 			c.Next()
 			return
 		}
@@ -317,6 +318,12 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 			ErrorType: errorTypePtr,
 			ErrorBody: summaryPtr,
 		})
+	}
+
+	// Discard non-inference utility/success responses (such as model discovery, ping, or probe requests)
+	// that consumed zero tokens, have no target model, and were not handled by any upstream provider.
+	if status >= 200 && status < 300 && (strings.TrimSpace(model) == "" || strings.EqualFold(strings.TrimSpace(model), "unknown")) && w.totalTokens == 0 && authIndex == "" && !w.isStreaming {
+		return
 	}
 
 	var ttftPtr *int64

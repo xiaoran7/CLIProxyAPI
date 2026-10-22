@@ -1383,8 +1383,6 @@
                   title += t('quotas.bucket.bottleneckConstraintNotice', { rem5h: rawRem, remWeekly: weeklyRem });
                 }
 
-                const suffixTag = (isWeeklyBottleneck && !isModelCooling && !isBktDisabled) ? ` <span style="font-size:9px; font-weight:normal; opacity:0.85;">${t('quotas.bucket.tagWeeklyBottleneck')}</span>` : (isBktDisabled ? ` <span style="font-size:9px; font-weight:normal; opacity:0.85;">${t('quotas.bucket.tagExhausted')}</span>` : '');
-
                 return `
                   <div class="compact-meter-wrap" title="${escapeHtml(title)}">
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
@@ -1392,7 +1390,7 @@
                         <span class="quota-pool-badge pool-gemini">Gemini</span>
                         <span style="color:var(--text-muted); font-size:10px;">${escapeHtml(defaultLabel)}</span>
                       </span>
-                      <span style="font-family:var(--mono); font-weight:700; color:${col};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem })}${suffixTag}</span>
+                      <span style="font-family:var(--mono); font-weight:700; color:${col};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem })}</span>
                     </div>
                     <div class="quota-meter-bar" style="height:4px;">
                       <div class="quota-meter-fill ${cls}" style="width: ${rem}%"></div>
@@ -1416,7 +1414,7 @@
                 `;
               } else if (fallbackBucket && Number.isFinite(fallbackBucket.remaining_percent)) {
                 metersHtml = `
-                  ${buildAntigravityMeter(fallbackBucket, null, formatBucketLabel(fallbackBucket.name, fallbackBucket.window) || '5h 额度', false)}
+                  ${buildAntigravityMeter(fallbackBucket, null, formatBucketLabel(fallbackBucket.name, fallbackBucket.window) || '5h', false)}
                 `;
               } else {
                 metersHtml = cooldownCompactNotice + `<div class="account-quota-unknown">${t('quotas.quotaUnknownUpstream')}</div>`;

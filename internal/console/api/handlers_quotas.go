@@ -44,6 +44,9 @@ type CpaAuthFile struct {
 	Note          string              `json:"note"`
 	Cooldowns     []CpaCooldownRecord `json:"cooldowns"`
 	Quota         *CpaFileQuota       `json:"quota"`
+	SupportsQuota bool                `json:"supports_quota"`
+	QuotaProvider string              `json:"quota_provider"`
+	QuotaPluginID string              `json:"quota_plugin_id"`
 	ProjectID     string              `json:"project_id"`
 	CreatedAt     string              `json:"created_at"`
 	UpdatedAt     string              `json:"updated_at"`
@@ -160,6 +163,10 @@ type UpstreamAccountItem struct {
 	RawError          *string                   `json:"raw_error"`
 	UpdatedAt         int64                     `json:"updated_at"`
 	Validation        *db.UpstreamValidationRow `json:"validation,omitempty"`
+	TotalCredits      *float64                  `json:"total_credits,omitempty"`
+	RemainingCredits  *float64                  `json:"remaining_credits,omitempty"`
+	UsedCredits       *float64                  `json:"used_credits,omitempty"`
+	ExpiresAt         string                    `json:"expires_at,omitempty"`
 }
 
 // UpstreamAccountHealth indicates real-time operational status
@@ -509,6 +516,55 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 	}
 }
 
+// isSupportedQuotaProvider returns true if the provider supports quota probing or has quota groups.
+func isSupportedQuotaProvider(prov string, f CpaAuthFile) bool {
+	p := strings.ToLower(strings.TrimSpace(prov))
+	switch p {
+	case "antigravity", "codex", "claude", "workbuddy", "workbuddy-cn", "copilot-tencent",
+		"qoder", "qoder-cn", "qoder-intl", "qoder-en", "kimi", "xai", "devin":
+		return true
+	}
+	if strings.HasPrefix(p, "workbuddy") || strings.HasPrefix(p, "qoder") {
+		return true
+	}
+	if f.SupportsQuota || f.QuotaProvider != "" || f.QuotaPluginID != "" {
+		return true
+	}
+	if f.Quota != nil && len(f.Quota.Groups) > 0 {
+		return true
+	}
+	return false
+}
+
+// extractAccountCredits aggregates point capacity metrics across quota groups and buckets.
+func extractAccountCredits(groups []CpaQuotaGroup) (*float64, *float64, *float64, string) {
+	var totCreds, remCreds, usedCreds *float64
+	var expAt string
+	for _, g := range groups {
+		for _, b := range g.Buckets {
+			if b.TotalCapacity != nil || b.RemainCapacity != nil || b.UsedCapacity != nil {
+				if totCreds == nil {
+					z1, z2, z3 := 0.0, 0.0, 0.0
+					totCreds, remCreds, usedCreds = &z1, &z2, &z3
+				}
+				if b.TotalCapacity != nil {
+					*totCreds += *b.TotalCapacity
+				}
+				if b.RemainCapacity != nil {
+					*remCreds += *b.RemainCapacity
+				}
+				if b.UsedCapacity != nil {
+					*usedCreds += *b.UsedCapacity
+				}
+			}
+			if b.ExpiresAt != "" && expAt == "" {
+				expAt = b.ExpiresAt
+			}
+		}
+	}
+	return totCreds, remCreds, usedCreds, expAt
+}
+
 // FetchUpstreamAccounts retrieves active and configured upstream accounts with quota groups and cached stats.
 func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClient, providers *ProviderRegistryEngine, force bool) (*UpstreamQuotasResponse, error) {
 	if !force {
@@ -545,7 +601,7 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 			if prov == "" {
 				prov = strings.ToLower(strings.TrimSpace(f.Type))
 			}
-			if prov != "antigravity" && prov != "codex" && prov != "workbuddy" && prov != "workbuddy-cn" {
+			if !isSupportedQuotaProvider(prov, f) {
 				continue
 			}
 			if f.Disabled || f.Status == "disabled" {
@@ -589,7 +645,7 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 			if prov == "" {
 				prov = strings.ToLower(strings.TrimSpace(f.Type))
 			}
-			if prov != "antigravity" && prov != "codex" && prov != "workbuddy" && prov != "workbuddy-cn" {
+			if !isSupportedQuotaProvider(prov, f) {
 				continue
 			}
 			if f.Disabled || f.Status == "disabled" {
@@ -867,6 +923,11 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 		}
 
 		populateLocalStats(&item, f.AuthIndex, fname)
+		totCreds, remCreds, usedCreds, expAt := extractAccountCredits(item.Groups)
+		item.TotalCredits = totCreds
+		item.RemainingCredits = remCreds
+		item.UsedCredits = usedCreds
+		item.ExpiresAt = expAt
 
 		if val, ok := valMap[f.AuthIndex]; ok {
 			vCopy := val
@@ -973,6 +1034,11 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 			}
 
 			populateLocalStats(&item, authIdx, fname)
+			totCreds, remCreds, usedCreds, expAt := extractAccountCredits(item.Groups)
+			item.TotalCredits = totCreds
+			item.RemainingCredits = remCreds
+			item.UsedCredits = usedCreds
+			item.ExpiresAt = expAt
 
 			if val, ok := valMap[authIdx]; ok {
 				vCopy := val
@@ -1023,6 +1089,11 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 					UpdatedAt:   nowMs,
 				}
 				populateLocalStats(&item, b.AuthIndex, "")
+				totCreds, remCreds, usedCreds, expAt := extractAccountCredits(item.Groups)
+				item.TotalCredits = totCreds
+				item.RemainingCredits = remCreds
+				item.UsedCredits = usedCreds
+				item.ExpiresAt = expAt
 				if val, ok := valMap[b.AuthIndex]; ok {
 					vCopy := val
 					item.Validation = &vCopy

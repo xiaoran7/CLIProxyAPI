@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/engine"
@@ -13,8 +12,8 @@ func QuotaLimiterMiddleware(eng *engine.Engine) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		// Discovery endpoints (e.g. GET /v1/models) do not consume RPM or token quota
-		if c.Request.Method == http.MethodGet && (strings.HasSuffix(path, "/models") || strings.HasSuffix(path, "/models/")) {
+		// Discovery, utility, and preflight endpoints do not consume RPM or token quota
+		if IsDiscoveryOrUtilityRequest(c.Request.Method, path) {
 			c.Next()
 			return
 		}

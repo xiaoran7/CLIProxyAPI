@@ -39,6 +39,29 @@ func ShouldSkipGateway(path string) bool {
 	return false
 }
 
+// IsDiscoveryOrUtilityRequest checks if a request is a discovery, preflight, or utility call
+// (such as models listing, CORS preflight, or health probe) rather than a model inference request.
+func IsDiscoveryOrUtilityRequest(method, path string) bool {
+	// 1. CORS Preflight & Head Probes
+	if method == "OPTIONS" || method == "HEAD" {
+		return true
+	}
+
+	// 2. Models Discovery & Metadata (OpenAI, Gemini, Claude, Codex)
+	if method == "GET" {
+		clean := strings.TrimRight(path, "/")
+		if clean == "/models" ||
+			strings.HasSuffix(clean, "/models") ||
+			strings.Contains(clean, "/models/") ||
+			strings.HasPrefix(clean, "/v1/videos") ||
+			strings.HasPrefix(clean, "/openai/v1/videos") {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Gateway returns the complete Gin middleware handlers for Console in execution order:
 // 1. AccountingMiddleware: sets up response interception, TTFT timing, and transactional outbox flush.
 // 2. KeyAuthMiddleware: extracts and authenticates multi-tenant API keys.

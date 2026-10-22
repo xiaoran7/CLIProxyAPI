@@ -59,8 +59,8 @@ func ExtractRawKey(c *gin.Context) string {
 func KeyAuthMiddleware(eng *engine.Engine) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
-		// Skip Console management routes, native CPA management, OAuth, and public system endpoints
-		if ShouldSkipGateway(path) {
+		// Skip Console management routes, native CPA management, OAuth, public system endpoints, and CORS preflight
+		if ShouldSkipGateway(path) || c.Request.Method == http.MethodOptions {
 			c.Next()
 			return
 		}

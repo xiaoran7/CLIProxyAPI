@@ -1049,3 +1049,29 @@ GROUP BY auth_index, model
 	}
 	return list, nil
 }
+
+// CleanPhantomEvents removes ghost request events mistakenly recorded for non-inference requests
+// (model = 'unknown' or empty, status 200..299, 0 tokens, and empty upstream auth).
+func (d *DB) CleanPhantomEvents(ctx context.Context) (int64, error) {
+	query := `
+DELETE FROM request_events
+WHERE (model IS NULL OR model = '' OR model = 'unknown')
+  AND status >= 200 AND status < 300
+  AND prompt_tokens = 0 AND completion_tokens = 0 AND total_tokens = 0
+  AND (auth_index IS NULL OR auth_index = '')
+`
+	res, err := d.ExecContext(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("clean phantom events failed: %w", err)
+	}
+
+	// Also clean orphaned daily usage records with model = 'unknown' and 0 tokens
+	queryDaily := `
+DELETE FROM usage_daily
+WHERE (model IS NULL OR model = '' OR model = 'unknown')
+  AND prompt_tokens = 0 AND completion_tokens = 0 AND total_tokens = 0
+`
+	_, _ = d.ExecContext(ctx, queryDaily)
+
+	return res.RowsAffected()
+}

@@ -528,3 +528,105 @@ func TestOutboxFlusher_ContinuousQuotaPreservation(t *testing.T) {
 		t.Fatalf("expected 4800 tokens preserved after second flush, got %d", usageAfterSecond)
 	}
 }
+
+func TestNonInferenceDiscoveryAndUtilityNotRecorded(t *testing.T) {
+	database, eng, _, rawKey := setupTestEnvironment(t)
+	defer func() { _ = database.Close() }()
+
+	r := gin.New()
+	for _, mw := range Gateway(eng) {
+		r.Use(mw)
+	}
+	r.GET("/v1/models", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"object": "list",
+			"data": []gin.H{
+				{"id": "gpt-4o", "object": "model"},
+			},
+		})
+	})
+	r.OPTIONS("/v1/chat/completions", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	r.POST("/v1/chat/completions", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"id":      "chatcmpl-test",
+			"object":  "chat.completion",
+			"model":   "gpt-4o",
+			"choices": []gin.H{{"message": gin.H{"role": "assistant", "content": "hello"}}},
+			"usage":   gin.H{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+		})
+	})
+
+	ctx := context.Background()
+
+	// 1. GET /v1/models with valid API Key
+	reqModels := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	reqModels.Header.Set("Authorization", "Bearer "+rawKey)
+	wModels := httptest.NewRecorder()
+	r.ServeHTTP(wModels, reqModels)
+	if wModels.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /v1/models, got %d", wModels.Code)
+	}
+
+	// 2. OPTIONS /v1/chat/completions (CORS Preflight)
+	reqOptions := httptest.NewRequest(http.MethodOptions, "/v1/chat/completions", nil)
+	wOptions := httptest.NewRecorder()
+	r.ServeHTTP(wOptions, reqOptions)
+	if wOptions.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for OPTIONS, got %d", wOptions.Code)
+	}
+
+	// Flush and verify neither GET /v1/models nor OPTIONS was recorded in outbox or events
+	if err := eng.Flusher().FlushUsage(ctx); err != nil {
+		t.Fatalf("flush usage failed: %v", err)
+	}
+
+	events, err := database.SelectRecentEvents(ctx, 100)
+	if err != nil {
+		t.Fatalf("select recent events failed: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected 0 events recorded for discovery/options, got %d (first model: %s)", len(events), events[0].Model)
+	}
+
+	// 3. Real inference request POST /v1/chat/completions
+	reqInference := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(`{"model":"gpt-4o"}`))
+	reqInference.Header.Set("Authorization", "Bearer "+rawKey)
+	reqInference.Header.Set("Content-Type", "application/json")
+	wInference := httptest.NewRecorder()
+	r.ServeHTTP(wInference, reqInference)
+	if wInference.Code != http.StatusOK {
+		t.Fatalf("expected 200 for inference, got %d", wInference.Code)
+	}
+
+	if err := eng.Flusher().FlushUsage(ctx); err != nil {
+		t.Fatalf("flush usage failed: %v", err)
+	}
+
+	eventsAfter, err := database.SelectRecentEvents(ctx, 100)
+	if err != nil {
+		t.Fatalf("select recent events failed: %v", err)
+	}
+	if len(eventsAfter) != 1 {
+		t.Fatalf("expected exactly 1 event recorded for real inference, got %d", len(eventsAfter))
+	}
+	if eventsAfter[0].Model != "gpt-4o" || eventsAfter[0].TotalTokens != 15 {
+		t.Fatalf("unexpected recorded event: model=%s, tokens=%d", eventsAfter[0].Model, eventsAfter[0].TotalTokens)
+	}
+
+	// 4. Test CleanPhantomEvents on legacy dirty records
+	_, _ = database.InsertRequestEvent(ctx, &db.RequestEventRow{
+		TS:          time.Now().Unix(),
+		Model:       "unknown",
+		Status:      200,
+		TotalTokens: 0,
+	})
+	cleaned, err := database.CleanPhantomEvents(ctx)
+	if err != nil {
+		t.Fatalf("clean phantom events failed: %v", err)
+	}
+	if cleaned != 1 {
+		t.Fatalf("expected 1 cleaned phantom event, got %d", cleaned)
+	}
+}

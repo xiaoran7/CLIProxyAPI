@@ -91,6 +91,9 @@ func InitSubsystem(cfg SubsystemConfig) (*Subsystem, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = database.BackfillUpstreamDailyStatsProviders(ctx)
+		if cleaned, errClean := database.CleanPhantomEvents(ctx); errClean == nil && cleaned > 0 {
+			logger.Infof("console: cleaned %d legacy phantom request events", cleaned)
+		}
 	}()
 
 	// Start engine background flusher
