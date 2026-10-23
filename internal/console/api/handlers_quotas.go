@@ -224,11 +224,15 @@ func InvalidateUpstreamQuotaCache() {
 
 // CachedAccountQuota stores parsed on-demand quota snapshots in memory
 type CachedAccountQuota struct {
-	Groups    []CpaQuotaGroup
-	PlanType  string
-	PlanName  string
-	RawError  string
-	UpdatedAt time.Time
+	Groups           []CpaQuotaGroup
+	PlanType         string
+	PlanName         string
+	RawError         string
+	UpdatedAt        time.Time
+	TotalCredits     *float64
+	RemainingCredits *float64
+	UsedCredits      *float64
+	ExpiresAt        string
 }
 
 var (
@@ -865,82 +869,103 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 		planType := "free"
 		planName := "免费版"
 		var groups []CpaQuotaGroup
-		if f.Quota != nil && len(f.Quota.Groups) > 0 {
-			groups = f.Quota.Groups
-			if prov == "antigravity" && len(f.Cooldowns) > 0 {
-				groups = reconcileAntigravityQuotaGroups(groups, f.Cooldowns)
+		var cachedCredits struct {
+			hasCredits bool
+			tot        *float64
+			rem        *float64
+			used       *float64
+			expAt      string
+		}
+
+		// 1. Prioritize live-probed accountQuotaCache
+		accountQuotaCacheMu.RLock()
+		cached, found := accountQuotaCache[f.AuthIndex]
+		if !found && fname != "" {
+			cached, found = accountQuotaCache[fname]
+		}
+		if found {
+			if len(cached.Groups) > 0 {
+				groups = cached.Groups
 			}
+			if cached.PlanType != "" {
+				planType = cached.PlanType
+			}
+			if cached.PlanName != "" {
+				planName = cached.PlanName
+			}
+			if cached.TotalCredits != nil || cached.RemainingCredits != nil || cached.UsedCredits != nil || cached.ExpiresAt != "" {
+				cachedCredits.hasCredits = true
+				cachedCredits.tot = cached.TotalCredits
+				cachedCredits.rem = cached.RemainingCredits
+				cachedCredits.used = cached.UsedCredits
+				cachedCredits.expAt = cached.ExpiresAt
+			}
+		}
+		accountQuotaCacheMu.RUnlock()
+
+		// 2. Fallback to auth-file quota groups if live cache is empty
+		if len(groups) == 0 && f.Quota != nil && len(f.Quota.Groups) > 0 {
+			groups = f.Quota.Groups
 			planType = "standard"
 			planName = "标准包"
 		}
 
-		if len(groups) == 0 {
-			accountQuotaCacheMu.RLock()
-			if cached, found := accountQuotaCache[f.AuthIndex]; found && len(cached.Groups) > 0 {
-				groups = cached.Groups
-				if cached.PlanType != "" {
-					planType = cached.PlanType
+		// 3. Fallback to SQLite hydrated quota snapshots
+		if len(groups) == 0 && dbHydratedMap != nil {
+			if hGroups, found := dbHydratedMap[f.AuthIndex]; found && len(hGroups) > 0 {
+				groups = hGroups
+				planType = "standard"
+				planName = "标准包"
+				var snapTime time.Time
+				if ts, ok := dbHydratedTimes[f.AuthIndex]; ok && ts > 0 {
+					snapTime = time.Unix(ts, 0)
+				} else {
+					snapTime = time.Now().Add(-2 * time.Hour)
 				}
-				if cached.PlanName != "" {
-					planName = cached.PlanName
+				totCreds, remCreds, usedCreds, expAt := extractAccountCredits(groups)
+				accountQuotaCacheMu.Lock()
+				accountQuotaCache[f.AuthIndex] = CachedAccountQuota{
+					Groups:           groups,
+					PlanType:         planType,
+					PlanName:         planName,
+					UpdatedAt:        snapTime,
+					TotalCredits:     totCreds,
+					RemainingCredits: remCreds,
+					UsedCredits:      usedCreds,
+					ExpiresAt:        expAt,
 				}
-			} else if cached, found := accountQuotaCache[fname]; found && len(cached.Groups) > 0 {
-				groups = cached.Groups
-				if cached.PlanType != "" {
-					planType = cached.PlanType
+				if fname != "" {
+					accountQuotaCache[fname] = accountQuotaCache[f.AuthIndex]
 				}
-				if cached.PlanName != "" {
-					planName = cached.PlanName
+				accountQuotaCacheMu.Unlock()
+			} else if hGroups, found := dbHydratedMap[fname]; found && len(hGroups) > 0 {
+				groups = hGroups
+				planType = "standard"
+				planName = "标准包"
+				var snapTime time.Time
+				if ts, ok := dbHydratedTimes[fname]; ok && ts > 0 {
+					snapTime = time.Unix(ts, 0)
+				} else {
+					snapTime = time.Now().Add(-2 * time.Hour)
 				}
+				totCreds, remCreds, usedCreds, expAt := extractAccountCredits(groups)
+				accountQuotaCacheMu.Lock()
+				accountQuotaCache[fname] = CachedAccountQuota{
+					Groups:           groups,
+					PlanType:         planType,
+					PlanName:         planName,
+					UpdatedAt:        snapTime,
+					TotalCredits:     totCreds,
+					RemainingCredits: remCreds,
+					UsedCredits:      usedCreds,
+					ExpiresAt:        expAt,
+				}
+				accountQuotaCacheMu.Unlock()
 			}
-			accountQuotaCacheMu.RUnlock()
+		}
 
-			if len(groups) == 0 && dbHydratedMap != nil {
-				if hGroups, found := dbHydratedMap[f.AuthIndex]; found && len(hGroups) > 0 {
-					groups = hGroups
-					planType = "standard"
-					planName = "标准包"
-					var snapTime time.Time
-					if ts, ok := dbHydratedTimes[f.AuthIndex]; ok && ts > 0 {
-						snapTime = time.Unix(ts, 0)
-					} else {
-						snapTime = time.Now().Add(-2 * time.Hour)
-					}
-					accountQuotaCacheMu.Lock()
-					accountQuotaCache[f.AuthIndex] = CachedAccountQuota{
-						Groups:    groups,
-						PlanType:  planType,
-						PlanName:  planName,
-						UpdatedAt: snapTime,
-					}
-					if fname != "" {
-						accountQuotaCache[fname] = accountQuotaCache[f.AuthIndex]
-					}
-					accountQuotaCacheMu.Unlock()
-				} else if hGroups, found := dbHydratedMap[fname]; found && len(hGroups) > 0 {
-					groups = hGroups
-					planType = "standard"
-					planName = "标准包"
-					var snapTime time.Time
-					if ts, ok := dbHydratedTimes[fname]; ok && ts > 0 {
-						snapTime = time.Unix(ts, 0)
-					} else {
-						snapTime = time.Now().Add(-2 * time.Hour)
-					}
-					accountQuotaCacheMu.Lock()
-					accountQuotaCache[fname] = CachedAccountQuota{
-						Groups:    groups,
-						PlanType:  planType,
-						PlanName:  planName,
-						UpdatedAt: snapTime,
-					}
-					accountQuotaCacheMu.Unlock()
-				}
-			}
-
-			if prov == "antigravity" && len(f.Cooldowns) > 0 && len(groups) > 0 {
-				groups = reconcileAntigravityQuotaGroups(groups, f.Cooldowns)
-			}
+		if prov == "antigravity" && len(f.Cooldowns) > 0 && len(groups) > 0 {
+			groups = reconcileAntigravityQuotaGroups(groups, f.Cooldowns)
 		}
 
 		item := UpstreamAccountItem{
@@ -964,11 +989,49 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 		}
 
 		populateLocalStats(&item, f.AuthIndex, fname)
-		totCreds, remCreds, usedCreds, expAt := extractAccountCredits(item.Groups)
-		item.TotalCredits = totCreds
-		item.RemainingCredits = remCreds
-		item.UsedCredits = usedCreds
-		item.ExpiresAt = expAt
+		if cachedCredits.hasCredits {
+			item.TotalCredits = cachedCredits.tot
+			item.RemainingCredits = cachedCredits.rem
+			item.UsedCredits = cachedCredits.used
+			if cachedCredits.expAt != "" {
+				item.ExpiresAt = cachedCredits.expAt
+			}
+		} else {
+			totCreds, remCreds, usedCreds, expAt := extractAccountCredits(item.Groups)
+			item.TotalCredits = totCreds
+			item.RemainingCredits = remCreds
+			item.UsedCredits = usedCreds
+			item.ExpiresAt = expAt
+		}
+		if (item.TotalCredits == nil && item.RemainingCredits == nil) && f.Quota != nil && len(f.Quota.Summary) > 0 {
+			for _, m := range f.Quota.Summary {
+				v := 0.0
+				switch val := m.Value.(type) {
+				case float64:
+					v = val
+				case int:
+					v = float64(val)
+				case int64:
+					v = float64(val)
+				case string:
+					if fv, err := strconv.ParseFloat(val, 64); err == nil {
+						v = fv
+					}
+				}
+				switch m.Key {
+				case "points_total", "total", "quota":
+					item.TotalCredits = &v
+				case "points_used", "used":
+					item.UsedCredits = &v
+				case "points_remain", "remaining", "balance", "points":
+					item.RemainingCredits = &v
+				case "expires_at", "runs_out_at":
+					if m.Unit != "" && item.ExpiresAt == "" {
+						item.ExpiresAt = m.Unit
+					}
+				}
+			}
+		}
 
 		if val, ok := valMap[f.AuthIndex]; ok {
 			vCopy := val
@@ -1967,6 +2030,7 @@ func parsePluginQuotaResponse(raw []byte, prov string) ([]CpaQuotaGroup, string,
 	}
 
 	var totalPoints, usedPoints, remainPoints *float64
+	var expAtStr string
 	for _, m := range resp.Summary {
 		v := m.Value
 		switch m.Key {
@@ -1976,6 +2040,10 @@ func parsePluginQuotaResponse(raw []byte, prov string) ([]CpaQuotaGroup, string,
 			usedPoints = &v
 		case "points_remain", "remaining", "balance", "points":
 			remainPoints = &v
+		case "expires_at", "runs_out_at":
+			if m.Unit != "" && expAtStr == "" {
+				expAtStr = m.Unit
+			}
 		}
 	}
 
@@ -2014,16 +2082,22 @@ func parsePluginQuotaResponse(raw []byte, prov string) ([]CpaQuotaGroup, string,
 				ResetCountdown:    countdown,
 				Disabled:          remPct <= 0,
 			}
-			if totalPoints != nil {
-				bkt.TotalCapacity = totalPoints
+			// Only attach account-wide points to the primary bucket (first bucket of first group)
+			// to avoid duplicating points when summing bucket capacities across buckets.
+			if idx == 0 && bIdx == 0 {
+				if totalPoints != nil {
+					bkt.TotalCapacity = totalPoints
+				}
+				if remainPoints != nil {
+					bkt.RemainCapacity = remainPoints
+				}
+				if usedPoints != nil {
+					bkt.UsedCapacity = usedPoints
+				}
 			}
-			if remainPoints != nil {
-				bkt.RemainCapacity = remainPoints
-			}
-			if usedPoints != nil {
-				bkt.UsedCapacity = usedPoints
-			}
-			if b.ResetTime != "" {
+			if expAtStr != "" {
+				bkt.ExpiresAt = expAtStr
+			} else if b.ResetTime != "" {
 				bkt.ExpiresAt = b.ResetTime
 			}
 			buckets = append(buckets, bkt)
@@ -2059,6 +2133,7 @@ func parsePluginQuotaResponse(raw []byte, prov string) ([]CpaQuotaGroup, string,
 			RemainCapacity:    remainPoints,
 			UsedCapacity:      usedPoints,
 			Disabled:          remPct <= 0,
+			ExpiresAt:         expAtStr,
 		}
 		groups = append(groups, CpaQuotaGroup{
 			GroupID:     fmt.Sprintf("%s-quota", prov),
@@ -2216,33 +2291,91 @@ func fetchSingleAccountQuota(ctx context.Context, eng *engine.Engine, cpa *CpaCl
 			planName = pName
 		}
 
-	} else if prov == "workbuddy" || prov == "workbuddy-cn" {
-		reqBody, _ := json.Marshal(map[string]string{"authIndex": authIdx})
-		_, _ = cpa.Request(ctx, http.MethodPost, "/quota/fetch", reqBody, "application/json", "v0")
+	} else if prov == "claude" {
+		if authIdx == "" {
+			return nil, "", "", fmt.Errorf("unable to resolve auth_index for %s", fname)
+		}
+		apiCallBody, _ := json.Marshal(map[string]interface{}{
+			"authIndex": authIdx,
+			"method":    "GET",
+			"url":       "https://api.anthropic.com/api/oauth/usage",
+			"header": map[string]string{
+				"Authorization":  "Bearer $TOKEN$",
+				"Content-Type":   "application/json",
+				"anthropic-beta": "oauth-2025-04-20",
+				"User-Agent":     "claude-cli/1.0.0",
+			},
+		})
 
-		var authFilesResp CpaAuthFilesResponse
-		if err := cpa.RequestJSON(ctx, http.MethodGet, "/auth-files", nil, "v0", &authFilesResp); err == nil {
-			for _, f := range authFilesResp.Files {
-				if (authIdx != "" && strings.EqualFold(strings.TrimSpace(f.AuthIndex), authIdx)) ||
-					(fname != "" && (strings.EqualFold(f.Name, fname) || strings.EqualFold(f.ID, fname))) {
-					if f.Quota != nil && len(f.Quota.Groups) > 0 {
-						groups = f.Quota.Groups
-						planType = "standard"
-						planName = "标准包"
+		resp, err := cpa.Request(ctx, http.MethodPost, "/api-call", apiCallBody, "application/json", "v0")
+		if err != nil {
+			return nil, "", "", fmt.Errorf("claude quota probe failed: %w", err)
+		}
+
+		var callWrapper struct {
+			StatusCode int                 `json:"status_code"`
+			Header     map[string][]string `json:"header"`
+			Body       string              `json:"body"`
+			Response   json.RawMessage     `json:"response"`
+		}
+		if err := json.Unmarshal(resp.Bytes, &callWrapper); err != nil {
+			return nil, "", "", fmt.Errorf("unmarshal api-call response failed: %w", err)
+		}
+		if callWrapper.StatusCode == http.StatusOK {
+			var rawUpstream []byte
+			if strings.TrimSpace(callWrapper.Body) != "" {
+				rawUpstream = []byte(callWrapper.Body)
+			} else if len(callWrapper.Response) > 0 {
+				rawUpstream = callWrapper.Response
+			}
+			groups = parseClaudeQuotaGroups(rawUpstream)
+			planType = "standard"
+			planName = "Anthropic Claude"
+		}
+
+	} else {
+		// Native WorkBuddy, Qoder, Copilot-Tencent, and plugin declarative quota probes via /quota/fetch
+		reqBody, _ := json.Marshal(map[string]string{
+			"auth_index": authIdx,
+			"authIndex":  authIdx,
+			"provider":   prov,
+		})
+		resp, err := cpa.Request(ctx, http.MethodPost, "/quota/fetch", reqBody, "application/json", "v0")
+		if err == nil && resp != nil && resp.StatusCode == http.StatusOK && len(resp.Bytes) > 0 {
+			groups, planType, planName = parsePluginQuotaResponse(resp.Bytes, prov)
+		}
+
+		// Fallback to /auth-files if /quota/fetch yielded no groups
+		if len(groups) == 0 {
+			var authFilesResp CpaAuthFilesResponse
+			if err := cpa.RequestJSON(ctx, http.MethodGet, "/auth-files", nil, "v0", &authFilesResp); err == nil {
+				for _, f := range authFilesResp.Files {
+					if (authIdx != "" && strings.EqualFold(strings.TrimSpace(f.AuthIndex), authIdx)) ||
+						(fname != "" && (strings.EqualFold(f.Name, fname) || strings.EqualFold(f.ID, fname))) {
+						if f.Quota != nil && len(f.Quota.Groups) > 0 {
+							groups = f.Quota.Groups
+							planType = "standard"
+							planName = "标准包"
+						}
+						break
 					}
-					break
 				}
 			}
 		}
 	}
 
 	if len(groups) > 0 {
+		totCreds, remCreds, usedCreds, expAt := extractAccountCredits(groups)
 		accountQuotaCacheMu.Lock()
 		cached := CachedAccountQuota{
-			Groups:    groups,
-			PlanType:  planType,
-			PlanName:  planName,
-			UpdatedAt: time.Now(),
+			Groups:           groups,
+			PlanType:         planType,
+			PlanName:         planName,
+			UpdatedAt:        time.Now(),
+			TotalCredits:     totCreds,
+			RemainingCredits: remCreds,
+			UsedCredits:      usedCreds,
+			ExpiresAt:        expAt,
 		}
 		if authIdx != "" {
 			accountQuotaCache[authIdx] = cached
@@ -2360,12 +2493,17 @@ func HandlePostUpstreamAuthActivateWindow(eng *engine.Engine, cpa *CpaClient) gi
 			return
 		}
 
+		totCreds, remCreds, usedCreds, expAt := extractAccountCredits(groups)
 		c.JSON(http.StatusOK, gin.H{
-			"success":   true,
-			"message":   "已成功拉取上游额度",
-			"groups":    groups,
-			"plan_type": planType,
-			"plan_name": planName,
+			"success":           true,
+			"message":           "已成功拉取上游额度",
+			"groups":            groups,
+			"plan_type":         planType,
+			"plan_name":         planName,
+			"total_credits":     totCreds,
+			"remaining_credits": remCreds,
+			"used_credits":      usedCreds,
+			"expires_at":        expAt,
 		})
 	}
 }

@@ -502,6 +502,89 @@ func TestParsePluginQuotaResponse(t *testing.T) {
 	}
 }
 
+func TestParsePluginQuotaResponse_WorkBuddy(t *testing.T) {
+	t.Parallel()
+
+	rawJSON := []byte(`{
+		"summary": [
+			{"key": "points_remain", "label": "可用点数", "value": 350.0, "unit": "点"},
+			{"key": "points_total", "label": "总点数", "value": 350.0, "unit": "点"},
+			{"key": "points_used", "label": "已用点数", "value": 0.0, "unit": "点"},
+			{"key": "runs_out_points", "label": "即将过期点数", "value": 250.0, "unit": "点"},
+			{"key": "runs_out_at", "label": "最近过期时间", "value": 1793279074000, "unit": "2026-10-29 21:04:34 CST"}
+		],
+		"groups": [
+			{
+				"groupId": "workbuddy-resource-quota",
+				"displayName": "WorkBuddy Resource Quota",
+				"buckets": [
+					{
+						"bucketId": "workbuddy-points",
+						"name": "可用点数",
+						"window": "points",
+						"remainingFraction": 1.0,
+						"description": "350 可用 / 350 总点数"
+					},
+					{
+						"bucketId": "TCACA_code_123",
+						"name": "套餐包",
+						"window": "points",
+						"remainingFraction": 1.0,
+						"description": "套餐包 (250 点)"
+					}
+				]
+			}
+		]
+	}`)
+
+	groups, planType, planName := parsePluginQuotaResponse(rawJSON, "workbuddy")
+	if planType != "standard" {
+		t.Errorf("expected planType 'standard', got %q", planType)
+	}
+	if planName != "标准包" {
+		t.Errorf("expected planName '标准包', got %q", planName)
+	}
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(groups))
+	}
+	if len(groups[0].Buckets) != 2 {
+		t.Fatalf("expected 2 buckets, got %d", len(groups[0].Buckets))
+	}
+
+	// Verify primary bucket holds points
+	b0 := groups[0].Buckets[0]
+	if b0.TotalCapacity == nil || *b0.TotalCapacity != 350.0 {
+		t.Errorf("expected b0 total capacity 350, got %v", b0.TotalCapacity)
+	}
+	if b0.RemainCapacity == nil || *b0.RemainCapacity != 350.0 {
+		t.Errorf("expected b0 remain capacity 350, got %v", b0.RemainCapacity)
+	}
+	if b0.ExpiresAt != "2026-10-29 21:04:34 CST" {
+		t.Errorf("expected b0 expiresAt '2026-10-29 21:04:34 CST', got %q", b0.ExpiresAt)
+	}
+
+	// Verify secondary bucket does NOT duplicate points to avoid multiplier bugs
+	b1 := groups[0].Buckets[1]
+	if b1.TotalCapacity != nil {
+		t.Errorf("secondary bucket must not duplicate TotalCapacity, got %v", b1.TotalCapacity)
+	}
+
+	// Verify extracted account credits are not duplicated across multiple buckets
+	tot, rem, used, exp := extractAccountCredits(groups)
+	if tot == nil || *tot != 350.0 {
+		t.Errorf("expected 350 total credits, got %v", tot)
+	}
+	if rem == nil || *rem != 350.0 {
+		t.Errorf("expected 350 remaining credits, got %v", rem)
+	}
+	if used == nil || *used != 0.0 {
+		t.Errorf("expected 0 used credits, got %v", used)
+	}
+	if exp != "2026-10-29 21:04:34 CST" {
+		t.Errorf("expected expiration timestamp '2026-10-29 21:04:34 CST', got %q", exp)
+	}
+}
+
 func TestIsSupportedQuotaProvider(t *testing.T) {
 	t.Parallel()
 
