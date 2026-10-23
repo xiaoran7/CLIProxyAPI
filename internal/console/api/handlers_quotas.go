@@ -263,8 +263,8 @@ const (
 )
 
 var cooldownReasonLabels = map[string]string{
-	"quota":                "额度限制",
-	"credential_quota":     "凭证额度限制",
+	"quota":                "限流",
+	"credential_quota":     "额度耗尽",
 	"cloudflare_challenge": "Cloudflare 验证",
 	"invalid_grant":        "授权无效",
 	"unauthorized":         "未获授权",
