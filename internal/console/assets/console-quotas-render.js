@@ -28,6 +28,9 @@
           if (activeUpstreamFilter === 'qoder') {
             return prov === 'qoder' || prov === 'qoder-cn';
           }
+          if (activeUpstreamFilter === 'zcode') {
+            return prov.startsWith('zcode');
+          }
           return prov === activeUpstreamFilter;
         });
       }
@@ -793,6 +796,7 @@
         const isClaude = gnameLower.includes('claude') || gnameLower.includes('gpt') || gnameLower.includes('3p');
         const isCodex = gnameLower.includes('codex') || acc.provider === 'codex';
         const isQoder = gnameLower.includes('qoder') || (acc.provider && acc.provider.toLowerCase().startsWith('qoder'));
+        const isZCode = gnameLower.includes('zcode') || (acc.provider && acc.provider.toLowerCase().startsWith('zcode'));
         const isWorkbuddy = gnameLower.includes('workbuddy') || (acc.provider && acc.provider.toLowerCase().startsWith('workbuddy'));
 
         let poolBadge = '';
@@ -815,6 +819,8 @@
           poolBadge = `<span class="quota-pool-badge pool-codex">Codex</span>`;
         } else if (isQoder) {
           poolBadge = `<span class="quota-pool-badge pool-qoder">Qoder</span>`;
+        } else if (isZCode) {
+          poolBadge = `<span class="quota-pool-badge pool-zcode">ZCode</span>`;
         } else if (isWorkbuddy) {
           poolBadge = `<span class="quota-pool-badge pool-workbuddy">WorkBuddy</span>`;
         }

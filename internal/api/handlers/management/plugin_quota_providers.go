@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/qoder"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/workbuddy"
+	zcodeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/zcode"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
@@ -267,4 +268,80 @@ func (h *Handler) listQoderQuotas(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"accounts": results,
 	})
+}
+
+// listZCodeQuotas lists every ZCode credential with its plan and allowance.
+func (h *Handler) listZCodeQuotas(c *gin.Context) {
+	if h.authManager == nil {
+		c.JSON(http.StatusOK, gin.H{"accounts": []any{}})
+		return
+	}
+
+	type accountQuota struct {
+		AuthID    string `json:"auth_id"`
+		User      string `json:"user"`
+		Plan      string `json:"plan"`
+		Site      string `json:"site"`
+		Team      bool   `json:"team"`
+		StartPlan bool   `json:"start_plan"`
+		ExpiresAt string `json:"expires_at,omitempty"`
+		Error     string `json:"error,omitempty"`
+	}
+
+	var targets []*coreauth.Auth
+	for _, a := range h.authManager.List() {
+		if a == nil || isInternalStorageFile(a.ID) || isInternalStorageFile(a.FileName) {
+			continue
+		}
+		if path := strings.TrimSpace(authAttribute(a, "path")); path != "" && isInternalStorageFile(path) {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(a.Provider)), "zcode") {
+			targets = append(targets, a)
+		}
+	}
+	if len(targets) == 0 {
+		c.JSON(http.StatusOK, gin.H{"accounts": []accountQuota{}})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	results := make([]accountQuota, len(targets))
+	var wg sync.WaitGroup
+	for idx, a := range targets {
+		wg.Add(1)
+		go func(i int, auth *coreauth.Auth) {
+			defer wg.Done()
+			entry := accountQuota{
+				AuthID:    auth.ID,
+				User:      zcodeauth.UserLabel(auth),
+				Plan:      zcodeauth.PlanName(auth),
+				Site:      zcodeauth.ResolveSite(auth),
+				Team:      zcodeauth.IsTeamSeat(auth),
+				StartPlan: zcodeauth.StartToken(auth) != "",
+			}
+			client := &http.Client{Timeout: 10 * time.Second}
+			quotaResp, errQuery := zcodeauth.QueryQuota(ctx, client, auth)
+			if errQuery != nil {
+				entry.Error = errQuery.Error()
+				log.WithError(errQuery).Warnf("failed to query zcode quota for auth %s", auth.ID)
+				results[i] = entry
+				return
+			}
+			if quotaResp.Subscription != nil && quotaResp.Subscription.Plan != "" {
+				entry.Plan = quotaResp.Subscription.Plan
+			}
+			for _, metric := range quotaResp.Summary {
+				if metric.Key == "expires_at" {
+					entry.ExpiresAt = metric.Unit
+				}
+			}
+			results[i] = entry
+		}(idx, a)
+	}
+	wg.Wait()
+
+	c.JSON(http.StatusOK, gin.H{"accounts": results})
 }

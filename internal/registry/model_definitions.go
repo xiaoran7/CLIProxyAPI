@@ -543,6 +543,8 @@ func GetStaticModelDefinitionsByChannel(channel string) []*ModelInfo {
 		return GetQoderModels("intl")
 	case "qoder-cn":
 		return GetQoderModels("cn")
+	case "zcode", "zcode-zai", "zcode-bigmodel", "zcode-cn":
+		return GetZCodeModels()
 	default:
 		return nil
 	}
@@ -639,6 +641,7 @@ func LookupStaticModelProviders(modelID string) []string {
 		{provider: "opencode", models: GetOpenCodeModels()},
 		{provider: "workbuddy", models: GetAllWorkBuddyModels()},
 		{provider: "qoder", models: GetAllQoderModels()},
+		{provider: "zcode", models: GetZCodeModels()},
 		{provider: "antigravity", models: data.Antigravity},
 		{provider: "claude", models: data.Claude},
 		{provider: "gemini", models: data.Gemini},

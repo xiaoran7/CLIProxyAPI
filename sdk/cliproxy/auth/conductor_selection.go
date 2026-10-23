@@ -1687,6 +1687,8 @@ func (m *Manager) executorLocked(provider string) (ProviderExecutor, bool) {
 			executor, okExecutor = m.executors["workbuddy"]
 		case "qoder-cn", "qoder-intl", "qoder-en":
 			executor, okExecutor = m.executors["qoder"]
+		case "zcode-zai", "zcode-bigmodel", "zcode-cn":
+			executor, okExecutor = m.executors["zcode"]
 		}
 	}
 	if !okExecutor || executor == nil {

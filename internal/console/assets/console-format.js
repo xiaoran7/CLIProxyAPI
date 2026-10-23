@@ -334,6 +334,17 @@
           iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>`
         };
       }
+      if (p.includes('zcode')) {
+        const isCn = p.includes('cn') || p.includes('bigmodel');
+        return {
+          id: isCn ? 'zcode-cn' : 'zcode',
+          name: isCn ? t('provider.zcodeCn') : t('provider.zcode'),
+          shortName: t('provider.zcodeShort'),
+          iconClass: 'provider-icon-glm',
+          pillClass: 'provider-pill-other',
+          iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4h16v4H8v8h12v4H4V4z"/></svg>`
+        };
+      }
       if (p.includes('glm') || p.includes('zhipu')) {
         return {
           id: 'zhipu',

@@ -14,6 +14,7 @@ import (
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
 	kimiauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/kimi"
+	zcodeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/zcode"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
@@ -299,6 +300,15 @@ func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([
 			} else {
 				a.Attributes["domain"] = "www.workbuddy.ai"
 			}
+		}
+	}
+	// For ZCode auth files, preserve the realm and base_url attributes.
+	if provider == "zcode" || provider == "zcode-zai" || provider == "zcode-bigmodel" || provider == "zcode-cn" {
+		a.Attributes["site"] = zcodeauth.ResolveSite(a)
+		if bu, ok := metadata["base_url"].(string); ok && strings.TrimSpace(bu) != "" {
+			a.Attributes["base_url"] = strings.TrimSpace(bu)
+		} else {
+			a.Attributes["base_url"] = zcodeauth.SiteBaseURL(a.Attributes["site"])
 		}
 	}
 	// For codex auth files, extract plan_type from metadata or JWT id_token.

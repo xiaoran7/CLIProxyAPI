@@ -187,6 +187,16 @@ var InitialProviderRegistry = []SeedProvider{
 		SortOrder: 75,
 	},
 	{
+		ProviderKey: "zcode",
+		Label:       "ZCode GLM Coding",
+		// ZCode's models are named GLM-*, which the zhipu entry claims; a ZCode
+		// credential is told apart by its own provider key instead.
+		AuthPatterns: []PatternItem{
+			{P: "zcode", Anchor: ""},
+		},
+		SortOrder: 76,
+	},
+	{
 		ProviderKey: "openrouter",
 		Label:       "OpenRouter",
 		ModelPatterns: []PatternItem{

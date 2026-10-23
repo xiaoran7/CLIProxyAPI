@@ -36,6 +36,8 @@ func (h *Handler) StartOAuthV8(c *gin.Context) {
 		h.RequestQoderToken(c)
 	case "qoder-cn":
 		h.RequestQoderCNToken(c)
+	case "zcode", "zcode-zai", "zcode-bigmodel", "zcode-cn":
+		h.RequestZCodeToken(c)
 	default:
 		if !h.ServePluginAuthURL(c) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "provider_not_found"})

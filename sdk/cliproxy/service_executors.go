@@ -337,6 +337,8 @@ func (s *Service) registerExecutorForAuth(a *coreauth.Auth, forceReplace bool) {
 		s.coreManager.RegisterExecutor(executor.NewWorkBuddyExecutor(cfg))
 	case "qoder", "qoder-intl", "qoder-en", "qoder-cn":
 		s.coreManager.RegisterExecutor(executor.NewQoderExecutor(cfg))
+	case "zcode", "zcode-zai", "zcode-bigmodel", "zcode-cn":
+		s.coreManager.RegisterExecutor(executor.NewZCodeExecutor(cfg))
 	default:
 		providerKey := strings.ToLower(strings.TrimSpace(a.Provider))
 		if providerKey == "" {

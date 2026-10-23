@@ -333,6 +333,8 @@ func RegisterCpaRoutes(rg *gin.RouterGroup, cpa *CpaClient, eng *engine.Engine, 
 		"workbuddy-cn": "/workbuddy-cn-auth-url",
 		"qoder":        "/qoder-auth-url",
 		"qoder-cn":     "/qoder-cn-auth-url",
+		"zcode":        "/zcode-auth-url",
+		"zcode-cn":     "/zcode-auth-url?site=bigmodel",
 	}
 
 	rg.POST("/oauth/:provider/start", func(c *gin.Context) {
@@ -342,7 +344,12 @@ func RegisterCpaRoutes(rg *gin.RouterGroup, cpa *CpaClient, eng *engine.Engine, 
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported oauth provider"})
 			return
 		}
-		forwardCpa(c, cpa, http.MethodGet, resPath+"?is_webui=true", nil, "v0")
+		// Some resources carry their own query (ZCode picks its realm there).
+		sep := "?"
+		if strings.Contains(resPath, "?") {
+			sep = "&"
+		}
+		forwardCpa(c, cpa, http.MethodGet, resPath+sep+"is_webui=true", nil, "v0")
 	})
 
 	rg.GET("/oauth/status", func(c *gin.Context) {

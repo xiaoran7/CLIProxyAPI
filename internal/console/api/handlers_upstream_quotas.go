@@ -34,10 +34,10 @@ func isSupportedQuotaProvider(prov string, f CpaAuthFile) bool {
 	p := strings.ToLower(strings.TrimSpace(prov))
 	switch p {
 	case "antigravity", "codex", "claude", "workbuddy", "workbuddy-cn", "copilot-tencent",
-		"qoder", "qoder-cn", "qoder-intl", "qoder-en", "kimi", "xai", "devin":
+		"qoder", "qoder-cn", "qoder-intl", "qoder-en", "kimi", "xai", "devin", "zcode", "zcode-cn":
 		return true
 	}
-	if strings.HasPrefix(p, "workbuddy") || strings.HasPrefix(p, "qoder") {
+	if strings.HasPrefix(p, "workbuddy") || strings.HasPrefix(p, "qoder") || strings.HasPrefix(p, "zcode") {
 		return true
 	}
 	if f.SupportsQuota || f.QuotaProvider != "" || f.QuotaPluginID != "" {

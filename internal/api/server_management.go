@@ -207,6 +207,7 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.GET("/workbuddy-cn-auth-url", s.mgmt.RequestWorkBuddyCNToken)
 		mgmt.GET("/qoder-auth-url", s.mgmt.RequestQoderToken)
 		mgmt.GET("/qoder-cn-auth-url", s.mgmt.RequestQoderCNToken)
+		mgmt.GET("/zcode-auth-url", s.mgmt.RequestZCodeToken)
 		mgmt.GET("/get-auth-status", s.mgmt.GetAuthStatus)
 		mgmt.DELETE("/oauth-session", s.mgmt.CancelAuthSession)
 	}

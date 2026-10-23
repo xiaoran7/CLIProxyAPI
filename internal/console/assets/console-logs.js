@@ -179,6 +179,8 @@
         { value: 'deepseek', label: 'DeepSeek' },
         { value: 'qoder-cn', label: t('logs.providerQoderCn') },
         { value: 'qoder', label: t('logs.providerQoder') },
+        { value: 'zcode', label: t('provider.zcode') },
+        { value: 'zcode-cn', label: t('provider.zcodeCn') },
         { value: 'openrouter', label: 'OpenRouter' },
         { value: 'qwen', label: t('logs.providerQwen') },
         { value: 'moonshot', label: 'Moonshot Kimi' },

@@ -170,6 +170,9 @@
     'provider.customChannel': { zh: '自定义渠道', en: 'Custom Channel' },
     'provider.workbuddy': { zh: '腾讯 WorkBuddy', en: 'WorkBuddy' },
     'provider.xai': { zh: 'xAI (Grok)', en: 'xAI (Grok)' },
+    'provider.zcode': { zh: 'ZCode GLM 编码套餐', en: 'ZCode GLM Coding' },
+    'provider.zcodeCn': { zh: 'ZCode (智谱 BigModel)', en: 'ZCode (BigModel)' },
+    'provider.zcodeShort': { zh: 'ZCode', en: 'ZCode' },
 
     // ==== 筛选与分页（filter.*）====
     'filter.allCreds': { zh: '全部凭据', en: 'All credentials' },
@@ -649,6 +652,8 @@
     'quotas.refreshAllQuotaBtn': { zh: '刷新全部额度', en: 'Refresh all quotas' },
     'quotas.refreshAllWorkBuddyQuota': { zh: '刷新全部 WorkBuddy 额度', en: 'Refresh all WorkBuddy quotas' },
     'quotas.refreshAllWorkBuddyQuotaTitle': { zh: '对所有有效 WorkBuddy / CodeBuddy 凭据批量查询最新额度', en: 'Batch-query the latest quota for all valid WorkBuddy / CodeBuddy credentials' },
+    'quotas.refreshAllZCodeQuota': { zh: '刷新全部 ZCode 额度', en: 'Refresh all ZCode quotas' },
+    'quotas.refreshAllZCodeQuotaTitle': { zh: '对所有有效 ZCode / GLM 编码套餐凭据批量查询最新额度', en: 'Batch-query the latest quota for all valid ZCode / GLM Coding Plan credentials' },
     'quotas.refreshFilteredQuotaTitle': { zh: '向当前筛选的凭据批量查询最新上游额度', en: 'Batch-query the latest upstream quota for the currently filtered credentials' },
     'quotas.refreshQuota': { zh: '刷新配额', en: 'Refresh quota' },
     'quotas.refreshQuotaBtn': { zh: '刷新额度', en: 'Refresh quota' },

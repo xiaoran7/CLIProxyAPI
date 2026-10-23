@@ -179,6 +179,25 @@ func (h *Handler) ListPlugins(c *gin.Context) {
 				GitHubRepository: "https://qoder.com",
 			},
 		},
+		{
+			ID:               "zcode",
+			Configured:       true,
+			Registered:       true,
+			Enabled:          true,
+			EffectiveEnabled: true,
+			SupportsOAuth:    true,
+			OAuthProvider:    "zcode",
+			SupportsQuota:    true,
+			QuotaProvider:    "zcode",
+			ConfigFields:     []pluginConfigFieldInfo{},
+			Menus:            []pluginMenuInfo{},
+			Metadata: &pluginMetadataInfo{
+				Name:             "ZCode",
+				Author:           "Z.ai",
+				Version:          "1.0.0",
+				GitHubRepository: "https://zcode.z.ai",
+			},
+		},
 	}
 
 	nativeMap := make(map[string]pluginListEntry, len(nativeOAuthPlugins))
@@ -270,7 +289,7 @@ func (h *Handler) GetPluginConfig(c *gin.Context) {
 		return
 	}
 
-	if pluginRegistered(host, id) || id == "workbuddy" || id == "workbuddy-cn" || id == "qoder" || id == "qoder-cn" {
+	if pluginRegistered(host, id) || id == "workbuddy" || id == "workbuddy-cn" || id == "qoder" || id == "qoder-cn" || id == "zcode" || id == "zcode-cn" {
 		c.JSON(http.StatusOK, gin.H{})
 		return
 	}
@@ -404,7 +423,7 @@ func (h *Handler) DeletePlugin(c *gin.Context) {
 	if !okID {
 		return
 	}
-	if id == "workbuddy" || id == "workbuddy-cn" || id == "qoder" || id == "qoder-cn" {
+	if id == "workbuddy" || id == "workbuddy-cn" || id == "qoder" || id == "qoder-cn" || id == "zcode" || id == "zcode-cn" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot_delete_native_plugin", "message": "native suite plugin cannot be deleted"})
 		return
 	}

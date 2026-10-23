@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	zcodeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/zcode"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/constant"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/modelconfig"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
@@ -232,6 +233,15 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 		}
 		s.warmQoderCatalogForAuth(ctx, a, realm)
 		models = registry.GetQoderModels(realm)
+		models = applyExcludedModels(models, excluded)
+	case "zcode", "zcode-zai", "zcode-bigmodel", "zcode-cn":
+		// The Start Plan's trial entries are only listed for a credential that
+		// holds the gift; a coding-plan-only account has no use for them.
+		if zcodeauth.StartToken(a) != "" {
+			models = registry.GetZCodeModels()
+		} else {
+			models = registry.GetZCodeCodingPlanModels()
+		}
 		models = applyExcludedModels(models, excluded)
 	default:
 		// Handle OpenAI-compatibility providers by name using config

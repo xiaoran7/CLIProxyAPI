@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Sync Upstream v8.0.40 Core Fixes & Features (`router-for-me/CLIProxyAPI`)**:
+  - **Claude Usage Speed Propagation**: Extracted `usage.speed` ("fast" / "standard") from Claude API responses and populated `detail.ResponseServiceTier` across streaming and non-streaming accounting records (#6884).
+  - **Gemini Server-Side Tool Invocations for Mixed Tools**: Automatically set `toolConfig.includeServerSideToolInvocations` to `true` when combining built-in tools (Google Search, Code Execution, URL Context) with custom function declarations in Gemini Chat Completions and Responses requests (#6892).
+  - **Antigravity Tool Capability Isolation**: Safely stripped `includeServerSideToolInvocations` in Antigravity Responses translators to prevent downstream endpoint parameter rejections (#6892).
+  - **Codex Client Request Credential Isolation**: Detected Codex client requests (`IsCodexClientRequest`), bypassed `use_siwc` configuration rules, and enforced authentic non-SIWC credential routing for Codex client requests (#6833).
+  - **Frontend Auth Plugin Decoded Body**: Added `DecodedBody` to `FrontendAuthRequest` for pre-decoded route inspection, bounded by zstd memory limits, payload size caps, and protected RPC slot lifecycle (#6886).
+  - **Pluginhost & Handlers Concurrency Test Hardening**: Eliminated flaky race conditions during plugin initialization shutdown and stream context cancellation tests (#6885).
 - **Console Upstream Quotas Runtime & Visual Alignment Fixes (`internal/console/`)**:
   - Fixed a `ReferenceError: renderUpstreamLocalUsageCard is not defined` runtime exception when rendering upstream credential full cards in `console-quotas-render.js`.
   - Resolved visual alignment defects across the console upstream credentials section:
@@ -25,6 +32,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Added POST method attempt to `FetchUpstreamModels` for COSY-signed `/algo/api/v2/model/list?Encode=1` before falling back to GET and OpenAPI routes.
 
 ### Added
+- **ZCode Native Provider: GLM Coding Plans & Free Start Plan (`internal/auth/zcode/`, `internal/runtime/executor/zcode_executor.go`, `internal/registry/zcode_models.go`)**:
+  - **Sign-in and key minting**: `POST /api/v1/oauth/cli/init` + poll opens ZCode's CLI flow; the completed flow mints (or finds) the account's `<id>.<secret>` key in its default project, falls back to a team seat (`zcode-team-api-key`, projectType 2), and falls back again to the Start Plan when the account holds no plan. Both realms are served — Z.ai (`api.z.ai/api/anthropic`) and BigModel (`open.bigmodel.cn/api/anthropic`).
+  - **Two pools, one credential**: a model spends the Coding Plan unless the catalog entry ends in `-Trial`, which spends ZCode's free Start Plan (`zcode.z.ai/api/v1/zcode-plan/anthropic`) instead; a credential with no minted key spends the Start Plan for everything. An explicit `zcode_route` attribute (`start` / `coding`) overrides both.
+  - **Start Plan dressing**: the executor reproduces ZCode 3.16.3's wire exactly — the header set replaces every caller header (no `anthropic-beta`, no `x-stainless-*`), `/v1/messages?beta=true` is stripped to `/v1/messages`, and the body is rewritten into exactly three cached system blocks (ZCode's own prompt texts, byte for byte), a `<system-reminder>` date turn before the agent's first turn, one cache breakpoint on the last turn's last block, none on the tools, and a `metadata.user_id` device envelope. An optional `x-magpie-work-dir` / `x-magpie-work-git` pair names the agent's folder in the environment section, and is left out when not told.
+  - **Refusal classification**: `zcode.z.ai`'s anti-bot answer (405, edge block page, code 3012) and a spent gift (any 429, or codes 1113 / 1005, including inside an HTTP 200) are told apart and reported with the operator-facing explanation; a spent trial entry answers 429 with the reference client's own wording.
+  - **Quota**: Coding Plan `/api/monitor/usage/quota/limit` windows (5-hour, weekly, monthly; unit 1/3/4/5/6), subscription term and auto-renew, per-plan resets, team seat plan detail, and Start Plan `plans` + `balances` buckets. A dual account reports both pools as separate groups.
+  - **Catalog**: `GLM-5.3`, `GLM-5.3-Flash`, `GLM-5.2`, `GLM-5-Turbo` plus `-Trial` entries; a coding-plan-only credential is not offered the trial entries.
+  - **Wiring**: executor registration for `zcode` / `zcode-zai` / `zcode-bigmodel` / `zcode-cn`, conductor alias maps, auth-file site attributes, `GET /v0/management/zcode-auth-url?site=`, native plugin registry entry, quota dispatch and per-credential listing, and console provider registry, brand, i18n, filters and pool badge.
+  - **Hardening & Defect Prevention**: Fixed a metadata serialization risk in `Dress` where caller metadata fields could be serialized into `gjson.Result` internal struct representations by leveraging path-targeted in-place `sjson.SetBytes`, and reinforced UTF-8 rune decoding safety during plan level capitalization.
 - **Console UI Aesthetic & Separation of Concerns Overhaul (`internal/console/`)**:
   - **Complete Emoji Removal**: System emojis across the console UI (`console-i18n.js`, `console-quotas-fetch.js`, `console-theme-v2310.css`, `console.html`) replaced with clean typography or inline SVG vector icons.
   - **Purged Usage Statistics from Upstream Credentials View**: Removed proxy usage statistics, today token consumption, 5-hour tokens, and request counters from both compact list rows and full cards in `tab-page-quotas`, enforcing strict separation of concerns between upstream credential health/quota management and analytics/log inspection.

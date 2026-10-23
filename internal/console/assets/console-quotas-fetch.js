@@ -515,6 +515,10 @@
             const p = (a.provider || '').toLowerCase();
             return p.startsWith('qoder');
           }
+          if (filter === 'zcode') {
+            const p = (a.provider || '').toLowerCase();
+            return p.startsWith('zcode');
+          }
           return (a.provider || '').toLowerCase() === filter;
         }
         const prov = (a.provider || '').toLowerCase();
@@ -522,6 +526,7 @@
           prov === 'workbuddy' || prov === 'workbuddy-cn' ||
           prov === 'qoder' || prov === 'qoder-cn' || prov === 'qoder-intl' || prov === 'qoder-en' ||
           prov === 'copilot-tencent' || prov === 'kimi' || prov === 'xai' || prov === 'devin' ||
+          prov === 'zcode' || prov === 'zcode-cn' || prov === 'zcode-zai' || prov === 'zcode-bigmodel' ||
           prov === 'openrouter' || prov === 'opencode' ||
           Boolean(a.supports_quota || a.quota_provider || a.quota_plugin_id);
       });
@@ -598,6 +603,9 @@
       } else if (f === 'qoder' || f === 'qoder-cn') {
         btn.textContent = t('quotas.refreshAllQoderQuota');
         btn.title = t('quotas.refreshAllQoderQuotaTitle');
+      } else if (f === 'zcode') {
+        btn.textContent = t('quotas.refreshAllZCodeQuota');
+        btn.title = t('quotas.refreshAllZCodeQuotaTitle');
       } else if (f === 'openrouter') {
         btn.textContent = t('quotas.refreshAllOpenRouterQuota');
         btn.title = t('quotas.refreshAllOpenRouterQuotaTitle');

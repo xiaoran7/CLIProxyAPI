@@ -498,6 +498,16 @@
       background: rgba(59, 130, 246, 0.18);
       border-color: rgba(96, 165, 250, 0.32);
     }
+    .quota-pool-badge.pool-zcode {
+      background: rgba(14, 165, 233, 0.1);
+      color: #0284c7;
+      border: 1px solid rgba(14, 165, 233, 0.25);
+    }
+    .theme-dark .quota-pool-badge.pool-zcode {
+      color: #38bdf8;
+      background: rgba(14, 165, 233, 0.18);
+      border-color: rgba(56, 189, 248, 0.32);
+    }
     .quota-pool-badge.pool-opencode {
       background: rgba(15, 23, 42, 0.08);
       color: #0f172a;

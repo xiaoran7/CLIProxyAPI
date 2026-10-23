@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/qoder"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/workbuddy"
+	zcodeauth "github.com/router-for-me/CLIProxyAPI/v8/internal/auth/zcode"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 	log "github.com/sirupsen/logrus"
@@ -124,6 +125,18 @@ func (h *Handler) FetchCredentialQuota(c *gin.Context) {
 		quotaResp, errQuota := qoder.QueryQuota(c.Request.Context(), nil, auth)
 		if errQuota != nil {
 			log.WithError(errQuota).Warnf("failed to query native qoder quota for credential %s", auth.Index)
+			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errQuota)})
+			return
+		}
+		c.JSON(http.StatusOK, quotaResp)
+		return
+	}
+
+	// Native ZCode quota provider
+	if strings.HasPrefix(pLower, "zcode") || strings.HasPrefix(strings.ToLower(pluginID), "zcode") {
+		quotaResp, errQuota := zcodeauth.QueryQuota(c.Request.Context(), nil, auth)
+		if errQuota != nil {
+			log.WithError(errQuota).Warnf("failed to query native zcode quota for credential %s", auth.Index)
 			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errQuota)})
 			return
 		}
@@ -270,6 +283,10 @@ func (h *Handler) GetPluginQuota(c *gin.Context) {
 			h.listQoderQuotas(c)
 			return
 		}
+		if strings.HasPrefix(pLower, "zcode") {
+			h.listZCodeQuotas(c)
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "auth_index is required"})
 		return
 	}
@@ -293,6 +310,10 @@ func (h *Handler) FetchPluginQuota(c *gin.Context) {
 		}
 		if strings.HasPrefix(pLower, "qoder") {
 			h.listQoderQuotas(c)
+			return
+		}
+		if strings.HasPrefix(pLower, "zcode") {
+			h.listZCodeQuotas(c)
 			return
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "auth_index is required"})
@@ -347,6 +368,17 @@ func (h *Handler) fetchQuotaForPlugin(c *gin.Context, pluginID, authIndex string
 		quotaResp, errQuota := qoder.QueryQuota(c.Request.Context(), nil, auth)
 		if errQuota != nil {
 			log.WithError(errQuota).Warnf("failed to query native qoder quota for credential %s", auth.Index)
+			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errQuota)})
+			return
+		}
+		c.JSON(http.StatusOK, quotaResp)
+		return
+	}
+
+	if strings.HasPrefix(pLower, "zcode") || strings.HasPrefix(authPLower, "zcode") {
+		quotaResp, errQuota := zcodeauth.QueryQuota(c.Request.Context(), nil, auth)
+		if errQuota != nil {
+			log.WithError(errQuota).Warnf("failed to query native zcode quota for credential %s", auth.Index)
 			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errQuota)})
 			return
 		}

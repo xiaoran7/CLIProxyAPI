@@ -174,6 +174,8 @@
             { value: 'workbuddy-cn', label: 'WorkBuddy (CodeBuddy)' },
             { value: 'qoder', label: t('provider.qoder') },
             { value: 'qoder-cn', label: t('provider.qoderCn') },
+            { value: 'zcode', label: t('provider.zcode') },
+            { value: 'zcode-cn', label: t('provider.zcodeCn') },
             { value: 'deepseek', label: 'DeepSeek' },
             { value: 'openrouter', label: 'OpenRouter' },
             { value: 'qwen', label: t('provider.qwen') },
