@@ -40,16 +40,17 @@ func ShouldSkipGateway(path string) bool {
 }
 
 // IsDiscoveryOrUtilityRequest checks if a request is a discovery, preflight, or utility call
-// (such as models listing, CORS preflight, or health probe) rather than a model inference request.
+// (such as models listing, CORS preflight, health probe, or token counting) rather than a model inference request.
 func IsDiscoveryOrUtilityRequest(method, path string) bool {
 	// 1. CORS Preflight & Head Probes
 	if method == "OPTIONS" || method == "HEAD" {
 		return true
 	}
 
+	clean := strings.TrimRight(path, "/")
+
 	// 2. Models Discovery & Metadata (OpenAI, Gemini, Claude, Codex)
 	if method == "GET" {
-		clean := strings.TrimRight(path, "/")
 		if clean == "/models" ||
 			strings.HasSuffix(clean, "/models") ||
 			strings.Contains(clean, "/models/") ||
@@ -57,6 +58,14 @@ func IsDiscoveryOrUtilityRequest(method, path string) bool {
 			strings.HasPrefix(clean, "/openai/v1/videos") {
 			return true
 		}
+	}
+
+	// 3. Pre-flight token counting & utility endpoints (Claude /messages/count_tokens, Gemini :countTokens, etc.)
+	if strings.HasSuffix(clean, "/count_tokens") ||
+		strings.HasSuffix(clean, "/count-tokens") ||
+		strings.HasSuffix(clean, ":countTokens") ||
+		strings.HasSuffix(clean, "/tokenize") {
+		return true
 	}
 
 	return false

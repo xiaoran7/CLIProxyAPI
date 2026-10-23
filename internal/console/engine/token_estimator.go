@@ -104,6 +104,31 @@ func ExtractUsageFromJSON(body []byte) (prompt, completion, cached, total int64,
 		}
 	}
 
+	// 3. Flat / Root-level token fields (e.g. Anthropic count_tokens {"input_tokens": 1234})
+	if res.Get("input_tokens").Exists() || res.Get("prompt_tokens").Exists() || res.Get("total_tokens").Exists() {
+		hasPrompt := false
+		if val := res.Get("prompt_tokens"); val.Exists() {
+			prompt = val.Int()
+			hasPrompt = true
+		} else if val := res.Get("input_tokens"); val.Exists() {
+			prompt = val.Int()
+			hasPrompt = true
+		}
+		if val := res.Get("output_tokens"); val.Exists() {
+			completion = val.Int()
+		} else if val := res.Get("completion_tokens"); val.Exists() {
+			completion = val.Int()
+		}
+		if val := res.Get("total_tokens"); val.Exists() {
+			total = val.Int()
+		} else {
+			total = prompt + completion
+		}
+		if hasPrompt || completion > 0 || total > 0 {
+			return prompt, completion, 0, total, true
+		}
+	}
+
 	return 0, 0, 0, 0, false
 }
 

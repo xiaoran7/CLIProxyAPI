@@ -548,6 +548,11 @@ func TestNonInferenceDiscoveryAndUtilityNotRecorded(t *testing.T) {
 	r.OPTIONS("/v1/chat/completions", func(c *gin.Context) {
 		c.Status(http.StatusNoContent)
 	})
+	r.POST("/v1/messages/count_tokens", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"input_tokens": 128,
+		})
+	})
 	r.POST("/v1/chat/completions", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"id":      "chatcmpl-test",
@@ -577,7 +582,17 @@ func TestNonInferenceDiscoveryAndUtilityNotRecorded(t *testing.T) {
 		t.Fatalf("expected 204 for OPTIONS, got %d", wOptions.Code)
 	}
 
-	// Flush and verify neither GET /v1/models nor OPTIONS was recorded in outbox or events
+	// 2b. POST /v1/messages/count_tokens (Token counting utility)
+	reqCount := httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", bytes.NewBufferString(`{"model":"gpt-4o","messages":[]}`))
+	reqCount.Header.Set("Authorization", "Bearer "+rawKey)
+	reqCount.Header.Set("Content-Type", "application/json")
+	wCount := httptest.NewRecorder()
+	r.ServeHTTP(wCount, reqCount)
+	if wCount.Code != http.StatusOK {
+		t.Fatalf("expected 200 for count_tokens, got %d", wCount.Code)
+	}
+
+	// Flush and verify neither GET /v1/models nor OPTIONS nor count_tokens was recorded in outbox or events
 	if err := eng.Flusher().FlushUsage(ctx); err != nil {
 		t.Fatalf("flush usage failed: %v", err)
 	}
@@ -587,7 +602,7 @@ func TestNonInferenceDiscoveryAndUtilityNotRecorded(t *testing.T) {
 		t.Fatalf("select recent events failed: %v", err)
 	}
 	if len(events) != 0 {
-		t.Fatalf("expected 0 events recorded for discovery/options, got %d (first model: %s)", len(events), events[0].Model)
+		t.Fatalf("expected 0 events recorded for discovery/options/count_tokens, got %d (first model: %s)", len(events), events[0].Model)
 	}
 
 	// 3. Real inference request POST /v1/chat/completions

@@ -63,6 +63,17 @@ func TestExtractUsageFromJSON_Gemini(t *testing.T) {
 	}
 }
 
+func TestExtractUsageFromJSON_RootTokens(t *testing.T) {
+	raw := []byte(`{"input_tokens": 128, "output_tokens": 64}`)
+	prompt, completion, cached, total, ok := ExtractUsageFromJSON(raw)
+	if !ok {
+		t.Fatalf("expected usage extracted from root tokens")
+	}
+	if prompt != 128 || completion != 64 || total != 192 || cached != 0 {
+		t.Errorf("unexpected root tokens: p=%d, c=%d, cached=%d, t=%d", prompt, completion, cached, total)
+	}
+}
+
 func TestCalculateTokensPerSec(t *testing.T) {
 	// 100 tokens, 1000ms latency -> 100 tok/s
 	tps := CalculateTokensPerSec(100, 1000, 0, false)
