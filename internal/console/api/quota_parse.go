@@ -291,19 +291,26 @@ func parseAntigravityQuotaGroups(raw []byte) []CpaQuotaGroup {
 		}
 
 		gLower := strings.ToLower(fmt.Sprintf("%s %s", gName, gDisp))
-		if strings.Contains(gLower, "gemini") {
+		if strings.Contains(gLower, "argon") || strings.Contains(gLower, "gemini 4") || strings.Contains(gLower, "gemini-4") || strings.Contains(gLower, "gemini4") {
+			if gName == "" || gName == "<nil>" || gName == "Model Group" {
+				gName = "models/gemini4_argon"
+			}
+			if gDisp == "" || gDisp == "<nil>" {
+				gDisp = "Gemini 4 Argon"
+			}
+		} else if strings.Contains(gLower, "gemini") {
 			if gName == "" || gName == "<nil>" || gName == "Model Group" {
 				gName = "models/gemini"
 			}
 			if gDisp == "" || gDisp == "<nil>" {
 				gDisp = "Gemini Models"
 			}
-		} else if strings.Contains(gLower, "claude") {
+		} else if strings.Contains(gLower, "claude") || strings.Contains(gLower, "gpt") || strings.Contains(gLower, "3p") {
 			if gName == "" || gName == "<nil>" || gName == "Model Group" {
 				gName = "models/claude"
 			}
 			if gDisp == "" || gDisp == "<nil>" {
-				gDisp = "Claude Models"
+				gDisp = "Claude and GPT models"
 			}
 		}
 

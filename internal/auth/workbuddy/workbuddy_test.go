@@ -642,3 +642,280 @@ func TestQueryQuota_EnterpriseUsage(t *testing.T) {
 		t.Errorf("expiresAt = %q, want 2026-12-01 00:00:00", expiresAt)
 	}
 }
+
+func TestQueryQuota_RefreshTokenOn401Success(t *testing.T) {
+	var summaryCalls int32
+	var refreshCalls int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case MeterUserResourceSummaryPath:
+			count := atomic.AddInt32(&summaryCalls, 1)
+			if count == 1 {
+				// First call fails with 401 Unauthorized
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"code": 11100, "msg": "token expired"}`))
+				return
+			}
+			// Second call with refreshed token succeeds
+			if r.Header.Get("Authorization") != "Bearer new-valid-access-token" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"code": 401, "msg": "invalid refreshed token"}`))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"code": 0,
+				"msg": "ok",
+				"data": {
+					"IsPaidUser": true,
+					"Packages": [
+						{
+							"PackageCode": "TCACA_code_002_test",
+							"CycleTotalCapacity": "100.00",
+							"CycleUsedCapacity": "10.00",
+							"CycleRemainCapacity": "90.00"
+						}
+					]
+				}
+			}`))
+		case TokenRefreshPath:
+			atomic.AddInt32(&refreshCalls, 1)
+			if r.Header.Get("X-Refresh-Token") != "my-valid-refresh-token" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"code": 401, "msg": "invalid refresh token"}`))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"code": 0,
+				"msg": "ok",
+				"data": {
+					"accessToken": "new-valid-access-token",
+					"refreshToken": "next-refresh-token",
+					"expires_in": 7200
+				}
+			}`))
+		case MeterPaidPackagesPath, MeterFreePackagesPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code": 0, "data": {"TotalCount": 0, "Accounts": []}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	customClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.URL.Scheme = "http"
+			req.URL.Host = server.Listener.Addr().String()
+			return http.DefaultTransport.RoundTrip(req)
+		}),
+	}
+
+	auth := &cliproxyauth.Auth{
+		ID:       "wb-test-refresh-success",
+		Provider: "workbuddy",
+		Metadata: map[string]any{
+			"access_token":  "expired-old-token",
+			"refresh_token": "my-valid-refresh-token",
+			"user_id":       "u-test-99",
+		},
+		Attributes: map[string]string{
+			"base_url": server.URL,
+		},
+	}
+
+	res, err := QueryQuota(context.Background(), customClient, auth)
+	if err != nil {
+		t.Fatalf("QueryQuota failed on refresh retry: %v", err)
+	}
+
+	if atomic.LoadInt32(&refreshCalls) != 1 {
+		t.Errorf("expected 1 refresh call, got %d", atomic.LoadInt32(&refreshCalls))
+	}
+	if atomic.LoadInt32(&summaryCalls) != 2 {
+		t.Errorf("expected 2 summary calls (1 failed, 1 retried), got %d", atomic.LoadInt32(&summaryCalls))
+	}
+	if res.Subscription == nil || res.Subscription.Plan != "WorkBuddy (en) · Pro" {
+		t.Errorf("Subscription.Plan = %v, want WorkBuddy (en) · Pro", res.Subscription)
+	}
+	if auth.Metadata["access_token"] != "new-valid-access-token" {
+		t.Errorf("auth.Metadata access_token not updated, got %v", auth.Metadata["access_token"])
+	}
+}
+
+func TestQueryQuota_RefreshTokenOn401Failure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case MeterUserResourceSummaryPath, UserPointsPath, "/v2/billing/meter/checkin-activity-status":
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"code": 11100, "msg": "token expired"}`))
+		case TokenRefreshPath:
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"code": 401, "msg": "refresh token revoked"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	customClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.URL.Scheme = "http"
+			req.URL.Host = server.Listener.Addr().String()
+			return http.DefaultTransport.RoundTrip(req)
+		}),
+	}
+
+	auth := &cliproxyauth.Auth{
+		ID:       "wb-test-refresh-fail",
+		Provider: "workbuddy",
+		Metadata: map[string]any{
+			"access_token":  "expired-token",
+			"refresh_token": "revoked-refresh-token",
+		},
+		Attributes: map[string]string{
+			"base_url": server.URL,
+		},
+	}
+
+	_, err := QueryQuota(context.Background(), customClient, auth)
+	if err == nil {
+		t.Fatalf("expected QueryQuota to return error on auth failure, but got nil error")
+	}
+	if !strings.Contains(err.Error(), "authentication failed") && !strings.Contains(err.Error(), "unauthorized") {
+		t.Errorf("expected authentication failure in error message, got %v", err)
+	}
+}
+
+func TestQueryQuota_MissingRefreshTokenOn401(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case MeterUserResourceSummaryPath, UserPointsPath, "/v2/billing/meter/checkin-activity-status":
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"code": 11100, "msg": "token expired"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	customClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.URL.Scheme = "http"
+			req.URL.Host = server.Listener.Addr().String()
+			return http.DefaultTransport.RoundTrip(req)
+		}),
+	}
+
+	auth := &cliproxyauth.Auth{
+		ID:       "wb-test-no-refresh",
+		Provider: "workbuddy",
+		Metadata: map[string]any{
+			"access_token": "expired-token-only",
+		},
+		Attributes: map[string]string{
+			"base_url": server.URL,
+		},
+	}
+
+	_, err := QueryQuota(context.Background(), customClient, auth)
+	if err == nil {
+		t.Fatalf("expected QueryQuota to return error on 401 without refresh token, but got nil")
+	}
+	if !strings.Contains(err.Error(), "authentication failed") && !strings.Contains(err.Error(), "unauthorized") {
+		t.Errorf("expected authentication failure in error message, got %v", err)
+	}
+}
+
+func TestQueryQuota_LegitimateFreeTierFallbackWhenAuthSucceeded(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case MeterUserResourceSummaryPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"code": 0,
+				"msg": "ok",
+				"data": {
+					"IsPaidUser": false,
+					"Packages": []
+				}
+			}`))
+		case MeterEnterpriseUsagePath:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code": 404, "msg": "not enterprise"}`))
+		case UserPointsPath:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code": 404, "msg": "not found"}`))
+		case "/v2/billing/meter/checkin-activity-status":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code": 404, "msg": "not found"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	customClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.URL.Scheme = "http"
+			req.URL.Host = server.Listener.Addr().String()
+			return http.DefaultTransport.RoundTrip(req)
+		}),
+	}
+
+	auth := &cliproxyauth.Auth{
+		ID:       "wb-test-legit-free",
+		Provider: "workbuddy",
+		Metadata: map[string]any{
+			"access_token": "valid-token",
+		},
+		Attributes: map[string]string{
+			"base_url": server.URL,
+		},
+	}
+
+	res, err := QueryQuota(context.Background(), customClient, auth)
+	if err != nil {
+		t.Fatalf("expected nil error for legitimate free tier, got: %v", err)
+	}
+	if res.Subscription == nil || res.Subscription.Plan != "WorkBuddy (en) · Free" {
+		t.Errorf("Subscription.Plan = %v, want WorkBuddy (en) · Free", res.Subscription)
+	}
+	if len(res.Groups) == 0 || len(res.Groups[0].Buckets) == 0 || res.Groups[0].Buckets[0].RemainingFraction != 1.0 {
+		t.Errorf("RemainingFraction in bucket = %v, want 1.0", res.Groups)
+	}
+}
+
+func TestQueryQuota_AllEndpointsFailPropagatesError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"code": 500, "msg": "internal error"}`))
+	}))
+	defer server.Close()
+
+	customClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.URL.Scheme = "http"
+			req.URL.Host = server.Listener.Addr().String()
+			return http.DefaultTransport.RoundTrip(req)
+		}),
+	}
+
+	auth := &cliproxyauth.Auth{
+		ID:       "wb-test-server-error",
+		Provider: "workbuddy",
+		Metadata: map[string]any{
+			"access_token": "valid-token",
+		},
+		Attributes: map[string]string{
+			"base_url": server.URL,
+		},
+	}
+
+	_, err := QueryQuota(context.Background(), customClient, auth)
+	if err == nil {
+		t.Fatalf("expected error when all endpoints fail with 500, got nil")
+	}
+}

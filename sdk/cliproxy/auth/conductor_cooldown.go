@@ -1783,6 +1783,42 @@ func updateAggregatedAvailability(auth *Auth, now time.Time) {
 		clearAggregatedAvailability(auth)
 		return
 	}
+	if strings.EqualFold(strings.TrimSpace(auth.Provider), "antigravity") {
+		hasAuthFailure := false
+		if auth.LastError != nil {
+			code := statusCodeFromResult(auth.LastError)
+			if code == http.StatusUnauthorized || code == http.StatusForbidden {
+				hasAuthFailure = true
+			}
+		}
+		failedPools := make(map[antigravityQuotaPool]bool)
+		for stateModel, state := range auth.ModelStates {
+			if state == nil {
+				continue
+			}
+			if state.LastError != nil {
+				code := statusCodeFromResult(state.LastError)
+				if code == http.StatusUnauthorized || code == http.StatusForbidden {
+					hasAuthFailure = true
+				}
+			}
+			pool := classifyAntigravityModelPool(stateModel)
+			if pool == antigravityPoolUnknown {
+				continue
+			}
+			stateUnavail := state.Status == StatusDisabled || (state.Unavailable && state.NextRetryAfter.After(now)) || state.Quota.Exceeded
+			if stateUnavail {
+				failedPools[pool] = true
+			}
+		}
+		// Antigravity accounts have 3 independent quota pools:
+		// Standard Gemini, Gemini 4 Argon, and Claude/GPT.
+		// If there are no credential-level auth failures (401/403) and not all 3 pools are exhausted,
+		// the credential itself is not allUnavailable.
+		if !hasAuthFailure && len(failedPools) < 3 {
+			allUnavailable = false
+		}
+	}
 	auth.Unavailable = allUnavailable
 	if allUnavailable {
 		auth.NextRetryAfter = earliestRetry

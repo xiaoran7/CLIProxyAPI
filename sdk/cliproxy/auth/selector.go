@@ -397,6 +397,32 @@ func authWeight(auth *Auth) int64 {
 	return credentialweight.Default
 }
 
+type antigravityQuotaPool int
+
+const (
+	antigravityPoolUnknown antigravityQuotaPool = iota
+	antigravityPoolGeminiStandard
+	antigravityPoolGemini4Argon
+	antigravityPoolClaudeGPT
+)
+
+func classifyAntigravityModelPool(model string) antigravityQuotaPool {
+	m := strings.ToLower(strings.TrimSpace(model))
+	if m == "" {
+		return antigravityPoolUnknown
+	}
+	if strings.Contains(m, "argon") || strings.Contains(m, "gemini-4") || strings.Contains(m, "gemini4") || strings.Contains(m, "gemini 4") {
+		return antigravityPoolGemini4Argon
+	}
+	if strings.Contains(m, "claude") || strings.Contains(m, "gpt") || strings.Contains(m, "sonnet") || strings.Contains(m, "opus") || strings.Contains(m, "haiku") || strings.Contains(m, "3p") {
+		return antigravityPoolClaudeGPT
+	}
+	if strings.Contains(m, "gemini") || strings.Contains(m, "flash") || strings.Contains(m, "pro") {
+		return antigravityPoolGeminiStandard
+	}
+	return antigravityPoolUnknown
+}
+
 func canonicalModelKey(model string) string {
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -868,6 +894,44 @@ func isAuthBlockedForModel(auth *Auth, model string, now time.Time) (bool, block
 			if matched {
 				return blocked, blockedReason, nextRetry
 			}
+			// Provider-level quota pool check for Antigravity:
+			// When a requested model is not yet in ModelStates, check if its quota pool
+			// (e.g. standard Gemini) has an active quota exhaustion cooldown.
+			if strings.EqualFold(strings.TrimSpace(auth.Provider), "antigravity") {
+				reqPool := classifyAntigravityModelPool(model)
+				if reqPool != antigravityPoolUnknown {
+					poolBlocked := false
+					poolReason := blockReasonNone
+					poolNext := time.Time{}
+					for stateModel, state := range auth.ModelStates {
+						if state == nil {
+							continue
+						}
+						if classifyAntigravityModelPool(stateModel) != reqPool {
+							continue
+						}
+						stateBlocked, reason, next := availabilityBlock(state.Unavailable, state.Quota.Exceeded, state.NextRetryAfter, state.Quota.NextRecoverAt, now)
+						if !stateBlocked {
+							continue
+						}
+						isQuotaOrRateLimit := state.Quota.Exceeded || (state.LastError != nil && statusCodeFromResult(state.LastError) == 429) || reason == blockReasonCooldown
+						if !isQuotaOrRateLimit {
+							continue
+						}
+						if next.IsZero() {
+							return true, reason, time.Time{}
+						}
+						if !poolBlocked || next.After(poolNext) || (next.Equal(poolNext) && reason == blockReasonCooldown) {
+							poolBlocked = true
+							poolReason = reason
+							poolNext = next
+						}
+					}
+					if poolBlocked {
+						return true, poolReason, poolNext
+					}
+				}
+			}
 			return false, blockReasonNone, time.Time{}
 		}
 		return availabilityBlock(auth.Unavailable, auth.Quota.Exceeded, auth.NextRetryAfter, auth.Quota.NextRecoverAt, now)
@@ -988,15 +1052,36 @@ func isAuthBlockedByQuotaOrAuthForModel(auth *Auth, model string, now time.Time)
 	}
 	if model != "" && len(auth.ModelStates) > 0 {
 		modelKey := canonicalModelKey(model)
+		matched := false
 		for stateModel, state := range auth.ModelStates {
 			if state == nil || canonicalModelKey(stateModel) != modelKey {
 				continue
 			}
+			matched = true
 			if state.Status == StatusDisabled {
 				return true
 			}
 			if isStateBlockedByQuotaOrAuth(state.Unavailable, state.Quota, state.NextRetryAfter, state.LastError, now) {
 				return true
+			}
+		}
+		if matched {
+			return false
+		}
+		if strings.EqualFold(strings.TrimSpace(auth.Provider), "antigravity") {
+			reqPool := classifyAntigravityModelPool(model)
+			if reqPool != antigravityPoolUnknown {
+				for stateModel, state := range auth.ModelStates {
+					if state == nil {
+						continue
+					}
+					if classifyAntigravityModelPool(stateModel) != reqPool {
+						continue
+					}
+					if isStateBlockedByQuotaOrAuth(state.Unavailable, state.Quota, state.NextRetryAfter, state.LastError, now) {
+						return true
+					}
+				}
 			}
 		}
 		return false

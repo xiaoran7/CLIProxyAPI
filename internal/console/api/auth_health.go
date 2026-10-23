@@ -214,9 +214,13 @@ func interpretCooldowns(rawList []rawCooldownRecord, observedAtMs int64, nowMs i
 
 func getAuthHealth(cooldown *CooldownSummary, disabled bool, unavailable bool, status string, statusMsg string) AuthHealthInfo {
 	if cooldown != nil {
+		label := "冷却中"
+		if cooldown.Scope == "models" {
+			label = "部分模型冷却"
+		}
 		return AuthHealthInfo{
 			State:    "cooldown",
-			Label:    "冷却中",
+			Label:    label,
 			Detail:   fmt.Sprintf("%s · %s · 最早结束约 %s", cooldown.ReasonLabel, cooldown.ScopeLabel, cooldown.RemainingText),
 			Blocked:  true,
 			Cooldown: cooldown,

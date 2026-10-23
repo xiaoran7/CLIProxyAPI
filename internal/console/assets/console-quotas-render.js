@@ -98,7 +98,10 @@
           const isWeekly = bwin === 'weekly' || bname.includes('weekly') || bname.includes('week') || bname.includes(t('quotas.bucket.weekly')) || bid.includes('weekly');
           const is5h = bwin === '5h' || bname.includes('5h') || bname.includes('5 hour') || bname.includes('five') || bid.includes('5h') || !isWeekly;
 
-          if (gname.includes('gemini') || bname.includes('gemini') || bid.includes('gemini')) {
+          const isArgon = gname.includes('argon') || gname.includes('gemini 4') || gname.includes('gemini-4') || gname.includes('gemini4') || bname.includes('argon') || bid.includes('argon');
+          if (isArgon) {
+            // Keep argon distinct from standard gemini compact meter
+          } else if (gname.includes('gemini') || bname.includes('gemini') || bid.includes('gemini')) {
             if (isWeekly) geminiWeeklyBucket = bkt;
             else if (!gemini5hBucket || is5h) gemini5hBucket = bkt;
           } else if (gname.includes('claude') || bname.includes('claude') || bid.includes('claude') || gname.includes('gpt') || bname.includes('gpt') || gname.includes('3p')) {
@@ -550,6 +553,7 @@
       const isDisabled = Boolean(acc.disabled || acc.status === 'disabled');
       const health = acc.health || {};
       const isBlocked = health.blocked === true;
+      const isPartialCooldown = (health.state === 'partial_cooldown') || (health.cooldown && health.cooldown.scope === 'models');
       const isCredentialBlocked = isBlocked && (!health.cooldown || health.cooldown.scope === 'credential' || health.cooldown.scope === 'credential_and_models');
       const prio = normalizeAuthPriority(acc.priority);
       const prioCls = prio >= 20 ? 'p-high' : (prio >= 10 ? 'p-normal' : 'p-low');
@@ -557,8 +561,8 @@
       const buckets = extractUpstreamCompactBuckets(acc);
 
       let cooldownCompactNotice = '';
-      if (health.cooldown && health.cooldown.scope === 'models') {
-        cooldownCompactNotice = `<div style="font-size:10px; color:#d97706; margin-bottom:2px; font-family:var(--mono);">${escapeHtml(health.detail || health.label)}</div>`;
+      if (isPartialCooldown) {
+        cooldownCompactNotice = `<div style="font-size:10px; color:#d97706; margin-bottom:2px; font-family:var(--mono);">${escapeHtml(health.detail || health.label || '部分模型冷却')}</div>`;
       }
 
       const metersHtml = renderUpstreamCompactMeters(acc, buckets, health, cooldownCompactNotice, isCredentialBlocked);
@@ -601,7 +605,7 @@
                   ${escapeHtml(accountTitle)}
                 </span>
                 ${isDisabled ? `<span class="chip chip-red" style="font-size:10px; padding:1px 5px; line-height:1.2; white-space:nowrap; flex-shrink:0;">${t('quotas.disabledBadge')}</span>` : ''}
-                ${isBlocked && !isDisabled ? `<span class="chip ${health.cooldown && health.cooldown.scope === 'models' ? 'chip-orange' : 'chip-red'}" style="font-size:10px; padding:1px 5px; line-height:1.2; ${health.cooldown && health.cooldown.scope === 'models' ? 'background:rgba(245,158,11,0.15); color:#d97706; border:1px solid rgba(245,158,11,0.3);' : ''}">${escapeHtml(health.label)}</span>` : ''}
+                ${!isDisabled && (isBlocked || isPartialCooldown) ? `<span class="chip ${isPartialCooldown ? 'chip-orange' : 'chip-red'}" style="font-size:10px; padding:1px 5px; line-height:1.2; ${isPartialCooldown ? 'background:rgba(245,158,11,0.15); color:#d97706; border:1px solid rgba(245,158,11,0.3);' : ''}">${escapeHtml(health.label || (isPartialCooldown ? '部分模型冷却' : ''))}</span>` : ''}
                 ${hasValidation ? `<span class="chip chip-red" style="font-size:10px; padding:1px 5px; line-height:1.2; white-space:nowrap; flex-shrink:0; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); animation:pulse 2s infinite;">${t('quotas.validation.needGoogleBadge')}</span>` : ''}
               </div>
               <div style="font-size:10.5px; font-family:var(--mono); color:var(--text-dim);">
@@ -648,18 +652,20 @@
     function renderUpstreamGroupsHtml(acc, safeFilename) {
       const sortedGroups = [...(acc.groups || [])].filter(grp => Array.isArray(grp.buckets) && grp.buckets.some(bkt => Number.isFinite(bkt.remaining_percent)));
       sortedGroups.sort((a, b) => {
-        const aLow = String(a.name || '').toLowerCase();
-        const bLow = String(b.name || '').toLowerCase();
-        const aIsGemini = aLow.includes('gemini');
-        const bIsGemini = bLow.includes('gemini');
-        if (aIsGemini && !bIsGemini) return -1;
-        if (!aIsGemini && bIsGemini) return 1;
-        return 0;
+        const getRank = (grp) => {
+          const s = String(grp.name || '').toLowerCase();
+          if (s.includes('argon') || s.includes('gemini 4') || s.includes('gemini-4') || s.includes('gemini4')) return 2;
+          if (s.includes('gemini')) return 1;
+          if (s.includes('claude') || s.includes('gpt') || s.includes('3p')) return 3;
+          return 4;
+        };
+        return getRank(a) - getRank(b);
       });
 
       const groupsHtml = sortedGroups.map(grp => {
         const gnameLower = String(grp.name || '').toLowerCase();
-        const isGemini = gnameLower.includes('gemini');
+        const isGemini4 = gnameLower.includes('argon') || gnameLower.includes('gemini 4') || gnameLower.includes('gemini-4') || gnameLower.includes('gemini4');
+        const isGemini = !isGemini4 && gnameLower.includes('gemini');
         const isClaude = gnameLower.includes('claude') || gnameLower.includes('gpt') || gnameLower.includes('3p');
         const isCodex = gnameLower.includes('codex') || acc.provider === 'codex';
         const isQoder = gnameLower.includes('qoder') || (acc.provider && acc.provider.toLowerCase().startsWith('qoder'));
@@ -669,7 +675,11 @@
         let displayTitle = escapeHtml(grp.name);
         let displayDesc = '';
 
-        if (isGemini) {
+        if (isGemini4) {
+          poolBadge = `<span class="quota-pool-badge pool-gemini4">Gemini 4</span>`;
+          displayTitle = t('quotas.group.gemini4Models');
+          displayDesc = t('quotas.group.gemini4Desc');
+        } else if (isGemini) {
           poolBadge = `<span class="quota-pool-badge pool-gemini">Gemini</span>`;
           displayTitle = t('quotas.group.geminiModels');
           displayDesc = t('quotas.group.geminiDesc');
@@ -961,9 +971,10 @@
       const isDisabled = Boolean(acc.disabled || acc.status === 'disabled');
       const health = acc.health || {};
       const isBlocked = health.blocked === true;
+      const isPartialCooldown = (health.state === 'partial_cooldown') || (health.cooldown && health.cooldown.scope === 'models');
       const isCredentialBlocked = isBlocked && (!health.cooldown || health.cooldown.scope === 'credential' || health.cooldown.scope === 'credential_and_models');
       const stRaw = String(acc.status || '').toLowerCase();
-      const stColor = (isCredentialBlocked || isDisabled || stRaw.includes('error') || stRaw.includes('invalid')) ? 'var(--danger)' : (health.cooldown && health.cooldown.scope === 'models' ? '#d97706' : 'var(--success)');
+      const stColor = (isCredentialBlocked || isDisabled || (!isPartialCooldown && (stRaw.includes('error') || stRaw.includes('invalid')))) ? 'var(--danger)' : (isPartialCooldown ? '#d97706' : 'var(--success)');
       const prio = normalizeAuthPriority(acc.priority);
       const prioCls = prio >= 20 ? 'p-high' : (prio >= 10 ? 'p-normal' : 'p-low');
 
@@ -994,7 +1005,7 @@
                   <span class="provider-pill ${brand.pillClass}">${escapeHtml(brand.name)}</span>
                   <span class="priority-badge ${prioCls}" title="${t('quotas.priority.valueHint')}">P${prio}</span>
                   ${isDisabled ? `<span class="chip chip-red" style="font-size:10.5px; padding:1px 6px; line-height:1.2; white-space:nowrap; flex-shrink:0;">${t('quotas.disabledBadge')}</span>` : ''}
-                  ${isBlocked && !isDisabled ? `<span class="chip ${health.cooldown && health.cooldown.scope === 'models' ? 'chip-orange' : 'chip-red'}" style="font-size:10.5px; padding:1px 6px; line-height:1.2; ${health.cooldown && health.cooldown.scope === 'models' ? 'background:rgba(245,158,11,0.15); color:#d97706; border:1px solid rgba(245,158,11,0.3);' : ''}">${escapeHtml(health.label)}</span>` : ''}
+                  ${!isDisabled && (isBlocked || isPartialCooldown) ? `<span class="chip ${isPartialCooldown ? 'chip-orange' : 'chip-red'}" style="font-size:10.5px; padding:1px 6px; line-height:1.2; ${isPartialCooldown ? 'background:rgba(245,158,11,0.15); color:#d97706; border:1px solid rgba(245,158,11,0.3);' : ''}">${escapeHtml(health.label || (isPartialCooldown ? '部分模型冷却' : ''))}</span>` : ''}
                   ${hasValidation ? `<span class="chip chip-red" style="font-size:10.5px; padding:1px 6px; line-height:1.2; white-space:nowrap; flex-shrink:0; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); animation:pulse 2s infinite;">${t('quotas.validation.needGoogleBadge')}</span>` : ''}
                 </div>
                 <div class="account-card-email" title="${escapeHtml(cardFullTip)}">${escapeHtml(accountCardTitle)}</div>
@@ -1021,7 +1032,7 @@
           </div>
           <div class="account-card-subinfo">
             <span title="${safeFilename}">${t('quotas.credentialLabel', { value: acc.auth_index ? '<b class="num">' + escapeHtml(String(acc.auth_index).slice(0, 8)) + '</b>' : '—' })}</span>
-            <span>${t('quotas.statusLabel')} <b style="color:${stColor};">${isBlocked ? escapeHtml(health.label) : (isDisabled ? t('quotas.disabledBadge') : escapeHtml(acc.status))}</b></span>
+            <span>${t('quotas.statusLabel')} <b style="color:${stColor};">${isBlocked ? escapeHtml(health.label) : (isPartialCooldown ? escapeHtml(health.label || '部分模型冷却') : (isDisabled ? t('quotas.disabledBadge') : escapeHtml(acc.status)))}</b></span>
           </div>
           ${hasValidation ? `
             <div style="background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.2); border-radius:6px; padding:8px 10px; margin:4px 0 10px 0; font-size:11.5px; display:flex; justify-content:space-between; align-items:center;">

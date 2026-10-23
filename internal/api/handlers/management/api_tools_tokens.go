@@ -215,6 +215,7 @@ func reconcileAntigravityQuotaResponse(auth *coreauth.Auth, respBody []byte, now
 
 	var claudeCooldowns []coreauth.CooldownView
 	var geminiCooldowns []coreauth.CooldownView
+	var gemini4Cooldowns []coreauth.CooldownView
 
 	for _, cd := range cooldowns {
 		if cd.RemainingSeconds <= 0 && (cd.RetryAt.IsZero() || !cd.RetryAt.After(now)) {
@@ -228,19 +229,20 @@ func reconcileAntigravityQuotaResponse(auth *coreauth.Auth, respBody []byte, now
 			}
 		} else if cd.Scope == "model" {
 			mKey := strings.ToLower(strings.TrimSpace(cd.ModelKey))
-			if strings.Contains(mKey, "claude") || strings.Contains(mKey, "gpt") ||
+			if strings.Contains(mKey, "argon") || strings.Contains(mKey, "gemini-4") || strings.Contains(mKey, "gemini4") {
+				gemini4Cooldowns = append(gemini4Cooldowns, cd)
+			} else if strings.Contains(mKey, "claude") || strings.Contains(mKey, "gpt") ||
 				strings.Contains(mKey, "sonnet") || strings.Contains(mKey, "opus") ||
 				strings.Contains(mKey, "haiku") {
 				claudeCooldowns = append(claudeCooldowns, cd)
-			}
-			if strings.Contains(mKey, "gemini") || strings.Contains(mKey, "flash") ||
+			} else if strings.Contains(mKey, "gemini") || strings.Contains(mKey, "flash") ||
 				(strings.Contains(mKey, "pro") && !strings.Contains(mKey, "claude")) {
 				geminiCooldowns = append(geminiCooldowns, cd)
 			}
 		}
 	}
 
-	if !hasCredCooldown && len(claudeCooldowns) == 0 && len(geminiCooldowns) == 0 {
+	if !hasCredCooldown && len(claudeCooldowns) == 0 && len(geminiCooldowns) == 0 && len(gemini4Cooldowns) == 0 {
 		return respBody
 	}
 
@@ -250,8 +252,9 @@ func reconcileAntigravityQuotaResponse(auth *coreauth.Auth, respBody []byte, now
 			continue
 		}
 		gName := strings.ToLower(fmt.Sprintf("%v %v %v %v", grp["label"], grp["displayName"], grp["name"], grp["id"]))
-		isClaude := strings.Contains(gName, "claude") || strings.Contains(gName, "gpt")
-		isGemini := strings.Contains(gName, "gemini")
+		isGemini4 := strings.Contains(gName, "argon") || strings.Contains(gName, "gemini 4") || strings.Contains(gName, "gemini-4") || strings.Contains(gName, "gemini4")
+		isClaude := strings.Contains(gName, "claude") || strings.Contains(gName, "gpt") || strings.Contains(gName, "3p")
+		isGemini := !isGemini4 && strings.Contains(gName, "gemini")
 
 		var targetCooldowns []coreauth.CooldownView
 		if hasCredCooldown {
@@ -260,6 +263,8 @@ func reconcileAntigravityQuotaResponse(auth *coreauth.Auth, respBody []byte, now
 				RetryAt:          credRetryAt,
 				RemainingSeconds: credRemainingSec,
 			})
+		} else if isGemini4 {
+			targetCooldowns = gemini4Cooldowns
 		} else if isClaude {
 			targetCooldowns = claudeCooldowns
 		} else if isGemini {

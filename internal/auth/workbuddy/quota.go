@@ -5,10 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -127,6 +130,151 @@ func parseEndOfPackage(pkg gjson.Result) int64 {
 	return 0
 }
 
+// extractRefreshToken retrieves the refresh token from metadata, attributes, or storage.
+func extractRefreshToken(auth *cliproxyauth.Auth) string {
+	if auth == nil {
+		return ""
+	}
+	if storage, ok := auth.Storage.(*WorkBuddyTokenStorage); ok && storage != nil && strings.TrimSpace(storage.RefreshToken) != "" {
+		return strings.TrimSpace(storage.RefreshToken)
+	}
+	if auth.Metadata != nil {
+		for _, k := range []string{"refresh_token", "refreshToken"} {
+			if v, ok := auth.Metadata[k]; ok {
+				if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+					return strings.TrimSpace(s)
+				}
+			}
+		}
+	}
+	if auth.Attributes != nil {
+		for _, k := range []string{"refresh_token", "refreshToken"} {
+			if s := strings.TrimSpace(auth.Attributes[k]); s != "" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+func tryPersistWorkBuddyToken(auth *cliproxyauth.Auth, storage *WorkBuddyTokenStorage) {
+	if auth == nil || storage == nil {
+		return
+	}
+	var targetPath string
+	if auth.Attributes != nil {
+		targetPath = strings.TrimSpace(auth.Attributes["path"])
+	}
+	if targetPath == "" && auth.FileName != "" {
+		targetPath = strings.TrimSpace(auth.FileName)
+	}
+	if targetPath == "" {
+		return
+	}
+	if _, err := os.Stat(targetPath); err == nil {
+		_ = storage.SaveTokenToFile(targetPath)
+		return
+	}
+	candidate := filepath.Join("auths", filepath.Base(targetPath))
+	if _, err := os.Stat(candidate); err == nil {
+		_ = storage.SaveTokenToFile(candidate)
+		return
+	}
+}
+
+func refreshAuthToken(ctx context.Context, client *http.Client, auth *cliproxyauth.Auth) (string, error) {
+	if auth == nil {
+		return "", errors.New("workbuddy: auth is nil")
+	}
+	refreshToken := extractRefreshToken(auth)
+	if refreshToken == "" {
+		return "", errors.New("workbuddy: refresh token is empty")
+	}
+	realm := ResolveRealm(auth)
+	uid := ResolveUserID(auth)
+
+	td, err := RefreshToken(ctx, client, realm, refreshToken, uid)
+	if err != nil {
+		return "", fmt.Errorf("workbuddy: refresh token failed: %w", err)
+	}
+
+	if auth.Metadata == nil {
+		auth.Metadata = make(map[string]any)
+	}
+	auth.Metadata["access_token"] = td.AccessToken
+	if td.RefreshToken != "" {
+		auth.Metadata["refresh_token"] = td.RefreshToken
+	}
+	if td.ExpiresIn > 0 {
+		exp := time.Now().Add(time.Duration(td.ExpiresIn) * time.Second).UTC().Format(time.RFC3339)
+		auth.Metadata["expired"] = exp
+	}
+	auth.Metadata["realm"] = realm
+	auth.Metadata["domain"] = ResolveDomain(realm)
+	auth.Metadata["base_url"] = ResolveBaseURL(realm)
+	auth.Metadata["last_refresh"] = time.Now().UTC().Format(time.RFC3339)
+	auth.LastRefreshedAt = time.Now()
+
+	var storage *WorkBuddyTokenStorage
+	if s, ok := auth.Storage.(*WorkBuddyTokenStorage); ok && s != nil {
+		storage = s
+	} else {
+		storage = &WorkBuddyTokenStorage{
+			Type:    "workbuddy",
+			Realm:   realm,
+			Domain:  ResolveDomain(realm),
+			BaseURL: ResolveBaseURL(realm),
+			UserID:  uid,
+		}
+		auth.Storage = storage
+	}
+	storage.AccessToken = td.AccessToken
+	if td.RefreshToken != "" {
+		storage.RefreshToken = td.RefreshToken
+	}
+	if td.ExpiresIn > 0 {
+		storage.Expired = time.Now().Add(time.Duration(td.ExpiresIn) * time.Second).UTC().Format(time.RFC3339)
+	}
+	storage.SetMetadata(auth.Metadata)
+	tryPersistWorkBuddyToken(auth, storage)
+
+	return td.AccessToken, nil
+}
+
+func isAuthFailure(statusCode int, body []byte) (bool, string) {
+	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
+		msg := "unauthorized"
+		if len(body) > 0 {
+			if m := gjson.GetBytes(body, "msg").String(); m != "" {
+				msg = m
+			} else if m := gjson.GetBytes(body, "message").String(); m != "" {
+				msg = m
+			}
+		}
+		return true, msg
+	}
+	if len(body) > 0 && json.Valid(body) {
+		code := gjson.GetBytes(body, "code")
+		if code.Exists() && code.Int() != 0 {
+			msg := gjson.GetBytes(body, "msg").String()
+			if msg == "" {
+				msg = gjson.GetBytes(body, "message").String()
+			}
+			c := code.Int()
+			msgLower := strings.ToLower(msg)
+			if c == 11100 || c == 11128 ||
+				strings.Contains(msgLower, "token") ||
+				strings.Contains(msgLower, "unauthorized") ||
+				strings.Contains(msgLower, "auth") ||
+				strings.Contains(msgLower, "login") ||
+				strings.Contains(msgLower, "expired") {
+				return true, fmt.Sprintf("code %d: %s", c, msg)
+			}
+		}
+	}
+	return false, ""
+}
+
 // QueryQuota queries WorkBuddy / CodeBuddy account points and subscription status.
 func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Auth) (pluginapi.QuotaFetchResponse, error) {
 	if auth == nil {
@@ -138,7 +286,15 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 
 	token := extractAccessToken(auth)
 	if token == "" {
-		return pluginapi.QuotaFetchResponse{}, fmt.Errorf("workbuddy: missing access token")
+		if extractRefreshToken(auth) != "" {
+			newTok, errRef := refreshAuthToken(ctx, client, auth)
+			if errRef != nil {
+				return pluginapi.QuotaFetchResponse{}, fmt.Errorf("workbuddy: missing access token and refresh failed: %w", errRef)
+			}
+			token = newTok
+		} else {
+			return pluginapi.QuotaFetchResponse{}, fmt.Errorf("workbuddy: missing access token")
+		}
 	}
 
 	realm := ResolveRealm(auth)
@@ -161,206 +317,259 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 	var remainingFrac = 1.0
 	var usedPoints, totalPoints, remainPoints float64
 	var hasExplicitPoints bool
+	var authSucceeded bool
 	var expiresAt string
 	var runsOutAt string
 	var runsOutPoints float64
 	var hasRunsOut bool
 
+	var lastAuthErr string
+	var lastErr error
+	var lastStatus int
+
+	var refreshedOnce bool
+	ensureValidToken := func() error {
+		if refreshedOnce {
+			return errors.New("already attempted refresh once")
+		}
+		refreshedOnce = true
+		newTok, errRef := refreshAuthToken(ctx, client, auth)
+		if errRef != nil {
+			return errRef
+		}
+		token = newTok
+		return nil
+	}
+
 	// Helper for POST requests to /billing/meter/...
 	postMeter := func(path string, reqBody any) ([]byte, int, error) {
-		bodyBytes, _ := json.Marshal(reqBody)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+path, bytes.NewReader(bodyBytes))
-		if err != nil {
-			return nil, 0, err
-		}
-		ApplyHeaders(req, auth, token)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json, text/plain, */*")
-		req.Header.Set("X-Product", "SaaS")
-		req.Header.Set("X-IDE-Type", "WorkBuddy")
+		doPost := func() ([]byte, int, error) {
+			bodyBytes, _ := json.Marshal(reqBody)
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+path, bytes.NewReader(bodyBytes))
+			if err != nil {
+				return nil, 0, err
+			}
+			ApplyHeaders(req, auth, token)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/plain, */*")
+			req.Header.Set("X-Product", "SaaS")
+			req.Header.Set("X-IDE-Type", "WorkBuddy")
 
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, 0, err
+			resp, err := client.Do(req)
+			if err != nil {
+				return nil, 0, err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			respBytes, errRead := io.ReadAll(resp.Body)
+			return respBytes, resp.StatusCode, errRead
 		}
-		defer func() { _ = resp.Body.Close() }()
-		respBytes, errRead := io.ReadAll(resp.Body)
-		return respBytes, resp.StatusCode, errRead
+
+		b, status, err := doPost()
+		if err == nil {
+			if isAuth, _ := isAuthFailure(status, b); isAuth && !refreshedOnce {
+				if errRef := ensureValidToken(); errRef == nil {
+					return doPost()
+				}
+			}
+		}
+		return b, status, err
 	}
 
 	// 1. Primary path: query /billing/meter/get-user-resource-summary
 	summaryBytes, summaryStatus, errSummary := postMeter(MeterUserResourceSummaryPath, map[string]any{})
-	if errSummary == nil && summaryStatus == http.StatusOK && json.Valid(summaryBytes) {
-		data := gjson.GetBytes(summaryBytes, "data")
-		if !data.Exists() {
-			data = gjson.ParseBytes(summaryBytes)
-		}
-
-		isPaidUser := data.Get("IsPaidUser").Bool()
-		if isPaidUser {
-			planName = editionLabel + " · Pro"
-		} else {
-			planName = editionLabel + " · Free"
-		}
-
-		pkgs := data.Get("Packages")
-		if pkgs.IsArray() && len(pkgs.Array()) > 0 {
-			countedCodes := make(map[string]bool)
-			for _, p := range pkgs.Array() {
-				code := p.Get("PackageCode").String()
-				if code != "" {
-					countedCodes[code] = true
-				}
-				tot := parseCapacity(p.Get("CycleTotalCapacity"))
-				used := parseCapacity(p.Get("CycleUsedCapacity"))
-				rem := parseCapacity(p.Get("CycleRemainCapacity"))
-				if rem == 0 && tot > used {
-					rem = tot - used
-				}
-				totalPoints += tot
-				usedPoints += used
-				remainPoints += rem
-			}
-			hasExplicitPoints = true
-
-			// Fetch package details to discover earliest expiration / cutoff date
-			nowBeijing := time.Now().In(beijingLocation)
-			dayStr := nowBeijing.Format("2006-01-02")
-			nowMs := now.UnixMilli()
-
-			// Dynamically combine builtin package codes with codes active on the account
-			activePaidCodes := make([]string, 0, len(paidPackageCodes)+len(countedCodes))
-			activePaidCodes = append(activePaidCodes, paidPackageCodes...)
-			activePaidSet := make(map[string]bool, len(paidPackageCodes))
-			for _, c := range paidPackageCodes {
-				activePaidSet[c] = true
-			}
-
-			activeFreeCodes := make([]string, 0, len(freePackageCodes)+len(countedCodes))
-			activeFreeCodes = append(activeFreeCodes, freePackageCodes...)
-			activeFreeSet := make(map[string]bool, len(freePackageCodes))
-			for _, c := range freePackageCodes {
-				activeFreeSet[c] = true
-			}
-
-			for code := range countedCodes {
-				if !activePaidSet[code] && !activeFreeSet[code] {
-					activePaidCodes = append(activePaidCodes, code)
-					activePaidSet[code] = true
-					activeFreeCodes = append(activeFreeCodes, code)
-					activeFreeSet[code] = true
-				}
-			}
-
-			type meterPackageCall struct {
-				path  string
-				extra map[string]any
-			}
-			calls := []meterPackageCall{
-				{
-					path: MeterPaidPackagesPath,
-					extra: map[string]any{
-						"PackageCodes":  activePaidCodes,
-						"NeedRenewInfo": true,
-					},
-				},
-				{
-					path: MeterFreePackagesPath,
-					extra: map[string]any{
-						"PackageCodes":         activeFreeCodes,
-						"SlicePeriodStartTime": dayStr + " 00:00:00",
-						"SlicePeriodEndTime":   dayStr + " 23:59:59",
-					},
-				},
-			}
-
-			var earliestAt int64
-			var earliestAmount float64
-
-			for _, c := range calls {
-				for page := 1; page <= 5; page++ {
-					bodyMap := map[string]any{
-						"PageNumber": page,
-						"PageSize":   200,
-						"Status":     []int{0, 3},
-					}
-					for k, v := range c.extra {
-						bodyMap[k] = v
-					}
-					pkgBytes, pkgStatus, errPkg := postMeter(c.path, bodyMap)
-					if errPkg != nil || pkgStatus != http.StatusOK || !json.Valid(pkgBytes) {
-						break
-					}
-					pkgData := gjson.GetBytes(pkgBytes, "data")
-					if !pkgData.Exists() {
-						pkgData = gjson.ParseBytes(pkgBytes)
-					}
-					accounts := pkgData.Get("Accounts")
-					if !accounts.IsArray() || len(accounts.Array()) == 0 {
-						break
-					}
-					for _, p := range accounts.Array() {
-						pCode := p.Get("PackageCode").String()
-						capType := strings.TrimSpace(p.Get("CapacityType").String())
-						if !countedCodes[pCode] || pCode == DailySlicePackageCode || capType == SliceCapacityType {
-							continue
-						}
-						remPrecise := p.Get("CycleCapacityRemainPrecise")
-						if !remPrecise.Exists() {
-							remPrecise = p.Get("CycleCapacityRemain")
-						}
-						left := parseCapacity(remPrecise)
-						end := parseEndOfPackage(p)
-						if left <= 0 || end <= nowMs {
-							continue
-						}
-						if earliestAt == 0 || end < earliestAt {
-							earliestAt = end
-							earliestAmount = left
-						} else if end == earliestAt {
-							earliestAmount += left
-						}
-					}
-					totalCount := pkgData.Get("TotalCount").Int()
-					if int64(len(accounts.Array())) < 200 || int64(page*200) >= totalCount {
-						break
-					}
-				}
-			}
-
-			if earliestAt > 0 {
-				earliestTime := time.UnixMilli(earliestAt).UTC()
-				runsOutAt = earliestTime.Format(time.RFC3339)
-				expiresAt = earliestTime.In(beijingLocation).Format("2006-01-02 15:04:05")
-				runsOutPoints = earliestAmount
-				hasRunsOut = true
+	lastStatus = summaryStatus
+	if errSummary != nil {
+		lastErr = errSummary
+	} else if isAuth, authMsg := isAuthFailure(summaryStatus, summaryBytes); isAuth {
+		lastAuthErr = fmt.Sprintf("unauthorized (status %d): %s", summaryStatus, authMsg)
+	} else if summaryStatus != http.StatusOK {
+		lastErr = fmt.Errorf("upstream meter status %d: %s", summaryStatus, strings.TrimSpace(string(summaryBytes)))
+	} else if json.Valid(summaryBytes) {
+		code := gjson.GetBytes(summaryBytes, "code")
+		if code.Exists() && code.Int() != 0 {
+			codeInt := code.Int()
+			msg := gjson.GetBytes(summaryBytes, "msg").String()
+			if isAuth, authMsg := isAuthFailure(summaryStatus, summaryBytes); isAuth {
+				lastAuthErr = fmt.Sprintf("upstream auth error (code %d: %s)", codeInt, authMsg)
+			} else {
+				lastErr = fmt.Errorf("upstream error (code %d: %s)", codeInt, msg)
 			}
 		} else {
-			// Packages array is empty: query enterprise usage endpoint
-			entBytes, entStatus, errEnt := postMeter(MeterEnterpriseUsagePath, map[string]any{})
-			if errEnt == nil && entStatus == http.StatusOK && json.Valid(entBytes) {
-				entData := gjson.GetBytes(entBytes, "data")
-				if !entData.Exists() {
-					entData = gjson.ParseBytes(entBytes)
-				}
-				limit := parseCapacity(entData.Get("limitNum"))
-				if limit > 0 {
-					planName = editionLabel + " · Enterprise"
-					credit := parseCapacity(entData.Get("credit"))
-					totalPoints = limit
-					usedPoints = credit
-					if limit >= credit {
-						remainPoints = limit - credit
-					}
-					hasExplicitPoints = true
+			authSucceeded = true
+			data := gjson.GetBytes(summaryBytes, "data")
+			if !data.Exists() {
+				data = gjson.ParseBytes(summaryBytes)
+			}
 
-					resetTimeStr := strings.TrimSpace(entData.Get("cycleResetTime").String())
-					if resetTimeStr != "" {
-						if t := parseBeijingTime(resetTimeStr); !t.IsZero() {
-							runsOutAt = t.UTC().Format(time.RFC3339)
-							expiresAt = t.In(beijingLocation).Format("2006-01-02 15:04:05")
-							runsOutPoints = remainPoints
-							hasRunsOut = true
+			isPaidUser := data.Get("IsPaidUser").Bool()
+			if isPaidUser {
+				planName = editionLabel + " · Pro"
+			} else {
+				planName = editionLabel + " · Free"
+			}
+
+			pkgs := data.Get("Packages")
+			if pkgs.IsArray() && len(pkgs.Array()) > 0 {
+				countedCodes := make(map[string]bool)
+				for _, p := range pkgs.Array() {
+					code := p.Get("PackageCode").String()
+					if code != "" {
+						countedCodes[code] = true
+					}
+					tot := parseCapacity(p.Get("CycleTotalCapacity"))
+					used := parseCapacity(p.Get("CycleUsedCapacity"))
+					rem := parseCapacity(p.Get("CycleRemainCapacity"))
+					if rem == 0 && tot > used {
+						rem = tot - used
+					}
+					totalPoints += tot
+					usedPoints += used
+					remainPoints += rem
+				}
+				hasExplicitPoints = true
+
+				// Fetch package details to discover earliest expiration / cutoff date
+				nowBeijing := time.Now().In(beijingLocation)
+				dayStr := nowBeijing.Format("2006-01-02")
+				nowMs := now.UnixMilli()
+
+				// Dynamically combine builtin package codes with codes active on the account
+				activePaidCodes := make([]string, 0, len(paidPackageCodes)+len(countedCodes))
+				activePaidCodes = append(activePaidCodes, paidPackageCodes...)
+				activePaidSet := make(map[string]bool, len(paidPackageCodes))
+				for _, c := range paidPackageCodes {
+					activePaidSet[c] = true
+				}
+
+				activeFreeCodes := make([]string, 0, len(freePackageCodes)+len(countedCodes))
+				activeFreeCodes = append(activeFreeCodes, freePackageCodes...)
+				activeFreeSet := make(map[string]bool, len(freePackageCodes))
+				for _, c := range freePackageCodes {
+					activeFreeSet[c] = true
+				}
+
+				for code := range countedCodes {
+					if !activePaidSet[code] && !activeFreeSet[code] {
+						activePaidCodes = append(activePaidCodes, code)
+						activePaidSet[code] = true
+						activeFreeCodes = append(activeFreeCodes, code)
+						activeFreeSet[code] = true
+					}
+				}
+
+				type meterPackageCall struct {
+					path  string
+					extra map[string]any
+				}
+				calls := []meterPackageCall{
+					{
+						path: MeterPaidPackagesPath,
+						extra: map[string]any{
+							"PackageCodes":  activePaidCodes,
+							"NeedRenewInfo": true,
+						},
+					},
+					{
+						path: MeterFreePackagesPath,
+						extra: map[string]any{
+							"PackageCodes":         activeFreeCodes,
+							"SlicePeriodStartTime": dayStr + " 00:00:00",
+							"SlicePeriodEndTime":   dayStr + " 23:59:59",
+						},
+					},
+				}
+
+				var earliestAt int64
+				var earliestAmount float64
+
+				for _, c := range calls {
+					for page := 1; page <= 5; page++ {
+						bodyMap := map[string]any{
+							"PageNumber": page,
+							"PageSize":   200,
+							"Status":     []int{0, 3},
+						}
+						for k, v := range c.extra {
+							bodyMap[k] = v
+						}
+						pkgBytes, pkgStatus, errPkg := postMeter(c.path, bodyMap)
+						if errPkg != nil || pkgStatus != http.StatusOK || !json.Valid(pkgBytes) {
+							break
+						}
+						pkgData := gjson.GetBytes(pkgBytes, "data")
+						if !pkgData.Exists() {
+							pkgData = gjson.ParseBytes(pkgBytes)
+						}
+						accounts := pkgData.Get("Accounts")
+						if !accounts.IsArray() || len(accounts.Array()) == 0 {
+							break
+						}
+						for _, p := range accounts.Array() {
+							pCode := p.Get("PackageCode").String()
+							capType := strings.TrimSpace(p.Get("CapacityType").String())
+							if !countedCodes[pCode] || pCode == DailySlicePackageCode || capType == SliceCapacityType {
+								continue
+							}
+							remPrecise := p.Get("CycleCapacityRemainPrecise")
+							if !remPrecise.Exists() {
+								remPrecise = p.Get("CycleCapacityRemain")
+							}
+							left := parseCapacity(remPrecise)
+							end := parseEndOfPackage(p)
+							if left <= 0 || end <= nowMs {
+								continue
+							}
+							if earliestAt == 0 || end < earliestAt {
+								earliestAt = end
+								earliestAmount = left
+							} else if end == earliestAt {
+								earliestAmount += left
+							}
+						}
+						totalCount := pkgData.Get("TotalCount").Int()
+						if int64(len(accounts.Array())) < 200 || int64(page*200) >= totalCount {
+							break
+						}
+					}
+				}
+
+				if earliestAt > 0 {
+					earliestTime := time.UnixMilli(earliestAt).UTC()
+					runsOutAt = earliestTime.Format(time.RFC3339)
+					expiresAt = earliestTime.In(beijingLocation).Format("2006-01-02 15:04:05")
+					runsOutPoints = earliestAmount
+					hasRunsOut = true
+				}
+			} else {
+				// Packages array is empty: query enterprise usage endpoint
+				entBytes, entStatus, errEnt := postMeter(MeterEnterpriseUsagePath, map[string]any{})
+				if errEnt == nil && entStatus == http.StatusOK && json.Valid(entBytes) {
+					entCode := gjson.GetBytes(entBytes, "code")
+					if !entCode.Exists() || entCode.Int() == 0 {
+						entData := gjson.GetBytes(entBytes, "data")
+						if !entData.Exists() {
+							entData = gjson.ParseBytes(entBytes)
+						}
+						limit := parseCapacity(entData.Get("limitNum"))
+						if limit > 0 {
+							planName = editionLabel + " · Enterprise"
+							credit := parseCapacity(entData.Get("credit"))
+							totalPoints = limit
+							usedPoints = credit
+							if limit >= credit {
+								remainPoints = limit - credit
+							}
+							hasExplicitPoints = true
+
+							resetTimeStr := strings.TrimSpace(entData.Get("cycleResetTime").String())
+							if resetTimeStr != "" {
+								if t := parseBeijingTime(resetTimeStr); !t.IsZero() {
+									runsOutAt = t.UTC().Format(time.RFC3339)
+									expiresAt = t.In(beijingLocation).Format("2006-01-02 15:04:05")
+									runsOutPoints = remainPoints
+									hasRunsOut = true
+								}
+							}
 						}
 					}
 				}
@@ -370,14 +579,45 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 
 	// 2. Fallback to /v2/plugin/user/points if meter endpoints didn't yield explicit points
 	if !hasExplicitPoints {
-		pointsURL := baseURL + UserPointsPath
-		req, errReq := http.NewRequestWithContext(ctx, http.MethodGet, pointsURL, nil)
-		if errReq == nil {
+		doPointsGet := func() (*http.Response, []byte, error) {
+			pointsURL := baseURL + UserPointsPath
+			req, errReq := http.NewRequestWithContext(ctx, http.MethodGet, pointsURL, nil)
+			if errReq != nil {
+				return nil, nil, errReq
+			}
 			ApplyHeaders(req, auth, token)
 			resp, errDo := client.Do(req)
-			if errDo == nil {
-				defer func() { _ = resp.Body.Close() }()
-				if respBytes, errRead := io.ReadAll(resp.Body); errRead == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 && json.Valid(respBytes) {
+			if errDo != nil {
+				return nil, nil, errDo
+			}
+			defer func() { _ = resp.Body.Close() }()
+			b, errRead := io.ReadAll(resp.Body)
+			return resp, b, errRead
+		}
+
+		resp, respBytes, errDo := doPointsGet()
+		if errDo == nil && resp != nil {
+			if isAuth, _ := isAuthFailure(resp.StatusCode, respBytes); isAuth && !refreshedOnce {
+				if errRef := ensureValidToken(); errRef == nil {
+					resp, respBytes, errDo = doPointsGet()
+				}
+			}
+		}
+
+		if errDo != nil {
+			if lastErr == nil {
+				lastErr = errDo
+			}
+		} else if resp != nil {
+			lastStatus = resp.StatusCode
+			if isAuth, authMsg := isAuthFailure(resp.StatusCode, respBytes); isAuth {
+				if lastAuthErr == "" {
+					lastAuthErr = fmt.Sprintf("unauthorized (status %d): %s", resp.StatusCode, authMsg)
+				}
+			} else if resp.StatusCode >= 200 && resp.StatusCode < 300 && json.Valid(respBytes) {
+				code := gjson.GetBytes(respBytes, "code")
+				if !code.Exists() || code.Int() == 0 {
+					authSucceeded = true
 					data := gjson.GetBytes(respBytes, "data")
 					if !data.Exists() {
 						data = gjson.ParseBytes(respBytes)
@@ -418,16 +658,46 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 
 	// 3. Fallback to /v2/billing/meter/checkin-activity-status if still no explicit points
 	if !hasExplicitPoints {
-		statusURL := baseURL + "/v2/billing/meter/checkin-activity-status"
-		reqActivity, errActivityReq := http.NewRequestWithContext(ctx, http.MethodPost, statusURL, bytes.NewReader([]byte("{}")))
-		if errActivityReq == nil {
+		doActivityPost := func() (*http.Response, []byte, error) {
+			statusURL := baseURL + "/v2/billing/meter/checkin-activity-status"
+			reqActivity, errActivityReq := http.NewRequestWithContext(ctx, http.MethodPost, statusURL, bytes.NewReader([]byte("{}")))
+			if errActivityReq != nil {
+				return nil, nil, errActivityReq
+			}
 			ApplyHeaders(reqActivity, auth, token)
 			reqActivity.Header.Set("Content-Type", "application/json")
 			respActivity, errActivityDo := client.Do(reqActivity)
-			if errActivityDo == nil {
-				defer func() { _ = respActivity.Body.Close() }()
-				bodyActivity, _ := io.ReadAll(respActivity.Body)
-				if respActivity.StatusCode == http.StatusOK && json.Valid(bodyActivity) {
+			if errActivityDo != nil {
+				return nil, nil, errActivityDo
+			}
+			defer func() { _ = respActivity.Body.Close() }()
+			b, errRead := io.ReadAll(respActivity.Body)
+			return respActivity, b, errRead
+		}
+
+		respActivity, bodyActivity, errActivityDo := doActivityPost()
+		if errActivityDo == nil && respActivity != nil {
+			if isAuth, _ := isAuthFailure(respActivity.StatusCode, bodyActivity); isAuth && !refreshedOnce {
+				if errRef := ensureValidToken(); errRef == nil {
+					respActivity, bodyActivity, errActivityDo = doActivityPost()
+				}
+			}
+		}
+
+		if errActivityDo != nil {
+			if lastErr == nil {
+				lastErr = errActivityDo
+			}
+		} else if respActivity != nil {
+			lastStatus = respActivity.StatusCode
+			if isAuth, authMsg := isAuthFailure(respActivity.StatusCode, bodyActivity); isAuth {
+				if lastAuthErr == "" {
+					lastAuthErr = fmt.Sprintf("unauthorized (status %d): %s", respActivity.StatusCode, authMsg)
+				}
+			} else if respActivity.StatusCode == http.StatusOK && json.Valid(bodyActivity) {
+				code := gjson.GetBytes(bodyActivity, "code")
+				if !code.Exists() || code.Int() == 0 {
+					authSucceeded = true
 					data := gjson.GetBytes(bodyActivity, "data")
 					if data.Exists() {
 						if totalCredits := data.Get("total_credits"); totalCredits.Exists() {
@@ -450,6 +720,19 @@ func QueryQuota(ctx context.Context, client *http.Client, auth *cliproxyauth.Aut
 				}
 			}
 		}
+	}
+
+	if !hasExplicitPoints && !authSucceeded {
+		if lastAuthErr != "" {
+			return pluginapi.QuotaFetchResponse{}, fmt.Errorf("workbuddy: authentication failed: %s", lastAuthErr)
+		}
+		if lastErr != nil {
+			return pluginapi.QuotaFetchResponse{}, fmt.Errorf("workbuddy: quota query failed: %w", lastErr)
+		}
+		if lastStatus > 0 {
+			return pluginapi.QuotaFetchResponse{}, fmt.Errorf("workbuddy: quota query failed with HTTP %d", lastStatus)
+		}
+		return pluginapi.QuotaFetchResponse{}, fmt.Errorf("workbuddy: failed to fetch quota: upstream returned no valid data")
 	}
 
 	// Calculate remaining fraction
