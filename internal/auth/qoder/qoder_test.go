@@ -1,6 +1,9 @@
 package qoder
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -167,5 +170,55 @@ func TestIsTokenExpired(t *testing.T) {
 	}
 	if !IsTokenExpired(authUnixPast) {
 		t.Errorf("IsTokenExpired(unix past) should be true")
+	}
+}
+
+func TestEnsureValidJobToken_DeviceRefreshFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/jobToken/refresh":
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"code":401,"message":"refresh token expired"}`))
+		case "/api/v1/deviceToken/refresh":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"token":"dt-fresh-123","refresh_token":"drt-fresh-456","expires_in":2592000}`))
+		case "/api/v1/me/jobToken":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"token":"jt-fresh-789","refresh_token":"jrt-fresh-012","expires_in":86400000}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	auth := &cliproxyauth.Auth{
+		Provider: "qoder",
+		Attributes: map[string]string{
+			"base_url":     server.URL,
+			"openapi_base": server.URL,
+			"realm":        "intl",
+		},
+		Metadata: map[string]any{
+			"access_token":   "jt-expired-old",
+			"job_token":      "jt-expired-old",
+			"job_refresh":    "jrt-expired-old",
+			"device_token":   "dt-old",
+			"device_refresh": "drt-valid-123",
+			"expired":        time.Now().Add(-1 * time.Hour).Format(time.RFC3339),
+		},
+	}
+
+	tok, err := EnsureValidJobToken(context.Background(), server.Client(), auth)
+	if err != nil {
+		t.Fatalf("EnsureValidJobToken failed: %v", err)
+	}
+	if tok != "jt-fresh-789" {
+		t.Fatalf("expected jt-fresh-789, got %q", tok)
+	}
+	if auth.Metadata["device_token"] != "dt-fresh-123" {
+		t.Errorf("expected updated device_token dt-fresh-123, got %v", auth.Metadata["device_token"])
+	}
+	if auth.Metadata["job_token"] != "jt-fresh-789" {
+		t.Errorf("expected updated job_token jt-fresh-789, got %v", auth.Metadata["job_token"])
 	}
 }

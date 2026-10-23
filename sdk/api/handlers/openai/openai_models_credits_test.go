@@ -233,6 +233,68 @@ func TestOpenAIModelsVariantModes(t *testing.T) {
 	})
 }
 
+// TestOpenAIModelsMultiProviderNonWorkBuddyNotMasked verifies that when a model
+// (such as Stepfun's "step-5-preview") is registered by both an OpenAI compatibility
+// provider and WorkBuddy, compact mode does NOT mask the bare model ID under WorkBuddy's
+// multiplier format ("workbuddy/step-5-preview:0x"). Both the clean bare model ID
+// and the WorkBuddy variant must be present in /v1/models.
+func TestOpenAIModelsMultiProviderNonWorkBuddyNotMasked(t *testing.T) {
+	const modelID = "step-5-preview"
+	compatClientID := "stepfun-compat-client"
+	wbClientID := "workbuddy-client"
+
+	modelRegistry := registry.GetGlobalRegistry()
+
+	// 1. Register model from Stepfun (openai-compatibility)
+	modelRegistry.RegisterClient(compatClientID, "stepfun", []*registry.ModelInfo{
+		{
+			ID:          modelID,
+			OwnedBy:     "stepfun",
+			DisplayName: "Step-5 Preview",
+		},
+	})
+
+	// 2. Register same model from WorkBuddy (with credits / multiplier)
+	modelRegistry.RegisterClient(wbClientID, "workbuddy", []*registry.ModelInfo{
+		{
+			ID:      modelID,
+			OwnedBy: "workbuddy",
+			Credits: &registry.ModelCredits{
+				Multiplier: 0.0,
+				Source:     "workbuddy",
+			},
+		},
+	})
+
+	t.Cleanup(func() {
+		modelRegistry.UnregisterClient(compatClientID)
+		modelRegistry.UnregisterClient(wbClientID)
+	})
+
+	got := getModelsResponseWithConfig(t, &config.SDKConfig{
+		ModelVariantMode: config.ModelVariantModeCompact,
+	})
+
+	// Bare Stepfun model MUST be exposed in compact mode
+	bareEntry, ok := findModel(t, got, modelID)
+	if !ok {
+		t.Fatalf("compact mode: bare model %q was masked and missing from /v1/models", modelID)
+	}
+	if ownedBy, _ := bareEntry["owned_by"].(string); ownedBy != "stepfun" {
+		t.Errorf("bare model owned_by = %q, want stepfun", ownedBy)
+	}
+
+	// WorkBuddy namespaced multiplier entry MUST also be available
+	const wbVariant = "workbuddy/step-5-preview:0x"
+	wbEntry, ok := findModel(t, got, wbVariant)
+	if !ok {
+		t.Fatalf("compact mode: expected WorkBuddy variant %q in /v1/models", wbVariant)
+	}
+	if ownedBy, _ := wbEntry["owned_by"].(string); ownedBy != "workbuddy" {
+		t.Errorf("workbuddy variant owned_by = %q, want workbuddy", ownedBy)
+	}
+}
+
 func getModelsResponse(t *testing.T) map[string]any {
 	return getModelsResponseWithConfig(t, &config.SDKConfig{})
 }

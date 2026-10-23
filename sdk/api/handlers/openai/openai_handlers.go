@@ -82,6 +82,7 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 
 	// Get all available models
 	allModels := h.Models()
+	modelRegistry := registry.GetGlobalRegistry()
 
 	variantMode := config.ModelVariantModeCompact
 	if cfg := h.CurrentConfig(); cfg != nil && cfg.ModelVariantMode != "" {
@@ -207,6 +208,79 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 			} else if effectiveStr != "" {
 				targetID = fmt.Sprintf("%s:%s", cleanBaseModel, effectiveStr)
 				displayName = fmt.Sprintf("%s (%s)", cleanBaseModel, effectiveStr)
+			}
+
+			// If this model is also registered by non-WorkBuddy providers (e.g. Stepfun,
+			// OpenAI compatibility, OpenAI, Anthropic, Gemini, etc.), always emit the bare
+			// cleanBaseModel so downstream clients can select and pull it directly without
+			// being masked by WorkBuddy billing variants.
+			hasNonWorkBuddy := false
+			var nonWBOwnedBy string
+			for _, p := range modelRegistry.GetModelProviders(cleanBaseModel) {
+				pLower := strings.ToLower(strings.TrimSpace(p))
+				if !strings.HasPrefix(pLower, "workbuddy") && !strings.HasPrefix(pLower, "codebuddy") && pLower != "copilot-tencent" {
+					hasNonWorkBuddy = true
+					if nonWBOwnedBy == "" {
+						nonWBOwnedBy = p
+					}
+				}
+			}
+			if !hasNonWorkBuddy {
+				for _, p := range modelRegistry.GetModelProviders(modelID) {
+					pLower := strings.ToLower(strings.TrimSpace(p))
+					if !strings.HasPrefix(pLower, "workbuddy") && !strings.HasPrefix(pLower, "codebuddy") && pLower != "copilot-tencent" {
+						hasNonWorkBuddy = true
+						if nonWBOwnedBy == "" {
+							nonWBOwnedBy = p
+						}
+					}
+				}
+			}
+
+			if hasNonWorkBuddy {
+				if !seenIDs[cleanBaseModel] {
+					seenIDs[cleanBaseModel] = true
+					bareOwnedBy := nonWBOwnedBy
+					if bareOwnedBy == "" {
+						if origOwnedBy, ok := model["owned_by"].(string); ok && origOwnedBy != "" && !strings.HasPrefix(strings.ToLower(origOwnedBy), "workbuddy") && !strings.HasPrefix(strings.ToLower(origOwnedBy), "codebuddy") {
+							bareOwnedBy = origOwnedBy
+						}
+					}
+					bareModel := map[string]any{
+						"id":           cleanBaseModel,
+						"object":       model["object"],
+						"display_name": cleanBaseModel,
+						"name":         cleanBaseModel,
+					}
+					if created, exists := model["created"]; exists {
+						bareModel["created"] = created
+					}
+					if bareOwnedBy != "" {
+						bareModel["owned_by"] = bareOwnedBy
+					}
+					filteredModels = append(filteredModels, bareModel)
+				}
+
+				if targetID != cleanBaseModel && !seenIDs[targetID] {
+					seenIDs[targetID] = true
+					compactModel := map[string]any{
+						"id":           targetID,
+						"object":       model["object"],
+						"display_name": displayName,
+						"name":         displayName,
+					}
+					if created, exists := model["created"]; exists {
+						compactModel["created"] = created
+					}
+					if targetOwnedBy != "" {
+						compactModel["owned_by"] = targetOwnedBy
+					}
+					if creditsMap != nil {
+						compactModel["credits"] = creditsMap
+					}
+					filteredModels = append(filteredModels, compactModel)
+				}
+				continue
 			}
 
 			if seenIDs[targetID] {

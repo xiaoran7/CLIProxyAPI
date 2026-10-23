@@ -112,7 +112,6 @@ func ClearQoderCatalogModels(realm string) {
 
 // SetQoderCatalogModels stores dynamic models discovered from upstream for a realm.
 // It returns true if the dynamic model definitions have changed.
-// NOTE: Models are purely dynamic and NEVER hardcoded.
 func SetQoderCatalogModels(realm string, models []*ModelInfo) bool {
 	cleanRealm := strings.ToLower(strings.TrimSpace(realm))
 	qoderCatalogStore.mu.Lock()
@@ -147,26 +146,361 @@ func SetQoderCatalogModels(realm string, models []*ModelInfo) bool {
 	return true
 }
 
-// GetQoderModels returns dynamic models discovered from upstream for a realm ("intl" or "cn").
-// If no models have been fetched yet from upstream, it returns an empty slice.
-// Hardcoded model lists are strictly prohibited.
-func GetQoderModels(realm string) []*ModelInfo {
+var staticQoderIntlModels = []*ModelInfo{
+	{
+		ID:                       "ultimate",
+		Object:                   "model",
+		OwnedBy:                  "qoder",
+		Type:                     "qoder",
+		DisplayName:              "Ultimate",
+		ContextLength:            1000000,
+		MaxCompletionTokens:      64000,
+		InputTokenLimit:          1000000,
+		OutputTokenLimit:         64000,
+		SupportedInputModalities: []string{"TEXT", "IMAGE"},
+		Thinking: &ThinkingSupport{
+			Levels: []string{"low", "medium", "high", "xhigh", "max"},
+		},
+		Credits: &ModelCredits{
+			Multiplier: 1.6,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                       "auto",
+		Object:                   "model",
+		OwnedBy:                  "qoder",
+		Type:                     "qoder",
+		DisplayName:              "Auto",
+		ContextLength:            1000000,
+		MaxCompletionTokens:      64000,
+		InputTokenLimit:          1000000,
+		OutputTokenLimit:         64000,
+		SupportedInputModalities: []string{"TEXT", "IMAGE"},
+		Credits: &ModelCredits{
+			Multiplier: 1.0,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                       "qwen3.8-flash",
+		Object:                   "model",
+		OwnedBy:                  "alibaba",
+		Type:                     "qoder",
+		DisplayName:              "Qwen 3.8 Flash",
+		ContextLength:            1000000,
+		MaxCompletionTokens:      64000,
+		InputTokenLimit:          1000000,
+		OutputTokenLimit:         64000,
+		SupportedInputModalities: []string{"TEXT", "IMAGE"},
+		Thinking: &ThinkingSupport{
+			Levels: []string{"low", "medium", "high"},
+		},
+		Credits: &ModelCredits{
+			Multiplier: 0.0,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                  "deepseek-v4-pro",
+		Object:              "model",
+		OwnedBy:             "deepseek",
+		Type:                "qoder",
+		DisplayName:         "DeepSeek V4 Pro",
+		ContextLength:       1048576,
+		MaxCompletionTokens: 64000,
+		InputTokenLimit:     1048576,
+		OutputTokenLimit:    64000,
+		Thinking: &ThinkingSupport{
+			Levels: []string{"high", "max"},
+		},
+		Credits: &ModelCredits{
+			Multiplier: 1.5,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                  "deepseek-v4-flash",
+		Object:              "model",
+		OwnedBy:             "deepseek",
+		Type:                "qoder",
+		DisplayName:         "DeepSeek V4 Flash",
+		ContextLength:       1048576,
+		MaxCompletionTokens: 64000,
+		InputTokenLimit:     1048576,
+		OutputTokenLimit:    64000,
+		Credits: &ModelCredits{
+			Multiplier: 0.5,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                       "qwen-max-latest",
+		Object:                   "model",
+		OwnedBy:                  "alibaba",
+		Type:                     "qoder",
+		DisplayName:              "Qwen Max (Latest)",
+		ContextLength:            1000000,
+		MaxCompletionTokens:      64000,
+		InputTokenLimit:          1000000,
+		OutputTokenLimit:         64000,
+		SupportedInputModalities: []string{"TEXT", "IMAGE"},
+		Thinking: &ThinkingSupport{
+			Levels: []string{"low", "medium", "high"},
+		},
+		Credits: &ModelCredits{
+			Multiplier: 1.2,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                       "qwen-plus",
+		Object:                   "model",
+		OwnedBy:                  "alibaba",
+		Type:                     "qoder",
+		DisplayName:              "Qwen Plus",
+		ContextLength:            1000000,
+		MaxCompletionTokens:      64000,
+		InputTokenLimit:          1000000,
+		OutputTokenLimit:         64000,
+		SupportedInputModalities: []string{"TEXT", "IMAGE"},
+		Credits: &ModelCredits{
+			Multiplier: 0.8,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                  "kimi-code",
+		Object:              "model",
+		OwnedBy:             "moonshot",
+		Type:                "qoder",
+		DisplayName:         "Kimi Code",
+		ContextLength:       256000,
+		MaxCompletionTokens: 32000,
+		InputTokenLimit:     256000,
+		OutputTokenLimit:    32000,
+		Credits: &ModelCredits{
+			Multiplier: 1.0,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                  "glm-5",
+		Object:              "model",
+		OwnedBy:             "zhipu",
+		Type:                "qoder",
+		DisplayName:         "GLM-5",
+		ContextLength:       256000,
+		MaxCompletionTokens: 32000,
+		InputTokenLimit:     256000,
+		OutputTokenLimit:    32000,
+		Credits: &ModelCredits{
+			Multiplier: 1.0,
+			Source:     "qoder",
+		},
+	},
+}
+
+var staticQoderCNModels = []*ModelInfo{
+	{
+		ID:                       "auto",
+		Object:                   "model",
+		OwnedBy:                  "alibaba",
+		Type:                     "qoder",
+		DisplayName:              "Auto (Qoder CN)",
+		ContextLength:            1000000,
+		MaxCompletionTokens:      64000,
+		InputTokenLimit:          1000000,
+		OutputTokenLimit:         64000,
+		SupportedInputModalities: []string{"TEXT", "IMAGE"},
+		Credits: &ModelCredits{
+			Multiplier: 1.0,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                       "qwen3.8-flash",
+		Object:                   "model",
+		OwnedBy:                  "alibaba",
+		Type:                     "qoder",
+		DisplayName:              "Qwen 3.8 Flash (Qoder CN)",
+		ContextLength:            1000000,
+		MaxCompletionTokens:      64000,
+		InputTokenLimit:          1000000,
+		OutputTokenLimit:         64000,
+		SupportedInputModalities: []string{"TEXT", "IMAGE"},
+		Thinking: &ThinkingSupport{
+			Levels: []string{"low", "medium", "high"},
+		},
+		Credits: &ModelCredits{
+			Multiplier: 0.0,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                  "deepseek-v4-pro",
+		Object:              "model",
+		OwnedBy:             "deepseek",
+		Type:                "qoder",
+		DisplayName:         "DeepSeek V4 Pro (Qoder CN)",
+		ContextLength:       1048576,
+		MaxCompletionTokens: 64000,
+		InputTokenLimit:     1048576,
+		OutputTokenLimit:    64000,
+		Thinking: &ThinkingSupport{
+			Levels: []string{"high", "max"},
+		},
+		Credits: &ModelCredits{
+			Multiplier: 1.5,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                  "deepseek-v4-flash",
+		Object:              "model",
+		OwnedBy:             "deepseek",
+		Type:                "qoder",
+		DisplayName:         "DeepSeek V4 Flash (Qoder CN)",
+		ContextLength:       1048576,
+		MaxCompletionTokens: 64000,
+		InputTokenLimit:     1048576,
+		OutputTokenLimit:    64000,
+		Credits: &ModelCredits{
+			Multiplier: 0.5,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                       "qwen-max-latest",
+		Object:                   "model",
+		OwnedBy:                  "alibaba",
+		Type:                     "qoder",
+		DisplayName:              "Qwen Max (Qoder CN)",
+		ContextLength:            1000000,
+		MaxCompletionTokens:      64000,
+		InputTokenLimit:          1000000,
+		OutputTokenLimit:         64000,
+		SupportedInputModalities: []string{"TEXT", "IMAGE"},
+		Thinking: &ThinkingSupport{
+			Levels: []string{"low", "medium", "high"},
+		},
+		Credits: &ModelCredits{
+			Multiplier: 1.2,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                       "qwen-plus",
+		Object:                   "model",
+		OwnedBy:                  "alibaba",
+		Type:                     "qoder",
+		DisplayName:              "Qwen Plus (Qoder CN)",
+		ContextLength:            1000000,
+		MaxCompletionTokens:      64000,
+		InputTokenLimit:          1000000,
+		OutputTokenLimit:         64000,
+		SupportedInputModalities: []string{"TEXT", "IMAGE"},
+		Credits: &ModelCredits{
+			Multiplier: 0.8,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                  "kimi",
+		Object:              "model",
+		OwnedBy:             "moonshot",
+		Type:                "qoder",
+		DisplayName:         "Kimi (Qoder CN)",
+		ContextLength:       256000,
+		MaxCompletionTokens: 32000,
+		InputTokenLimit:     256000,
+		OutputTokenLimit:    32000,
+		Credits: &ModelCredits{
+			Multiplier: 1.0,
+			Source:     "qoder",
+		},
+	},
+	{
+		ID:                  "glm",
+		Object:              "model",
+		OwnedBy:             "zhipu",
+		Type:                "qoder",
+		DisplayName:         "GLM (Qoder CN)",
+		ContextLength:       256000,
+		MaxCompletionTokens: 32000,
+		InputTokenLimit:     256000,
+		OutputTokenLimit:    32000,
+		Credits: &ModelCredits{
+			Multiplier: 1.0,
+			Source:     "qoder",
+		},
+	},
+}
+
+// GetQoderDynamicModels returns dynamic models discovered from upstream for a realm.
+func GetQoderDynamicModels(realm string) []*ModelInfo {
 	cleanRealm := strings.ToLower(strings.TrimSpace(realm))
 	qoderCatalogStore.mu.RLock()
 	defer qoderCatalogStore.mu.RUnlock()
 	if cleanRealm == "cn" {
-		if len(qoderCatalogStore.cnModels) == 0 {
-			return []*ModelInfo{}
-		}
 		return cloneModelInfos(qoderCatalogStore.cnModels)
-	}
-	if len(qoderCatalogStore.intlModels) == 0 {
-		return []*ModelInfo{}
 	}
 	return cloneModelInfos(qoderCatalogStore.intlModels)
 }
 
-// GetAllQoderModels returns all unique dynamic Qoder models across both realms.
+// GetQoderModels returns dynamic models discovered from upstream merged with baseline static models for a realm ("intl" or "cn").
+func GetQoderModels(realm string) []*ModelInfo {
+	cleanRealm := strings.ToLower(strings.TrimSpace(realm))
+	var staticModels []*ModelInfo
+	var dynamicModels []*ModelInfo
+
+	if cleanRealm == "cn" {
+		staticModels = staticQoderCNModels
+		qoderCatalogStore.mu.RLock()
+		dynamicModels = qoderCatalogStore.cnModels
+		qoderCatalogStore.mu.RUnlock()
+	} else {
+		staticModels = staticQoderIntlModels
+		qoderCatalogStore.mu.RLock()
+		dynamicModels = qoderCatalogStore.intlModels
+		qoderCatalogStore.mu.RUnlock()
+	}
+
+	seen := make(map[string]bool, len(staticModels)+len(dynamicModels))
+	result := make([]*ModelInfo, 0, len(staticModels)+len(dynamicModels))
+
+	// 1. Add static baseline models
+	for _, m := range staticModels {
+		if m != nil && !seen[strings.ToLower(m.ID)] {
+			seen[strings.ToLower(m.ID)] = true
+			result = append(result, cloneModelInfo(m))
+		}
+	}
+
+	// 2. Dynamic models discovered from upstream enrich or override static models
+	for _, m := range dynamicModels {
+		if m == nil {
+			continue
+		}
+		idLower := strings.ToLower(m.ID)
+		replaced := false
+		for i, existing := range result {
+			if existing != nil && strings.ToLower(existing.ID) == idLower {
+				result[i] = cloneModelInfo(m)
+				replaced = true
+				break
+			}
+		}
+		if !replaced && !seen[idLower] {
+			seen[idLower] = true
+			result = append(result, cloneModelInfo(m))
+		}
+	}
+
+	return result
+}
+
+// GetAllQoderModels returns all unique dynamic and baseline Qoder models across both realms.
 func GetAllQoderModels() []*ModelInfo {
 	seen := make(map[string]bool)
 	var all []*ModelInfo

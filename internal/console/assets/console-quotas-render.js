@@ -142,6 +142,20 @@
             <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
           </div>
         </div>
+        <div class="compact-meter-wrap" style="display:flex; flex-direction:column; justify-content:center; gap:3px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+            <span style="display:inline-flex; align-items:center; gap:5px;">
+              <span class="quota-pool-badge pool-opencode">OpenCode</span>
+              <span style="color:var(--text-muted); font-size:10.5px;">通道健康度</span>
+            </span>
+            <span style="font-family:var(--mono); font-size:11px; font-weight:600; color:var(--success);">
+              实时连通
+            </span>
+          </div>
+          <div class="quota-meter-bar">
+            <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
+          </div>
+        </div>
       `;
     }
 
@@ -162,15 +176,27 @@
             <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
           </div>
         </div>
+        <div class="compact-meter-wrap" style="display:flex; flex-direction:column; justify-content:center; gap:3px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+            <span style="display:inline-flex; align-items:center; gap:5px;">
+              <span class="quota-pool-badge pool-openrouter">OpenRouter</span>
+              <span style="color:var(--text-muted); font-size:10.5px;">路由健康度</span>
+            </span>
+            <span style="font-family:var(--mono); font-size:11px; font-weight:600; color:var(--success);">
+              实时连通
+            </span>
+          </div>
+          <div class="quota-meter-bar">
+            <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
+          </div>
+        </div>
       `;
     }
 
     // WorkBuddy 紧凑视图：积分余量与到期徽标
     function renderCompactWorkBuddyMeter(acc) {
-      let metersHtml = '';
       const remainCredits = Number(acc.remaining_credits) || 0;
       const totalCredits = Number(acc.total_credits) || 0;
-      const usedCredits = Number(acc.used_credits) || 0;
       const pct = totalCredits > 0 ? Math.max(0, Math.min(100, Math.round((remainCredits / totalCredits) * 1000) / 10)) : (remainCredits > 0 ? 100 : 0);
       let cls = 'meter-high'; let col = '#10b981';
       if (pct <= 20) { cls = 'meter-low'; col = '#ef4444'; }
@@ -179,8 +205,10 @@
       const expInfo = getWorkBuddyExpirationInfo(acc);
       const title = expInfo.tooltip || t('quotas.workbuddy.officialPointsTooltip', { remainCredits: remainCredits, totalCredits: totalCredits });
       const wbResetBadge = expInfo.hasExpiration ? buildCompactResetBadge({ reset_time: expInfo.targetTs, reset_countdown: expInfo.countdown }) : '';
+      const expLabel = expInfo.hasExpiration ? (expInfo.countdown ? `${expInfo.shortText} (${expInfo.countdown})` : expInfo.shortText) : (expInfo.shortText || '官方套餐');
+      const expCol = expInfo.color || 'var(--text-main)';
 
-      metersHtml = `
+      return `
         <div class="compact-meter-wrap" title="${escapeHtml(title)}">
           <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
             <span style="display:inline-flex; align-items:center; gap:4px;">
@@ -188,7 +216,6 @@
               <span style="color:var(--text-muted); font-size:10px;">${t('quotas.workbuddy.packPoints')}</span>
             </span>
             <span style="display:inline-flex; align-items:center; gap:6px;">
-              ${wbResetBadge}
               <span style="font-family:var(--mono); font-weight:700; color:${col};">
                 ${t('quotas.points.remainingPoints', { value: remainCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) })}
               </span>
@@ -198,13 +225,29 @@
             <div class="quota-meter-fill ${cls}" style="width: ${pct}%"></div>
           </div>
         </div>
+
+        <div class="compact-meter-wrap" title="${escapeHtml(expInfo.tooltip || expInfo.fullText || '有效期与周期')}">
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+            <span style="display:inline-flex; align-items:center; gap:4px;">
+              <span class="quota-pool-badge pool-workbuddy">WorkBuddy</span>
+              <span style="color:var(--text-muted); font-size:10px;">有效期</span>
+            </span>
+            <span style="display:inline-flex; align-items:center; gap:6px;">
+              ${wbResetBadge}
+              <span style="font-family:var(--mono); font-weight:600; color:${expCol}; font-size:11px;">
+                ${escapeHtml(expLabel)}
+              </span>
+            </span>
+          </div>
+          <div class="quota-meter-bar">
+            <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
+          </div>
+        </div>
       `;
-      return metersHtml;
     }
 
     // Qoder 紧凑视图：资源点数余量
     function renderCompactQoderMeter(acc, fallbackBucket) {
-      let metersHtml = '';
       const remainCredits = Number(acc.remaining_credits) || 0;
       const totalCredits = Number(acc.total_credits) || 0;
       const pct = totalCredits > 0 ? Math.max(0, Math.min(100, Math.round((remainCredits / totalCredits) * 1000) / 10)) : (remainCredits > 0 ? 100 : (fallbackBucket && Number.isFinite(fallbackBucket.remaining_percent) ? fallbackBucket.remaining_percent : 0));
@@ -214,27 +257,44 @@
 
       const pointsLabel = totalCredits > 0 ? `${remainCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 1})} / ${totalCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 1})}` : `${remainCredits.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 1})} pts`;
       const qoderResetBadge = buildCompactResetBadge(fallbackBucket || acc);
+      const resetText = (fallbackBucket && (fallbackBucket.reset_countdown || fallbackBucket.reset_time))
+        ? (fallbackBucket.reset_countdown || formatResetAbs(fallbackBucket.reset_time))
+        : '按月重置';
 
-      metersHtml = `
+      return `
         <div class="compact-meter-wrap" title="Qoder 资源额度点数 (${escapeHtml(pointsLabel)})">
           <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
             <span style="display:inline-flex; align-items:center; gap:4px;">
               <span class="quota-pool-badge pool-qoder">Qoder</span>
               <span style="color:var(--text-muted); font-size:10px;">资源点数</span>
             </span>
-            <span style="display:inline-flex; align-items:center; gap:6px;">
-              ${qoderResetBadge}
-              <span style="font-family:var(--mono); font-weight:700; color:${col};">
-                ${escapeHtml(pointsLabel)}
-              </span>
+            <span style="font-family:var(--mono); font-weight:700; color:${col};">
+              ${escapeHtml(pointsLabel)}
             </span>
           </div>
           <div class="quota-meter-bar">
             <div class="quota-meter-fill ${cls}" style="width: ${pct}%"></div>
           </div>
         </div>
+
+        <div class="compact-meter-wrap" title="Qoder 额度周期刷新">
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+            <span style="display:inline-flex; align-items:center; gap:4px;">
+              <span class="quota-pool-badge pool-qoder">Qoder</span>
+              <span style="color:var(--text-muted); font-size:10px;">重置周期</span>
+            </span>
+            <span style="display:inline-flex; align-items:center; gap:6px;">
+              ${qoderResetBadge}
+              <span style="font-family:var(--mono); font-weight:600; color:var(--text-main); font-size:11px;">
+                ${escapeHtml(resetText)}
+              </span>
+            </span>
+          </div>
+          <div class="quota-meter-bar">
+            <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
+          </div>
+        </div>
       `;
-      return metersHtml;
     }
 
     // Antigravity 紧凑视图：Gemini 5h / 周额度双指示条
@@ -299,7 +359,37 @@
         // 简短展示专属：严格只展示 Gemini 的 5h 与周额度，标明池子标识
         const col2Html = hasGeminiWeekly
           ? buildAntigravityMeter(geminiWeeklyBucket, null, t('quotas.bucket.weeklyLimit'), true)
-          : '';
+          : (claude5hBucket && Number.isFinite(claude5hBucket.remaining_percent)
+              ? `
+                <div class="compact-meter-wrap" title="Claude 备用池">
+                  <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+                    <span style="display:inline-flex; align-items:center; gap:4px;">
+                      <span class="quota-pool-badge pool-claude">Claude</span>
+                      <span style="color:var(--text-muted); font-size:10px;">备用池</span>
+                    </span>
+                    <span style="font-family:var(--mono); font-weight:700; color:#10b981;">
+                      ${claude5hBucket.remaining_percent}%
+                    </span>
+                  </div>
+                  <div class="quota-meter-bar">
+                    <div class="quota-meter-fill meter-high" style="width: ${claude5hBucket.remaining_percent}%;"></div>
+                  </div>
+                </div>
+              `
+              : `
+                <div class="compact-meter-wrap" title="Gemini 周额度：未单独设限">
+                  <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+                    <span style="display:inline-flex; align-items:center; gap:4px;">
+                      <span class="quota-pool-badge pool-gemini">Gemini</span>
+                      <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.weeklyLimit')}</span>
+                    </span>
+                    <span style="font-family:var(--mono); font-size:10.5px; color:var(--text-dim);">无独立周限</span>
+                  </div>
+                  <div class="quota-meter-bar">
+                    <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
+                  </div>
+                </div>
+              `);
         metersHtml = `
           ${buildAntigravityMeter(gemini5hBucket, geminiWeeklyBucket, t('quotas.bucket.fiveHourLimit'), false)}
           ${col2Html}
@@ -307,10 +397,34 @@
       } else if (hasGeminiWeekly) {
         metersHtml = `
           ${buildAntigravityMeter(geminiWeeklyBucket, null, t('quotas.bucket.weeklyLimit'), true)}
+          <div class="compact-meter-wrap" title="Gemini 滚动 5h 限额">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+              <span style="display:inline-flex; align-items:center; gap:4px;">
+                <span class="quota-pool-badge pool-gemini">Gemini</span>
+                <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.fiveHourLimit')}</span>
+              </span>
+              <span style="font-family:var(--mono); font-size:10.5px; color:var(--text-dim);">随调用刷新</span>
+            </div>
+            <div class="quota-meter-bar">
+              <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
+            </div>
+          </div>
         `;
       } else if (fallbackBucket && Number.isFinite(fallbackBucket.remaining_percent)) {
         metersHtml = `
           ${buildAntigravityMeter(fallbackBucket, null, formatBucketLabel(fallbackBucket.name, fallbackBucket.window) || '5h', false)}
+          <div class="compact-meter-wrap" title="上游状态">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+              <span style="display:inline-flex; align-items:center; gap:4px;">
+                <span class="quota-pool-badge pool-gemini">Gemini</span>
+                <span style="color:var(--text-muted); font-size:10px;">服务状态</span>
+              </span>
+              <span style="font-family:var(--mono); font-size:11px; font-weight:600; color:var(--success);">正常就绪</span>
+            </div>
+            <div class="quota-meter-bar">
+              <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
+            </div>
+          </div>
         `;
       } else {
         metersHtml = cooldownCompactNotice + `<div class="account-quota-unknown">${t('quotas.quotaUnknownUpstream')}</div>`;
@@ -364,6 +478,21 @@
               </div>
               <div class="quota-meter-bar">
                 <div class="quota-meter-fill ${cls2}" style="width: ${rem2}%"></div>
+              </div>
+            </div>
+          `;
+        } else {
+          col2Html = `
+            <div class="compact-meter-wrap" title="Codex 周额度：未单独设限">
+              <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+                <span style="display:inline-flex; align-items:center; gap:4px;">
+                  <span class="quota-pool-badge pool-codex">Codex</span>
+                  <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.weeklyLimit')}</span>
+                </span>
+                <span style="font-family:var(--mono); font-size:10.5px; color:var(--text-dim);">标准配额</span>
+              </div>
+              <div class="quota-meter-bar">
+                <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
               </div>
             </div>
           `;
@@ -441,6 +570,21 @@
               </div>
             </div>
           `;
+        } else {
+          col2Html = `
+            <div class="compact-meter-wrap" title="Claude 周期额度">
+              <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+                <span style="display:inline-flex; align-items:center; gap:4px;">
+                  <span class="quota-pool-badge pool-claude">Claude</span>
+                  <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.weeklyLimit')}</span>
+                </span>
+                <span style="font-family:var(--mono); font-size:10.5px; color:var(--text-dim);">循环配额</span>
+              </div>
+              <div class="quota-meter-bar">
+                <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
+              </div>
+            </div>
+          `;
         }
 
         const resetBadge1 = buildCompactResetBadge(b1);
@@ -493,6 +637,15 @@
           </div>
           <div class="quota-meter-bar">
             <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
+          </div>
+        </div>
+        <div class="compact-meter-wrap" title="服务通道就绪状态">
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+            <span style="color:var(--text-muted); font-size:10.5px;">通道可用性</span>
+            <span style="font-family:var(--mono); font-size:11px; font-weight:600; color:var(--success);">正常就绪</span>
+          </div>
+          <div class="quota-meter-bar">
+            <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
           </div>
         </div>
       `;
@@ -569,15 +722,15 @@
         <div class="compact-account-row ${isDisabled ? 'is-disabled' : ''}" style="${hasValidation ? 'border-color:rgba(239,68,68,0.5); background:rgba(239,68,68,0.03);' : ''}">
           <div class="compact-left">
             <div class="provider-icon-badge ${brand.iconClass}" title="${escapeHtml(brand.name)}">${brand.iconSvg}</div>
-            <div style="display:flex; flex-direction:column; min-width:0; gap:3px;">
-              <div style="display:flex; align-items:center; gap:6px; flex-wrap:nowrap;">
-                <span class="provider-pill ${brand.pillClass}" style="font-size:10px; padding:1.5px 6px;">${escapeHtml(brand.name)}</span>
-                <span class="priority-badge ${prioCls}">P${prio}</span>
-                <span style="font-weight:600; font-size:13px; color:var(--text-main); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(fullTip)}">
+            <div style="display:flex; flex-direction:column; min-width:0; flex:1 1 auto; gap:3px;">
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:nowrap; min-width:0;">
+                <span class="provider-pill ${brand.pillClass}" style="font-size:10px; padding:1.5px 6px; flex-shrink:0;">${escapeHtml(brand.name)}</span>
+                <span class="priority-badge ${prioCls}" style="flex-shrink:0;">P${prio}</span>
+                <span style="font-weight:600; font-size:13px; color:var(--text-main); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1 1 auto;" title="${escapeHtml(fullTip)}">
                   ${escapeHtml(accountTitle)}
                 </span>
                 ${isDisabled ? `<span class="chip chip-red" style="font-size:10px; padding:1.5px 6px; line-height:1.2; white-space:nowrap; flex-shrink:0;">${t('quotas.disabledBadge')}</span>` : ''}
-                ${!isDisabled && (isBlocked || isPartialCooldown) ? `<span class="chip ${isPartialCooldown ? 'chip-orange' : 'chip-red'}" style="font-size:10px; padding:1.5px 6px; line-height:1.2; ${isPartialCooldown ? 'background:rgba(245,158,11,0.15); color:#d97706; border:1px solid rgba(245,158,11,0.3);' : ''}">${escapeHtml(health.label || (isPartialCooldown ? '部分模型冷却' : ''))}</span>` : ''}
+                ${!isDisabled && (isBlocked || isPartialCooldown) ? `<span class="chip ${isPartialCooldown ? 'chip-orange' : 'chip-red'}" style="font-size:10px; padding:1.5px 6px; line-height:1.2; flex-shrink:0; ${isPartialCooldown ? 'background:rgba(245,158,11,0.15); color:#d97706; border:1px solid rgba(245,158,11,0.3);' : ''}">${escapeHtml(health.label || (isPartialCooldown ? '部分模型冷却' : ''))}</span>` : ''}
                 ${hasValidation ? `<span class="chip chip-red" style="font-size:10px; padding:1.5px 6px; line-height:1.2; white-space:nowrap; flex-shrink:0; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); animation:pulse 2s infinite;">${t('quotas.validation.needGoogleBadge')}</span>` : ''}
               </div>
               <div style="font-size:11px; font-family:var(--mono); color:var(--text-dim);">
@@ -906,8 +1059,6 @@
         cooldownBanner = `<div class="account-health-warning" style="margin-bottom:8px; font-size:11.5px; background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.3); color:#d97706;">${escapeHtml(health.detail || health.label)}</div>`;
       }
       const quotaSectionHtml = renderUpstreamQuotaSection(acc, groupsHtml, health, isCredentialBlocked, cooldownBanner);
-
-      const cardLocalUsageHtml = renderUpstreamLocalUsageCard(acc);
 
       const accountCardTitle = (acc.display_name || acc.email || acc.filename || '').replace(/\.json$/i, '');
       const cardFullTip = acc.email && acc.email !== accountCardTitle ? `${accountCardTitle} (${acc.email})` : accountCardTitle;

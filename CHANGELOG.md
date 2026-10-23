@@ -5,6 +5,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Console Upstream Quotas Runtime & Visual Alignment Fixes (`internal/console/`)**:
+  - Fixed a `ReferenceError: renderUpstreamLocalUsageCard is not defined` runtime exception when rendering upstream credential full cards in `console-quotas-render.js`.
+  - Resolved visual alignment defects across the console upstream credentials section:
+    - Added `grid-column: 1 / -1; width: 100%` for `.upstream-empty-state` and error status boxes inside `.upstream-grid`, ensuring full container width and proper centering rather than being constrained to a single 360px column.
+    - Standardized `.compact-mid` into a strict 2-column grid (`grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px;`) across all providers (WorkBuddy, Qoder, OpenCode, OpenRouter, Antigravity, Codex, Claude, Fallback), aligning all meter progress bars, labels, and percentages vertically down the page.
+    - Expanded `.compact-left` to 320px with smooth ellipsis truncation for account titles and badges, and stabilized `.compact-right` action buttons to prevent variable width shifts across rows.
+- **Multi-Provider Model Visibility & Non-WorkBuddy De-Masking (`sdk/api/handlers/openai/openai_handlers.go`, `openai_models_credits_test.go`)**:
+  - Resolved model masking in `/v1/models` under `compact` variant mode where non-WorkBuddy models (such as Stepfun's `step-5-preview`) were obscured when both WorkBuddy and another provider registered the identical model ID.
+  - When non-WorkBuddy providers back a model, `compact` mode now always emits the bare `cleanBaseModel` (e.g. `step-5-preview` with `owned_by: stepfun`) while independently preserving the WorkBuddy multiplier entry (`workbuddy/step-5-preview:0x`), allowing downstream clients to select and discover both providers without naming collisions.
+- **Qoder Token Lifecycle & Multi-Stage Refresh Fallback (`internal/auth/qoder/`)**:
+  - Resolved Qoder authentication failures and 401 unauthenticated errors where expired job tokens (`jt-`) could not be refreshed when job refresh tokens (`jrt-`) were rejected or missing.
+  - Enhanced `EnsureValidJobToken` to support device refresh fallback: when a job token is expired and `jrt-` refresh fails, the flow automatically invokes `POST /api/v1/deviceToken/refresh` using `drt-` to obtain a fresh device token, then trades for a new active job token via `POST /api/v1/me/jobToken`.
+  - Added `WithBase` variants (`ExchangeJobTokenWithBase`, `RefreshJobTokenWithBase`, `RefreshDeviceTokenWithBase`, `TradeJobTokenWithBase`) respecting custom `openAPIBase` and mock test endpoints.
+- **Qoder Model Catalog Discovery & Cold-Start Baseline Protection (`internal/registry/qoder_models.go`, `internal/auth/qoder/catalog.go`, `sdk/cliproxy/qoder_catalog.go`)**:
+  - Implemented baseline static model catalogs (`staticQoderIntlModels` and `staticQoderCNModels`) for Qoder International and Qoder CN, ensuring Qoder credentials remain actively registered in the gateway even during cold starts or transient upstream network failures.
+  - Upstream dynamic catalog discoveries seamlessly overlay and enrich baseline models with live pricing multipliers, multimodal flags, and context limits.
+  - Added POST method attempt to `FetchUpstreamModels` for COSY-signed `/algo/api/v2/model/list?Encode=1` before falling back to GET and OpenAPI routes.
+
 ### Added
 - **Console UI Aesthetic & Separation of Concerns Overhaul (`internal/console/`)**:
   - **Complete Emoji Removal**: System emojis across the console UI (`console-i18n.js`, `console-quotas-fetch.js`, `console-theme-v2310.css`, `console.html`) replaced with clean typography or inline SVG vector icons.

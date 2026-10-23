@@ -5,17 +5,23 @@ import (
 	"time"
 )
 
-func TestQoderModelsNoHardcoding(t *testing.T) {
+func TestQoderModelsBaseline(t *testing.T) {
 	ClearQoderCatalogModels("")
 
 	intlModels := GetQoderModels("intl")
-	if len(intlModels) != 0 {
-		t.Fatalf("expected 0 hardcoded models for intl, got %d", len(intlModels))
+	if len(intlModels) == 0 {
+		t.Fatalf("expected non-empty baseline models for intl, got %d", len(intlModels))
 	}
 
 	cnModels := GetQoderModels("cn")
-	if len(cnModels) != 0 {
-		t.Fatalf("expected 0 hardcoded models for cn, got %d", len(cnModels))
+	if len(cnModels) == 0 {
+		t.Fatalf("expected non-empty baseline models for cn, got %d", len(cnModels))
+	}
+
+	// Dynamic models should be empty when catalog is cold
+	dynamicIntl := GetQoderDynamicModels("intl")
+	if len(dynamicIntl) != 0 {
+		t.Fatalf("expected 0 dynamic models for cold intl catalog, got %d", len(dynamicIntl))
 	}
 }
 
@@ -99,15 +105,28 @@ func TestSetAndGetQoderModels(t *testing.T) {
 		t.Fatal("expected SetQoderCatalogModels to report change on first write")
 	}
 
-	got := GetQoderModels("intl")
-	if len(got) != 1 || got[0].ID != "qwen3.8-flash" {
-		t.Fatalf("expected 1 model 'qwen3.8-flash', got %v", got)
+	dynamicGot := GetQoderDynamicModels("intl")
+	if len(dynamicGot) != 1 || dynamicGot[0].ID != "qwen3.8-flash" {
+		t.Fatalf("expected 1 dynamic model 'qwen3.8-flash', got %v", dynamicGot)
 	}
 
-	// CN realm should still be empty
-	cnGot := GetQoderModels("cn")
+	// CN realm dynamic models should still be empty
+	cnGot := GetQoderDynamicModels("cn")
 	if len(cnGot) != 0 {
-		t.Fatalf("expected 0 models for cn, got %d", len(cnGot))
+		t.Fatalf("expected 0 dynamic models for cn, got %d", len(cnGot))
+	}
+
+	// Merged models should contain the dynamic model overlay
+	got := GetQoderModels("intl")
+	found := false
+	for _, m := range got {
+		if m != nil && m.ID == "qwen3.8-flash" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected 'qwen3.8-flash' to be present in merged models")
 	}
 
 	// Repeated identical set should report no change

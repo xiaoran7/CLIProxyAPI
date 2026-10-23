@@ -110,6 +110,26 @@ func ResolveBaseURL(realm string) string {
 	return BaseURLIntl
 }
 
+// ResolveBaseURLForAuth returns the inference gateway base URL for the given realm and auth,
+// respecting any configured base_url overrides in auth attributes or metadata.
+func ResolveBaseURLForAuth(realm string, auth *cliproxyauth.Auth) string {
+	base := ResolveBaseURL(realm)
+	if auth == nil {
+		return base
+	}
+	if auth.Attributes != nil {
+		if bu := strings.TrimSpace(auth.Attributes["base_url"]); bu != "" {
+			return strings.TrimRight(bu, "/")
+		}
+	}
+	if auth.Metadata != nil {
+		if bu, ok := auth.Metadata["base_url"].(string); ok && strings.TrimSpace(bu) != "" {
+			return strings.TrimRight(bu, "/")
+		}
+	}
+	return base
+}
+
 // ResolveOpenAPIBaseURL returns the OpenAPI authentication and management base URL for the given realm.
 func ResolveOpenAPIBaseURL(realm string) string {
 	if strings.EqualFold(realm, RealmCN) {
@@ -126,6 +146,26 @@ func ResolveOpenAPIBaseURL(realm string) string {
 		}
 	}
 	return OpenAPIBaseURLIntl
+}
+
+// ResolveOpenAPIBaseURLForAuth returns the OpenAPI base URL for the given realm and auth,
+// respecting any configured openapi_base overrides in auth attributes or metadata.
+func ResolveOpenAPIBaseURLForAuth(realm string, auth *cliproxyauth.Auth) string {
+	base := ResolveOpenAPIBaseURL(realm)
+	if auth == nil {
+		return base
+	}
+	if auth.Attributes != nil {
+		if ob := strings.TrimSpace(auth.Attributes["openapi_base"]); ob != "" {
+			return strings.TrimRight(ob, "/")
+		}
+	}
+	if auth.Metadata != nil {
+		if ob, ok := auth.Metadata["openapi_base"].(string); ok && strings.TrimSpace(ob) != "" {
+			return strings.TrimRight(ob, "/")
+		}
+	}
+	return base
 }
 
 // ResolveAuthWebURL returns the web login portal origin for the given realm.

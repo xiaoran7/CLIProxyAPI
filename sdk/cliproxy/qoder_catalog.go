@@ -57,7 +57,7 @@ func (s *Service) warmQoderCatalogForAuth(ctx context.Context, a *coreauth.Auth,
 		return
 	}
 
-	existing := registry.GetQoderModels(cleanRealm)
+	existing := registry.GetQoderDynamicModels(cleanRealm)
 	isCold := len(existing) == 0
 
 	fetchFunc := func() {

@@ -162,10 +162,18 @@ func FetchUserInfo(ctx context.Context, httpClient *http.Client, realm, deviceTo
 
 // TradeJobToken trades a device token for a short-lived job token for model inference.
 func TradeJobToken(ctx context.Context, httpClient *http.Client, realm, deviceToken string) (*JobTokenResponse, error) {
+	return TradeJobTokenWithBase(ctx, httpClient, ResolveOpenAPIBaseURL(realm), realm, deviceToken)
+}
+
+// TradeJobTokenWithBase trades a device token for a short-lived job token using an explicit openapi base URL.
+func TradeJobTokenWithBase(ctx context.Context, httpClient *http.Client, openAPIBase, realm, deviceToken string) (*JobTokenResponse, error) {
 	if strings.TrimSpace(deviceToken) == "" {
 		return nil, errors.New("qoder: device token is empty")
 	}
-	openAPIBase := ResolveOpenAPIBaseURL(realm)
+	if openAPIBase == "" {
+		openAPIBase = ResolveOpenAPIBaseURL(realm)
+	}
+	openAPIBase = strings.TrimRight(openAPIBase, "/")
 	clientID := ResolveClientID(realm)
 	reqURL := openAPIBase + JobTokenPath
 
