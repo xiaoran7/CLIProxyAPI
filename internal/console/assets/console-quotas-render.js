@@ -125,52 +125,44 @@
       return { gemini5hBucket, geminiWeeklyBucket, claude5hBucket, claudeWeeklyBucket, codex5hBucket, codexWeeklyBucket, fallbackBucket };
     }
 
-    // opencode 紧凑视图：当日 token 与调用次数
+    // opencode 紧凑视图：渠道就绪状态
     function renderCompactOpenCodeMeter(acc) {
-      let metersHtml = '';
-      const todayCount = Number.isFinite(acc.today_requests) ? acc.today_requests : 0;
-      const todayTokens = Number.isFinite(acc.today_tokens) ? acc.today_tokens : 0;
-
-      metersHtml = `
-        <div class="compact-meter-wrap" style="display:flex; flex-direction:column; justify-content:center; gap:2px;" title="${t('quotas.opencode.todayCallVolumeStats')}">
-          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11.5px;">
-            <span style="color:var(--text-muted); font-size:11px;">${t('quotas.opencode.todayConsumed')}</span>
-            <span style="font-family:var(--mono); font-weight:700; color:var(--text-main);">
-              <span style="color:#0ea5e9; font-size:13px;">${formatTokens(todayTokens)}</span>
-              <span style="color:var(--text-dim); font-size:10.5px;"> Tokens</span>
+      return `
+        <div class="compact-meter-wrap" style="display:flex; flex-direction:column; justify-content:center; gap:3px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+            <span style="display:inline-flex; align-items:center; gap:5px;">
+              <span class="quota-pool-badge pool-opencode">OpenCode</span>
+              <span style="color:var(--text-muted); font-size:10.5px;">API 凭据直连</span>
+            </span>
+            <span style="font-family:var(--mono); font-size:11px; font-weight:600; color:var(--success);">
+              正常就绪
             </span>
           </div>
-          <div style="display:flex; justify-content:space-between; align-items:center; font-size:10.5px; color:var(--text-dim);">
-            <span>${t('quotas.todayRequestsLabel')} <b style="font-family:var(--mono); color:var(--text-muted);">${todayCount}</b> ${t('quotas.timesUnit')}</span>
-            <span>${t('quotas.naturalDayCumulative')}</span>
+          <div class="quota-meter-bar">
+            <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
           </div>
         </div>
       `;
-      return metersHtml;
     }
 
-    // openrouter 紧凑视图：当日调用次数与重置时间
+    // openrouter 紧凑视图：渠道就绪状态
     function renderCompactOpenRouterMeter(acc) {
-      let metersHtml = '';
-      const todayCount = Number.isFinite(acc.today_requests) ? acc.today_requests : 0;
-      const resetTxt = (acc.reset_time || acc.reset_countdown) ? escapeHtml(acc.reset_countdown || (formatResetAbs(acc.reset_time) + t('quotas.actionRefresh'))) : '00:00 UTC';
-
-      metersHtml = `
-        <div class="compact-meter-wrap" style="display:flex; flex-direction:column; justify-content:center; gap:2px;" title="${t('quotas.openrouter.todayModelCallStats')}">
-          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11.5px;">
-            <span style="color:var(--text-muted); font-size:11px;">${t('quotas.todayCallsLabel')}</span>
-            <span style="font-family:var(--mono); font-weight:700; color:var(--text-main);">
-              <span style="color:#3b82f6; font-size:13.5px;">${todayCount}</span>
-              <span style="color:var(--text-dim); font-size:11px;"> ${t('quotas.timesUnit')}</span>
+      return `
+        <div class="compact-meter-wrap" style="display:flex; flex-direction:column; justify-content:center; gap:3px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+            <span style="display:inline-flex; align-items:center; gap:5px;">
+              <span class="quota-pool-badge pool-openrouter">OpenRouter</span>
+              <span style="color:var(--text-muted); font-size:10.5px;">聚合路由直连</span>
+            </span>
+            <span style="font-family:var(--mono); font-size:11px; font-weight:600; color:var(--success);">
+              正常就绪
             </span>
           </div>
-          <div style="display:flex; justify-content:space-between; align-items:center; font-size:10.5px; color:var(--text-dim);">
-            <span>${t('quotas.statsCycleUtcDay')}</span>
-            <span style="font-family:var(--mono);" ${acc.reset_time ? `data-reset-time="${escapeHtml(acc.reset_time)}"` : ''}>${t('quotas.resetLabel', { resetTxt: resetTxt })}</span>
+          <div class="quota-meter-bar">
+            <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
           </div>
         </div>
       `;
-      return metersHtml;
     }
 
     // WorkBuddy 紧凑视图：积分余量与到期徽标
@@ -202,7 +194,7 @@
               </span>
             </span>
           </div>
-          <div class="quota-meter-bar" style="height:4px;">
+          <div class="quota-meter-bar">
             <div class="quota-meter-fill ${cls}" style="width: ${pct}%"></div>
           </div>
         </div>
@@ -237,7 +229,7 @@
               </span>
             </span>
           </div>
-          <div class="quota-meter-bar" style="height:4px;">
+          <div class="quota-meter-bar">
             <div class="quota-meter-fill ${cls}" style="width: ${pct}%"></div>
           </div>
         </div>
@@ -296,7 +288,7 @@
                 <span style="font-family:var(--mono); font-weight:700; color:${col};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem })}</span>
               </span>
             </div>
-            <div class="quota-meter-bar" style="height:4px;">
+            <div class="quota-meter-bar">
               <div class="quota-meter-fill ${cls}" style="width: ${rem}%"></div>
             </div>
           </div>
@@ -370,7 +362,7 @@
                   <span style="font-family:var(--mono); font-weight:700; color:${col2};">${t('quotas.bucket.secondRemainingPercent', { rem2: rem2 })}</span>
                 </span>
               </div>
-              <div class="quota-meter-bar" style="height:4px;">
+              <div class="quota-meter-bar">
                 <div class="quota-meter-fill ${cls2}" style="width: ${rem2}%"></div>
               </div>
             </div>
@@ -390,7 +382,7 @@
                 <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
               </span>
             </div>
-            <div class="quota-meter-bar" style="height:4px;">
+            <div class="quota-meter-bar">
               <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
             </div>
           </div>
@@ -444,7 +436,7 @@
                   <span style="font-family:var(--mono); font-weight:700; color:${col2};">${t('quotas.bucket.secondRemainingPercent', { rem2: rem2 })}</span>
                 </span>
               </div>
-              <div class="quota-meter-bar" style="height:4px;">
+              <div class="quota-meter-bar">
                 <div class="quota-meter-fill ${cls2}" style="width: ${rem2}%"></div>
               </div>
             </div>
@@ -464,7 +456,7 @@
                 <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
               </span>
             </div>
-            <div class="quota-meter-bar" style="height:4px;">
+            <div class="quota-meter-bar">
               <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
             </div>
           </div>
@@ -499,7 +491,7 @@
               <span style="font-family:var(--mono); font-weight:700; color:${col1};">${t('quotas.bucket.firstRemainingPercent', { rem1: rem1 })}</span>
             </span>
           </div>
-          <div class="quota-meter-bar" style="height:4px;">
+          <div class="quota-meter-bar">
             <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
           </div>
         </div>
@@ -567,26 +559,6 @@
 
       const metersHtml = renderUpstreamCompactMeters(acc, buckets, health, cooldownCompactNotice, isCredentialBlocked);
 
-      const todayCount = Number.isFinite(acc.today_requests) ? acc.today_requests : 0;
-      const todayTokens = Number.isFinite(acc.today_tokens) ? acc.today_tokens : 0;
-      const fiveHTokens = Number.isFinite(acc.five_hour_tokens) ? acc.five_hour_tokens : 0;
-      const fiveHRequests = Number.isFinite(acc.five_hour_requests) ? acc.five_hour_requests : 0;
-
-      const localUsageHtml = `
-        <div class="compact-meter-wrap compact-local-usage" style="background:rgba(241, 245, 249, 0.65); border:1px solid rgba(186, 215, 242, 0.4); border-radius:6px; padding:4px 8px; justify-content:center; gap:2px;" title="${t('quotas.localUsageTooltip', { today: todayTokens.toLocaleString(LOCALE), todayReq: todayCount, fiveH: fiveHTokens.toLocaleString(LOCALE), fiveHReq: fiveHRequests })}">
-          <div style="display:flex; justify-content:space-between; align-items:center; font-size:10.5px;">
-            <span style="color:var(--text-muted); font-weight:600;">${t('quotas.localAuthenticToday')}</span>
-            <span style="font-family:var(--mono); font-weight:700; color:#0284c7;">
-              ${formatTokens(todayTokens)} <span style="font-size:9.5px; font-weight:normal; color:var(--text-dim);">Tokens (${todayCount}${t('quotas.timesUnit')})</span>
-            </span>
-          </div>
-          <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; color:var(--text-dim); font-family:var(--mono);">
-            <span>${t('quotas.localAuthentic5h')}</span>
-            <span style="color:#6366f1; font-weight:600;">${formatTokens(fiveHTokens)} <span style="font-size:9px; font-weight:normal; color:var(--text-dim);">Tokens (${fiveHRequests}${t('quotas.timesUnit')})</span></span>
-          </div>
-        </div>
-      `;
-
       const valInfo = acc.validation;
       const hasValidation = Boolean(valInfo && valInfo.status === 'pending');
       const safeValUrl = valInfo && valInfo.validation_url ? escapeHtml(valInfo.validation_url) : '';
@@ -597,26 +569,25 @@
         <div class="compact-account-row ${isDisabled ? 'is-disabled' : ''}" style="${hasValidation ? 'border-color:rgba(239,68,68,0.5); background:rgba(239,68,68,0.03);' : ''}">
           <div class="compact-left">
             <div class="provider-icon-badge ${brand.iconClass}" title="${escapeHtml(brand.name)}">${brand.iconSvg}</div>
-            <div style="display:flex; flex-direction:column; min-width:0; gap:2px;">
+            <div style="display:flex; flex-direction:column; min-width:0; gap:3px;">
               <div style="display:flex; align-items:center; gap:6px; flex-wrap:nowrap;">
-                <span class="provider-pill ${brand.pillClass}" style="font-size:10px; padding:1px 5px;">${escapeHtml(brand.name)}</span>
+                <span class="provider-pill ${brand.pillClass}" style="font-size:10px; padding:1.5px 6px;">${escapeHtml(brand.name)}</span>
                 <span class="priority-badge ${prioCls}">P${prio}</span>
-                <span style="font-weight:600; font-size:12.5px; color:var(--text-main); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(fullTip)}">
+                <span style="font-weight:600; font-size:13px; color:var(--text-main); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(fullTip)}">
                   ${escapeHtml(accountTitle)}
                 </span>
-                ${isDisabled ? `<span class="chip chip-red" style="font-size:10px; padding:1px 5px; line-height:1.2; white-space:nowrap; flex-shrink:0;">${t('quotas.disabledBadge')}</span>` : ''}
-                ${!isDisabled && (isBlocked || isPartialCooldown) ? `<span class="chip ${isPartialCooldown ? 'chip-orange' : 'chip-red'}" style="font-size:10px; padding:1px 5px; line-height:1.2; ${isPartialCooldown ? 'background:rgba(245,158,11,0.15); color:#d97706; border:1px solid rgba(245,158,11,0.3);' : ''}">${escapeHtml(health.label || (isPartialCooldown ? '部分模型冷却' : ''))}</span>` : ''}
-                ${hasValidation ? `<span class="chip chip-red" style="font-size:10px; padding:1px 5px; line-height:1.2; white-space:nowrap; flex-shrink:0; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); animation:pulse 2s infinite;">${t('quotas.validation.needGoogleBadge')}</span>` : ''}
+                ${isDisabled ? `<span class="chip chip-red" style="font-size:10px; padding:1.5px 6px; line-height:1.2; white-space:nowrap; flex-shrink:0;">${t('quotas.disabledBadge')}</span>` : ''}
+                ${!isDisabled && (isBlocked || isPartialCooldown) ? `<span class="chip ${isPartialCooldown ? 'chip-orange' : 'chip-red'}" style="font-size:10px; padding:1.5px 6px; line-height:1.2; ${isPartialCooldown ? 'background:rgba(245,158,11,0.15); color:#d97706; border:1px solid rgba(245,158,11,0.3);' : ''}">${escapeHtml(health.label || (isPartialCooldown ? '部分模型冷却' : ''))}</span>` : ''}
+                ${hasValidation ? `<span class="chip chip-red" style="font-size:10px; padding:1.5px 6px; line-height:1.2; white-space:nowrap; flex-shrink:0; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); animation:pulse 2s infinite;">${t('quotas.validation.needGoogleBadge')}</span>` : ''}
               </div>
-              <div style="font-size:10.5px; font-family:var(--mono); color:var(--text-dim);">
-                ID: ${acc.auth_index ? escapeHtml(String(acc.auth_index).slice(0, 12)) : '—'} ${isCredentialBlocked ? '' : `· <span class="account-card-plan ${planClass}" style="padding:0 5px; font-size:9.5px;">${escapeHtml(acc.plan_name || acc.plan_type)}</span>`}
+              <div style="font-size:11px; font-family:var(--mono); color:var(--text-dim);">
+                ID: ${acc.auth_index ? escapeHtml(String(acc.auth_index).slice(0, 12)) : '—'} ${isCredentialBlocked ? '' : `· <span class="account-card-plan ${planClass}" style="padding:1px 6px; font-size:10px;">${escapeHtml(acc.plan_name || acc.plan_type)}</span>`}
               </div>
             </div>
           </div>
 
           <div class="compact-mid">
             ${metersHtml}
-            ${localUsageHtml}
           </div>
 
           <div class="compact-right">
@@ -761,69 +732,56 @@
       return groupsHtml;
     }
 
-    // opencode 完整卡片：当日调用统计
+    // opencode 完整卡片：渠道接入配置与状态
     function renderUpstreamFullOpenCodeSection(acc) {
-      let quotaSectionHtml = '';
-      const todayCount = Number.isFinite(acc.today_requests) ? acc.today_requests : 0;
-      const todayTokens = Number.isFinite(acc.today_tokens) ? acc.today_tokens : 0;
-
-      quotaSectionHtml = `
-        <div class="model-group-section" style="margin-top:8px;">
-          <div class="model-group-title" style="display:flex; justify-content:space-between; align-items:center;">
-            <span>${t('quotas.opencode.todayCallStats')}</span>
-            <span style="font-size:11px; font-weight:normal; color:var(--text-dim);">${t('quotas.naturalDayCumulative')}</span>
+      return `
+        <div class="model-group-section" style="margin-top:10px;">
+          <div class="model-group-header">
+            <div class="model-group-title-wrap">
+              <span class="quota-pool-badge pool-opencode">OpenCode</span>
+              <span class="model-group-title">API 凭据直连渠道</span>
+            </div>
+            <span class="model-group-desc">按量实时路由接入</span>
           </div>
-          <div style="background:var(--bg-subtle, rgba(0,0,0,0.02)); border:1px solid var(--border-subtle, rgba(0,0,0,0.06)); border-radius:8px; padding:12px 14px; margin-top:6px; display:flex; justify-content:space-between; align-items:center;">
+          <div style="background:var(--bg-subtle, rgba(234,243,255,0.5)); border:1px solid var(--card-border-subtle, rgba(212,228,245,0.6)); border-radius:8px; padding:12px 16px; margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
             <div>
-              <div style="font-size:11px; color:var(--text-muted); margin-bottom:2px;">${t('quotas.todayTokenConsumption')}</div>
-              <div style="font-family:var(--mono); line-height:1.2;">
-                <span style="font-size:24px; font-weight:700; color:#0ea5e9;">${formatTokens(todayTokens)}</span>
-                <span style="font-size:12px; color:var(--text-dim); font-weight:normal;" title="${todayTokens.toLocaleString(LOCALE)} Tokens"> Tokens</span>
-              </div>
+              <div style="font-size:11px; color:var(--text-muted); margin-bottom:2px;">接入协议</div>
+              <div style="font-weight:650; color:var(--text-main); font-size:13px;">OpenCode Native Client</div>
             </div>
             <div style="text-align:right;">
-              <div style="font-size:11px; color:var(--text-muted); margin-bottom:2px;">${t('quotas.todayRequestCountLabel')}</div>
-              <div style="font-family:var(--mono); line-height:1.2;">
-                <span style="font-size:22px; font-weight:700; color:var(--text-main);">${todayCount}</span>
-                <span style="font-size:12px; color:var(--text-dim); font-weight:normal;"> ${t('quotas.timesUnit')}</span>
-              </div>
+              <div style="font-size:11px; color:var(--text-muted); margin-bottom:2px;">凭据通道状态</div>
+              <div style="font-weight:650; color:var(--success); font-size:13px;">健康就绪</div>
             </div>
           </div>
-          ${acc.raw_error ? `<div class="account-health-warning" style="color:var(--danger); margin-top:6px; font-size:11px;">${escapeHtml(acc.raw_error)}</div>` : ''}
+          ${acc.raw_error ? `<div class="account-health-warning" style="color:var(--danger); margin-top:8px; font-size:11px;">${escapeHtml(acc.raw_error)}</div>` : ''}
         </div>
       `;
-      return quotaSectionHtml;
     }
 
-    // openrouter 完整卡片：当日调用统计
+    // openrouter 完整卡片：渠道接入配置与状态
     function renderUpstreamFullOpenRouterSection(acc) {
-      let quotaSectionHtml = '';
-      const todayCount = Number.isFinite(acc.today_requests) ? acc.today_requests : 0;
-      const resetTxt = (acc.reset_time || acc.reset_countdown) ? escapeHtml(acc.reset_countdown || (formatResetAbs(acc.reset_time) + t('quotas.actionRefresh'))) : '00:00 UTC';
-
-      quotaSectionHtml = `
-        <div class="model-group-section" style="margin-top:8px;">
-          <div class="model-group-title" style="display:flex; justify-content:space-between; align-items:center;">
-            <span>${t('quotas.openrouter.modelCallStats')}</span>
-            <span style="font-size:11px; font-weight:normal; color:var(--text-dim);" ${acc.reset_time ? `data-reset-time="${escapeHtml(acc.reset_time)}"` : ''}>${t('quotas.resetLabel', { resetTxt: resetTxt })}</span>
+      return `
+        <div class="model-group-section" style="margin-top:10px;">
+          <div class="model-group-header">
+            <div class="model-group-title-wrap">
+              <span class="quota-pool-badge pool-openrouter">OpenRouter</span>
+              <span class="model-group-title">聚合模型路由渠道</span>
+            </div>
+            <span class="model-group-desc">API Key 凭据直连</span>
           </div>
-          <div style="background:var(--bg-subtle, rgba(0,0,0,0.02)); border:1px solid var(--border-subtle, rgba(0,0,0,0.06)); border-radius:8px; padding:12px 14px; margin-top:6px; display:flex; justify-content:space-between; align-items:center;">
+          <div style="background:var(--bg-subtle, rgba(234,243,255,0.5)); border:1px solid var(--card-border-subtle, rgba(212,228,245,0.6)); border-radius:8px; padding:12px 16px; margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
             <div>
-              <div style="font-size:11px; color:var(--text-muted); margin-bottom:2px;">${t('quotas.todayCalledLabel')}</div>
-              <div style="font-family:var(--mono); line-height:1.2;">
-                <span style="font-size:24px; font-weight:700; color:#3b82f6;">${todayCount}</span>
-                <span style="font-size:13px; color:var(--text-dim); font-weight:normal;"> ${t('quotas.timesUnit')}</span>
-              </div>
+              <div style="font-size:11px; color:var(--text-muted); margin-bottom:2px;">接入协议</div>
+              <div style="font-weight:650; color:var(--text-main); font-size:13px;">OpenRouter Multi-Model Gateway</div>
             </div>
             <div style="text-align:right;">
-              <div style="font-size:11px; color:var(--text-dim);">${t('quotas.statsRangeLabel')}</div>
-              <div style="font-size:11.5px; font-family:var(--mono); color:var(--text-muted); margin-top:2px;">UTC 00:00 - 24:00</div>
+              <div style="font-size:11px; color:var(--text-muted); margin-bottom:2px;">凭据通道状态</div>
+              <div style="font-weight:650; color:var(--success); font-size:13px;">健康就绪</div>
             </div>
           </div>
-          ${acc.raw_error ? `<div class="account-health-warning" style="color:var(--danger); margin-top:6px; font-size:11px;">${escapeHtml(acc.raw_error)}</div>` : ''}
+          ${acc.raw_error ? `<div class="account-health-warning" style="color:var(--danger); margin-top:8px; font-size:11px;">${escapeHtml(acc.raw_error)}</div>` : ''}
         </div>
       `;
-      return quotaSectionHtml;
     }
 
     // WorkBuddy 完整卡片：积分余量、消耗与资源包到期明细
@@ -870,7 +828,7 @@
             </div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; padding-top:8px; border-top:1px dashed var(--border-subtle, rgba(0,0,0,0.06)); font-size:11px;">
               <span style="color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;">
-                <span>⏱️ ${expInfo.isAllLongTerm ? t('quotas.points.quotaLabel') : (expInfo.hasMultiplePackages ? `${t('quotas.workbuddy.pointsBatchExpiry')} <span style="font-size:10px; opacity:0.8;">${t('quotas.workbuddy.packageCountSuffix', { packageCount: expInfo.packageCount })}</span>` : t('quotas.workbuddy.pointsExpiryAt'))}</span>
+                <span>${expInfo.isAllLongTerm ? t('quotas.points.quotaLabel') : (expInfo.hasMultiplePackages ? `${t('quotas.workbuddy.pointsBatchExpiry')} <span style="font-size:10px; opacity:0.8;">${t('quotas.workbuddy.packageCountSuffix', { packageCount: expInfo.packageCount })}</span>` : t('quotas.workbuddy.pointsExpiryAt'))}</span>
               </span>
               <span style="font-family:var(--mono); font-weight:600; color:${expInfo.color};" title="${escapeHtml(expInfo.tooltip)}">
                 ${expInfo.hasMultiplePackages && !expInfo.isAllLongTerm ? `${t('quotas.workbuddy.firstBatchLabel')} ` : ''}${escapeHtml(expInfo.shortText)}${expInfo.countdown ? ` <span style="font-weight:normal; font-size:10px; opacity:0.85;">(${escapeHtml(expInfo.countdown)})</span>` : ''}
@@ -918,48 +876,7 @@
       return quotaSectionHtml;
     }
 
-    // 完整卡片本地真实用量区块
-    function renderUpstreamLocalUsageCard(acc) {
-      let cardLocalUsageHtml = '';
-      const todayCount = Number.isFinite(acc.today_requests) ? acc.today_requests : 0;
-      const todayTokens = Number.isFinite(acc.today_tokens) ? acc.today_tokens : 0;
-      const fiveHTokens = Number.isFinite(acc.five_hour_tokens) ? acc.five_hour_tokens : 0;
-      const fiveHRequests = Number.isFinite(acc.five_hour_requests) ? acc.five_hour_requests : 0;
-
-      if (acc.provider !== 'opencode') {
-        cardLocalUsageHtml = `
-          <div class="account-card-local-usage" style="margin-top:12px; padding:10px 12px; background:var(--bg-subtle, #f1f5f9); border:1px solid var(--card-border-subtle, rgba(186, 215, 242, 0.45)); border-radius:8px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-              <span style="font-size:11px; font-weight:600; color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;">
-                <span>📊</span> ${t('quotas.localAuthenticUsageTitle')}
-              </span>
-              <span style="font-size:10px; color:var(--text-dim);" title="${t('quotas.localGroundTruthTip')}">
-                ${t('quotas.localGroundTruthTip')}
-              </span>
-            </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-              <div style="background:var(--card-bg, #fff); padding:6px 10px; border-radius:6px; border:1px solid var(--card-border-subtle, rgba(186, 215, 242, 0.3));">
-                <div style="font-size:10px; color:var(--text-dim); margin-bottom:2px;">${t('quotas.localAuthenticToday')}</div>
-                <div style="display:flex; align-items:baseline; gap:4px;">
-                  <span style="font-family:var(--mono); font-size:13.5px; font-weight:700; color:#0284c7;">${formatTokens(todayTokens)}</span>
-                  <span style="font-size:10px; color:var(--text-dim); font-family:var(--mono);">(${todayCount}${t('quotas.timesUnit')})</span>
-                </div>
-              </div>
-              <div style="background:var(--card-bg, #fff); padding:6px 10px; border-radius:6px; border:1px solid var(--card-border-subtle, rgba(186, 215, 242, 0.3));">
-                <div style="font-size:10px; color:var(--text-dim); margin-bottom:2px;">${t('quotas.localAuthentic5h')}</div>
-                <div style="display:flex; align-items:baseline; gap:4px;">
-                  <span style="font-family:var(--mono); font-size:13.5px; font-weight:700; color:#6366f1;">${formatTokens(fiveHTokens)}</span>
-                  <span style="font-size:10px; color:var(--text-dim); font-family:var(--mono);">(${fiveHRequests}${t('quotas.timesUnit')})</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        `;
-      }
-      return cardLocalUsageHtml;
-    }
-
-    // 完整卡片单卡：头部操作区 + 配额区 + 本地用量
+    // 完整卡片单卡：头部操作区 + 配额区
     function renderUpstreamFullCard(acc) {
       const safeFilename = escapeHtml(acc.filename || acc.id || '');
       const brand = getProviderBrand(acc.provider, acc.display_name || acc.name);
@@ -1044,7 +961,6 @@
             </div>
           ` : ''}
           ${quotaSectionHtml}
-          ${cardLocalUsageHtml}
         </div>
       `;
     }

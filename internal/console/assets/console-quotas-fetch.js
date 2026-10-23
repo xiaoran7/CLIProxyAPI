@@ -156,7 +156,7 @@
                   </div>
                 </div>
                 <div class="val-pending-msg">
-                  ⚠️ ${errSafe}
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;color:var(--danger);vertical-align:-1px;display:inline-block;margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>${errSafe}
                 </div>
                 <div style="font-size:12px; color:var(--text-muted); word-break:break-all; background:rgba(0,0,0,0.02); padding:8px 10px; border-radius:6px; border:1px dashed var(--card-border);">
                   <strong>${t('quotas.validation.officialLinkLabel')}</strong>

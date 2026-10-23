@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Console UI Aesthetic & Separation of Concerns Overhaul (`internal/console/`)**:
+  - **Complete Emoji Removal**: System emojis across the console UI (`console-i18n.js`, `console-quotas-fetch.js`, `console-theme-v2310.css`, `console.html`) replaced with clean typography or inline SVG vector icons.
+  - **Purged Usage Statistics from Upstream Credentials View**: Removed proxy usage statistics, today token consumption, 5-hour tokens, and request counters from both compact list rows and full cards in `tab-page-quotas`, enforcing strict separation of concerns between upstream credential health/quota management and analytics/log inspection.
+  - **Modernized Visual Hierarchy & High-Contrast Typography**: Enhanced provider pills and priority badges with high-contrast, accessible typography across both light and dark themes, eliminating washed-out pastel text on white backgrounds.
+  - **Tactile Meter Bars & Elevated Card Rows**: Standardized quota meters to 6px rounded capsules (`border-radius: 999px`) with smooth transitions; upgraded compact account rows to elevated card rows (`border-radius: 10px 10px 10px 3px`, subtle shadow lift on hover) in harmony with the Sakura Observatory theme.
 - **Antigravity Multi-Pool Quota Isolation & Bypass Routing (`sdk/cliproxy/auth/`, `internal/console/`)**:
   - **Independent Quota Pools**: Partitioned Google Antigravity models into three independent quota pools: `antigravityPoolGeminiStandard` (standard Gemini models), `antigravityPoolGemini4Argon` (Gemini 4 Argon models), and `antigravityPoolClaudeGPT` (third-party Claude and GPT models).
   - **Pool-Aware Selector Bypass**: Updated `isAuthBlockedForModel` and `isAuthBlockedByQuotaOrAuthForModel` in `sdk/cliproxy/auth/selector.go` so that when an Antigravity account's standard Gemini quota is exhausted, incoming requests for standard Gemini models automatically bypass this account and failover to other healthy accounts, while requests for models in unexhausted pools (Gemini 4 Argon, Claude, GPT) remain freely selectable and active.
