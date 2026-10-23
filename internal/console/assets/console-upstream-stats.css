@@ -1,0 +1,414 @@
+/**
+ * Gate Admin Console - Upstream credential usage and success-rate statistics cards
+ * 上游凭证用量与成功率统计卡片
+ */
+
+    /* ==========================================================================
+       上游凭证用量与成功率统计 (Upstream Stats) - Aozora UI 账号卡片网格体系
+       ========================================================================== */
+    .upstream-stats-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 16px;
+      padding: 18px 20px 24px;
+    }
+    @media (max-width: 640px) {
+      .upstream-stats-cards-grid {
+        grid-template-columns: 1fr;
+        padding: 12px;
+        gap: 12px;
+      }
+    }
+    .upstream-stat-card {
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid #cedff1;
+      border-radius: 12px;
+      padding: 16px 16px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 11px;
+      box-shadow: 0 3px 12px rgba(100, 143, 188, 0.08);
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+    }
+    .upstream-stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(100, 143, 188, 0.16);
+      border-color: #bad3ed;
+    }
+    .upstream-stat-card.is-disabled {
+      opacity: 0.68;
+      background: #fafcfe;
+      border-style: dashed;
+    }
+    .upstream-stat-card.is-deleted {
+      opacity: 0.82;
+      background: #fdfdfe;
+    }
+    .stat-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .stat-card-identity {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      min-width: 0;
+      flex: 1;
+    }
+    .stat-card-identity .provider-icon-badge {
+      width: 32px;
+      height: 32px;
+      flex-shrink: 0;
+      border-radius: 8px;
+    }
+    .stat-card-identity .provider-icon-badge svg {
+      width: 18px;
+      height: 18px;
+    }
+    .stat-card-title-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+      flex: 1;
+    }
+    .stat-card-title-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .stat-card-name {
+      font-weight: 700;
+      font-size: 13.5px;
+      color: var(--text-main);
+      max-width: 190px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .stat-card-sub-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .stat-card-id {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .status-tag {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      line-height: 1.2;
+    }
+    .status-tag.tag-disabled {
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--danger);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+    }
+    .status-tag.tag-deleted {
+      background: rgba(148, 163, 184, 0.15);
+      color: #64748b;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+    }
+    .stat-card-rate-badge {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-width: 62px;
+      padding: 4px 8px;
+      border-radius: 8px;
+      border: 1px solid;
+      flex-shrink: 0;
+    }
+    .stat-card-rate-val {
+      font-family: var(--mono);
+      font-weight: 800;
+      font-size: 13.5px;
+      line-height: 1.1;
+    }
+    .stat-card-rate-lbl {
+      font-size: 9.5px;
+      opacity: 0.85;
+      margin-top: 1px;
+    }
+    .stat-card-quota-box {
+      background: rgba(240, 246, 252, 0.7);
+      border: 1px solid #e1ecf6;
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .quota-box-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11.5px;
+    }
+    .quota-box-title {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .quota-box-countdown {
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+    .quota-progress-track {
+      width: 100%;
+      height: 5px;
+      background: rgba(0, 0, 0, 0.06);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .quota-progress-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+    .quota-weekly-row {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 1px;
+    }
+    .stat-card-metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      background: rgba(248, 250, 252, 0.65);
+      border: 1px solid #e6eff7;
+      border-radius: 8px;
+      padding: 8px 6px;
+    }
+    .stat-metric-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      text-align: center;
+    }
+    .stat-metric-cell:not(:last-child) {
+      border-right: 1px solid #e7eff6;
+    }
+    .metric-cell-label {
+      font-size: 10.5px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .metric-cell-value {
+      font-weight: 700;
+      font-size: 13px;
+      color: var(--text-main);
+      font-family: var(--mono);
+      line-height: 1.2;
+    }
+    .metric-cell-sub {
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .stat-card-period-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 10px;
+      background: #ffffff;
+      border: 1px dashed #d5e4f2;
+      border-radius: 6px;
+      font-size: 10.5px;
+      color: var(--text-dim);
+    }
+    .period-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .period-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+    }
+    .dot-5h { background: #0284c7; }
+    .dot-24h { background: #6366f1; }
+    .dot-all { background: #64748b; }
+    .period-item b {
+      color: var(--text-main);
+      font-family: var(--mono);
+    }
+    .stat-card-footer {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--text-dim);
+      padding-top: 6px;
+      border-top: 1px solid #edf4fa;
+    }
+    .footer-model-label {
+      flex-shrink: 0;
+      font-size: 10.5px;
+      color: var(--text-dim);
+    }
+    .footer-model-value {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      color: var(--text-main);
+      background: #f1f5f9;
+      padding: 1px 6px;
+      border-radius: 4px;
+      max-width: 240px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    /* ==========================================================================
+       已删除/历史留痕账号次级收纳折叠面板 (Aozora UI 弱化归档区)
+       ========================================================================== */
+    .deleted-accounts-wrapper {
+      padding: 0 20px 24px;
+    }
+    @media (max-width: 640px) {
+      .deleted-accounts-wrapper {
+        padding: 0 12px 16px;
+      }
+    }
+    .deleted-accounts-archive {
+      border: 1px dashed #cedff1;
+      border-radius: 10px;
+      background: rgba(248, 250, 252, 0.7);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+    .deleted-accounts-archive[open] {
+      background: #ffffff;
+      border-style: solid;
+      border-color: #bad3ed;
+      box-shadow: 0 4px 16px rgba(100, 143, 188, 0.08);
+    }
+    .deleted-accounts-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 9px 16px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 12px;
+      color: var(--text-muted);
+      list-style: none;
+    }
+    .deleted-accounts-summary::-webkit-details-marker {
+      display: none;
+    }
+    .deleted-accounts-summary:hover {
+      background: rgba(238, 244, 251, 0.5);
+      color: var(--text-main);
+    }
+    .deleted-summary-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .deleted-archive-icon {
+      width: 14px;
+      height: 14px;
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+    .deleted-summary-title {
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .deleted-summary-badge {
+      font-size: 11px;
+      background: #e2e8f0;
+      color: #64748b;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-family: var(--mono);
+      font-weight: 600;
+    }
+    .deleted-summary-desc {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .deleted-summary-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+    .deleted-chevron {
+      width: 14px;
+      height: 14px;
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .deleted-accounts-archive[open] .deleted-chevron {
+      transform: rotate(180deg);
+    }
+    .deleted-accounts-body {
+      padding: 0 16px 14px;
+      border-top: 1px solid #edf4fa;
+    }
+    .deleted-accounts-table-wrap {
+      overflow-x: auto;
+      margin-top: 8px;
+    }
+    .deleted-accounts-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+    }
+    .deleted-accounts-table th {
+      text-align: left;
+      padding: 8px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-dim);
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
+      background: #f8fafc;
+    }
+    .deleted-accounts-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #f1f5f9;
+      color: var(--text-main);
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+    .deleted-accounts-table tr:last-child td {
+      border-bottom: none;
+    }
+    .deleted-accounts-table tr:hover td {
+      background: #f8fafc;
+    }
+    .deleted-row-name {
+      font-weight: 600;
+      color: #475569;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .deleted-row-id {
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--text-dim);
+    }

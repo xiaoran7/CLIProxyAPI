@@ -1,0 +1,213 @@
+/**
+ * Gate Admin Console - Gate x Beszel monitoring surfaces over the anime city scene
+ * Gate x Beszel 监控表面与城市场景
+ */
+
+    /* Gate × Beszel: readable monitoring surfaces over a quiet anime city scene. */
+    :root {
+      --bg: #f3f8fe;
+      --bg-subtle: #eaf3fb;
+      --card-bg: #ffffff;
+      --card-bg-hover: #f8fbff;
+      --card-border: #dce8f4;
+      --card-border-subtle: #e9f0f7;
+      --card-border-hover: #9bc8ed;
+      --text-main: #172b45;
+      --text-muted: #4e627c;
+      --text-dim: #667b96;
+      --accent: #147dc5;
+      --accent-hover: #0968ab;
+      --accent-muted: #e6f3fe;
+      --success: #087d60;
+      --warning: #a96608;
+      --danger: #c33551;
+      --radius-sm: 8px;
+      --radius-md: 11px;
+      --radius-lg: 15px;
+    }
+    body {
+      background: linear-gradient(180deg, #eaf5ff 0, #f3f8fe 520px, #f3f8fe 100%);
+      color: var(--text-main);
+      padding: 0 24px 72px;
+      font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .container { max-width: 1680px; position: relative; }
+    header {
+      min-height: 84px;
+      padding: 16px 6px;
+      margin: 0 0 12px;
+      border-bottom: 1px solid var(--card-border);
+      background: transparent;
+    }
+    .brand-icon {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      background: #e7f3ff;
+      border-color: #b9dcf6;
+      box-shadow: 0 2px 8px rgba(37, 108, 169, .08);
+    }
+    .brand-icon img { width: 44px; height: 44px; object-fit: contain; }
+    .title-group h1 { font-size: 22px; font-weight: 700; letter-spacing: -.035em; }
+    .title-desc { font-size: 12px; color: var(--text-muted); }
+    .version-tag { color: var(--text-muted); background: #eaf3fb; border-color: var(--card-border); }
+    .header-actions { justify-content: flex-end; gap: 8px; }
+    .btn { min-height: 34px; font-family: inherit; font-weight: 600; box-shadow: 0 1px 2px rgba(20, 81, 138, .08); }
+    .btn-secondary { box-shadow: none; }
+    .btn-secondary:hover { color: var(--accent); }
+    .btn:focus-visible, .dropdown-trigger:focus-visible, .nav-tab-btn:focus-visible,
+    .segmented-tabs button:focus-visible, .page-btn:focus-visible, .panel-fold-btn:focus-visible,
+    .status-badge:focus-visible, .form-control:focus-visible, .logs-search-input:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .polling-capsule { min-height: 36px; background: rgba(255,255,255,.92); }
+    .countdown-bg { stroke: #d7e6f3; }
+    .status-badge { min-height: 36px; }
+    .scene-banner {
+      min-height: 192px;
+      margin-bottom: 15px;
+      padding: 26px 32px;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid #c9e2f5;
+      border-radius: 19px;
+      background: linear-gradient(90deg, rgba(238,248,255,.96) 0%, rgba(237,247,255,.83) 34%, rgba(237,247,255,.08) 74%), url('/console/assets/sakura-gate-v2.webp') right 31% / auto 540px no-repeat, #ddecf9;
+      box-shadow: 0 9px 30px rgba(50, 115, 171, .09);
+    }
+    .scene-banner::after {
+      content: '';
+      position: absolute;
+      inset: auto 0 0;
+      height: 36px;
+      background: linear-gradient(transparent, rgba(240,247,254,.65));
+      pointer-events: none;
+    }
+    .scene-banner-copy { position: relative; z-index: 1; max-width: 560px; }
+    .scene-eyebrow { display: inline-flex; gap: 7px; align-items: center; color: #3477a7; font-size: 11px; font-weight: 800; letter-spacing: .17em; text-transform: uppercase; }
+    .scene-eyebrow::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #f398b3; box-shadow: 0 0 0 4px rgba(243,152,179,.18); }
+    .scene-banner h2 { margin: 14px 0 5px; color: #143d68; font-size: clamp(24px, 2.4vw, 34px); font-weight: 750; letter-spacing: -.045em; line-height: 1.22; }
+    .scene-banner p { color: #496984; font-size: 13px; font-weight: 550; }
+    body[data-active-tab="keys"] .scene-banner,
+    body[data-active-tab="logs"] .scene-banner,
+    body[data-active-tab="errors"] .scene-banner { min-height: 92px; padding: 15px 26px; background-size: auto, auto 400px; }
+    body[data-active-tab="keys"] .scene-banner h2,
+    body[data-active-tab="logs"] .scene-banner h2,
+    body[data-active-tab="errors"] .scene-banner h2 { margin: 4px 0 0; font-size: 22px; }
+    body[data-active-tab="keys"] .scene-banner p,
+    body[data-active-tab="logs"] .scene-banner p,
+    body[data-active-tab="errors"] .scene-banner p { display: none; }
+    .nav-tabs-bar { gap: 3px; margin: 0 0 22px; padding: 0 2px 1px; scrollbar-width: thin; }
+    .nav-tab-btn { min-height: 47px; padding: 10px 15px; color: var(--text-muted); }
+    .nav-tab-btn.active { color: var(--accent); background: transparent; }
+    .nav-tab-btn.active::after { bottom: -2px; height: 3px; box-shadow: none; }
+    .panel, .summary-card, .member-info-card {
+      border-color: var(--card-border);
+      box-shadow: 0 2px 12px rgba(43, 97, 151, .045);
+    }
+    .panel, .summary-card, .member-info-card { background: rgba(255,255,255,.96); }
+    .panel-header { padding: 18px 20px; }
+    .panel-title { font-size: 16px; font-weight: 650; letter-spacing: -.015em; }
+    .panel-subtitle { color: var(--text-muted); line-height: 1.5; margin-top: 4px; }
+    .summary-card { padding: 18px; }
+    .summary-card:hover { box-shadow: 0 3px 14px rgba(43, 97, 151, .08); transform: none; }
+    .summary-value { font-size: clamp(23px, 2vw, 30px); }
+    .summary-footer { color: var(--text-muted); }
+    .status-card, .account-card, .compact-account-row { border-color: var(--card-border); box-shadow: none; }
+    .status-grid { grid-template-columns: repeat(auto-fill, minmax(285px, 1fr)); }
+    .upstream-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+    .status-card:hover, .account-card:hover, .compact-account-row:hover { border-color: var(--card-border-hover); }
+    .dropdown-item { min-height: 32px; }
+    .dropdown-menu { box-shadow: 0 14px 32px rgba(46, 87, 128, .15); scrollbar-color: #b9cadb transparent; }
+    .dropdown-menu::-webkit-scrollbar-thumb { background: #b9cadb; }
+    .provider-pill-antigravity { color: #6545a8; }
+    .provider-pill-codex { color: #087d60; }
+    .provider-pill-claude { color: #9a5b0b; }
+    .provider-pill-stepfun { color: #0284c7; }
+    .provider-pill-workbuddy { color: #0d7a42; }
+    .provider-pill-qoder { color: #d95800; }
+    .provider-pill-custom { color: #0284c7; }
+    .priority-badge { color: #8d5708; }
+    .priority-badge.p-high { color: #b22f39; }
+    .priority-badge.p-normal { color: #1b66a6; }
+    .plan-pro { color: #7941ac; }
+    .plan-plus { color: #087d60; }
+    .model-cost { color: var(--success); }
+    th { background: #f5f9fd; color: var(--text-muted); font-weight: 600; }
+    td { color: var(--text-main); }
+    @keyframes modalPop {
+      from { opacity: 0; transform: translateY(12px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .modal-backdrop {
+      background: rgba(18, 38, 62, 0.45);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    .modal {
+      max-height: min(90vh, 850px);
+      overflow-y: auto;
+      border: 1px solid rgba(206, 223, 241, 0.85);
+      border-radius: 16px;
+      box-shadow: 0 24px 48px -6px rgba(24, 54, 89, 0.16), 0 8px 16px rgba(24, 54, 89, 0.08);
+      animation: modalPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .form-control, .logs-search-input { font-family: inherit; }
+    .form-control:focus { background: #fff; }
+    .btn-activate-5h { background: #eaf5fd; border-color: #b8dff7; color: #07598d; box-shadow: none; }
+    .btn-activate-5h:hover, .btn-activate-5h.btn-mini:hover { background: #dcedfa; color: #07598d; box-shadow: none; }
+    .auth-required-panel { display: none; max-width: 560px; margin: 68px auto; padding: 38px; text-align: center; }
+    .auth-required-panel h2 { font-size: 22px; letter-spacing: -.03em; margin-bottom: 9px; }
+    .auth-required-panel p { color: var(--text-muted); font-size: 13px; line-height: 1.7; margin-bottom: 24px; }
+    body.needs-auth .auth-required-panel { display: block; }
+    body.needs-auth .nav-tabs-bar, body.needs-auth .status-panel,
+    body.needs-auth #upstream-panel, body.needs-auth #upstream-stats-panel,
+    body.needs-auth #member-quota-panel,
+    body.needs-auth #btn-create-key, body.needs-auth #btn-prices,
+    body.needs-auth .header-actions .polling-capsule { display: none !important; }
+    @media (max-width: 1100px) {
+      header { align-items: flex-start; }
+      .header-actions { justify-content: flex-start; }
+      .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .scene-banner { background-size: auto, auto 470px; }
+    }
+    @media (max-width: 640px) {
+      body { padding: 0 12px 48px; }
+      header { padding: 16px 2px; }
+      .scene-banner { min-height: 150px; padding: 22px 18px; background-image: linear-gradient(90deg, rgba(238,248,255,.98) 0%, rgba(238,248,255,.90) 55%, rgba(238,248,255,.12) 100%), url('/console/assets/sakura-gate-mobile.webp'); background-size: auto, auto 370px; background-position: center, right 27%; }
+      .scene-banner-copy { max-width: 70%; }
+      .scene-banner h2 { margin-top: 11px; font-size: clamp(19px, 5.3vw, 25px); }
+      .scene-banner p { font-size: 11px; line-height: 1.45; }
+      .scene-eyebrow { font-size: 9px; }
+      body[data-active-tab="keys"] .scene-banner,
+      body[data-active-tab="logs"] .scene-banner,
+      body[data-active-tab="errors"] .scene-banner { min-height: 82px; padding: 13px 17px; background-size: auto, auto 320px; }
+      body[data-active-tab="keys"] .scene-banner h2,
+      body[data-active-tab="logs"] .scene-banner h2,
+      body[data-active-tab="errors"] .scene-banner h2 { font-size: 17px; }
+      .header-actions { width: 100%; gap: 7px; }
+      .header-actions .btn { flex: 0 1 auto; }
+      .header-actions .polling-capsule { order: 2; }
+      .header-actions #quota-probe-badge { order: 3; }
+      .title-desc { max-width: 280px; line-height: 1.4; }
+      .nav-tabs-bar { margin-bottom: 16px; }
+      .panel-header { padding: 15px; }
+      .panel-header > div { min-width: 0; }
+      .panel-header > .segmented-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
+      .panel-subtitle { font-size: 11.5px; }
+      .status-grid, .upstream-grid { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+      .upstream-compact-list { padding: 12px; }
+      .compact-account-row { flex-wrap: wrap; }
+      .compact-mid { flex-basis: 100%; flex-wrap: wrap; }
+      .logs-controls { padding: 12px; }
+      .logs-search-input { max-width: 100%; }
+      .pagination-bar { flex-wrap: wrap; }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .summary-card { min-width: 0; }
+      .summary-header { flex-wrap: wrap; gap: 5px; }
+      .summary-value { overflow-wrap: anywhere; }
+      .auth-required-panel { margin: 32px auto; padding: 30px 22px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+    }

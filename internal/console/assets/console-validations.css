@@ -1,0 +1,96 @@
+/**
+ * Gate Admin Console - Google validation zone styling
+ * Google 验证专区样式
+ */
+
+    /* Google 验证专区样式 */
+    .val-pending-card {
+      background: #ffffff;
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      border-radius: var(--radius-md);
+      padding: 16px 18px;
+      box-shadow: 0 4px 16px rgba(239, 68, 68, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+    .val-pending-card:hover {
+      box-shadow: 0 6px 20px rgba(239, 68, 68, 0.14);
+      border-color: rgba(239, 68, 68, 0.6);
+    }
+    .val-pending-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .val-pending-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .val-pending-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+    .val-pending-msg {
+      background: rgba(239, 68, 68, 0.05);
+      border-left: 3px solid #ef4444;
+      padding: 8px 12px;
+      border-radius: 0 4px 4px 0;
+      font-size: 12px;
+      color: #991b1b;
+      font-family: var(--mono);
+      word-break: break-all;
+    }
+    .val-pending-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .val-btn-go {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: #ffffff !important;
+      font-weight: 700;
+      padding: 7px 16px;
+      border-radius: var(--radius-sm);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12.5px;
+      box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+      transition: all 0.15s ease;
+    }
+    .val-btn-go:hover {
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
+    }
+    .val-empty-box {
+      padding: 36px 20px;
+      text-align: center;
+      background: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      border-radius: var(--radius-md);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .val-empty-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .val-empty-desc {
+      font-size: 12px;
+      color: var(--text-dim);
+      max-width: 440px;
+      line-height: 1.5;
+    }

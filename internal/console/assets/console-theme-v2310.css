@@ -1,0 +1,130 @@
+/**
+ * Gate Admin Console - v2.3.10 Sakura Observatory: one spatial language across the console
+ * v2.3.10 樱花天文台：全控制台统一空间语言
+ */
+
+    /* v2.3.10 — Sakura Observatory: one spatial language across the whole console. */
+    :root {
+      --bg: #f5f8ff;
+      --bg-subtle: #eaf3ff;
+      --card-border: #d4e4f5;
+      --card-border-subtle: #e4edf8;
+      --card-border-hover: #a9c9ee;
+      --text-main: #1b365b;
+      --text-muted: #5e7798;
+      --text-dim: #849bb5;
+      --accent: #3e77bd;
+      --accent-hover: #2d65ae;
+      --accent-muted: #e7f1ff;
+      --success: #219878;
+      --danger: #d95e83;
+      --warning: #be8546;
+      --sakura: #e88eae;
+      --sakura-line: #f6cbdc;
+    }
+    body { background: var(--bg); color: var(--text-main); }
+    .app-shell { grid-template-columns: 220px minmax(0, 1fr); }
+    .app-sidebar { overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #cbddeb transparent; background: linear-gradient(180deg, #fbfdff 0%, #f0f6ff 68%, #e8f3ff 100%); border-right-color: #cedff2; }
+    .app-sidebar::-webkit-scrollbar { width: 4px; }
+    .app-sidebar::-webkit-scrollbar-thumb { background: #cbddeb; border-radius: 4px; }
+    .app-sidebar::after { content: ''; position: absolute; left: -22px; right: -35px; bottom: 32px; height: 190px; background: url('/console/assets/sakura-observatory-v3.webp') left bottom / auto 210px no-repeat; opacity: .45; pointer-events: none; }
+    .app-sidebar > * { position: relative; z-index: 1; }
+    .app-sidebar .brand-wrap { border-bottom-color: #dce9f7; }
+    .app-sidebar .brand-icon { border-color: #f1c3d5; background: #fff7fb; }
+    .app-sidebar .title-group h1 { color: #18375d; font-weight: 780; letter-spacing: -.04em; }
+    .app-sidebar .version-tag { background: #fcebf3; color: #a95478; border-color: #f7d3e2; }
+    .sidebar-section-label { color: #a283a4; }
+    .sidebar-section-divider {
+      height: 1px;
+      margin: 6px 10px;
+      background: linear-gradient(90deg, rgba(162, 131, 164, 0.05), rgba(162, 131, 164, 0.28) 40%, rgba(162, 131, 164, 0.05));
+    }
+    .app-sidebar .nav-tab-btn { border: 1px solid transparent; color: #557194; min-height: 38px; padding: 8px 11px; }
+    .app-sidebar .nav-tab-btn:hover { background: #f7fbff; border-color: #dceafb; }
+    .app-sidebar .nav-tab-btn.active { color: #235d9f; background: linear-gradient(90deg, #e8f2ff, #f8fbff); border-color: #bfd9f5; box-shadow: inset 3px 0 var(--sakura); }
+    .app-sidebar .nav-tab-btn.active .tab-badge { background: #fff; color: #3974b8; }
+    .sidebar-footer { min-height: 68px; align-items: flex-end; border-top-color: #d4e5f5; color: #4d739c; font-weight: 700; }
+    .sidebar-footer-dot { background: var(--sakura); box-shadow: 0 0 0 3px #fce6ef; }
+    .workspace { position: relative; isolation: isolate; overflow: hidden; }
+    .workspace-scene { position: absolute; z-index: -1; top: 58px; left: 0; right: 0; height: 610px; background: url('/console/assets/sakura-observatory-v3.webp') right -150px / cover no-repeat; -webkit-mask-image: linear-gradient(#000 0%, #000 72%, transparent 100%); mask-image: linear-gradient(#000 0%, #000 72%, transparent 100%); pointer-events: none; }
+    .workspace-topbar { position: relative; z-index: 2; background: #ffffffed; border-bottom-color: #d7e5f4; }
+    .workspace-topbar-location { color: #2c527f; }
+    .workspace-topbar #btn-create-key { background: #f6e9f0; color: #a74e73; border-color: #f0c8d9; }
+    .workspace-topbar #btn-create-key:hover { background: #fbe0ed; }
+    .scene-banner { display: none !important; }
+    .page-intro { display: none !important; min-height: 0 !important; height: 0 !important; margin: 0 !important; padding: 0 !important; }
+    body[data-active-tab="quotas"]:not(.member-mode):not(.needs-auth) .page-intro {
+      display: flex !important;
+      min-height: 0 !important;
+      height: auto !important;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin: 0 0 12px 0 !important;
+      padding: 0 !important;
+    }
+    .page-intro > div:first-child { display: none !important; }
+    .page-eyebrow { display: none !important; }
+    .page-intro h2, .page-intro p, #page-title, #page-description { display: none !important; }
+    .page-intro-actions { padding-bottom: 0; }
+    .operations-strip { position: relative; z-index: 1; grid-template-columns: repeat(2, minmax(0,1fr)); width: calc(100% - 355px); gap: 9px; padding: 0; background: transparent; border: 0; border-radius: 0; overflow: visible; }
+    .operation-metric { position: relative; min-height: 92px; padding: 15px 17px 13px; background: #ffffffeb; border: 1px solid #cfdef0 !important; border-radius: 11px 11px 11px 3px; box-shadow: 0 3px 10px #7ca7d010; }
+    .operation-metric::before { content: ''; position: absolute; top: -1px; left: 15px; width: 36px; height: 3px; background: var(--sakura); border-radius: 0 0 4px 4px; }
+    .operation-metric:nth-child(even)::before { background: #76aee7; }
+    .operation-label { color: #6681a0; font-size: 11px; }
+    .operation-value { color: #203f69; font-size: 25px; letter-spacing: -.035em; }
+    .quota-workspace { gap: 15px; }
+    .panel, .summary-card, .member-info-card { border: 1px solid #cedff1; background: #ffffffef; box-shadow: 0 3px 13px #648fbc0c; }
+    .panel { border-radius: 13px 13px 13px 4px; }
+    .panel-header { background-color: #f9fcff; background-image: linear-gradient(90deg, #f9fcff 0%, #f9fcfff2 65%, #f9fcffc9 100%), url('/console/assets/sakura-cityline-v3.webp'); background-position: center, right center; background-size: auto, auto 155px; background-repeat: no-repeat; border-bottom: 1px solid #d9e8f5; border-left: 3px solid var(--sakura-line); padding: 17px 18px; }
+    .panel-title { color: #21466f; font-weight: 740; }
+    .panel-title > svg { color: #6998cd !important; }
+    .panel-subtitle { color: #738aa4; }
+    .quota-workspace .status-grid, body.member-mode .quota-workspace .status-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px; }
+    .quota-workspace .status-grid > .status-card { flex: 1 1 380px; min-width: min(100%, 340px); }
+    .quota-workspace .status-grid > .status-empty { flex: 1 1 100%; }
+    .status-card { position: relative; border-color: #d4e3f3; border-radius: 10px 10px 10px 3px; background: #fff; padding: 14px 15px; overflow: hidden; }
+    .status-card::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 3px; background: #8dbbea; }
+    .status-card:has(.status-dot.err)::before { background: #e78da9; }
+    .status-card:has(.status-dot.warn)::before { background: #efbd75; }
+    .status-card-name { color: #284a70; }
+    .status-req-badge { border-color: #d8e5f4; background: #f3f8ff; color: #6683a2; }
+    .status-metric-box { background: #f4f8fe; border-color: #e1ebf7; }
+    .status-metric-value { color: #1c3c64; }
+    .status-availability-value { color: #148b73; }
+    .heartbeat-bars { height: 30px; padding: 5px 0; border-top: 1px solid #edf3fa; border-bottom: 1px solid #edf3fa; }
+    .heartbeat-bars i { border-radius: 2px 2px 0 0; }
+    .heartbeat-bars i.warn, .heartbeat-bars i.err { box-shadow: none; }
+    .status-empty, .upstream-empty-state { color: #6682a2; background: #f9fbff; border: 1px dashed #cbdff3; border-radius: 10px; }
+    .status-empty::before, .upstream-empty-state::before { content: '✿'; display: block; color: var(--sakura); font-size: 20px; line-height: 1; margin-bottom: 8px; }
+    #upstream-panel > .panel-header { border-left-color: #b9d6f4; }
+    #upstream-panel > .panel-header > div:last-child { border-top-color: #e1edf8; }
+    #upstream-panel .compact-account-row { background: transparent; border-bottom-color: #e3edf7; }
+    #upstream-panel .compact-account-row:nth-child(even) { background: #f7faff; }
+    #upstream-panel .compact-account-row:hover { background: #edf5ff; }
+    .account-card { border-color: #d6e5f5; border-radius: 10px 10px 10px 3px; }
+    .btn { font-family: inherit; font-weight: 650; }
+    .btn:focus-visible, .nav-tab-btn:focus-visible, .segmented-tabs button:focus-visible, .panel-fold-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    th { background: #f1f7ff; color: #526f91; }
+    .summary-card { border-radius: 11px 11px 11px 3px; border-top: 3px solid #eeb4cb; }
+    .summary-card:nth-child(even) { border-top-color: #9ac4ef; }
+    .auth-required-panel { background: #ffffffed; }
+    @media (max-width: 1240px) { .operations-strip { width: 100%; } }
+    @media (max-width: 900px) {
+      .app-sidebar { width: 260px; }
+      .workspace-scene { height: 440px; background-size: auto 440px; background-position: right top; }
+      .page-intro { min-height: 0 !important; }
+    }
+    @media (max-width: 640px) {
+      .workspace-scene { height: 240px; opacity: .55; background-position: 63% top; background-size: auto 240px; }
+      .page-intro { min-height: 0 !important; padding: 0 !important; }
+      .page-intro h2, .page-intro p, #page-title, #page-description { display: none !important; }
+      .page-intro > div:first-child { display: none !important; }
+      .page-intro-actions { padding-bottom: 0; }
+      .operations-strip { gap: 7px; }
+      .operation-metric { min-height: 80px; padding: 11px 12px; }
+      .operation-value { font-size: 20px; }
+      .quota-workspace .status-grid > .status-card { min-width: 100%; }
+      .panel-header { padding: 14px 12px; }
+    }
+
