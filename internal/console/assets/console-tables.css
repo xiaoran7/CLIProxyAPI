@@ -364,6 +364,16 @@
     .chip-green { background: var(--success-bg); color: var(--success); }
     .chip-yellow { background: var(--warning-bg); color: var(--warning); }
     .chip-red { background: var(--danger-bg); color: var(--danger); }
+    .chip-orange {
+      background: rgba(245, 158, 11, 0.12);
+      color: #d97706;
+      border: 1px solid rgba(245, 158, 11, 0.28);
+    }
+    .theme-dark .chip-orange {
+      background: rgba(245, 158, 11, 0.18);
+      color: #fbbf24;
+      border-color: rgba(251, 191, 36, 0.32);
+    }
     .chip-gray { background: rgba(186, 215, 242, 0.35); color: var(--text-dim); }
     .chip-purple {
       background: rgba(168, 85, 247, 0.12);

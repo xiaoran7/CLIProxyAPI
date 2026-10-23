@@ -352,43 +352,75 @@
     .quota-pool-badge {
       display: inline-flex;
       align-items: center;
-      font-size: 9.5px;
+      justify-content: center;
+      font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      padding: 1px 5px;
-      border-radius: 3px;
-      line-height: 1.2;
+      padding: 2px 6.5px;
+      border-radius: 4px;
+      line-height: 1.25;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .quota-pool-badge.pool-gemini {
       background: rgba(14, 165, 233, 0.12);
       color: #0284c7;
-      border: 1px solid rgba(14, 165, 233, 0.3);
+      border: 1px solid rgba(14, 165, 233, 0.28);
+    }
+    .theme-dark .quota-pool-badge.pool-gemini {
+      color: #38bdf8;
+      background: rgba(14, 165, 233, 0.18);
+      border-color: rgba(56, 189, 248, 0.32);
     }
     .quota-pool-badge.pool-gemini4 {
       background: rgba(139, 92, 246, 0.12);
       color: #7c3aed;
-      border: 1px solid rgba(139, 92, 246, 0.3);
+      border: 1px solid rgba(139, 92, 246, 0.28);
+    }
+    .theme-dark .quota-pool-badge.pool-gemini4 {
+      color: #a78bfa;
+      background: rgba(139, 92, 246, 0.18);
+      border-color: rgba(167, 139, 250, 0.32);
     }
     .quota-pool-badge.pool-claude {
       background: rgba(217, 119, 6, 0.12);
       color: #d97706;
-      border: 1px solid rgba(217, 119, 6, 0.3);
+      border: 1px solid rgba(217, 119, 6, 0.28);
+    }
+    .theme-dark .quota-pool-badge.pool-claude {
+      color: #fbbf24;
+      background: rgba(245, 158, 11, 0.18);
+      border-color: rgba(251, 191, 36, 0.32);
     }
     .quota-pool-badge.pool-codex {
       background: rgba(16, 185, 129, 0.12);
       color: #059669;
-      border: 1px solid rgba(16, 185, 129, 0.3);
+      border: 1px solid rgba(16, 185, 129, 0.28);
+    }
+    .theme-dark .quota-pool-badge.pool-codex {
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.18);
+      border-color: rgba(52, 211, 153, 0.32);
     }
     .quota-pool-badge.pool-qoder {
       background: rgba(139, 92, 246, 0.12);
       color: #7c3aed;
-      border: 1px solid rgba(139, 92, 246, 0.3);
+      border: 1px solid rgba(139, 92, 246, 0.28);
+    }
+    .theme-dark .quota-pool-badge.pool-qoder {
+      color: #a78bfa;
+      background: rgba(139, 92, 246, 0.18);
+      border-color: rgba(167, 139, 250, 0.32);
     }
     .quota-pool-badge.pool-workbuddy {
       background: rgba(59, 130, 246, 0.12);
       color: #2563eb;
-      border: 1px solid rgba(59, 130, 246, 0.3);
+      border: 1px solid rgba(59, 130, 246, 0.28);
+    }
+    .theme-dark .quota-pool-badge.pool-workbuddy {
+      color: #60a5fa;
+      background: rgba(59, 130, 246, 0.18);
+      border-color: rgba(96, 165, 250, 0.32);
     }
     .quota-reset-badge {
       display: inline-flex;
