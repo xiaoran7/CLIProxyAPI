@@ -37,7 +37,7 @@ func splitProviderPrefix(model string) (prefix, targetProvider, targetRealm, rem
 	case "workbuddy", "workbuddy-intl", "wb":
 		return cand, "workbuddy", "intl", rem
 	case "workbuddy-cn", "codebuddy", "wb-cn":
-		return cand, "workbuddy", "cn", rem
+		return cand, "workbuddy-cn", "cn", rem
 	case "opencode", "opencode-zen", "zen":
 		return cand, "opencode", "", rem
 	case "antigravity", "ag":

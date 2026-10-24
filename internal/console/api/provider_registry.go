@@ -188,19 +188,20 @@ var InitialProviderRegistry = []SeedProvider{
 	},
 	{
 		ProviderKey: "zcode-cn",
-		Label:       "ZCode (智谱 BigModel)",
+		Label:       "BigModel (智谱开放平台)",
 		ModelPatterns: []PatternItem{
 			{P: "zcode-cn", Anchor: ""},
 		},
 		AuthPatterns: []PatternItem{
 			{P: "zcode-cn", Anchor: ""},
 			{P: "zcode-bigmodel", Anchor: ""},
+			{P: "bigmodel", Anchor: ""},
 		},
 		SortOrder: 76,
 	},
 	{
 		ProviderKey: "zcode",
-		Label:       "ZCode GLM 编码套餐",
+		Label:       "ZCode (Z.ai 国际版)",
 		ModelPatterns: []PatternItem{
 			{P: "-trial", Anchor: ""},
 			{P: "zcode", Anchor: ""},

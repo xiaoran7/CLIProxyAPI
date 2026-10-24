@@ -140,12 +140,115 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 			creditsMap["free"] = true
 		}
 
-		var wbProvider string
-		if creditsMap != nil {
-			_, wbProvider = registry.DetectWorkBuddyModelRealm(modelID)
+		cleanBaseModel := registry.TrimWorkBuddyPrefixes(modelID)
+
+		// Determine registered providers for this model to decouple multi-realm WorkBuddy models
+		providers := modelRegistry.GetModelProviders(cleanBaseModel)
+		if len(providers) == 0 {
+			providers = modelRegistry.GetModelProviders(modelID)
 		}
 
-		cleanBaseModel := registry.TrimWorkBuddyPrefixes(modelID)
+		hasWBIntl := false
+		hasWBCN := false
+		hasNonWorkBuddy := false
+		var nonWBOwnedBy string
+
+		for _, p := range providers {
+			pLower := strings.ToLower(strings.TrimSpace(p))
+			switch pLower {
+			case "workbuddy-intl":
+				hasWBIntl = true
+			case "workbuddy-cn", "codebuddy", "copilot-tencent":
+				hasWBCN = true
+			case "workbuddy":
+				if strings.HasPrefix(strings.ToLower(cleanBaseModel), "hy") {
+					hasWBCN = true
+				} else {
+					hasWBIntl = true
+				}
+			default:
+				hasNonWorkBuddy = true
+				if nonWBOwnedBy == "" {
+					nonWBOwnedBy = p
+				}
+			}
+		}
+
+		// If modelID has explicit realm prefix, restrict to that realm
+		lowerID := strings.ToLower(modelID)
+		if strings.HasPrefix(lowerID, "workbuddy-cn/") || strings.HasPrefix(lowerID, "codebuddy/") || strings.HasPrefix(lowerID, "wb-cn/") {
+			hasWBIntl = false
+			hasWBCN = true
+			hasNonWorkBuddy = false
+		} else if strings.HasPrefix(lowerID, "workbuddy/") || strings.HasPrefix(lowerID, "workbuddy-intl/") || strings.HasPrefix(lowerID, "wb/") {
+			hasWBIntl = true
+			hasWBCN = false
+			hasNonWorkBuddy = false
+		}
+
+		// Fallback when registry does not have active provider entries (e.g. offline/mock tests)
+		if !hasWBIntl && !hasWBCN && !hasNonWorkBuddy {
+			ownedBy, _ := model["owned_by"].(string)
+			modelType, _ := model["type"].(string)
+			if strings.HasPrefix(strings.ToLower(cleanBaseModel), "hy") {
+				hasWBCN = true
+			} else if strings.EqualFold(ownedBy, "workbuddy") || strings.EqualFold(modelType, "workbuddy") || strings.EqualFold(ownedBy, "tencent") {
+				_, prov := registry.DetectWorkBuddyModelRealm(modelID)
+				if prov == "workbuddy-cn" {
+					hasWBCN = true
+				} else {
+					hasWBIntl = true
+				}
+			}
+		}
+
+		// CN realm has no -free tier/models; prevent emitting invalid CN -free entries
+		if strings.HasSuffix(strings.ToLower(cleanBaseModel), "-free") {
+			hasWBCN = false
+		}
+
+		resolveWBRealmRate := func(realm string) (string, map[string]any) {
+			rate := registry.LookupWorkBuddyModelCredits(cleanBaseModel, realm)
+			if rate == nil {
+				rate = registry.GetWorkBuddyModelCredits(cleanBaseModel, realm)
+			}
+			if rate != nil {
+				effStr := rate.Effective
+				if effStr == "" {
+					if rate.Multiplier < 1e-9 {
+						effStr = "0x"
+					} else {
+						effStr = fmt.Sprintf("%.2fx", rate.Multiplier)
+					}
+				}
+				cMap := map[string]any{
+					"multiplier": rate.Multiplier,
+					"free":       rate.Free,
+					"source":     rate.Source,
+				}
+				if rate.PromotionID != "" {
+					cMap["promotion_id"] = rate.PromotionID
+				}
+				if rate.PromotionNote != "" {
+					cMap["promotion_note"] = rate.PromotionNote
+				}
+				return effStr, cMap
+			}
+			if cm, exists := model["credits"]; exists && cm != nil {
+				if m, ok := cm.(map[string]any); ok {
+					effStr := ""
+					if mult, okMult := m["multiplier"].(float64); okMult {
+						if mult < 1e-9 {
+							effStr = "0x"
+						} else {
+							effStr = fmt.Sprintf("%.2fx", mult)
+						}
+					}
+					return effStr, m
+				}
+			}
+			return "", nil
+		}
 
 		switch variantMode {
 		case config.ModelVariantModeRaw:
@@ -164,9 +267,10 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 			if ownedBy, exists := model["owned_by"]; exists {
 				filteredModel["owned_by"] = ownedBy
 			}
-			if creditsMap != nil {
-				filteredModel["credits"] = creditsMap
-				filteredModel["owned_by"] = wbProvider
+			if hasWBCN && !hasWBIntl {
+				filteredModel["owned_by"] = "workbuddy-cn"
+			} else if hasWBIntl && !hasWBCN {
+				filteredModel["owned_by"] = "workbuddy"
 			}
 			if dn, exists := model["display_name"]; exists && dn != nil {
 				filteredModel["display_name"] = dn
@@ -175,68 +279,9 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 			filteredModels = append(filteredModels, filteredModel)
 
 		case config.ModelVariantModeCompact:
-			// "compact" (default): Emit exactly one clean entry per model.
-			// When a model has an effective credit rate (multiplier), format with provider namespace
-			// and rate suffix (e.g. "workbuddy-cn/hy4-preview-f:1.62x", "workbuddy/exo-free:0x").
-			// For models without credit rates, emit provider-prefixed (e.g. "workbuddy/model") or bare ID.
-			var effectiveStr string
-			if creditsMap != nil {
-				if rate := registry.ResolveWorkBuddyModelCreditRate(modelID); rate != nil && rate.Effective != "" {
-					effectiveStr = rate.Effective
-				} else if mult, ok := creditsMap["multiplier"].(float64); ok {
-					if mult < 1e-9 {
-						effectiveStr = "0x"
-					} else {
-						effectiveStr = fmt.Sprintf("%.2fx", mult)
-					}
-				}
-			}
-
-			targetID := cleanBaseModel
-			targetOwnedBy, _ := model["owned_by"].(string)
-			displayName := cleanBaseModel
-
-			if wbProvider != "" {
-				targetOwnedBy = wbProvider
-				if effectiveStr != "" {
-					targetID = fmt.Sprintf("%s/%s:%s", wbProvider, cleanBaseModel, effectiveStr)
-					displayName = fmt.Sprintf("%s/%s (%s)", wbProvider, cleanBaseModel, effectiveStr)
-				} else {
-					targetID = fmt.Sprintf("%s/%s", wbProvider, cleanBaseModel)
-					displayName = fmt.Sprintf("%s/%s", wbProvider, cleanBaseModel)
-				}
-			} else if effectiveStr != "" {
-				targetID = fmt.Sprintf("%s:%s", cleanBaseModel, effectiveStr)
-				displayName = fmt.Sprintf("%s (%s)", cleanBaseModel, effectiveStr)
-			}
-
-			// If this model is also registered by non-WorkBuddy providers (e.g. Stepfun,
-			// OpenAI compatibility, OpenAI, Anthropic, Gemini, etc.), always emit the bare
-			// cleanBaseModel so downstream clients can select and pull it directly without
-			// being masked by WorkBuddy billing variants.
-			hasNonWorkBuddy := false
-			var nonWBOwnedBy string
-			for _, p := range modelRegistry.GetModelProviders(cleanBaseModel) {
-				pLower := strings.ToLower(strings.TrimSpace(p))
-				if !strings.HasPrefix(pLower, "workbuddy") && !strings.HasPrefix(pLower, "codebuddy") && pLower != "copilot-tencent" {
-					hasNonWorkBuddy = true
-					if nonWBOwnedBy == "" {
-						nonWBOwnedBy = p
-					}
-				}
-			}
-			if !hasNonWorkBuddy {
-				for _, p := range modelRegistry.GetModelProviders(modelID) {
-					pLower := strings.ToLower(strings.TrimSpace(p))
-					if !strings.HasPrefix(pLower, "workbuddy") && !strings.HasPrefix(pLower, "codebuddy") && pLower != "copilot-tencent" {
-						hasNonWorkBuddy = true
-						if nonWBOwnedBy == "" {
-							nonWBOwnedBy = p
-						}
-					}
-				}
-			}
-
+			// "compact" (default): Emit exactly one clean entry per model provider.
+			// For multi-provider models (e.g. WorkBuddy Intl and WorkBuddy CN, or WorkBuddy and non-WorkBuddy),
+			// emit distinct namespaced entries so routes are never masked.
 			if hasNonWorkBuddy {
 				if !seenIDs[cleanBaseModel] {
 					seenIDs[cleanBaseModel] = true
@@ -260,8 +305,86 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 					}
 					filteredModels = append(filteredModels, bareModel)
 				}
+			}
 
-				if targetID != cleanBaseModel && !seenIDs[targetID] {
+			// Emit WorkBuddy International variant if provided
+			if hasWBIntl {
+				effStr, cMap := resolveWBRealmRate("intl")
+				targetID := "workbuddy/" + cleanBaseModel
+				displayName := "workbuddy/" + cleanBaseModel
+				if effStr != "" {
+					targetID = fmt.Sprintf("workbuddy/%s:%s", cleanBaseModel, effStr)
+					displayName = fmt.Sprintf("workbuddy/%s (%s)", cleanBaseModel, effStr)
+				}
+				if !seenIDs[targetID] {
+					seenIDs[targetID] = true
+					compactModel := map[string]any{
+						"id":           targetID,
+						"object":       model["object"],
+						"display_name": displayName,
+						"name":         displayName,
+						"owned_by":     "workbuddy",
+					}
+					if created, exists := model["created"]; exists {
+						compactModel["created"] = created
+					}
+					if cMap != nil {
+						compactModel["credits"] = cMap
+					}
+					filteredModels = append(filteredModels, compactModel)
+				}
+			}
+
+			// Emit WorkBuddy Domestic (CN) variant if provided
+			if hasWBCN {
+				effStr, cMap := resolveWBRealmRate("cn")
+				targetID := "workbuddy-cn/" + cleanBaseModel
+				displayName := "workbuddy-cn/" + cleanBaseModel
+				if effStr != "" {
+					targetID = fmt.Sprintf("workbuddy-cn/%s:%s", cleanBaseModel, effStr)
+					displayName = fmt.Sprintf("workbuddy-cn/%s (%s)", cleanBaseModel, effStr)
+				}
+				if !seenIDs[targetID] {
+					seenIDs[targetID] = true
+					compactModel := map[string]any{
+						"id":           targetID,
+						"object":       model["object"],
+						"display_name": displayName,
+						"name":         displayName,
+						"owned_by":     "workbuddy-cn",
+					}
+					if created, exists := model["created"]; exists {
+						compactModel["created"] = created
+					}
+					if cMap != nil {
+						compactModel["credits"] = cMap
+					}
+					filteredModels = append(filteredModels, compactModel)
+				}
+			}
+
+			// If not provided by WorkBuddy at all and not yet emitted as bare non-WorkBuddy model
+			if !hasWBIntl && !hasWBCN && !hasNonWorkBuddy {
+				targetID := cleanBaseModel
+				displayName := cleanBaseModel
+				targetOwnedBy, _ := model["owned_by"].(string)
+				var cMap map[string]any
+				if credits, exists := model["credits"]; exists && credits != nil {
+					if cm, ok := credits.(map[string]any); ok {
+						cMap = cm
+					}
+				}
+				if cMap != nil {
+					if mult, ok := cMap["multiplier"].(float64); ok {
+						effStr := fmt.Sprintf("%.2fx", mult)
+						if mult < 1e-9 {
+							effStr = "0x"
+						}
+						targetID = fmt.Sprintf("%s:%s", cleanBaseModel, effStr)
+						displayName = fmt.Sprintf("%s (%s)", cleanBaseModel, effStr)
+					}
+				}
+				if !seenIDs[targetID] {
 					seenIDs[targetID] = true
 					compactModel := map[string]any{
 						"id":           targetID,
@@ -275,42 +398,19 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 					if targetOwnedBy != "" {
 						compactModel["owned_by"] = targetOwnedBy
 					}
-					if creditsMap != nil {
-						compactModel["credits"] = creditsMap
+					if cMap != nil {
+						compactModel["credits"] = cMap
 					}
 					filteredModels = append(filteredModels, compactModel)
 				}
-				continue
 			}
-
-			if seenIDs[targetID] {
-				continue
-			}
-			seenIDs[targetID] = true
-
-			compactModel := map[string]any{
-				"id":           targetID,
-				"object":       model["object"],
-				"display_name": displayName,
-				"name":         displayName,
-			}
-			if created, exists := model["created"]; exists {
-				compactModel["created"] = created
-			}
-			if targetOwnedBy != "" {
-				compactModel["owned_by"] = targetOwnedBy
-			}
-			if creditsMap != nil {
-				compactModel["credits"] = creditsMap
-			}
-			filteredModels = append(filteredModels, compactModel)
 
 		case config.ModelVariantModeAll:
 			// "all": Emit all variants (bare, with multiplier, namespaced, namespaced with multiplier)
-			if !seenIDs[modelID] {
-				seenIDs[modelID] = true
+			if !seenIDs[cleanBaseModel] {
+				seenIDs[cleanBaseModel] = true
 				filteredModel := map[string]any{
-					"id":     modelID,
+					"id":     cleanBaseModel,
 					"object": model["object"],
 				}
 				if created, exists := model["created"]; exists {
@@ -319,10 +419,6 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 				if ownedBy, exists := model["owned_by"]; exists {
 					filteredModel["owned_by"] = ownedBy
 				}
-				if creditsMap != nil {
-					filteredModel["credits"] = creditsMap
-					filteredModel["owned_by"] = wbProvider
-				}
 				if dn, exists := model["display_name"]; exists && dn != nil {
 					filteredModel["display_name"] = dn
 					filteredModel["name"] = dn
@@ -330,30 +426,19 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 				filteredModels = append(filteredModels, filteredModel)
 			}
 
-			if creditsMap != nil {
-				var effectiveStr string
-				if rate := registry.ResolveWorkBuddyModelCreditRate(modelID); rate != nil && rate.Effective != "" {
-					effectiveStr = rate.Effective
-				} else if mult, ok := creditsMap["multiplier"].(float64); ok {
-					if mult < 1e-9 {
-						effectiveStr = "0x"
-					} else {
-						effectiveStr = fmt.Sprintf("%.2fx", mult)
-					}
-				}
-
-				if effectiveStr != "" {
-					// 1. Prefixed with multiplier: "workbuddy/claude-opus-5-5:3.33x"
-					prefixedSuffixedID := fmt.Sprintf("%s/%s:%s", wbProvider, cleanBaseModel, effectiveStr)
+			if hasWBIntl {
+				effStr, cMap := resolveWBRealmRate("intl")
+				if effStr != "" {
+					prefixedSuffixedID := fmt.Sprintf("workbuddy/%s:%s", cleanBaseModel, effStr)
 					if !seenIDs[prefixedSuffixedID] {
 						seenIDs[prefixedSuffixedID] = true
 						suffixedModel := map[string]any{
 							"id":           prefixedSuffixedID,
 							"object":       model["object"],
-							"owned_by":     wbProvider,
-							"credits":      creditsMap,
-							"display_name": fmt.Sprintf("%s/%s (%s)", wbProvider, cleanBaseModel, effectiveStr),
-							"name":         fmt.Sprintf("%s/%s (%s)", wbProvider, cleanBaseModel, effectiveStr),
+							"owned_by":     "workbuddy",
+							"credits":      cMap,
+							"display_name": fmt.Sprintf("workbuddy/%s (%s)", cleanBaseModel, effStr),
+							"name":         fmt.Sprintf("workbuddy/%s (%s)", cleanBaseModel, effStr),
 						}
 						if created, exists := model["created"]; exists {
 							suffixedModel["created"] = created
@@ -361,41 +446,99 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 						filteredModels = append(filteredModels, suffixedModel)
 					}
 
-					// 2. Prefixed base: "workbuddy/claude-opus-5-5"
-					prefixedBaseID := fmt.Sprintf("%s/%s", wbProvider, cleanBaseModel)
-					if !seenIDs[prefixedBaseID] {
-						seenIDs[prefixedBaseID] = true
-						prefixedModel := map[string]any{
-							"id":           prefixedBaseID,
-							"object":       model["object"],
-							"owned_by":     wbProvider,
-							"credits":      creditsMap,
-							"display_name": fmt.Sprintf("%s/%s", wbProvider, cleanBaseModel),
-							"name":         fmt.Sprintf("%s/%s", wbProvider, cleanBaseModel),
-						}
-						if created, exists := model["created"]; exists {
-							prefixedModel["created"] = created
-						}
-						filteredModels = append(filteredModels, prefixedModel)
-					}
-
-					// 3. Unprefixed with multiplier: "claude-opus-5-5:3.33x"
-					suffixedID := fmt.Sprintf("%s:%s", cleanBaseModel, effectiveStr)
-					if !seenIDs[suffixedID] {
-						seenIDs[suffixedID] = true
+					unprefixedSuffixedID := fmt.Sprintf("%s:%s", cleanBaseModel, effStr)
+					if !seenIDs[unprefixedSuffixedID] {
+						seenIDs[unprefixedSuffixedID] = true
 						suffixedModel := map[string]any{
-							"id":           suffixedID,
+							"id":           unprefixedSuffixedID,
 							"object":       model["object"],
-							"owned_by":     wbProvider,
-							"credits":      creditsMap,
-							"display_name": fmt.Sprintf("%s (%s)", cleanBaseModel, effectiveStr),
-							"name":         fmt.Sprintf("%s (%s)", cleanBaseModel, effectiveStr),
+							"owned_by":     "workbuddy",
+							"credits":      cMap,
+							"display_name": fmt.Sprintf("%s (%s)", cleanBaseModel, effStr),
+							"name":         fmt.Sprintf("%s (%s)", cleanBaseModel, effStr),
 						}
 						if created, exists := model["created"]; exists {
 							suffixedModel["created"] = created
 						}
 						filteredModels = append(filteredModels, suffixedModel)
 					}
+				}
+
+				prefixedBaseID := fmt.Sprintf("workbuddy/%s", cleanBaseModel)
+				if !seenIDs[prefixedBaseID] {
+					seenIDs[prefixedBaseID] = true
+					prefixedModel := map[string]any{
+						"id":           prefixedBaseID,
+						"object":       model["object"],
+						"owned_by":     "workbuddy",
+						"display_name": fmt.Sprintf("workbuddy/%s", cleanBaseModel),
+						"name":         fmt.Sprintf("workbuddy/%s", cleanBaseModel),
+					}
+					if created, exists := model["created"]; exists {
+						prefixedModel["created"] = created
+					}
+					if cMap != nil {
+						prefixedModel["credits"] = cMap
+					}
+					filteredModels = append(filteredModels, prefixedModel)
+				}
+			}
+
+			if hasWBCN {
+				effStr, cMap := resolveWBRealmRate("cn")
+				if effStr != "" {
+					prefixedSuffixedID := fmt.Sprintf("workbuddy-cn/%s:%s", cleanBaseModel, effStr)
+					if !seenIDs[prefixedSuffixedID] {
+						seenIDs[prefixedSuffixedID] = true
+						suffixedModel := map[string]any{
+							"id":           prefixedSuffixedID,
+							"object":       model["object"],
+							"owned_by":     "workbuddy-cn",
+							"credits":      cMap,
+							"display_name": fmt.Sprintf("workbuddy-cn/%s (%s)", cleanBaseModel, effStr),
+							"name":         fmt.Sprintf("workbuddy-cn/%s (%s)", cleanBaseModel, effStr),
+						}
+						if created, exists := model["created"]; exists {
+							suffixedModel["created"] = created
+						}
+						filteredModels = append(filteredModels, suffixedModel)
+					}
+
+					unprefixedSuffixedID := fmt.Sprintf("%s:%s", cleanBaseModel, effStr)
+					if !seenIDs[unprefixedSuffixedID] {
+						seenIDs[unprefixedSuffixedID] = true
+						suffixedModel := map[string]any{
+							"id":           unprefixedSuffixedID,
+							"object":       model["object"],
+							"owned_by":     "workbuddy-cn",
+							"credits":      cMap,
+							"display_name": fmt.Sprintf("%s (%s)", cleanBaseModel, effStr),
+							"name":         fmt.Sprintf("%s (%s)", cleanBaseModel, effStr),
+						}
+						if created, exists := model["created"]; exists {
+							suffixedModel["created"] = created
+						}
+						filteredModels = append(filteredModels, suffixedModel)
+					}
+				}
+
+				prefixedBaseID := fmt.Sprintf("workbuddy-cn/%s", cleanBaseModel)
+				if !seenIDs[prefixedBaseID] {
+					seenIDs[prefixedBaseID] = true
+					prefixedModel := map[string]any{
+						"id":           prefixedBaseID,
+						"object":       model["object"],
+						"owned_by":     "workbuddy-cn",
+						"display_name": fmt.Sprintf("workbuddy-cn/%s", cleanBaseModel),
+						"name":         fmt.Sprintf("workbuddy-cn/%s", cleanBaseModel),
+					}
+					if created, exists := model["created"]; exists {
+						prefixedModel["created"] = created
+					}
+					if cMap != nil {
+						prefixedModel["credits"] = cMap
+					}
+					filteredModels = append(filteredModels, prefixedModel)
 				}
 			}
 		}

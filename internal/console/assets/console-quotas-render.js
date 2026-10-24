@@ -29,7 +29,10 @@
             return prov === 'qoder' || prov === 'qoder-cn';
           }
           if (activeUpstreamFilter === 'zcode') {
-            return prov.startsWith('zcode');
+            return prov === 'zcode' || prov === 'zcode-zai' || (prov.startsWith('zcode') && !prov.includes('cn') && !prov.includes('bigmodel'));
+          }
+          if (activeUpstreamFilter === 'zcode-cn' || activeUpstreamFilter === 'bigmodel') {
+            return prov === 'zcode-cn' || prov === 'zcode-bigmodel' || prov === 'bigmodel';
           }
           return prov === activeUpstreamFilter;
         });

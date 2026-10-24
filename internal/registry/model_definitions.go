@@ -639,7 +639,8 @@ func LookupStaticModelProviders(modelID string) []string {
 	data := getModels()
 	catalogs := []staticCatalogProvider{
 		{provider: "opencode", models: GetOpenCodeModels()},
-		{provider: "workbuddy", models: GetAllWorkBuddyModels()},
+		{provider: "workbuddy", models: GetWorkBuddyModels("intl")},
+		{provider: "workbuddy-cn", models: GetWorkBuddyModels("cn")},
 		{provider: "qoder", models: GetAllQoderModels()},
 		{provider: "zcode", models: GetZCodeModels()},
 		{provider: "antigravity", models: data.Antigravity},

@@ -517,7 +517,11 @@
           }
           if (filter === 'zcode') {
             const p = (a.provider || '').toLowerCase();
-            return p.startsWith('zcode');
+            return p === 'zcode' || p === 'zcode-zai' || (p.startsWith('zcode') && !p.includes('cn') && !p.includes('bigmodel'));
+          }
+          if (filter === 'zcode-cn' || filter === 'bigmodel') {
+            const p = (a.provider || '').toLowerCase();
+            return p === 'zcode-cn' || p === 'zcode-bigmodel' || p === 'bigmodel';
           }
           return (a.provider || '').toLowerCase() === filter;
         }
@@ -606,6 +610,9 @@
       } else if (f === 'zcode') {
         btn.textContent = t('quotas.refreshAllZCodeQuota');
         btn.title = t('quotas.refreshAllZCodeQuotaTitle');
+      } else if (f === 'zcode-cn' || f === 'bigmodel') {
+        btn.textContent = t('quotas.refreshAllBigModelQuota');
+        btn.title = t('quotas.refreshAllBigModelQuotaTitle');
       } else if (f === 'openrouter') {
         btn.textContent = t('quotas.refreshAllOpenRouterQuota');
         btn.title = t('quotas.refreshAllOpenRouterQuotaTitle');

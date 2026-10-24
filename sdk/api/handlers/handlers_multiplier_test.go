@@ -270,3 +270,53 @@ func TestExtractAndValidateModelMultiplier(t *testing.T) {
 		})
 	}
 }
+
+func TestDualRealmWorkBuddyMultiplierValidation(t *testing.T) {
+	// 1. CN realm with correct 0.11x rate for deepseek-v4.1-flash
+	details, err := ExtractAndValidateModelMultiplierDetails("workbuddy-cn/deepseek-v4.1-flash:0.11x")
+	if err != nil {
+		t.Fatalf("unexpected error for workbuddy-cn valid rate: %v", err.Error)
+	}
+	if details.CleanModel != "deepseek-v4.1-flash" {
+		t.Errorf("CleanModel = %q, want deepseek-v4.1-flash", details.CleanModel)
+	}
+	if details.TargetProvider != "workbuddy-cn" {
+		t.Errorf("TargetProvider = %q, want workbuddy-cn", details.TargetProvider)
+	}
+	if details.TargetRealm != "cn" {
+		t.Errorf("TargetRealm = %q, want cn", details.TargetRealm)
+	}
+	if details.Multiplier != 0.11 {
+		t.Errorf("Multiplier = %v, want 0.11", details.Multiplier)
+	}
+
+	// 2. Intl realm with correct 0x rate for deepseek-v4.1-flash
+	detailsIntl, errIntl := ExtractAndValidateModelMultiplierDetails("workbuddy/deepseek-v4.1-flash:0x")
+	if errIntl != nil {
+		t.Fatalf("unexpected error for workbuddy intl valid rate: %v", errIntl.Error)
+	}
+	if detailsIntl.TargetProvider != "workbuddy" {
+		t.Errorf("TargetProvider = %q, want workbuddy", detailsIntl.TargetProvider)
+	}
+	if detailsIntl.TargetRealm != "intl" {
+		t.Errorf("TargetRealm = %q, want intl", detailsIntl.TargetRealm)
+	}
+
+	// 3. CN realm does NOT have a free tier: 0x must be rejected
+	_, errCNFree := ExtractAndValidateModelMultiplierDetails("workbuddy-cn/deepseek-v4.1-flash:0x")
+	if errCNFree == nil {
+		t.Fatal("expected error when requesting 0x for CN realm deepseek-v4.1-flash, got nil")
+	}
+	if errCNFree.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected StatusCode %d, got %d", http.StatusBadRequest, errCNFree.StatusCode)
+	}
+
+	// 4. CodeBuddy alias prefix (codebuddy/) also resolves to TargetProvider workbuddy-cn and realm cn
+	detailsCodeBuddy, errCodeBuddy := ExtractAndValidateModelMultiplierDetails("codebuddy/deepseek-v4.1-flash:0.11x")
+	if errCodeBuddy != nil {
+		t.Fatalf("unexpected error for codebuddy prefix: %v", errCodeBuddy.Error)
+	}
+	if detailsCodeBuddy.TargetProvider != "workbuddy-cn" {
+		t.Errorf("TargetProvider = %q, want workbuddy-cn", detailsCodeBuddy.TargetProvider)
+	}
+}

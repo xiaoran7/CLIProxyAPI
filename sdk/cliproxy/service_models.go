@@ -219,6 +219,9 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 		realm := "intl"
 		if provider == "workbuddy-cn" || provider == "copilot-tencent" || (a.Attributes != nil && strings.EqualFold(a.Attributes["realm"], "cn")) {
 			realm = "cn"
+			provider = "workbuddy-cn"
+		} else {
+			provider = "workbuddy"
 		}
 		// Warm credits and dynamic models from the upstream catalogue first,
 		// so the registration includes freshly discovered models and up-to-date rates.

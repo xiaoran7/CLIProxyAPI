@@ -295,6 +295,63 @@ func TestOpenAIModelsMultiProviderNonWorkBuddyNotMasked(t *testing.T) {
 	}
 }
 
+// TestOpenAIModelsDualRealmWorkBuddyDeepSeek verifies that when a model like
+// "deepseek-v4.1-flash" is registered by both WorkBuddy International and WorkBuddy CN,
+// compact mode emits both "workbuddy/deepseek-v4.1-flash:0x" and "workbuddy-cn/deepseek-v4.1-flash:0.11x"
+// without collision or masking.
+func TestOpenAIModelsDualRealmWorkBuddyDeepSeek(t *testing.T) {
+	const modelID = "deepseek-v4.1-flash"
+	intlClientID := "workbuddy-intl-client"
+	cnClientID := "workbuddy-cn-client"
+
+	modelRegistry := registry.GetGlobalRegistry()
+
+	// 1. Register model from International WorkBuddy
+	modelRegistry.RegisterClient(intlClientID, "workbuddy", []*registry.ModelInfo{
+		{
+			ID:      modelID,
+			OwnedBy: "deepseek",
+		},
+	})
+
+	// 2. Register same model from Domestic WorkBuddy CN
+	modelRegistry.RegisterClient(cnClientID, "workbuddy-cn", []*registry.ModelInfo{
+		{
+			ID:      modelID,
+			OwnedBy: "deepseek",
+		},
+	})
+
+	t.Cleanup(func() {
+		modelRegistry.UnregisterClient(intlClientID)
+		modelRegistry.UnregisterClient(cnClientID)
+	})
+
+	got := getModelsResponseWithConfig(t, &config.SDKConfig{
+		ModelVariantMode: config.ModelVariantModeCompact,
+	})
+
+	// 1. Check International variant with promotional 0x rate
+	const intlVariant = "workbuddy/deepseek-v4.1-flash:0x"
+	intlEntry, ok := findModel(t, got, intlVariant)
+	if !ok {
+		t.Fatalf("compact mode: expected international variant %q in /v1/models", intlVariant)
+	}
+	if ownedBy, _ := intlEntry["owned_by"].(string); ownedBy != "workbuddy" {
+		t.Errorf("international variant owned_by = %q, want workbuddy", ownedBy)
+	}
+
+	// 2. Check Domestic CN variant with authoritative 0.11x rate
+	const cnVariant = "workbuddy-cn/deepseek-v4.1-flash:0.11x"
+	cnEntry, ok := findModel(t, got, cnVariant)
+	if !ok {
+		t.Fatalf("compact mode: expected domestic CN variant %q in /v1/models", cnVariant)
+	}
+	if ownedBy, _ := cnEntry["owned_by"].(string); ownedBy != "workbuddy-cn" {
+		t.Errorf("domestic CN variant owned_by = %q, want workbuddy-cn", ownedBy)
+	}
+}
+
 func getModelsResponse(t *testing.T) map[string]any {
 	return getModelsResponseWithConfig(t, &config.SDKConfig{})
 }

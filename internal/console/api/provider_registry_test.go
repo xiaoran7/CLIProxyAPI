@@ -353,4 +353,15 @@ func TestProviderRegistryEngine_ZCode(t *testing.T) {
 	if resCn.Key != "zcode-cn" {
 		t.Errorf("expected key 'zcode-cn', got %q", resCn.Key)
 	}
+
+	// 3. Fallback matching by auth patterns
+	resAuthZai := pe.InferProvider("GLM-5.3", "zcode-zai-account-1234")
+	if resAuthZai.Key != "zcode" {
+		t.Errorf("expected key 'zcode' for zcode-zai auth, got %q", resAuthZai.Key)
+	}
+
+	resAuthBigModel := pe.InferProvider("GLM-5.3", "bigmodel-account-5678")
+	if resAuthBigModel.Key != "zcode-cn" {
+		t.Errorf("expected key 'zcode-cn' for bigmodel auth, got %q", resAuthBigModel.Key)
+	}
 }

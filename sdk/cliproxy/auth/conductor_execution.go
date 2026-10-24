@@ -1891,7 +1891,19 @@ func executorKeyFromAuth(auth *Auth) string {
 		return "qoder"
 	case "zcode-zai", "zcode-bigmodel", "zcode-cn":
 		return "zcode"
-	case "workbuddy-cn", "workbuddy-intl", "copilot-tencent":
+	case "workbuddy-intl":
+		return "workbuddy"
+	case "workbuddy-cn", "copilot-tencent":
+		return "workbuddy-cn"
+	case "workbuddy":
+		if auth.Attributes != nil && strings.EqualFold(auth.Attributes["realm"], "cn") {
+			return "workbuddy-cn"
+		}
+		if auth.Metadata != nil {
+			if r, ok := auth.Metadata["realm"].(string); ok && strings.EqualFold(r, "cn") {
+				return "workbuddy-cn"
+			}
+		}
 		return "workbuddy"
 	default:
 		return provider
