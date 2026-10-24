@@ -182,8 +182,14 @@ func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([
 		return nil, nil
 	}
 	label := provider
-	if email, _ := metadata["email"].(string); email != "" {
-		label = email
+	if email, _ := metadata["email"].(string); strings.TrimSpace(email) != "" {
+		label = strings.TrimSpace(email)
+	} else if nick, _ := metadata["nickname"].(string); strings.TrimSpace(nick) != "" {
+		label = strings.TrimSpace(nick)
+	} else if rawLabel, _ := metadata["label"].(string); strings.TrimSpace(rawLabel) != "" {
+		label = strings.TrimSpace(rawLabel)
+	} else if uid, _ := metadata["user_id"].(string); strings.TrimSpace(uid) != "" {
+		label = strings.TrimSpace(uid)
 	}
 	// Use relative path under authDir as ID to stay consistent with the file-based token store.
 	id := fullPath
@@ -309,6 +315,11 @@ func synthesizeFileAuths(ctx *SynthesisContext, fullPath string, data []byte) ([
 			a.Attributes["base_url"] = strings.TrimSpace(bu)
 		} else {
 			a.Attributes["base_url"] = zcodeauth.SiteBaseURL(a.Attributes["site"])
+		}
+		for _, k := range []string{"plan", "device_id", "user_id", "email", "nickname"} {
+			if v, ok := metadata[k].(string); ok && strings.TrimSpace(v) != "" {
+				a.Attributes[k] = strings.TrimSpace(v)
+			}
 		}
 	}
 	// For codex auth files, extract plan_type from metadata or JWT id_token.
