@@ -132,8 +132,8 @@ func (h *Handler) FetchCredentialQuota(c *gin.Context) {
 		return
 	}
 
-	// Native ZCode quota provider
-	if strings.HasPrefix(pLower, "zcode") || strings.HasPrefix(strings.ToLower(pluginID), "zcode") {
+	// Native ZCode / BigModel quota provider
+	if strings.HasPrefix(pLower, "zcode") || strings.HasPrefix(strings.ToLower(pluginID), "zcode") || strings.HasPrefix(pLower, "bigmodel") || strings.HasPrefix(strings.ToLower(pluginID), "bigmodel") {
 		quotaResp, errQuota := zcodeauth.QueryQuota(c.Request.Context(), nil, auth)
 		if errQuota != nil {
 			log.WithError(errQuota).Warnf("failed to query native zcode quota for credential %s", auth.Index)

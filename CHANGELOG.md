@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **ZCode & BigModel Dual-Realm Management UI Registration & Brand Icons (`internal/api/handlers/management/`, `internal/api/server_management.go`, `internal/console/api/handlers_cpa.go`)**:
+  - Embedded official high-resolution base64 PNG icons into `nativeOAuthPlugins` in `plugins.go` for both ZCode (Z.ai International) and BigModel (智谱开放平台国内版).
+  - Added dedicated `zcode-cn` entry to the plugin registry so the "添加凭证" modal exposes both international and domestic China providers with authentic branding rather than fallback plug placeholders.
+  - Implemented `RequestZCodeCNToken` and updated `RequestZCodeToken` to inspect `provider` and `site` query parameters, ensuring `zcode-cn` flows accurately select `SiteBigModel` and name credentials as `zcode-cn-<timestamp>.json`.
+  - Registered `/zcode-cn-auth-url` and `/bigmodel-auth-url` routes in `server_management.go` and aligned console proxy mappings in `handlers_cpa.go`.
 - **WorkBuddy Dual-Realm Model Catalog Decoupling & Scheduler Isolation (`sdk/api/handlers/openai/openai_handlers.go`, `sdk/api/handlers/handlers_multiplier.go`, `sdk/cliproxy/auth/conductor_execution.go`, `internal/registry/`)**:
   - Resolved model collision and masking where domestic China WorkBuddy (`workbuddy-cn` / CodeBuddy) and international WorkBuddy (`workbuddy`) shared the underlying model ID `deepseek-v4.1-flash`, causing the domestic paid tier (`workbuddy-cn/deepseek-v4.1-flash:0.11x`) to be masked by international promotional free tier (`workbuddy/deepseek-v4.1-flash:0x`).
   - Separated realm-specific fallback credit tables: established `staticWorkBuddyCNDefaultCredits` (0.11x for `deepseek-v4.1-flash`, 0.17x for `deepseek-v4-flash`, 0.51x for `deepseek-v4-pro`, 0x for `hy3`, 1.62x for `hy4-preview-f`) distinctly from `staticWorkBuddyIntlDefaultCredits` (0x for promotional free DeepSeek).

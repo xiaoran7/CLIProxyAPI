@@ -14,10 +14,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// RequestZCodeToken starts ZCode's CLI sign-in flow.
-//
-// ZCode serves both Z.ai and BigModel accounts; the realm is chosen with the
-// site query parameter and defaults to Z.ai.
+// RequestZCodeToken starts ZCode's CLI sign-in flow (international Z.ai by default).
 func (h *Handler) RequestZCodeToken(c *gin.Context) {
 	site := zcodeauth.SiteZAI
 	if q := strings.TrimSpace(c.Query("site")); q != "" {
@@ -27,21 +24,34 @@ func (h *Handler) RequestZCodeToken(c *gin.Context) {
 		default:
 			site = zcodeauth.SiteZAI
 		}
+	} else if p := strings.TrimSpace(c.Query("provider")); p != "" {
+		switch strings.ToLower(p) {
+		case "zcode-cn", "zcode-bigmodel", "bigmodel", "zcode_cn":
+			site = zcodeauth.SiteBigModel
+		default:
+			site = zcodeauth.SiteZAI
+		}
 	}
+	h.requestZCodeTokenWithSite(c, site)
+}
 
+// RequestZCodeCNToken starts ZCode Mainland China (BigModel / 智谱) CLI sign-in flow.
+func (h *Handler) RequestZCodeCNToken(c *gin.Context) {
+	h.requestZCodeTokenWithSite(c, zcodeauth.SiteBigModel)
+}
+
+func (h *Handler) requestZCodeTokenWithSite(c *gin.Context, site string) {
 	ctx := context.Background()
 	ctx = PopulateAuthContext(ctx, c)
 
 	providerName := "zcode"
-	if site == zcodeauth.SiteBigModel {
-		providerName = "zcode-cn"
-	}
 	displayName := "ZCode (Z.ai)"
 	if site == zcodeauth.SiteBigModel {
-		displayName = "ZCode (BigModel)"
+		providerName = "zcode-cn"
+		displayName = "BigModel (智谱)"
 	}
 
-	state := fmt.Sprintf("zcode-%d", time.Now().UnixNano())
+	state := fmt.Sprintf("%s-%d", providerName, time.Now().UnixNano())
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	if h.cfg != nil {
@@ -139,7 +149,7 @@ func (h *Handler) RequestZCodeToken(c *gin.Context) {
 		}
 		metadata["label"] = userLabel
 
-		fileName := fmt.Sprintf("zcode-%d.json", time.Now().UnixMilli())
+		fileName := fmt.Sprintf("%s-%d.json", providerName, time.Now().UnixMilli())
 		record := &coreauth.Auth{
 			ID:       fileName,
 			Provider: providerName,

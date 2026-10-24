@@ -296,7 +296,8 @@ func (h *Handler) listZCodeQuotas(c *gin.Context) {
 		if path := strings.TrimSpace(authAttribute(a, "path")); path != "" && isInternalStorageFile(path) {
 			continue
 		}
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(a.Provider)), "zcode") {
+		p := strings.ToLower(strings.TrimSpace(a.Provider))
+		if strings.HasPrefix(p, "zcode") || strings.HasPrefix(p, "bigmodel") {
 			targets = append(targets, a)
 		}
 	}

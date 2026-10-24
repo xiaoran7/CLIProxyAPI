@@ -334,7 +334,8 @@ func RegisterCpaRoutes(rg *gin.RouterGroup, cpa *CpaClient, eng *engine.Engine, 
 		"qoder":        "/qoder-auth-url",
 		"qoder-cn":     "/qoder-cn-auth-url",
 		"zcode":        "/zcode-auth-url",
-		"zcode-cn":     "/zcode-auth-url?site=bigmodel",
+		"zcode-cn":     "/zcode-cn-auth-url",
+		"bigmodel":     "/zcode-cn-auth-url",
 	}
 
 	rg.POST("/oauth/:provider/start", func(c *gin.Context) {

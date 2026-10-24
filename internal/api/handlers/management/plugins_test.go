@@ -866,6 +866,7 @@ func TestListPluginsNativePluginsPreserveCapabilitiesAndEffectiveEnabled(t *test
 			OAuthProvider    string `json:"oauth_provider"`
 			SupportsQuota    bool   `json:"supports_quota"`
 			QuotaProvider    string `json:"quota_provider"`
+			Logo             string `json:"logo"`
 		} `json:"plugins"`
 	}
 	if errDecode := json.Unmarshal(rec.Body.Bytes(), &body); errDecode != nil {
@@ -892,12 +893,36 @@ func TestListPluginsNativePluginsPreserveCapabilitiesAndEffectiveEnabled(t *test
 				t.Fatalf("qoder disabled in config should not be effective enabled: %#v", p)
 			}
 		}
+		if p.ID == "zcode" {
+			found["zcode"] = p
+			if !p.Registered || !p.SupportsQuota || p.QuotaProvider != "zcode" || !p.SupportsOAuth || p.OAuthProvider != "zcode" {
+				t.Fatalf("zcode missing capabilities: %#v", p)
+			}
+			if !strings.HasPrefix(p.Logo, "data:image/png;base64,") {
+				t.Fatalf("zcode missing brand logo data URI: %q", p.Logo)
+			}
+		}
+		if p.ID == "zcode-cn" {
+			found["zcode-cn"] = p
+			if !p.Registered || !p.SupportsQuota || p.QuotaProvider != "zcode-cn" || !p.SupportsOAuth || p.OAuthProvider != "zcode-cn" {
+				t.Fatalf("zcode-cn missing capabilities: %#v", p)
+			}
+			if !strings.HasPrefix(p.Logo, "data:image/png;base64,") {
+				t.Fatalf("zcode-cn missing brand logo data URI: %q", p.Logo)
+			}
+		}
 	}
 	if _, ok := found["workbuddy"]; !ok {
 		t.Fatal("workbuddy not found in plugins list")
 	}
 	if _, ok := found["qoder"]; !ok {
 		t.Fatal("qoder not found in plugins list")
+	}
+	if _, ok := found["zcode"]; !ok {
+		t.Fatal("zcode not found in plugins list")
+	}
+	if _, ok := found["zcode-cn"]; !ok {
+		t.Fatal("zcode-cn not found in plugins list")
 	}
 }
 
