@@ -300,6 +300,118 @@
       `;
     }
 
+    // ZCode 紧凑视图：双池（编码套餐配额 + 免费赠送/试用池）指示条
+    function renderCompactZCodeMeter(acc, fallbackBucket) {
+      let codingBucket = null;
+      let giftBucket = null;
+      let otherBucket = null;
+
+      for (const grp of (acc.groups || [])) {
+        const gname = ((grp.name || '') + ' ' + (grp.displayName || '')).toLowerCase();
+        const isGiftGrp = gname.includes('start') || gname.includes('gift') || gname.includes('trial');
+        for (const bkt of (grp.buckets || [])) {
+          if (!Number.isFinite(bkt.remaining_percent)) continue;
+          const bname = ((bkt.name || '') + ' ' + (bkt.displayName || '')).toLowerCase();
+          const isGiftBkt = isGiftGrp || bkt.gift === true || bname.includes('trial') || bname.includes('start') || bname.includes('gift');
+          if (isGiftBkt && !giftBucket) {
+            giftBucket = bkt;
+          } else if (!isGiftBkt && !codingBucket) {
+            codingBucket = bkt;
+          } else if (!otherBucket) {
+            otherBucket = bkt;
+          }
+        }
+      }
+
+      if (!codingBucket && fallbackBucket && !giftBucket) {
+        codingBucket = fallbackBucket;
+      } else if (!codingBucket && giftBucket) {
+        // Start Plan only account
+        codingBucket = giftBucket;
+        giftBucket = otherBucket;
+      }
+
+      // Bar 1: 主配额池 (Coding Plan 或 Start Plan)
+      const b1 = codingBucket || fallbackBucket;
+      const rem1 = b1 && Number.isFinite(b1.remaining_percent) ? b1.remaining_percent : 100;
+      let cls1 = 'meter-high'; let col1 = '#10b981';
+      if (rem1 <= 20) { cls1 = 'meter-low'; col1 = '#ef4444'; }
+      else if (rem1 <= 50) { cls1 = 'meter-medium'; col1 = '#f59e0b'; }
+
+      const planName = acc.plan_name || acc.plan_type || (b1 ? (b1.name || b1.window) : '') || t('quotas.zcode.codingPlan');
+      const resetBadge1 = buildCompactResetBadge(b1);
+      const title1 = `ZCode ${escapeHtml(planName)} (${rem1}% 可用)`;
+
+      // Bar 2: 次配额池 (Start Plan 赠送池 / 试用额度，或到期时间 / 通道状态)
+      let bar2Html = '';
+      if (giftBucket && Number.isFinite(giftBucket.remaining_percent)) {
+        const rem2 = giftBucket.remaining_percent;
+        let cls2 = 'meter-high'; let col2 = '#10b981';
+        if (rem2 <= 20) { cls2 = 'meter-low'; col2 = '#ef4444'; }
+        else if (rem2 <= 50) { cls2 = 'meter-medium'; col2 = '#f59e0b'; }
+        const giftName = giftBucket.name || giftBucket.window || t('quotas.zcode.trialPool');
+        const resetBadge2 = buildCompactResetBadge(giftBucket);
+        bar2Html = `
+          <div class="compact-meter-wrap" title="ZCode Start Plan 赠送额度 (${escapeHtml(giftName)}: ${rem2}% 可用)">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+              <span style="display:inline-flex; align-items:center; gap:4px;">
+                <span class="quota-pool-badge pool-zcode">ZCode</span>
+                <span style="color:var(--text-muted); font-size:10px;">${escapeHtml(giftName)}</span>
+              </span>
+              <span style="display:inline-flex; align-items:center; gap:6px;">
+                ${resetBadge2}
+                <span style="font-family:var(--mono); font-weight:700; color:${col2};">
+                  ${rem2}%
+                </span>
+              </span>
+            </div>
+            <div class="quota-meter-bar">
+              <div class="quota-meter-fill ${cls2}" style="width: ${rem2}%"></div>
+            </div>
+          </div>
+        `;
+      } else {
+        const expText = acc.expires_at ? formatResetAbs(acc.expires_at) : '有效就绪';
+        bar2Html = `
+          <div class="compact-meter-wrap" title="ZCode 通道可用性与有效期">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+              <span style="display:inline-flex; align-items:center; gap:4px;">
+                <span class="quota-pool-badge pool-zcode">ZCode</span>
+                <span style="color:var(--text-muted); font-size:10px;">服务通道</span>
+              </span>
+              <span style="font-family:var(--mono); font-size:11px; font-weight:600; color:var(--success);">
+                ${escapeHtml(expText)}
+              </span>
+            </div>
+            <div class="quota-meter-bar">
+              <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
+            </div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="compact-meter-wrap" title="${escapeHtml(title1)}">
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+            <span style="display:inline-flex; align-items:center; gap:4px;">
+              <span class="quota-pool-badge pool-zcode">ZCode</span>
+              <span style="color:var(--text-muted); font-size:10px;">${escapeHtml(planName)}</span>
+            </span>
+            <span style="display:inline-flex; align-items:center; gap:6px;">
+              ${resetBadge1}
+              <span style="font-family:var(--mono); font-weight:700; color:${col1};">
+                ${rem1}%
+              </span>
+            </span>
+          </div>
+          <div class="quota-meter-bar">
+            <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
+          </div>
+        </div>
+        ${bar2Html}
+      `;
+    }
+
     // Antigravity 紧凑视图：Gemini 5h / 周额度双指示条
     function renderCompactAntigravityMeters(gemini5hBucket, geminiWeeklyBucket, fallbackBucket, health, cooldownCompactNotice) {
       let metersHtml = '';
@@ -673,6 +785,8 @@
         metersHtml = renderCompactWorkBuddyMeter(acc);
       } else if (acc.provider && acc.provider.toLowerCase().startsWith('qoder')) {
         metersHtml = renderCompactQoderMeter(acc, fallbackBucket);
+      } else if (acc.provider && acc.provider.toLowerCase().startsWith('zcode')) {
+        metersHtml = renderCompactZCodeMeter(acc, fallbackBucket);
       } else if (!Number.isFinite(fallbackBucket?.remaining_percent)) {
         metersHtml = `<div class="account-quota-unknown">${t('quotas.quotaUnknownCpa')}</div>`;
       } else if (acc.provider === 'antigravity') {

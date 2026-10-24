@@ -340,8 +340,8 @@
           id: isCn ? 'zcode-cn' : 'zcode',
           name: isCn ? t('provider.zcodeCn') : t('provider.zcode'),
           shortName: t('provider.zcodeShort'),
-          iconClass: 'provider-icon-glm',
-          pillClass: 'provider-pill-other',
+          iconClass: 'provider-icon-zcode',
+          pillClass: 'provider-pill-zcode',
           iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4h16v4H8v8h12v4H4V4z"/></svg>`
         };
       }

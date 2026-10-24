@@ -64,6 +64,13 @@ var InitialSeedPrices = []SeedPrice{
 	{Pattern: "qwen-plus", PromptPrice: 0.40, CompletionPrice: 1.20, CacheReadPrice: 0.10},
 	{Pattern: "qwen-turbo", PromptPrice: 0.05, CompletionPrice: 0.20, CacheReadPrice: 0.01},
 	{Pattern: "qwen", PromptPrice: 0.20, CompletionPrice: 0.60, CacheReadPrice: 0.05},
+
+	// GLM / ZCode series
+	{Pattern: "glm-5.3-flash", PromptPrice: 0.10, CompletionPrice: 0.10, CacheReadPrice: 0.02},
+	{Pattern: "glm-5.3", PromptPrice: 1.00, CompletionPrice: 1.00, CacheReadPrice: 0.20},
+	{Pattern: "glm-5.2", PromptPrice: 0.70, CompletionPrice: 0.70, CacheReadPrice: 0.14},
+	{Pattern: "glm-5-turbo", PromptPrice: 0.50, CompletionPrice: 0.50, CacheReadPrice: 0.10},
+	{Pattern: "glm", PromptPrice: 0.50, CompletionPrice: 0.50, CacheReadPrice: 0.10},
 }
 
 // CompiledPricingRule holds an in-memory compiled model pricing rule.

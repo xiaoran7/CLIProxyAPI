@@ -56,6 +56,39 @@ func (e *workbuddyCreditsEntry) Free() bool {
 
 const workbuddyCreditsEpsilon = 1e-9
 
+// staticWorkBuddyCNDefaultCredits provides authoritative fallback credit multipliers for
+// domestic CodeBuddy (CN) models when live /v3/config catalogue data is unavailable.
+// Domestic CodeBuddy has NO free tier for DeepSeek models.
+var staticWorkBuddyCNDefaultCredits = map[string]float64{
+	"hy3":                 0.0,
+	"hy4-preview-f":       1.62,
+	"deepseek-v4.1-flash": 0.11,
+	"deepseek-v4-flash":   0.17,
+	"deepseek-v4-pro":     0.51,
+	"glm-5.3-flash":       0.06,
+	"glm-5.3":             0.15,
+	"kimi-k3":             0.15,
+	"minimax-m3":          0.15,
+}
+
+// staticWorkBuddyIntlDefaultCredits provides authoritative fallback credit multipliers for
+// international WorkBuddy models when live /v3/config catalogue data is unavailable.
+var staticWorkBuddyIntlDefaultCredits = map[string]float64{
+	"deepseek-v4.1-flash":    0.0,
+	"deepseek-v4.1-flash-sg": 0.03,
+	"glm-5.3-flash":          0.06,
+	"deepseek-v4-pro":        0.15,
+	"glm-5.3":                0.15,
+	"kimi-k3":                0.15,
+	"minimax-m3":             0.15,
+	"hy4-preview-f":          1.62,
+	"gpt-6-astra":            3.33,
+	"gpt-5.6-sol":            2.0,
+	"claude-fable-5-1":       3.0,
+	"claude-opus-5-5":        3.33,
+	"claude-sonnet-5-5":      1.0,
+}
+
 // staticWorkBuddyDefaultCredits provides authoritative fallback credit multipliers for
 // WorkBuddy / CodeBuddy models when live /v3/config catalogue data is unavailable.
 var staticWorkBuddyDefaultCredits = map[string]float64{
@@ -343,13 +376,16 @@ func TrimWorkBuddyPrefixes(modelID string) string {
 
 // DetectWorkBuddyModelRealm identifies whether a model belongs to the domestic (CN) CodeBuddy realm or international (Intl) WorkBuddy realm.
 func DetectWorkBuddyModelRealm(modelID string) (realm string, provider string) {
+	rawLower := strings.ToLower(strings.TrimSpace(modelID))
+	if strings.HasPrefix(rawLower, "workbuddy-cn/") || strings.HasPrefix(rawLower, "codebuddy/") || strings.HasPrefix(rawLower, "wb-cn/") {
+		return "cn", "workbuddy-cn"
+	}
+	if strings.HasPrefix(rawLower, "workbuddy-intl/") || strings.HasPrefix(rawLower, "workbuddy/") || strings.HasPrefix(rawLower, "wb/") {
+		return "intl", "workbuddy"
+	}
 	trimmed := TrimWorkBuddyPrefixes(modelID)
 	lower := strings.ToLower(trimmed)
 	if strings.HasPrefix(lower, "hy") {
-		return "cn", "workbuddy-cn"
-	}
-	rawLower := strings.ToLower(strings.TrimSpace(modelID))
-	if strings.HasPrefix(rawLower, "workbuddy-cn/") || strings.HasPrefix(rawLower, "codebuddy/") || strings.HasPrefix(rawLower, "wb-cn/") {
 		return "cn", "workbuddy-cn"
 	}
 	return "intl", "workbuddy"
@@ -395,6 +431,29 @@ func LookupWorkBuddyModelCredits(modelID, realm string) *WorkBuddyCreditsRate {
 	}
 
 	cleanKey := workbuddyCreditsLookupKey(cleanID)
+	if strings.EqualFold(strings.TrimSpace(realm), "cn") {
+		if defRate, ok := staticWorkBuddyCNDefaultCredits[cleanKey]; ok {
+			rate := &WorkBuddyCreditsRate{
+				Multiplier: defRate,
+				Free:       defRate < workbuddyCreditsEpsilon,
+				Source:     "default",
+				Effective:  formatWorkBuddyMultiplier(defRate),
+				Base:       formatWorkBuddyMultiplier(defRate),
+			}
+			return rate
+		}
+	} else {
+		if defRate, ok := staticWorkBuddyIntlDefaultCredits[cleanKey]; ok {
+			rate := &WorkBuddyCreditsRate{
+				Multiplier: defRate,
+				Free:       defRate < workbuddyCreditsEpsilon,
+				Source:     "default",
+				Effective:  formatWorkBuddyMultiplier(defRate),
+				Base:       formatWorkBuddyMultiplier(defRate),
+			}
+			return rate
+		}
+	}
 	if defRate, ok := staticWorkBuddyDefaultCredits[cleanKey]; ok {
 		rate := &WorkBuddyCreditsRate{
 			Multiplier: defRate,
@@ -588,8 +647,7 @@ func workbuddyCreditsRealmKey(realm string) string {
 // workbuddyCreditsLookupKey normalises a model ID for rate lookup. The "-free"
 // variants are local aliases of a base model, so they inherit the base rate.
 func workbuddyCreditsLookupKey(modelID string) string {
-	key := strings.ToLower(strings.TrimSpace(modelID))
-	key = strings.TrimPrefix(key, "workbuddy/")
+	key := strings.ToLower(strings.TrimSpace(TrimWorkBuddyPrefixes(modelID)))
 	return strings.TrimSuffix(key, "-free")
 }
 

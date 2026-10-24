@@ -187,14 +187,29 @@ var InitialProviderRegistry = []SeedProvider{
 		SortOrder: 75,
 	},
 	{
-		ProviderKey: "zcode",
-		Label:       "ZCode GLM Coding",
-		// ZCode's models are named GLM-*, which the zhipu entry claims; a ZCode
-		// credential is told apart by its own provider key instead.
+		ProviderKey: "zcode-cn",
+		Label:       "ZCode (智谱 BigModel)",
+		ModelPatterns: []PatternItem{
+			{P: "zcode-cn", Anchor: ""},
+		},
 		AuthPatterns: []PatternItem{
-			{P: "zcode", Anchor: ""},
+			{P: "zcode-cn", Anchor: ""},
+			{P: "zcode-bigmodel", Anchor: ""},
 		},
 		SortOrder: 76,
+	},
+	{
+		ProviderKey: "zcode",
+		Label:       "ZCode GLM 编码套餐",
+		ModelPatterns: []PatternItem{
+			{P: "-trial", Anchor: ""},
+			{P: "zcode", Anchor: ""},
+		},
+		AuthPatterns: []PatternItem{
+			{P: "zcode", Anchor: ""},
+			{P: "zcode-zai", Anchor: ""},
+		},
+		SortOrder: 77,
 	},
 	{
 		ProviderKey: "openrouter",

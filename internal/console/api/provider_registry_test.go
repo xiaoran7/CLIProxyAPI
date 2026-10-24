@@ -317,3 +317,40 @@ func TestSyncOpenAICompatConfig_CustomChannels(t *testing.T) {
 		t.Errorf("expected name 'Local Ollama', got %q", ollamaAcc.Name)
 	}
 }
+
+func TestProviderRegistryEngine_ZCode(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_zcode.db")
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	pe, err := NewProviderRegistryEngine(database)
+	if err != nil {
+		t.Fatalf("failed to create provider registry engine: %v", err)
+	}
+
+	// 1. Model inference for Trial models
+	resTrial := pe.InferProvider("GLM-5.3-Flash-Trial", "")
+	if resTrial.Key != "zcode" {
+		t.Errorf("expected key 'zcode' for trial model, got %q", resTrial.Key)
+	}
+
+	// 2. Auth account inference for zcode and zcode-cn
+	pe.RegisterAuthAccount("zcode_intl_1", "zcode", "ZCode-Intl")
+	pe.RegisterAuthAccount("zcode_cn_1", "zcode-cn", "ZCode-BigModel")
+
+	resIntl := pe.InferProvider("GLM-5.3", "zcode_intl_1")
+	if resIntl.Key != "zcode" {
+		t.Errorf("expected key 'zcode', got %q", resIntl.Key)
+	}
+
+	resCn := pe.InferProvider("GLM-5.3", "zcode_cn_1")
+	if resCn.Key != "zcode-cn" {
+		t.Errorf("expected key 'zcode-cn', got %q", resCn.Key)
+	}
+}

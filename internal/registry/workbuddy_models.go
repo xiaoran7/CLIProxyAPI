@@ -413,8 +413,7 @@ func GetAllWorkBuddyModels() []*ModelInfo {
 
 // LookupWorkBuddyModel finds a WorkBuddy model by ID and optional realm.
 func LookupWorkBuddyModel(modelID, realm string) *ModelInfo {
-	clean := strings.ToLower(strings.TrimSpace(modelID))
-	clean = strings.TrimPrefix(clean, "workbuddy/")
+	clean := strings.ToLower(strings.TrimSpace(TrimWorkBuddyPrefixes(modelID)))
 	if clean == "" {
 		return nil
 	}

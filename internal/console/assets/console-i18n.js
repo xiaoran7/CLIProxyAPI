@@ -778,6 +778,10 @@
     'quotas.workbuddy.remainingPercentLabel': { zh: '{value}% 可用', en: '{value}% available' },
     'quotas.workbuddy.remainingPointsLabel': { zh: '剩余 {remainFormatted}', en: 'Remaining {remainFormatted}' },
     'quotas.workbuddy.unknownExpiry': { zh: '未知到期日', en: 'expiry unknown' },
+    'quotas.zcode.codingPlan': { zh: '编码套餐', en: 'Coding Plan' },
+    'quotas.zcode.startPlan': { zh: 'Start 试用包', en: 'Start Plan' },
+    'quotas.zcode.trialPool': { zh: '赠送池', en: 'Gift Pool' },
+    'quotas.zcode.resetsLeft': { zh: '剩余重置次数', en: 'Resets Left' },
 
     // ==== API 密钥（keys.*）====
     'keys.addEditPricingRuleTitle': { zh: '添加 / 编辑定价规则', en: 'Add / edit pricing rule' },

@@ -101,6 +101,11 @@
       color: #ff6a00;
       border: 1px solid rgba(255, 106, 0, 0.25);
     }
+    .provider-icon-zcode {
+      background: #f0f9ff;
+      color: #0284c7;
+      border: 1px solid rgba(14, 165, 233, 0.25);
+    }
     .provider-icon-gate {
       background: linear-gradient(135deg, #38bdf8, #6366f1);
       color: #fff;
@@ -207,6 +212,16 @@
       background: rgba(251, 146, 60, 0.18);
       color: #fdba74;
       border-color: rgba(251, 146, 60, 0.3);
+    }
+    .provider-pill-zcode {
+      background: rgba(14, 165, 233, 0.08);
+      color: #0284c7;
+      border-color: rgba(14, 165, 233, 0.22);
+    }
+    .theme-dark .provider-pill-zcode {
+      background: rgba(14, 165, 233, 0.18);
+      color: #38bdf8;
+      border-color: rgba(56, 189, 248, 0.3);
     }
     .provider-pill-other {
       background: rgba(100, 116, 139, 0.08);

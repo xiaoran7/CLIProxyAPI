@@ -694,3 +694,34 @@ func TestFetchWorkBuddyCreditsStoresDynamicModelsAndNotifies(t *testing.T) {
 		t.Errorf("notifyModelRefresh was not triggered with workbuddy; notified: %v", notified)
 	}
 }
+
+func TestDualRealmCreditResolution(t *testing.T) {
+	// 1. Domestic CN realm default fallback rates: DeepSeek Flash is paid at 0.11x, no free tier.
+	cnFlash := LookupWorkBuddyModelCredits("deepseek-v4.1-flash", "cn")
+	if cnFlash == nil {
+		t.Fatal("LookupWorkBuddyModelCredits(deepseek-v4.1-flash, cn) returned nil")
+	}
+	if cnFlash.Multiplier != 0.11 || cnFlash.Effective != "0.11x" || cnFlash.Free {
+		t.Errorf("CN deepseek-v4.1-flash rate = %+v, want multiplier 0.11, effective 0.11x, free false", cnFlash)
+	}
+
+	// 2. International Intl realm default fallback rates: DeepSeek Flash is promotional free 0x.
+	intlFlash := LookupWorkBuddyModelCredits("deepseek-v4.1-flash", "intl")
+	if intlFlash == nil {
+		t.Fatal("LookupWorkBuddyModelCredits(deepseek-v4.1-flash, intl) returned nil")
+	}
+	if intlFlash.Multiplier != 0.0 || intlFlash.Effective != "0x" || !intlFlash.Free {
+		t.Errorf("Intl deepseek-v4.1-flash rate = %+v, want multiplier 0.0, effective 0x, free true", intlFlash)
+	}
+
+	// 3. Prefix detection respects realm namespaces
+	if realm, prov := DetectWorkBuddyModelRealm("workbuddy-cn/deepseek-v4.1-flash"); realm != "cn" || prov != "workbuddy-cn" {
+		t.Errorf("DetectWorkBuddyModelRealm(workbuddy-cn/...) = (%q, %q), want (cn, workbuddy-cn)", realm, prov)
+	}
+	if realm, prov := DetectWorkBuddyModelRealm("workbuddy/deepseek-v4.1-flash"); realm != "intl" || prov != "workbuddy" {
+		t.Errorf("DetectWorkBuddyModelRealm(workbuddy/...) = (%q, %q), want (intl, workbuddy)", realm, prov)
+	}
+	if realm, prov := DetectWorkBuddyModelRealm("hy4-preview-f"); realm != "cn" || prov != "workbuddy-cn" {
+		t.Errorf("DetectWorkBuddyModelRealm(hy4-preview-f) = (%q, %q), want (cn, workbuddy-cn)", realm, prov)
+	}
+}
