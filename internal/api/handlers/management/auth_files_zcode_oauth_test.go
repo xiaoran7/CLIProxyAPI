@@ -69,6 +69,8 @@ func TestListPlugins_DualZCodeAndBigModelLogos(t *testing.T) {
 			SupportsOAuth bool   `json:"supports_oauth"`
 			OAuthProvider string `json:"oauth_provider"`
 			Logo          string `json:"logo"`
+			Domain        string `json:"domain"`
+			Flow          string `json:"flow"`
 			Metadata      *struct {
 				Name string `json:"name"`
 				Logo string `json:"logo"`
@@ -87,6 +89,12 @@ func TestListPlugins_DualZCodeAndBigModelLogos(t *testing.T) {
 			if !p.SupportsOAuth || p.OAuthProvider != "zcode" {
 				t.Errorf("zcode OAuthProvider mismatch: got %q", p.OAuthProvider)
 			}
+			if p.Domain != "zcode.z.ai" {
+				t.Errorf("zcode domain mismatch: got %q, want 'zcode.z.ai'", p.Domain)
+			}
+			if p.Flow != "browser" {
+				t.Errorf("zcode flow mismatch: got %q, want 'browser'", p.Flow)
+			}
 			if !strings.HasPrefix(p.Logo, "data:image/png;base64,") {
 				t.Errorf("zcode logo must be base64 PNG data URI, got %q", p.Logo)
 			}
@@ -98,6 +106,12 @@ func TestListPlugins_DualZCodeAndBigModelLogos(t *testing.T) {
 			foundZCodeCN = true
 			if !p.SupportsOAuth || p.OAuthProvider != "zcode-cn" {
 				t.Errorf("zcode-cn OAuthProvider mismatch: got %q", p.OAuthProvider)
+			}
+			if p.Domain != "open.bigmodel.cn" {
+				t.Errorf("zcode-cn domain mismatch: got %q, want 'open.bigmodel.cn'", p.Domain)
+			}
+			if p.Flow != "browser" {
+				t.Errorf("zcode-cn flow mismatch: got %q, want 'browser'", p.Flow)
 			}
 			if !strings.HasPrefix(p.Logo, "data:image/png;base64,") {
 				t.Errorf("zcode-cn logo must be base64 PNG data URI, got %q", p.Logo)

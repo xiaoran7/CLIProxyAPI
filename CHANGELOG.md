@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **ZCode & BigModel Management UI Credential Subtitle & Domain Alignment (`internal/managementasset/assets/management.html`, `static/management.html`, `internal/api/handlers/management/plugins.go`)**:
+  - Aligned credential card subtitles in the management panel's "Add Credential" (添加凭证) modal for ZCode and BigModel: replaced the generic `"Plugin"` label with standard domain and browser sign-in copy (`zcode.z.ai · Browser sign-in` / `open.bigmodel.cn · Browser sign-in`, matching WorkBuddy and Qoder conventions).
+  - Extended plugin metadata mapping (`cN`) and credential card caption generator (`g(t)`) in `management.html` to support domain-aware subtitle rendering with browser/device flow awareness.
+  - Added `Domain` and `Flow` fields to `pluginListEntry` in `plugins.go` and populated them for `zcode` (`zcode.z.ai`), `zcode-cn` (`open.bigmodel.cn`), `workbuddy`, and `qoder`.
+  - Registered `zcode` and `zcode-cn` in the management panel's provider badge mapping (`wb`), provider filter bar (`AD`), credential badge colors (`xg`), and callback-supported OAuth provider set (`iN`).
 - **ZCode & BigModel Dual-Realm Management UI Registration & Brand Icons (`internal/api/handlers/management/`, `internal/api/server_management.go`, `internal/console/api/handlers_cpa.go`)**:
   - Embedded official high-resolution base64 PNG icons into `nativeOAuthPlugins` in `plugins.go` for both ZCode (Z.ai International) and BigModel (智谱开放平台国内版).
   - Added dedicated `zcode-cn` entry to the plugin registry so the "添加凭证" modal exposes both international and domestic China providers with authentic branding rather than fallback plug placeholders.

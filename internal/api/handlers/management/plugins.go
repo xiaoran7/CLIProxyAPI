@@ -36,6 +36,8 @@ type pluginListEntry struct {
 	SupportsQuota    bool                    `json:"supports_quota"`
 	QuotaProvider    string                  `json:"quota_provider,omitempty"`
 	Logo             string                  `json:"logo"`
+	Domain           string                  `json:"domain,omitempty"`
+	Flow             string                  `json:"flow,omitempty"`
 	ConfigFields     []pluginConfigFieldInfo `json:"config_fields"`
 	Menus            []pluginMenuInfo        `json:"menus"`
 	Metadata         *pluginMetadataInfo     `json:"metadata"`
@@ -152,6 +154,8 @@ func (h *Handler) ListPlugins(c *gin.Context) {
 			SupportsQuota:    true,
 			QuotaProvider:    "workbuddy",
 			Logo:             workbuddyLogoDataURI,
+			Domain:           "workbuddy.ai",
+			Flow:             "browser",
 			ConfigFields:     []pluginConfigFieldInfo{},
 			Menus:            []pluginMenuInfo{},
 			Metadata: &pluginMetadataInfo{
@@ -172,6 +176,8 @@ func (h *Handler) ListPlugins(c *gin.Context) {
 			SupportsQuota:    true,
 			QuotaProvider:    "qoder",
 			Logo:             qoderLogoDataURI,
+			Domain:           "qoder.com",
+			Flow:             "browser",
 			ConfigFields:     []pluginConfigFieldInfo{},
 			Menus:            []pluginMenuInfo{},
 			Metadata: &pluginMetadataInfo{
@@ -192,6 +198,8 @@ func (h *Handler) ListPlugins(c *gin.Context) {
 			SupportsQuota:    true,
 			QuotaProvider:    "zcode",
 			Logo:             zcodeLogoDataURI,
+			Domain:           "zcode.z.ai",
+			Flow:             "browser",
 			ConfigFields:     []pluginConfigFieldInfo{},
 			Menus:            []pluginMenuInfo{},
 			Metadata: &pluginMetadataInfo{
@@ -213,6 +221,8 @@ func (h *Handler) ListPlugins(c *gin.Context) {
 			SupportsQuota:    true,
 			QuotaProvider:    "zcode-cn",
 			Logo:             bigmodelLogoDataURI,
+			Domain:           "open.bigmodel.cn",
+			Flow:             "browser",
 			ConfigFields:     []pluginConfigFieldInfo{},
 			Menus:            []pluginMenuInfo{},
 			Metadata: &pluginMetadataInfo{
@@ -241,6 +251,12 @@ func (h *Handler) ListPlugins(c *gin.Context) {
 			entry.QuotaProvider = p.QuotaProvider
 			if entry.Logo == "" {
 				entry.Logo = p.Logo
+			}
+			if entry.Domain == "" {
+				entry.Domain = p.Domain
+			}
+			if entry.Flow == "" {
+				entry.Flow = p.Flow
 			}
 			if entry.Metadata == nil {
 				entry.Metadata = p.Metadata
