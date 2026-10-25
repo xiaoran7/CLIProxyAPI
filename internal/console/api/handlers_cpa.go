@@ -25,6 +25,60 @@ func isSafeAuthFilename(name string) bool {
 
 var safeErrorLogRegex = regexp.MustCompile(`^error-[A-Za-z0-9._-]+\.log$`)
 
+// maxCatalogAuthFiles bounds how many credentials the console model catalog
+// reads models from, keeping the endpoint responsive on large fleets.
+const maxCatalogAuthFiles = 15
+
+// catalogAuthFile is the subset of a CPA auth-file entry the model catalog needs.
+type catalogAuthFile struct {
+	Name      string `json:"name"`
+	Provider  string `json:"provider"`
+	Disabled  bool   `json:"disabled"`
+	AuthIndex string `json:"auth_index"`
+}
+
+// selectCatalogAuthFiles picks which credentials to read models from.
+//
+// Taking the first N files by listing order starves every provider that sorts
+// after a large fleet: with 28 credentials whose first 15 were all antigravity,
+// ZCode/BigModel never reached the catalog and its GLM models were missing from
+// the console picker. Instead each provider contributes one enabled credential
+// first, then a second pass fills the remaining budget, so every provider is
+// represented even when one of them owns most of the fleet.
+func selectCatalogAuthFiles(files []catalogAuthFile, limit int) []catalogAuthFile {
+	if limit <= 0 || len(files) <= limit {
+		return files
+	}
+
+	selected := make([]catalogAuthFile, 0, limit)
+	seenProvider := make(map[string]bool, len(files))
+	seenFile := make(map[int]bool, len(files))
+	// First pass: one enabled credential per provider, preserving listing order.
+	for i, f := range files {
+		if len(selected) >= limit {
+			return selected
+		}
+		prov := strings.ToLower(strings.TrimSpace(f.Provider))
+		if prov == "" || f.Disabled || seenProvider[prov] {
+			continue
+		}
+		seenProvider[prov] = true
+		seenFile[i] = true
+		selected = append(selected, f)
+	}
+	// Second pass: fill the remaining budget in listing order.
+	for i, f := range files {
+		if len(selected) >= limit {
+			break
+		}
+		if seenFile[i] {
+			continue
+		}
+		selected = append(selected, f)
+	}
+	return selected
+}
+
 func isSafeErrorLogFilename(name string) bool {
 	return safeErrorLogRegex.MatchString(name) && !strings.Contains(name, "..")
 }
@@ -66,19 +120,10 @@ func HandleGetCpaModels(eng *engine.Engine, cpa *CpaClient, providers *ProviderR
 
 		// 2. From CPA auth-files
 		var authFilesResp struct {
-			Files []struct {
-				Name      string `json:"name"`
-				Provider  string `json:"provider"`
-				Disabled  bool   `json:"disabled"`
-				AuthIndex string `json:"auth_index"`
-			} `json:"files"`
+			Files []catalogAuthFile `json:"files"`
 		}
 		if err := cpa.RequestJSON(ctx, http.MethodGet, "/auth-files", nil, "v0", &authFilesResp); err == nil {
-			files := authFilesResp.Files
-			if len(files) > 15 {
-				files = files[:15]
-			}
-			for _, f := range files {
+			for _, f := range selectCatalogAuthFiles(authFilesResp.Files, maxCatalogAuthFiles) {
 				if isSafeAuthFilename(f.Name) {
 					var mResp struct {
 						Models []interface{} `json:"models"`

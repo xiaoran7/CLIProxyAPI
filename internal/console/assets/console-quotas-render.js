@@ -303,11 +303,12 @@
       `;
     }
 
-    // ZCode 紧凑视图：双池（编码套餐配额 + 免费赠送/试用池）指示条
+    // ZCode 紧凑视图：最多两条真实额度指示条。
+    // 编码套餐与 Start Plan 赠送池各占一条；同一池内有多个模型窗口时按窗口分别呈现，
+    // 只有当上游确实只报了一个窗口时才用「有效期」条补位。
     function renderCompactZCodeMeter(acc, fallbackBucket) {
-      let codingBucket = null;
-      let giftBucket = null;
-      let otherBucket = null;
+      const codingBuckets = [];
+      const giftBuckets = [];
 
       for (const grp of (acc.groups || [])) {
         const gname = ((grp.name || '') + ' ' + (grp.displayName || '')).toLowerCase();
@@ -316,71 +317,63 @@
           if (!Number.isFinite(bkt.remaining_percent)) continue;
           const bname = ((bkt.name || '') + ' ' + (bkt.displayName || '')).toLowerCase();
           const isGiftBkt = isGiftGrp || bkt.gift === true || bname.includes('trial') || bname.includes('start') || bname.includes('gift');
-          if (isGiftBkt && !giftBucket) {
-            giftBucket = bkt;
-          } else if (!isGiftBkt && !codingBucket) {
-            codingBucket = bkt;
-          } else if (!otherBucket) {
-            otherBucket = bkt;
-          }
+          if (isGiftBkt) giftBuckets.push(bkt);
+          else codingBuckets.push(bkt);
         }
       }
 
-      if (!codingBucket && fallbackBucket && !giftBucket) {
-        codingBucket = fallbackBucket;
-      } else if (!codingBucket && giftBucket) {
-        // Start Plan only account
-        codingBucket = giftBucket;
-        giftBucket = otherBucket;
+      // 主池在前、赠送池在后；同池内多个模型窗口按剩余额度升序，最紧张的排在前面。
+      const byRemaining = (a, b) => a.remaining_percent - b.remaining_percent;
+      const pools = [...codingBuckets.sort(byRemaining), ...giftBuckets.sort(byRemaining)];
+      if (pools.length === 0 && fallbackBucket && Number.isFinite(fallbackBucket.remaining_percent)) {
+        pools.push(fallbackBucket);
       }
 
-      // Bar 1: 主配额池 (Coding Plan 或 Start Plan)
-      const b1 = codingBucket || fallbackBucket;
-      const rem1 = b1 && Number.isFinite(b1.remaining_percent) ? b1.remaining_percent : 100;
-      let cls1 = 'meter-high'; let col1 = '#10b981';
-      if (rem1 <= 20) { cls1 = 'meter-low'; col1 = '#ef4444'; }
-      else if (rem1 <= 50) { cls1 = 'meter-medium'; col1 = '#f59e0b'; }
+      const planName = acc.plan_name || acc.plan_type || t('quotas.zcode.codingPlan');
+      const bucketLabel = (bkt) => bkt.window || formatBucketLabel(bkt.name, bkt.window) || t('quotas.zcode.codingPlan');
+      const meterClass = (rem) => {
+        if (rem <= 20) return { cls: 'meter-low', col: '#ef4444' };
+        if (rem <= 50) return { cls: 'meter-medium', col: '#f59e0b' };
+        return { cls: 'meter-high', col: '#10b981' };
+      };
 
-      const planName = acc.plan_name || acc.plan_type || (b1 ? (b1.name || b1.window) : '') || t('quotas.zcode.codingPlan');
-      const resetBadge1 = buildCompactResetBadge(b1);
-      const title1 = `ZCode ${escapeHtml(planName)} (${rem1}% 可用)`;
-
-      // Bar 2: 次配额池 (Start Plan 赠送池 / 试用额度，或到期时间 / 通道状态)
-      let bar2Html = '';
-      if (giftBucket && Number.isFinite(giftBucket.remaining_percent)) {
-        const rem2 = giftBucket.remaining_percent;
-        let cls2 = 'meter-high'; let col2 = '#10b981';
-        if (rem2 <= 20) { cls2 = 'meter-low'; col2 = '#ef4444'; }
-        else if (rem2 <= 50) { cls2 = 'meter-medium'; col2 = '#f59e0b'; }
-        const giftName = giftBucket.name || giftBucket.window || t('quotas.zcode.trialPool');
-        const resetBadge2 = buildCompactResetBadge(giftBucket);
-        bar2Html = `
-          <div class="compact-meter-wrap" title="ZCode Start Plan 赠送额度 (${escapeHtml(giftName)}: ${rem2}% 可用)">
+      const buildBar = (bkt) => {
+        const rem = bkt.remaining_percent;
+        const { cls, col } = meterClass(rem);
+        const label = bucketLabel(bkt);
+        const isGift = giftBuckets.includes(bkt);
+        const title = `ZCode ${planName} · ${label}${isGift ? ` (${t('quotas.zcode.trialPool')})` : ''} (${rem}% 可用)`;
+        return `
+          <div class="compact-meter-wrap" title="${escapeHtml(title)}">
             <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
               <span style="display:inline-flex; align-items:center; gap:4px;">
                 <span class="quota-pool-badge pool-zcode">ZCode</span>
-                <span style="color:var(--text-muted); font-size:10px;">${escapeHtml(giftName)}</span>
+                <span style="color:var(--text-muted); font-size:10px;">${escapeHtml(label)}</span>
               </span>
               <span style="display:inline-flex; align-items:center; gap:6px;">
-                ${resetBadge2}
-                <span style="font-family:var(--mono); font-weight:700; color:${col2};">
-                  ${rem2}%
+                ${buildCompactResetBadge(bkt)}
+                <span style="font-family:var(--mono); font-weight:700; color:${col};">
+                  ${rem}%
                 </span>
               </span>
             </div>
             <div class="quota-meter-bar">
-              <div class="quota-meter-fill ${cls2}" style="width: ${rem2}%"></div>
+              <div class="quota-meter-fill ${cls}" style="width: ${rem}%"></div>
             </div>
           </div>
         `;
-      } else {
+      };
+
+      const bars = pools.slice(0, 2).map(buildBar);
+      if (bars.length < 2) {
+        // 上游只报了一个窗口：第二条补有效期，避免紧凑行出现半格空位。
         const expText = acc.expires_at ? formatResetAbs(acc.expires_at) : '有效就绪';
-        bar2Html = `
-          <div class="compact-meter-wrap" title="ZCode 通道可用性与有效期">
+        bars.push(`
+          <div class="compact-meter-wrap" title="ZCode ${escapeHtml(planName)} 有效期">
             <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
               <span style="display:inline-flex; align-items:center; gap:4px;">
                 <span class="quota-pool-badge pool-zcode">ZCode</span>
-                <span style="color:var(--text-muted); font-size:10px;">服务通道</span>
+                <span style="color:var(--text-muted); font-size:10px;">${escapeHtml(t('quotas.zcode.planExpiry'))}</span>
               </span>
               <span style="font-family:var(--mono); font-size:11px; font-weight:600; color:var(--success);">
                 ${escapeHtml(expText)}
@@ -390,29 +383,10 @@
               <div class="quota-meter-fill meter-high" style="width: 100%;"></div>
             </div>
           </div>
-        `;
+        `);
       }
 
-      return `
-        <div class="compact-meter-wrap" title="${escapeHtml(title1)}">
-          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
-            <span style="display:inline-flex; align-items:center; gap:4px;">
-              <span class="quota-pool-badge pool-zcode">ZCode</span>
-              <span style="color:var(--text-muted); font-size:10px;">${escapeHtml(planName)}</span>
-            </span>
-            <span style="display:inline-flex; align-items:center; gap:6px;">
-              ${resetBadge1}
-              <span style="font-family:var(--mono); font-weight:700; color:${col1};">
-                ${rem1}%
-              </span>
-            </span>
-          </div>
-          <div class="quota-meter-bar">
-            <div class="quota-meter-fill ${cls1}" style="width: ${rem1}%"></div>
-          </div>
-        </div>
-        ${bar2Html}
-      `;
+      return bars.join('');
     }
 
     // Antigravity 紧凑视图：Gemini 5h / 周额度双指示条

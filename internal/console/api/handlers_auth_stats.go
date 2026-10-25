@@ -60,6 +60,7 @@ type AuthStatResponseItem struct {
 	CacheRate         float64             `json:"cache_rate"`
 	Quota5h           *AuthStatQuotaInfo  `json:"quota_5h,omitempty"`
 	QuotaWeekly       *AuthStatQuotaInfo  `json:"quota_weekly,omitempty"`
+	QuotaPools        []AuthStatQuotaInfo `json:"quota_pools,omitempty"`
 	PeriodStats       AuthStatPeriodStats `json:"period_stats"`
 	TotalCredits      *float64            `json:"total_credits,omitempty"`
 	RemainingCredits  *float64            `json:"remaining_credits,omitempty"`
@@ -387,11 +388,16 @@ func HandleGetUpstreamAuthStats(eng *engine.Engine, cpa *CpaClient, providers *P
 			// Extract Quota 5h and Quota Weekly from acc.Groups
 			var quota5h *AuthStatQuotaInfo
 			var quotaWeekly *AuthStatQuotaInfo
+			// quotaPools keeps every reported window, so providers whose windows are
+			// neither 5-hour nor weekly (ZCode model buckets, Qoder points) still show
+			// a real water level instead of an empty placeholder.
+			var quotaPools []AuthStatQuotaInfo
 			var totalCredits, remainingCredits, usedCredits *float64
 			var expiresAt string
 			var resetTimeStr, resetCountdownStr string
 
 			if acc != nil {
+				quotaPools = collectQuotaPools(acc.Groups)
 				for _, grp := range acc.Groups {
 					gNameLower := strings.ToLower(grp.DisplayName + " " + grp.Name)
 					isClaudeGroup := strings.Contains(gNameLower, "claude") || strings.Contains(gNameLower, "gpt")
@@ -532,6 +538,7 @@ func HandleGetUpstreamAuthStats(eng *engine.Engine, cpa *CpaClient, providers *P
 				CacheRate:         cacheRate,
 				Quota5h:           quota5h,
 				QuotaWeekly:       quotaWeekly,
+				QuotaPools:        quotaPools,
 				PeriodStats:       periodStats,
 				TotalCredits:      totalCredits,
 				RemainingCredits:  remainingCredits,
@@ -616,4 +623,38 @@ func HandleGetUpstreamAuthStats(eng *engine.Engine, cpa *CpaClient, providers *P
 			"updated_at": now.UnixMilli(),
 		})
 	}
+}
+
+// collectQuotaPools flattens every quota bucket an upstream reported into the
+// stats payload's generic pool list.
+//
+// The stats card historically understood only 5-hour and weekly windows, so a
+// provider reporting per-model buckets (ZCode's GLM windows) or points (Qoder)
+// rendered as "no live quota". Keeping the raw windows lets the console show a
+// real water level for those providers without inventing a synthetic meter.
+func collectQuotaPools(groups []CpaQuotaGroup) []AuthStatQuotaInfo {
+	var pools []AuthStatQuotaInfo
+	for _, grp := range groups {
+		for _, bkt := range grp.Buckets {
+			if bkt.RemainingPercent == nil {
+				continue
+			}
+			name := strings.TrimSpace(bkt.Name)
+			if name == "" {
+				name = strings.TrimSpace(bkt.Window)
+			}
+			if name == "" {
+				name = strings.TrimSpace(grp.DisplayName)
+			}
+			pools = append(pools, AuthStatQuotaInfo{
+				Name:             name,
+				GroupName:        grp.DisplayName,
+				RemainingPercent: float64(*bkt.RemainingPercent),
+				UsedPercent:      bkt.UsedPercent,
+				ResetTime:        bkt.ResetTime,
+				ResetCountdown:   bkt.ResetCountdown,
+			})
+		}
+	}
+	return pools
 }

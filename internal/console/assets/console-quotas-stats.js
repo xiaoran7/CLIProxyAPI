@@ -275,6 +275,30 @@
               </div>
               ${it.quota_weekly ? `<div class="quota-weekly-row">${titleWeekly} <b>${it.quota_weekly.remaining_percent.toFixed(1)}%</b> ${it.quota_weekly.reset_countdown ? `· ${escapeHtml(it.quota_weekly.reset_countdown)}` : ''}</div>` : ''}
             `;
+          } else if (Array.isArray(it.quota_pools) && it.quota_pools.length > 0) {
+            // 非 5h/周窗口的提供商（ZCode 模型额度桶、Qoder 点数等）：
+            // 逐条渲染上游真实窗口，最紧张的排在最前面。
+            const pools = [...it.quota_pools].sort((a, b) => a.remaining_percent - b.remaining_percent).slice(0, 2);
+            const poolRows = pools.map(pool => {
+              const rem = Math.max(0, Math.min(100, Number(pool.remaining_percent) || 0));
+              let barColor = '#10b981';
+              if (rem < 20) barColor = '#ef4444';
+              else if (rem < 50) barColor = '#f59e0b';
+              const countdown = pool.reset_countdown ? escapeHtml(pool.reset_countdown) : '';
+              return `
+                <div class="quota-box-row">
+                  <span class="quota-box-title">${escapeHtml(pool.name)} <b style="color:${barColor};">${rem.toFixed(1)}%</b></span>
+                  <span class="quota-box-countdown">${countdown}</span>
+                </div>
+                <div class="quota-progress-track">
+                  <div class="quota-progress-fill" style="width:${rem}%; background:${barColor};"></div>
+                </div>
+              `;
+            }).join('');
+            const hidden = it.quota_pools.length - pools.length;
+            quotaHtml = poolRows + (hidden > 0
+              ? `<div class="quota-weekly-row">${t('quotas.moreQuotaPools', { count: hidden })}</div>`
+              : '');
           }
 
           // 分时段 Token 矩阵提取

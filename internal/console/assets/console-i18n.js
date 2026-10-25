@@ -786,6 +786,8 @@
     'quotas.zcode.startPlan': { zh: 'Start 试用包', en: 'Start Plan' },
     'quotas.zcode.trialPool': { zh: '赠送池', en: 'Gift Pool' },
     'quotas.zcode.resetsLeft': { zh: '剩余重置次数', en: 'Resets Left' },
+    'quotas.zcode.planExpiry': { zh: '套餐有效期', en: 'Plan Expiry' },
+    'quotas.moreQuotaPools': { zh: '另有 {count} 个额度窗口未展开', en: '{count} more quota windows hidden' },
 
     // ==== API 密钥（keys.*）====
     'keys.addEditPricingRuleTitle': { zh: '添加 / 编辑定价规则', en: 'Add / edit pricing rule' },
