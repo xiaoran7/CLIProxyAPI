@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **One Upstream Rendered as Three Provider Cards (`internal/console/api/handlers_status.go`)**:
+  - `buildProviderGroups` fed every request event to `InferProvider`, including events with an empty `auth_index`. Those cannot be attributed to any credential, so inference fell back to model-name patterns and invented phantom groups: a stray `glm-5.3` landed in `zhipu` (model pattern `glm`) and a `glm-5.3-flash-trial` in `zcode` (model pattern `-trial`), both beside the real `zcode-cn` group. The status page showed one upstream as three cards, two of them with zero accounts.
+  - Events without `auth_index` are now skipped before grouping. Added `TestBuildProviderGroupsSkipsEventsWithoutAuthIndex`, which returns `[zcode-cn zhipu zcode]` before the fix and exactly `[zcode-cn]` after, plus `TestBuildProviderGroupsKeepsAttributedGroups` to ensure attributed events are not dropped.
 - **Duplicate Quota Meters on Upstream Credential Cards (`internal/console/db/queries_upstream.go`, `internal/console/api/quota_parse.go`)**:
   - `quota_snapshots` holds two window-name shapes: an older writer stored `Gemini Models - Five Hour Limit Remaining`, the current one stores `Gemini Models:5h`. `SelectLatestQuotaSnapshots` deduped on the raw `auth_index|window_name` string, so both survived and the card rendered a stale 100% meter beside the real one (5h and weekly each appearing twice).
   - Added `normalizeQuotaWindowKey` / `canonicalQuotaWindow`, folding both shapes onto one semantic key before dedup, so the newest row wins. `hydrateQuotaGroupsFromSnapshots` gained a matching per-group bucket dedup as a second guard.

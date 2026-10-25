@@ -340,40 +340,43 @@ func buildProviderGroups(rows []db.RequestEventRow, providers *ProviderRegistryE
 
 	groups := make(map[string]*groupEntry)
 	for _, r := range rows {
-		provRes := providers.InferProvider(r.Model, r.AuthIndex)
+		authClean := strings.TrimSpace(r.AuthIndex)
+		// An event with no auth_index cannot be attributed to any credential, so
+		// it belongs to no provider group. InferProvider would otherwise fall back
+		// to model-name patterns and invent phantom groups: a stray "glm-5.3"
+		// landed in "zhipu" and a "glm-5.3-flash-trial" in "zcode" beside the real
+		// "zcode-cn" group, showing one upstream as three.
+		if authClean == "" {
+			continue
+		}
+		provRes := providers.InferProvider(r.Model, authClean)
 		provKey := provRes.Key
 		provLabel := provRes.Label
 
-		// If unclassified or generic 'other', check auth_index to separate custom upstreams by channel
+		// If unclassified or generic 'other', resolve the provider from the credential itself.
 		if provKey == "" || provKey == "unknown" || provKey == UnknownProviderKey {
-			authClean := strings.TrimSpace(r.AuthIndex)
-			if authClean != "" {
-				if acc, ok := providers.GetAuthAccount(authClean); ok && (acc.ProviderKey != "" || acc.Name != "") {
-					if acc.ProviderKey != "" && acc.ProviderKey != "openai-compatibility" && acc.ProviderKey != UnknownProviderKey {
-						provKey = acc.ProviderKey
-					} else if acc.Name != "" {
-						provKey = fmt.Sprintf("compat:%s", strings.ToLower(strings.ReplaceAll(acc.Name, " ", "_")))
-					} else {
-						prefix := authClean
-						if len(prefix) > 8 {
-							prefix = prefix[:8]
-						}
-						provKey = fmt.Sprintf("upstream:%s", prefix)
-					}
-					if provLabel == "" {
-						provLabel = acc.Name
-					}
+			if acc, ok := providers.GetAuthAccount(authClean); ok && (acc.ProviderKey != "" || acc.Name != "") {
+				if acc.ProviderKey != "" && acc.ProviderKey != "openai-compatibility" && acc.ProviderKey != UnknownProviderKey {
+					provKey = acc.ProviderKey
+				} else if acc.Name != "" {
+					provKey = fmt.Sprintf("compat:%s", strings.ToLower(strings.ReplaceAll(acc.Name, " ", "_")))
 				} else {
 					prefix := authClean
 					if len(prefix) > 8 {
 						prefix = prefix[:8]
 					}
 					provKey = fmt.Sprintf("upstream:%s", prefix)
-					provLabel = fmt.Sprintf("上游渠道 %s", prefix)
+				}
+				if provLabel == "" {
+					provLabel = acc.Name
 				}
 			} else {
-				provKey = UnknownProviderKey
-				provLabel = UnknownProviderLabel
+				prefix := authClean
+				if len(prefix) > 8 {
+					prefix = prefix[:8]
+				}
+				provKey = fmt.Sprintf("upstream:%s", prefix)
+				provLabel = fmt.Sprintf("上游渠道 %s", prefix)
 			}
 		}
 
