@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -552,7 +553,7 @@ ORDER BY ts DESC
 
 		key := r.AuthIndex
 		if r.WindowName != nil {
-			key += "|" + *r.WindowName
+			key += "|" + normalizeQuotaWindowKey(*r.WindowName)
 		}
 		if seen[key] {
 			continue
@@ -564,6 +565,40 @@ ORDER BY ts DESC
 		return nil, fmt.Errorf("rows iteration failed: %w", err)
 	}
 	return list, nil
+}
+
+// normalizeQuotaWindowKey folds the two window-name shapes this table has held
+// into one semantic key, so the newest row wins instead of both being returned.
+//
+// Older writers stored "Gemini Models - Five Hour Limit Remaining"; newer ones
+// store "Gemini Models:5h". Deduping on the raw name kept both, and the stale
+// 100% row rendered as a second meter beside the real one.
+func normalizeQuotaWindowKey(windowName string) string {
+	name := strings.TrimSpace(windowName)
+	if name == "" {
+		return ""
+	}
+	group, window := name, ""
+	if idx := strings.Index(name, ":"); idx >= 0 {
+		group, window = strings.TrimSpace(name[:idx]), strings.TrimSpace(name[idx+1:])
+	} else if idx := strings.Index(name, " - "); idx >= 0 {
+		group, window = strings.TrimSpace(name[:idx]), strings.TrimSpace(name[idx+3:])
+	}
+	return group + "|" + canonicalQuotaWindow(window)
+}
+
+// canonicalQuotaWindow maps the window spellings both writers used onto one token.
+func canonicalQuotaWindow(window string) string {
+	w := strings.ToLower(strings.TrimSpace(window))
+	switch {
+	case w == "":
+		return ""
+	case w == "5h", strings.Contains(w, "five hour"), strings.Contains(w, "5 hour"), strings.Contains(w, "hour"):
+		return "5h"
+	case w == "weekly", strings.Contains(w, "week"):
+		return "weekly"
+	}
+	return w
 }
 
 // SelectValidations returns upstream validation challenges by status (e.g. "pending").

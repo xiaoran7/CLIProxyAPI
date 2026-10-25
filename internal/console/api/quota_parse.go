@@ -58,6 +58,11 @@ func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) (map[strin
 	for authIdx, rows := range authMap {
 		groupBuckets := make(map[string][]CpaQuotaBucket)
 		groupDispNames := make(map[string]string)
+		// seenBucket dedupes on the canonical group plus window: the same window
+		// can arrive under both name shapes ("Gemini Models:5h" and
+		// "Gemini Models - Five Hour Limit Remaining"), and appending both
+		// rendered a stale duplicate meter beside the real one.
+		seenBucket := make(map[string]bool, len(rows))
 
 		for _, r := range rows {
 			winName := ""
@@ -143,6 +148,11 @@ func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) (map[strin
 				ResetCountdown:    countdown,
 				Disabled:          remPct <= 0,
 			}
+			bucketKey := canonicalName + "|" + win
+			if seenBucket[bucketKey] {
+				continue
+			}
+			seenBucket[bucketKey] = true
 			groupBuckets[canonicalName] = append(groupBuckets[canonicalName], bkt)
 			groupDispNames[canonicalName] = dispName
 		}

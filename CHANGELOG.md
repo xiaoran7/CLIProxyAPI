@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Duplicate Quota Meters on Upstream Credential Cards (`internal/console/db/queries_upstream.go`, `internal/console/api/quota_parse.go`)**:
+  - `quota_snapshots` holds two window-name shapes: an older writer stored `Gemini Models - Five Hour Limit Remaining`, the current one stores `Gemini Models:5h`. `SelectLatestQuotaSnapshots` deduped on the raw `auth_index|window_name` string, so both survived and the card rendered a stale 100% meter beside the real one (5h and weekly each appearing twice).
+  - Added `normalizeQuotaWindowKey` / `canonicalQuotaWindow`, folding both shapes onto one semantic key before dedup, so the newest row wins. `hydrateQuotaGroupsFromSnapshots` gained a matching per-group bucket dedup as a second guard.
+  - Added `TestSelectLatestQuotaSnapshotsFoldsLegacyWindowNames` and `TestNormalizeQuotaWindowKey`. With the legacy rows the old key produced 4 windows (`[44, 77, 100, 100]`); the normalized key produces the 2 real ones (`[44, 77]`).
 - **ZCode Realm Aliases Never Reached the Scheduler (`sdk/cliproxy/auth/conductor_selection.go`)**:
   - A `zcode-cn` (BigModel) or `zcode-zai` credential registered its scheduler shard under the executor key `zcode` (`executorKeyFromAuth`), while a request asked for the provider key `zcode-cn`/`zcode-zai` (`canonicalSchedulingProvider`). The two never matched, so `s.providers[providerKey]` was always nil and every ZCode model answered `503 auth_not_found: no auth available (providers=zcode-cn, model=GLM-5.3)` even though the credential was active, un-cooled and had its 7 models registered.
   - `canonicalSchedulingProvider` now folds `zcode-zai`, `zcode-bigmodel` and `zcode-cn` onto `zcode`, matching the write side. Added `TestSchedulerPick_ZCodeRealmProviderKeys`, which fails for both realm aliases before the fix and passes for all three keys after.
