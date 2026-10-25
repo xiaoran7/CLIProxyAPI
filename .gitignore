@@ -107,3 +107,6 @@ AGENTS.local.md
 .claude/worktrees/
 .claude/settings.local.json
 .claude/scheduled_tasks.json
+
+# Runtime OpenRouter account store written by tests from the repo root
+internal/console/api/data/

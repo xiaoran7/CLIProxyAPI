@@ -1654,6 +1654,10 @@ func (m *Manager) GetExecutionSessionAuthByID(sessionID string, authID string) (
 	return auth.Clone(), true
 }
 
+// canonicalSchedulingProvider maps a provider key to the scheduler shard it is
+// stored under. It must agree with executorKeyFromAuth, which decides the shard
+// a credential is written to: a realm alias folded on one side only makes every
+// request for that provider miss the shard and answer auth_not_found.
 func canonicalSchedulingProvider(key string) string {
 	lower := strings.ToLower(strings.TrimSpace(key))
 	switch lower {
@@ -1661,6 +1665,8 @@ func canonicalSchedulingProvider(key string) string {
 		return "kimi"
 	case "kimi.ai":
 		return "kimi-ai"
+	case "zcode-zai", "zcode-bigmodel", "zcode-cn":
+		return "zcode"
 	default:
 		return lower
 	}
