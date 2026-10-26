@@ -102,6 +102,66 @@ func TestReconcileAntigravityQuotaGroups(t *testing.T) {
 		}
 	})
 
+	t.Run("ArgonModelCooldown_OverridesOnlyArgon_LeavesGeminiUntouched", func(t *testing.T) {
+		groups := append(makeGroups(), CpaQuotaGroup{
+			DisplayName: "Gemini 4 Argon",
+			Name:        "models/gemini4_argon",
+			Buckets: []CpaQuotaBucket{
+				{
+					BucketID:          "gemini-argon-wtu-weekly",
+					Name:              "Gemini 4 Argon Weekly Limit",
+					Window:            "weekly",
+					RemainingFraction: &oneFrac,
+					RemainingPercent:  &hundredPct,
+					ResetTime:         "2026-10-29T12:00:00Z",
+				},
+			},
+		})
+		cooldowns := []CpaCooldownRecord{
+			{
+				Scope:            "model",
+				ModelKey:         "gemini-4-argon-high",
+				RemainingSeconds: 397000,
+				RetryAt:          "2026-10-31T04:54:50Z",
+			},
+		}
+
+		reconciled := reconcileAntigravityQuotaGroups(groups, cooldowns)
+		if len(reconciled) != 3 {
+			t.Fatalf("expected 3 groups, got %d", len(reconciled))
+		}
+
+		// Gemini group must remain 100%
+		for _, b := range reconciled[0].Buckets {
+			if b.RemainingFraction == nil || *b.RemainingFraction != 1.0 {
+				t.Errorf("gemini bucket %v remainingFraction = %v, want 1.0", b.BucketID, b.RemainingFraction)
+			}
+			if b.RemainingPercent == nil || *b.RemainingPercent != 100 {
+				t.Errorf("gemini bucket %v remainingPercent = %v, want 100", b.BucketID, b.RemainingPercent)
+			}
+		}
+
+		// Claude group must remain 100%
+		for _, b := range reconciled[1].Buckets {
+			if b.RemainingFraction == nil || *b.RemainingFraction != 1.0 {
+				t.Errorf("claude bucket %v remainingFraction = %v, want 1.0", b.BucketID, b.RemainingFraction)
+			}
+		}
+
+		// Argon group must be reconciled to 0% with 2026-10-31T04:54:50Z reset time
+		for _, b := range reconciled[2].Buckets {
+			if b.RemainingFraction == nil || *b.RemainingFraction != 0.0 {
+				t.Errorf("argon bucket %v remainingFraction = %v, want 0.0", b.BucketID, b.RemainingFraction)
+			}
+			if b.RemainingPercent == nil || *b.RemainingPercent != 0 {
+				t.Errorf("argon bucket %v remainingPercent = %v, want 0", b.BucketID, b.RemainingPercent)
+			}
+			if b.ResetTime != "2026-10-31T04:54:50Z" {
+				t.Errorf("argon bucket %v resetTime = %v, want 2026-10-31T04:54:50Z", b.BucketID, b.ResetTime)
+			}
+		}
+	})
+
 	t.Run("CredentialLevelCooldown_OverridesAllGroups", func(t *testing.T) {
 		groups := makeGroups()
 		cooldowns := []CpaCooldownRecord{

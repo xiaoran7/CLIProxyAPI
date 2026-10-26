@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Antigravity Gemini 4 Argon Cooldown Decoupled from Standard Gemini Quota Pool (`internal/console/api/quota_parse.go`, `internal/console/assets/console-quotas-render.js`, `internal/api/handlers/management/api_tools_tokens.go`, `internal/managementasset/assets/management.html`, `static/management.html`)**:
+  - `management.html` and `quota_parse.go` previously matched any cooling model containing substring `"gemini"` into a single `_hasGeminiCd` / `geminiCds` category without isolating Argon / Gemini-4. When `gemini-4-argon-high` encountered a 429 rate limit with a long recovery window (~111 hours), the cooldown collector incorrectly attributed the cooldown to standard Gemini models (`Gemini Models`), overwriting 100% full upstream quotas to 0% and falsely reporting weekly exhaustion on standard Flash/Pro models.
+  - Isolated `_hasGemini4Cd` / `gemini4Cds` (`argon`, `gemini-4`, `gemini4`, `gemini 4`) from standard `gemini` (`Gemini Models`) across `quota_parse.go`, `api_tools_tokens.go`, `console-quotas-render.js`, and `management.html`. Standard Gemini models now remain untouched (100% available) when only Gemini 4 is cooling down.
+  - Added unit test cases `ArgonModelCooldown_OverridesOnlyArgon_LeavesGeminiUntouched` in `handlers_quotas_test.go` and `ArgonModelCooldown_OverridesArgonGroupOnly_LeavesGeminiUntouched` in `api_tools_test.go`.
 - **Console Frontend Timezone Display Locked to Asia/Shanghai (`internal/console/assets/`)**:
   - `console-logs.js` formatted event timestamps using `d.toLocaleTimeString()` and `d.getMonth()` without a `timeZone` parameter, falling back to the client browser's local timezone. When users accessed the console via US proxies, anti-detect profiles, or remote machines in PDT (UTC-7), requests were displayed with a 15-hour shift (e.g. 22:05 CST rendered as 07:05 PDT).
   - Added centralized Asia/Shanghai timezone helpers (`getCstParts`, `formatCstTime`, `formatCstDate`, `formatCstDateTime`) to `console-format.js` using `Intl.DateTimeFormat(..., { timeZone: 'Asia/Shanghai', hourCycle: 'h23' })`.

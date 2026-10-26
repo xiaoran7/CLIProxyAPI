@@ -398,7 +398,11 @@
       const buildAntigravityMeter = (bkt, weeklyBkt, defaultLabel, isWeeklyMeter = false) => {
         if (!bkt || !Number.isFinite(bkt.remaining_percent)) return '';
         const isModelCooling = health.cooldown && health.cooldown.scope === 'models' && (
-          (health.cooldown.model_keys || []).some(k => /gemini|flash/i.test(k) && !/claude/i.test(k))
+          (health.cooldown.model_keys || []).some(k => {
+            const kl = String(k || '').toLowerCase();
+            const isG4 = kl.includes('argon') || kl.includes('gemini-4') || kl.includes('gemini4') || kl.includes('gemini 4');
+            return !isG4 && (/gemini|flash/i.test(kl) || (/pro/i.test(kl) && !/claude/i.test(kl)));
+          })
         );
 
         const rawRem = bkt.remaining_percent;

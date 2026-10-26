@@ -229,7 +229,7 @@ func reconcileAntigravityQuotaResponse(auth *coreauth.Auth, respBody []byte, now
 			}
 		} else if cd.Scope == "model" {
 			mKey := strings.ToLower(strings.TrimSpace(cd.ModelKey))
-			if strings.Contains(mKey, "argon") || strings.Contains(mKey, "gemini-4") || strings.Contains(mKey, "gemini4") {
+			if strings.Contains(mKey, "argon") || strings.Contains(mKey, "gemini-4") || strings.Contains(mKey, "gemini4") || strings.Contains(mKey, "gemini 4") {
 				gemini4Cooldowns = append(gemini4Cooldowns, cd)
 			} else if strings.Contains(mKey, "claude") || strings.Contains(mKey, "gpt") ||
 				strings.Contains(mKey, "sonnet") || strings.Contains(mKey, "opus") ||

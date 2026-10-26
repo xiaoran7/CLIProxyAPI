@@ -1841,6 +1841,71 @@ func TestReconcileAntigravityQuotaResponse(t *testing.T) {
 		}
 	})
 
+	t.Run("ArgonModelCooldown_OverridesArgonGroupOnly_LeavesGeminiUntouched", func(t *testing.T) {
+		rawWithArgon := `{
+			"groups": [
+				{
+					"name": "models/gemini",
+					"label": "GEMINI Models",
+					"buckets": [
+						{"id": "gemini-5h", "label": "5 Hour Limit", "remainingFraction": 1.0, "resetTime": "2026-10-22T17:00:00Z"},
+						{"id": "gemini-week", "label": "Weekly Limit", "remainingFraction": 1.0, "resetTime": "2026-10-29T12:00:00Z"}
+					]
+				},
+				{
+					"name": "models/gemini4_argon",
+					"label": "Gemini 4 Argon",
+					"buckets": [
+						{"id": "gemini-argon-wtu-weekly", "label": "Weekly Limit", "remainingFraction": 1.0, "resetTime": "2026-10-29T12:00:00Z"}
+					]
+				}
+			]
+		}`
+		auth := &coreauth.Auth{
+			ID:       "ag-argon-cd@example.com",
+			Provider: "antigravity",
+			ModelStates: map[string]*coreauth.ModelState{
+				"gemini-4-argon-high": {
+					Unavailable:    true,
+					NextRetryAfter: retryAt45h,
+					LastError:      &coreauth.Error{HTTPStatus: 429, Message: "RESOURCE_EXHAUSTED"},
+				},
+			},
+		}
+
+		reconciled := reconcileAntigravityQuotaResponse(auth, []byte(rawWithArgon), now)
+		var result map[string]any
+		if err := json.Unmarshal(reconciled, &result); err != nil {
+			t.Fatalf("unmarshal error: %v", err)
+		}
+
+		groups := result["groups"].([]any)
+		if len(groups) != 2 {
+			t.Fatalf("expected 2 groups, got %d", len(groups))
+		}
+
+		// Gemini group must remain 1.0
+		geminiGrp := groups[0].(map[string]any)
+		for _, b := range geminiGrp["buckets"].([]any) {
+			bMap := b.(map[string]any)
+			if frac, _ := bMap["remainingFraction"].(float64); frac != 1.0 {
+				t.Errorf("gemini bucket %v remainingFraction = %v, want 1.0", bMap["id"], frac)
+			}
+		}
+
+		// Argon group: must be 0.0 with retryAt45h
+		argonGrp := groups[1].(map[string]any)
+		for _, b := range argonGrp["buckets"].([]any) {
+			bMap := b.(map[string]any)
+			if frac, _ := bMap["remainingFraction"].(float64); frac != 0.0 {
+				t.Errorf("argon bucket %v remainingFraction = %v, want 0.0", bMap["id"], frac)
+			}
+			if resetTime, _ := bMap["resetTime"].(string); resetTime != retryAt45h.Format(time.RFC3339) {
+				t.Errorf("argon bucket %v resetTime = %v, want %v", bMap["id"], resetTime, retryAt45h.Format(time.RFC3339))
+			}
+		}
+	})
+
 	t.Run("NoCooldown_Unchanged", func(t *testing.T) {
 		auth := &coreauth.Auth{
 			ID:       "ag-healthy@example.com",

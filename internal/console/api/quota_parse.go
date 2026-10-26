@@ -798,6 +798,7 @@ func reconcileAntigravityQuotaGroups(groups []CpaQuotaGroup, cooldowns []CpaCool
 	hasCredCd := false
 	var claudeCds []CpaCooldownRecord
 	var geminiCds []CpaCooldownRecord
+	var gemini4Cds []CpaCooldownRecord
 
 	for _, cd := range cooldowns {
 		if cd.RemainingSeconds <= 0 {
@@ -808,18 +809,28 @@ func reconcileAntigravityQuotaGroups(groups []CpaQuotaGroup, cooldowns []CpaCool
 			hasCredCd = true
 		} else if cd.Scope == "model" {
 			mk := strings.ToLower(strings.TrimSpace(cd.ModelKey))
-			isGemini := strings.Contains(mk, "gemini") || strings.Contains(mk, "flash") ||
-				(strings.Contains(mk, "pro") && !strings.Contains(mk, "claude"))
-			if isGemini {
+			isGemini4 := strings.Contains(mk, "argon") || strings.Contains(mk, "gemini-4") ||
+				strings.Contains(mk, "gemini4") || strings.Contains(mk, "gemini 4")
+			isClaude := strings.Contains(mk, "claude") || strings.Contains(mk, "gpt") ||
+				strings.Contains(mk, "sonnet") || strings.Contains(mk, "opus") ||
+				strings.Contains(mk, "haiku")
+			isGemini := !isGemini4 && (strings.Contains(mk, "gemini") || strings.Contains(mk, "flash") ||
+				(strings.Contains(mk, "pro") && !strings.Contains(mk, "claude")))
+
+			if isGemini4 {
+				gemini4Cds = append(gemini4Cds, cd)
+			} else if isClaude {
+				claudeCds = append(claudeCds, cd)
+			} else if isGemini {
 				geminiCds = append(geminiCds, cd)
 			} else {
-				// All non-Gemini models (Claude, GPT, DeepSeek, Llama, Qwen, etc.) share the Antigravity 3P quota pool
+				// All non-Gemini non-Argon models (Claude, GPT, DeepSeek, Llama, Qwen, etc.) share the Antigravity 3P quota pool
 				claudeCds = append(claudeCds, cd)
 			}
 		}
 	}
 
-	if !hasCredCd && len(claudeCds) == 0 && len(geminiCds) == 0 {
+	if !hasCredCd && len(claudeCds) == 0 && len(geminiCds) == 0 && len(gemini4Cds) == 0 {
 		return groups
 	}
 
@@ -827,12 +838,16 @@ func reconcileAntigravityQuotaGroups(groups []CpaQuotaGroup, cooldowns []CpaCool
 	for i, grp := range groups {
 		gCopy := grp
 		gName := strings.ToLower(fmt.Sprintf("%s %s %s", grp.GroupID, grp.DisplayName, grp.Name))
-		isGemini := strings.Contains(gName, "gemini")
-		isClaude := !isGemini || strings.Contains(gName, "claude") || strings.Contains(gName, "gpt")
+		isGemini4 := strings.Contains(gName, "argon") || strings.Contains(gName, "gemini 4") ||
+			strings.Contains(gName, "gemini-4") || strings.Contains(gName, "gemini4")
+		isClaude := strings.Contains(gName, "claude") || strings.Contains(gName, "gpt") || strings.Contains(gName, "3p")
+		isGemini := !isGemini4 && strings.Contains(gName, "gemini")
 
 		var targetCds []CpaCooldownRecord
 		if hasCredCd {
 			targetCds = activeCds
+		} else if isGemini4 {
+			targetCds = gemini4Cds
 		} else if isGemini {
 			targetCds = geminiCds
 		} else if isClaude {
