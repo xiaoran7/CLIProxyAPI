@@ -532,7 +532,7 @@
       $('cpa-error-files').innerHTML = files.length ? files.map(file => `
         <div class="cpa-setting-row" style="align-items:center;">
           <span style="font-family:var(--mono);word-break:break-all;"><strong>${escape(file.name)}</strong> · ${t('cpa.fileMetaSizeBytes', { value: escape(file.size) })}</span>
-          <span style="color:var(--text-dim);font-size:12px;">${file.modified ? new Date(Number(file.modified) * 1000).toLocaleString(LOCALE) : ''}</span>
+          <span style="color:var(--text-dim);font-size:12px;">${file.modified ? new Date(Number(file.modified) * 1000).toLocaleString(LOCALE, { timeZone: 'Asia/Shanghai' }) : ''}</span>
           <div class="cpa-actions" style="margin:0;">
             <button class="btn btn-primary btn-sm" data-cpa-action="error-preview" data-name="${escape(file.name)}" data-size="${escape(file.size)}" data-modified="${escape(file.modified || '')}">${t('cpa.viewOnline')}</button>
             <button class="btn btn-secondary btn-sm" data-cpa-action="error-download" data-name="${escape(file.name)}">${t('cpa.download')}</button>
@@ -551,7 +551,7 @@
     if (!viewer) return;
 
     title.textContent = name;
-    meta.textContent = `${size ? t('cpa.fileListSizeBytes', { count: size }) : ''}${modified ? ` ${t('cpa.modifiedAtPrefix', { value: new Date(Number(modified) * 1000).toLocaleString(LOCALE) })}` : ''}`;
+    meta.textContent = `${size ? t('cpa.fileListSizeBytes', { count: size }) : ''}${modified ? ` ${t('cpa.modifiedAtPrefix', { value: new Date(Number(modified) * 1000).toLocaleString(LOCALE, { timeZone: 'Asia/Shanghai' }) })}` : ''}`;
     content.textContent = t('cpa.readingErrorLogContext');
     viewer.hidden = false;
     viewer.scrollIntoView({ block: 'nearest' });

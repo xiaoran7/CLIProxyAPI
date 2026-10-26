@@ -759,7 +759,7 @@
     renderFleet(state.facts);
     renderRuntime();
     const at = state.facts?.fetched_at;
-    setText('ovw-updated', at ? new Date(at).toLocaleTimeString(LOCALE) : '--');
+    setText('ovw-updated', at ? (typeof formatCstTime === 'function' ? formatCstTime(at) : new Date(at).toLocaleTimeString(LOCALE, { hour12: false, timeZone: 'Asia/Shanghai' })) : '--');
   }
 
   async function fetchRuntimeFacts(force = false) {

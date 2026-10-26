@@ -70,7 +70,7 @@
 
       banner.style.display = 'block';
       container.innerHTML = pendings.map(v => {
-        const timeStr = new Date(v.updated_at).toLocaleTimeString(LOCALE, { hour12: false });
+        const timeStr = typeof formatCstTime === 'function' ? formatCstTime(v.updated_at) : new Date(v.updated_at).toLocaleTimeString(LOCALE, { hour12: false, timeZone: 'Asia/Shanghai' });
         const nameDisp = escapeHtml(v.account_name || v.auth_index || t('quotas.unknownAccount'));
         const urlSafe = escapeHtml(v.validation_url);
         return `
@@ -135,7 +135,7 @@
           `;
         } else {
           pendingList.innerHTML = pendings.map(v => {
-            const timeStr = new Date(v.updated_at).toLocaleString(LOCALE, { hour12: false });
+            const timeStr = typeof formatCstDateTime === 'function' ? formatCstDateTime(v.updated_at) : new Date(v.updated_at).toLocaleString(LOCALE, { hour12: false, timeZone: 'Asia/Shanghai' });
             const nameDisp = escapeHtml(v.account_name || v.auth_index || t('quotas.validation.googleAccount'));
             const targetEmail = v.account_name && v.account_name.includes('@') ? v.account_name.trim() : null;
             const standardUrl = safeGoogleLink(v.validation_url);
@@ -213,7 +213,7 @@
               ? `<span class="chip chip-red" style="font-weight:700; animation:pulse 1.8s infinite;">${t('quotas.validation.needManualBadge')}</span>`
               : (acc.health?.blocked ? `<span class="chip chip-red">${escapeHtml(acc.health.detail)}</span>` : `<span class="chip chip-green">${t('quotas.healthOkBadge')}</span>`);
 
-            const updateTime = acc.updated_at ? new Date(acc.updated_at).toLocaleTimeString(LOCALE, { hour12: false }) : '--';
+            const updateTime = acc.updated_at ? (typeof formatCstTime === 'function' ? formatCstTime(acc.updated_at) : new Date(acc.updated_at).toLocaleTimeString(LOCALE, { hour12: false, timeZone: 'Asia/Shanghai' })) : '--';
 
             let actionHtml = '';
             if (hasPending) {
@@ -256,8 +256,8 @@
           histTbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-dim); padding:24px;">${t('quotas.emptyCaptureHistory')}</td></tr>`;
         } else {
           histTbody.innerHTML = cachedUpstreamValidations.slice(0, 50).map(v => {
-            const timeStr = new Date(v.ts).toLocaleString(LOCALE, { hour12: false });
-            const upTimeStr = new Date(v.updated_at).toLocaleString(LOCALE, { hour12: false });
+            const timeStr = typeof formatCstDateTime === 'function' ? formatCstDateTime(v.ts) : new Date(v.ts).toLocaleString(LOCALE, { hour12: false, timeZone: 'Asia/Shanghai' });
+            const upTimeStr = typeof formatCstDateTime === 'function' ? formatCstDateTime(v.updated_at) : new Date(v.updated_at).toLocaleString(LOCALE, { hour12: false, timeZone: 'Asia/Shanghai' });
             const statusLabel = v.status === 'pending'
               ? `<span class="chip chip-red">${t('quotas.validation.pendingBadge')}</span>`
               : (v.status === 'resolved' ? `<span class="chip chip-green">${t('quotas.validation.verifiedBadge')}</span>` : `<span class="chip chip-gray">${t('quotas.validation.ignoredBadge')}</span>`);

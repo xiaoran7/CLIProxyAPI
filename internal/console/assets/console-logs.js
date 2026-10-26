@@ -372,9 +372,10 @@
     function renderEventRowHtml(ev, isNew = false) {
       const rowClassAttr = isNew ? ' class="live-row-enter live-row-highlight"' : '';
       const tsMs = ev.ts > 1e11 ? ev.ts : ev.ts * 1000;
-      const d = new Date(tsMs);
-      const timeStr = d.toLocaleTimeString(LOCALE, { hour12: false });
-      const dateStr = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const cst = typeof getCstParts === 'function' ? getCstParts(tsMs) : null;
+      const d = cst ? cst.d : new Date(tsMs);
+      const timeStr = cst ? cst.timeStr : d.toLocaleTimeString(LOCALE, { hour12: false, timeZone: 'Asia/Shanghai' });
+      const dateStr = cst ? cst.dateStr : `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const fullIso = Number.isNaN(d.getTime()) ? '' : d.toISOString();
 
       let statusClass = 'chip-green';
@@ -457,7 +458,7 @@
       }
 
       return `<tr${rowClassAttr} data-id="${escapeHtml(String(ev.id || ''))}">
-        <td class="num" style="color:var(--text-dim); font-size:11.5px;" title="${escapeHtml(fullIso)}">
+        <td class="num" style="color:var(--text-dim); font-size:11.5px;" title="${escapeHtml(fullIso ? `${fullIso} (UTC) · CST (UTC+8)` : '')}">
           <div class="live-cell-content"><span style="color:var(--text-muted); margin-right:3px;">${dateStr}</span>${timeStr}</div>
         </td>
         <td>
@@ -657,10 +658,11 @@
       for (const ev of errors) {
         // 兼容自适应秒级或毫秒级时间戳，杜绝重复乘 1000 导致时间错乱与溢出
         const tsMs = ev.ts > 1e11 ? ev.ts : ev.ts * 1000;
-        const d = new Date(tsMs);
-        const dateStr = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        const timeStr = d.toLocaleTimeString(LOCALE, { hour12: false });
-        const fullTimeStr = `${dateStr} ${timeStr}`;
+        const cst = typeof getCstParts === 'function' ? getCstParts(tsMs) : null;
+        const d = cst ? cst.d : new Date(tsMs);
+        const dateStr = cst ? cst.dateStr : `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const timeStr = cst ? cst.timeStr : d.toLocaleTimeString(LOCALE, { hour12: false, timeZone: 'Asia/Shanghai' });
+        const fullTimeStr = cst ? cst.fullDateTimeStr : `${dateStr} ${timeStr}`;
         const keyInfo = ev.key_alias ? `${escapeHtml(ev.key_alias)} (#${ev.key_id || '—'})` : (ev.key_id ? `#${ev.key_id}` : '—');
 
         let statusClass = 'chip-red';

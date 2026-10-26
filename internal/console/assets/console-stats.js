@@ -31,9 +31,9 @@
       }
     }
 
-    // 每次调用现取，保证切换语言后 formatter 的 locale 同步
+    // 每次调用现取，保证切换语言后 formatter 的 locale 同步，锁定 Asia/Shanghai
     function heartbeatTimeFormatter() {
-      return new Intl.DateTimeFormat(LOCALE, { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      return new Intl.DateTimeFormat(LOCALE, { timeZone: 'Asia/Shanghai', hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
     }
     function renderOperationsStrip() {
       try {
@@ -173,7 +173,7 @@
         let availCls = '';
         if (availVal != null) availCls = availVal >= 99 ? '' : (availVal >= 95 ? 'warn' : 'err');
         const heartbeatCount = 60;
-        const lastReq = stat && stat.last_request_ts ? new Date(stat.last_request_ts).toLocaleString(LOCALE, { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+        const lastReq = stat && stat.last_request_ts ? new Date(stat.last_request_ts).toLocaleString(LOCALE, { timeZone: 'Asia/Shanghai', hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
         const b = e.brand;
 
         // 延迟/TTFT 组内无明细时留空，不显示误导性的 --

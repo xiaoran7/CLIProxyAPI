@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Console Frontend Timezone Display Locked to Asia/Shanghai (`internal/console/assets/`)**:
+  - `console-logs.js` formatted event timestamps using `d.toLocaleTimeString()` and `d.getMonth()` without a `timeZone` parameter, falling back to the client browser's local timezone. When users accessed the console via US proxies, anti-detect profiles, or remote machines in PDT (UTC-7), requests were displayed with a 15-hour shift (e.g. 22:05 CST rendered as 07:05 PDT).
+  - Added centralized Asia/Shanghai timezone helpers (`getCstParts`, `formatCstTime`, `formatCstDate`, `formatCstDateTime`) to `console-format.js` using `Intl.DateTimeFormat(..., { timeZone: 'Asia/Shanghai', hourCycle: 'h23' })`.
+  - Updated `console-logs.js` (request events and error center tables), `console-stats.js` (operation strip and last request timestamps), `console-quotas-fetch.js` (verification timestamps), `console-overview.js` (runtime facts refresh timestamp), and `console-cpa.js` (log modified timestamps) to strictly format in `Asia/Shanghai`.
+  - Moved `console-format.js` into `<head>` immediately after `console-i18n.js` in `console.html` so all downstream console modules have access to the time formatting helpers on initial load.
+  - Aligned Tokyo VPS host timezone to `Asia/Shanghai (CST, +0800)` via `timedatectl set-timezone Asia/Shanghai`.
 - **One Upstream Rendered as Three Provider Cards (`internal/console/api/handlers_status.go`)**:
   - `buildProviderGroups` fed every request event to `InferProvider`, including events with an empty `auth_index`. Those cannot be attributed to any credential, so inference fell back to model-name patterns and invented phantom groups: a stray `glm-5.3` landed in `zhipu` (model pattern `glm`) and a `glm-5.3-flash-trial` in `zcode` (model pattern `-trial`), both beside the real `zcode-cn` group. The status page showed one upstream as three cards, two of them with zero accounts.
   - Events without `auth_index` are now skipped before grouping. Added `TestBuildProviderGroupsSkipsEventsWithoutAuthIndex`, which returns `[zcode-cn zhipu zcode]` before the fix and exactly `[zcode-cn]` after, plus `TestBuildProviderGroupsKeepsAttributedGroups` to ensure attributed events are not dropped.

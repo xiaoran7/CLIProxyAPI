@@ -4,6 +4,83 @@
  */
 
     // ---- 通用格式化辅助 ----
+    // 统一东八区（Asia/Shanghai）时间基准，杜绝客户端浏览器代理/指纹导致的跨时区时间错乱
+    const CST_TIMEZONE = 'Asia/Shanghai';
+
+    function getCstParts(dateOrMs) {
+      if (!dateOrMs && dateOrMs !== 0) return null;
+      let d;
+      if (dateOrMs instanceof Date) {
+        d = dateOrMs;
+      } else if (typeof dateOrMs === 'string' && !isNaN(Number(dateOrMs)) && /^\d+$/.test(dateOrMs.trim())) {
+        d = new Date(Number(dateOrMs));
+      } else {
+        d = new Date(dateOrMs);
+      }
+      if (Number.isNaN(d.getTime())) return null;
+      try {
+        const dtf = new Intl.DateTimeFormat('en-US', {
+          timeZone: CST_TIMEZONE,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hourCycle: 'h23'
+        });
+        const parts = Object.fromEntries(dtf.formatToParts(d).map(p => [p.type, p.value]));
+        return {
+          d,
+          year: parts.year,
+          month: parts.month,
+          day: parts.day,
+          hour: parts.hour,
+          minute: parts.minute,
+          second: parts.second,
+          dateStr: `${parts.month}-${parts.day}`,
+          timeStr: `${parts.hour}:${parts.minute}:${parts.second}`,
+          fullDateStr: `${parts.year}-${parts.month}-${parts.day}`,
+          fullDateTimeStr: `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`
+        };
+      } catch {
+        const pad = n => String(n).padStart(2, '0');
+        return {
+          d,
+          year: String(d.getFullYear()),
+          month: pad(d.getMonth() + 1),
+          day: pad(d.getDate()),
+          hour: pad(d.getHours()),
+          minute: pad(d.getMinutes()),
+          second: pad(d.getSeconds()),
+          dateStr: `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+          timeStr: `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`,
+          fullDateStr: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+          fullDateTimeStr: `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+        };
+      }
+    }
+    window.CST_TIMEZONE = CST_TIMEZONE;
+    window.getCstParts = getCstParts;
+
+    function formatCstTime(dateOrMs) {
+      const parts = getCstParts(dateOrMs);
+      return parts ? parts.timeStr : '--';
+    }
+    window.formatCstTime = formatCstTime;
+
+    function formatCstDate(dateOrMs) {
+      const parts = getCstParts(dateOrMs);
+      return parts ? parts.dateStr : '--';
+    }
+    window.formatCstDate = formatCstDate;
+
+    function formatCstDateTime(dateOrMs) {
+      const parts = getCstParts(dateOrMs);
+      return parts ? parts.fullDateTimeStr : '--';
+    }
+    window.formatCstDateTime = formatCstDateTime;
+
     function formatTokens(n) {
       if (!n) return '0';
       if (typeof n === 'object' && n !== null && n.tokens != null) n = n.tokens;
@@ -27,22 +104,20 @@
       if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + ' s';
       return String(Math.round(n)) + ' ms';
     }
-    // 绝对刷新时刻（客户端本地时区）：9月13日 18:05（若跨年则带年份）
+    // 绝对刷新时刻（东八区北京时间）：9月13日 18:05（若跨年则带年份）
     function formatResetAbs(iso) {
       if (!iso) return '';
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return '';
-      const hh = String(d.getHours()).padStart(2, '0');
-      const mm = String(d.getMinutes()).padStart(2, '0');
-      const now = new Date();
+      const parts = getCstParts(iso);
+      if (!parts) return '';
+      const nowParts = getCstParts(Date.now());
       const vars = {
-        year: d.getFullYear(),
-        month: d.getMonth() + 1,
-        day: d.getDate(),
-        hh,
-        mm
+        year: parts.year,
+        month: parts.month,
+        day: parts.day,
+        hh: parts.hour,
+        mm: parts.minute
       };
-      if (d.getFullYear() !== now.getFullYear()) {
+      if (parts.year !== (nowParts ? nowParts.year : parts.year)) {
         return t('reset.absDateTime', vars);
       }
       return t('reset.absDateTimeNoYear', vars);
