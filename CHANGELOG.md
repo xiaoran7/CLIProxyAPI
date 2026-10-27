@@ -5,6 +5,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Qoder Automated Daily Check-in Engine & Management API (`internal/auth/qoder/checkin.go`, `internal/api/handlers/management/qoder_checkin.go`, `sdk/cliproxy/service_lifecycle.go`)**:
+  - Restored and elevated Qoder daily check-in (100 daily Credits reward, resetting at 10:00 CST / Beijing time) with full multi-channel API support, including OpenAPI user campaigns listing (`/sash/api/v1/me/campaigns`) and reward claim (`/sash/api/v1/me/campaigns/{id}/claim`), with automatic fallback to direct daily check-in endpoints (`/sash/api/v1/me/daily-check-in/claim`, `/sash/api/v1/me/daily-checkin`).
+  - Implemented authentic desktop client header emulation (`Cosy-ClientType: 10`, `Cosy-MachineType: 5`, `Cosy-Version: 0.1.43`, `Cosy-MachineToken`, `User-Agent`) required by Qoder's risk control and campaign discovery systems.
+  - Implemented persistent `CheckinEngine` with thread-safe file storage (`qoder_checkins.json`), automatic same-day deduplication, enable/disable toggle, and automated background execution ticker every 30 minutes.
+  - Registered management API endpoints `GET /v8/management/qoder/checkin`, `POST /v8/management/qoder/checkin`, and `PUT /v8/management/qoder/checkin` for status retrieval, immediate triggering (single or batch), and scheduler configuration.
+  - Wired `qoder.InitGlobalCheckinEngine` and graceful `Stop` into `sdk/cliproxy/service_lifecycle.go`, and protected `qoder_checkins.json` from exposure as a virtual user credential in `internalStorageFileNames`.
+  - Added comprehensive unit tests in `internal/auth/qoder/checkin_test.go` and `internal/api/handlers/management/qoder_checkin_test.go`.
+
 ### Fixed
 - **Antigravity Gemini 4 Argon Cooldown Decoupled from Standard Gemini Quota Pool (`internal/console/api/quota_parse.go`, `internal/console/assets/console-quotas-render.js`, `internal/api/handlers/management/api_tools_tokens.go`, `internal/managementasset/assets/management.html`, `static/management.html`)**:
   - `management.html` and `quota_parse.go` previously matched any cooling model containing substring `"gemini"` into a single `_hasGeminiCd` / `geminiCds` category without isolating Argon / Gemini-4. When `gemini-4-argon-high` encountered a 429 rate limit with a long recovery window (~111 hours), the cooldown collector incorrectly attributed the cooldown to standard Gemini models (`Gemini Models`), overwriting 100% full upstream quotas to 0% and falsely reporting weekly exhaustion on standard Flash/Pro models.

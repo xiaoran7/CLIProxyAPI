@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/api"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/qoder"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/workbuddy"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/home"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/redisqueue"
@@ -122,6 +123,14 @@ func (s *Service) Run(ctx context.Context) error {
 			return s.coreManager.List()
 		})
 		log.Info("workbuddy daily checkin engine initialized")
+
+		qoder.InitGlobalCheckinEngine(authDir, func() []*coreauth.Auth {
+			if s.coreManager == nil {
+				return nil
+			}
+			return s.coreManager.List()
+		})
+		log.Info("qoder daily checkin engine initialized")
 	}
 
 	if !homeEnabled {
@@ -281,6 +290,9 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	var shutdownErr error
 	s.shutdownOnce.Do(func() {
 		if engine := workbuddy.GetGlobalCheckinEngine(); engine != nil {
+			engine.Stop()
+		}
+		if engine := qoder.GetGlobalCheckinEngine(); engine != nil {
 			engine.Stop()
 		}
 		if s.coreManager != nil {

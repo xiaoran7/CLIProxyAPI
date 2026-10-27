@@ -53,6 +53,7 @@ var (
 var internalStorageFileNames = map[string]struct{}{
 	"session_affinity.json":   {},
 	"workbuddy_checkins.json": {},
+	"qoder_checkins.json":     {},
 }
 
 func isInternalStorageFile(name string) bool {
