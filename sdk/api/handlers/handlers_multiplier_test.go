@@ -3,6 +3,8 @@ package handlers
 import (
 	"net/http"
 	"testing"
+
+	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 )
 
 func TestParseModelMultiplier(t *testing.T) {
@@ -318,5 +320,29 @@ func TestDualRealmWorkBuddyMultiplierValidation(t *testing.T) {
 	}
 	if detailsCodeBuddy.TargetProvider != "workbuddy-cn" {
 		t.Errorf("TargetProvider = %q, want workbuddy-cn", detailsCodeBuddy.TargetProvider)
+	}
+
+	// 5. Verify providersForExecution preserves explicit namespace prefix from originalRequestedModel
+	handler := NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, nil)
+	provsCN, normCN, errCN := handler.providersForExecution("deepseek-v4.1-flash", "workbuddy-cn/deepseek-v4.1-flash:0.11x", false, modelRouteDecision{}, modelExecutionOptions{})
+	if errCN != nil {
+		t.Fatalf("unexpected error for workbuddy-cn providersForExecution: %v", errCN)
+	}
+	if len(provsCN) != 1 || provsCN[0] != "workbuddy-cn" {
+		t.Fatalf("providersForExecution(workbuddy-cn) = %v, want strictly [workbuddy-cn]", provsCN)
+	}
+	if normCN != "deepseek-v4.1-flash" {
+		t.Errorf("normalized model = %q, want deepseek-v4.1-flash", normCN)
+	}
+
+	provsIntl, normIntl, errIntl := handler.providersForExecution("deepseek-v4.1-flash", "workbuddy/deepseek-v4.1-flash:0x", false, modelRouteDecision{}, modelExecutionOptions{})
+	if errIntl != nil {
+		t.Fatalf("unexpected error for workbuddy intl providersForExecution: %v", errIntl)
+	}
+	if len(provsIntl) != 1 || provsIntl[0] != "workbuddy" {
+		t.Fatalf("providersForExecution(workbuddy) = %v, want strictly [workbuddy]", provsIntl)
+	}
+	if normIntl != "deepseek-v4.1-flash" {
+		t.Errorf("normalized model = %q, want deepseek-v4.1-flash", normIntl)
 	}
 }

@@ -159,7 +159,11 @@ func (h *BaseAPIHandler) providersForExecution(modelName, originalRequestedModel
 		}
 		return []string{routeDecision.Provider}, normalizedModel, nil
 	}
-	return h.getRequestDetailsWithOptions(modelName, allowImageModel, execOptions.AllowSpeechModel)
+	modelToResolve := strings.TrimSpace(originalRequestedModel)
+	if modelToResolve == "" {
+		modelToResolve = strings.TrimSpace(modelName)
+	}
+	return h.getRequestDetailsWithOptions(modelToResolve, allowImageModel, execOptions.AllowSpeechModel)
 }
 
 func (h *BaseAPIHandler) getRequestDetailsWithOptions(modelName string, allowImageModel, allowSpeechModel bool) (providers []string, normalizedModel string, err *interfaces.ErrorMessage) {
