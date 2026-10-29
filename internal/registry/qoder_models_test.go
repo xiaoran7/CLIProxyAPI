@@ -180,3 +180,80 @@ func TestQoderCatalogFreshnessAndTTL(t *testing.T) {
 		t.Fatal("expected failure cooldown to expire after 3m")
 	}
 }
+
+func TestParseQoderCatalogModels_GatewayChatFormat(t *testing.T) {
+	gatewayJSON := []byte(`{
+		"chat": [
+			{
+				"key": "auto",
+				"display_name": "Auto",
+				"is_vl": true,
+				"is_reasoning": true,
+				"price_factor": 0.5,
+				"context_config": {
+					"200K": {"token_count": 200000, "is_default": true}
+				}
+			},
+			{
+				"key": "qmodel_38max",
+				"display_name": "Qwen3.8-Max",
+				"is_vl": true,
+				"is_reasoning": true,
+				"price_factor": 0.5,
+				"context_config": {
+					"1M": {"token_count": 1000000},
+					"200K": {"token_count": 200000, "is_default": true},
+					"400K": {"token_count": 400000}
+				}
+			},
+			{
+				"key": "dfmodel",
+				"display_name": "DeepSeek-Flash",
+				"is_vl": true,
+				"is_reasoning": false,
+				"price_factor": 0.0,
+				"context_config": {
+					"1M": {"token_count": 1000000}
+				}
+			}
+		]
+	}`)
+
+	models := ParseQoderCatalogModels(gatewayJSON, "cn")
+	if len(models) != 3 {
+		t.Fatalf("expected 3 parsed models from gateway chat format, got %d", len(models))
+	}
+
+	m0 := models[0]
+	if m0.ID != "auto" {
+		t.Errorf("expected ID 'auto', got %s", m0.ID)
+	}
+	if m0.ContextLength != 200000 {
+		t.Errorf("expected ContextLength 200000, got %d", m0.ContextLength)
+	}
+	if m0.Thinking == nil {
+		t.Errorf("expected Thinking support for auto")
+	}
+
+	m1 := models[1]
+	if m1.ID != "qmodel_38max" {
+		t.Errorf("expected ID 'qmodel_38max', got %s", m1.ID)
+	}
+	if m1.DisplayName != "Qwen3.8-Max" {
+		t.Errorf("expected DisplayName 'Qwen3.8-Max', got %s", m1.DisplayName)
+	}
+	if m1.ContextLength != 1000000 {
+		t.Errorf("expected ContextLength 1000000 from context_config max, got %d", m1.ContextLength)
+	}
+	if m1.Credits == nil || m1.Credits.Multiplier != 0.5 {
+		t.Errorf("expected Credits Multiplier 0.5, got %v", m1.Credits)
+	}
+
+	m2 := models[2]
+	if m2.ID != "dfmodel" {
+		t.Errorf("expected ID 'dfmodel', got %s", m2.ID)
+	}
+	if m2.Thinking != nil {
+		t.Errorf("expected no Thinking support for non-reasoning dfmodel")
+	}
+}

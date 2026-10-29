@@ -95,32 +95,52 @@ type CosySignature struct {
 // signingPath is the URL path (e.g. "/algo/api/v2/model/list").
 // requestBody is the raw body string of the request.
 func ComputeCosySignature(uid, jobToken, signingPath, requestBody string, nowSec int64) (*CosySignature, error) {
+	return ComputeCosySignatureWithIdentity(uid, uid, "personal_professional_trial", jobToken, "", signingPath, requestBody, nowSec)
+}
+
+// ComputeCosySignatureWithIdentity computes the COSY Authorization header using the canonical 9-field identity schema.
+func ComputeCosySignatureWithIdentity(uid, nickname, userType, token, refreshToken, signingPath, requestBody string, nowSec int64) (*CosySignature, error) {
 	rsaPub, errPub := getCosyRSAPublicKey()
 	if errPub != nil {
 		return nil, errPub
 	}
 
-	tempKey := NewRandomBytes(16)
+	rawUUID := uuid.New().String()
+	tempKeyHex := strings.ReplaceAll(rawUUID, "-", "")[:16]
+	tempKeyBytes := []byte(tempKeyHex)
 
-	// 1. RSA encrypt tempKey
-	encryptedKey, errRSA := rsa.EncryptPKCS1v15(rand.Reader, rsaPub, tempKey)
+	// 1. RSA encrypt tempKey (PKCS#1 v1.5)
+	encryptedKey, errRSA := rsa.EncryptPKCS1v15(rand.Reader, rsaPub, tempKeyBytes)
 	if errRSA != nil {
 		return nil, fmt.Errorf("qoder cosy: rsa encrypt temp key failed: %w", errRSA)
 	}
 	cosyKey := base64.StdEncoding.EncodeToString(encryptedKey)
 
-	// 2. AES-128-CBC encrypt user identity info
-	infoObj := map[string]string{
-		"sub":   uid,
-		"token": jobToken,
+	// 2. AES-128-CBC encrypt canonical identity
+	if userType == "" {
+		userType = "personal_professional_trial"
 	}
-	infoJSON, errJSON := json.Marshal(infoObj)
+	if nickname == "" {
+		nickname = uid
+	}
+	identity := map[string]string{
+		"name":                 nickname,
+		"aid":                  uid,
+		"uid":                  uid,
+		"yx_uid":               "",
+		"organization_id":      "",
+		"organization_name":    "",
+		"user_type":            userType,
+		"security_oauth_token": token,
+		"refresh_token":        refreshToken,
+	}
+	infoJSON, errJSON := json.Marshal(identity)
 	if errJSON != nil {
-		return nil, fmt.Errorf("qoder cosy: marshal info json failed: %w", errJSON)
+		return nil, fmt.Errorf("qoder cosy: marshal identity json failed: %w", errJSON)
 	}
 
-	iv := tempKey[:16]
-	encryptedInfo, errAES := encryptAES128CBC(tempKey, iv, infoJSON)
+	iv := tempKeyBytes
+	encryptedInfo, errAES := encryptAES128CBC(tempKeyBytes, iv, infoJSON)
 	if errAES != nil {
 		return nil, fmt.Errorf("qoder cosy: aes encrypt info failed: %w", errAES)
 	}
@@ -173,7 +193,19 @@ func SignRequest(req *http.Request, auth *cliproxyauth.Auth, jobToken, requestBo
 		return errors.New("qoder cosy: request is nil")
 	}
 	uid := ResolveUserID(auth)
+	nickname := ResolveNickname(auth)
 	machineID := ResolveMachineID(auth)
+	token := jobToken
+	if token == "" {
+		token = AccessToken(auth)
+	}
+	refreshToken := ResolveRefreshToken(auth)
+	userType := "personal_professional_trial"
+	if auth != nil && auth.Metadata != nil {
+		if ut, ok := auth.Metadata["user_type"].(string); ok && strings.TrimSpace(ut) != "" {
+			userType = strings.TrimSpace(ut)
+		}
+	}
 	nowSec := time.Now().Unix()
 
 	path := req.URL.Path
@@ -181,7 +213,7 @@ func SignRequest(req *http.Request, auth *cliproxyauth.Auth, jobToken, requestBo
 		path = "/"
 	}
 
-	sig, errSig := ComputeCosySignature(uid, jobToken, path, requestBody, nowSec)
+	sig, errSig := ComputeCosySignatureWithIdentity(uid, nickname, userType, token, refreshToken, path, requestBody, nowSec)
 	if errSig != nil {
 		return errSig
 	}
@@ -198,5 +230,8 @@ func SignRequest(req *http.Request, auth *cliproxyauth.Auth, jobToken, requestBo
 	req.Header.Set("Cosy-Version", CosyVersion)
 	req.Header.Set("Cosy-Data-Policy", "AGREE")
 	req.Header.Set("User-Agent", DefaultUserAgent)
+	if req.Header.Get("x-model-key") == "" {
+		req.Header.Set("x-model-key", "auto")
+	}
 	return nil
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
+	"github.com/tidwall/gjson"
 )
 
 // RequestQoderToken handles Qoder OAuth device login flow (international realm).
@@ -134,7 +137,21 @@ func (h *Handler) requestQoderTokenWithRealm(c *gin.Context, realm string) {
 		}
 		metadata["label"] = userLabel
 
-		fileName := fmt.Sprintf("%s-%d.json", filePrefix, time.Now().UnixMilli())
+		// Deduplicate against existing credential files
+		var fileName string
+		if existing := h.findExistingQoderCredential(providerName, bundle.UserID, bundle.Email, bundle.Nickname); existing != nil && existing.FileName != "" {
+			fileName = existing.FileName
+			log.Infof("%s: found existing credential file %s for user %s, updating in place", displayName, fileName, bundle.UserID)
+		} else if strings.TrimSpace(bundle.UserID) != "" {
+			cleanID := sanitizeCredentialSlug(bundle.UserID)
+			fileName = fmt.Sprintf("%s-%s.json", filePrefix, cleanID)
+		} else if strings.TrimSpace(bundle.Email) != "" {
+			cleanEmail := sanitizeCredentialSlug(bundle.Email)
+			fileName = fmt.Sprintf("%s-%s.json", filePrefix, cleanEmail)
+		} else {
+			fileName = fmt.Sprintf("%s-%d.json", filePrefix, time.Now().UnixMilli())
+		}
+
 		record := &coreauth.Auth{
 			ID:       fileName,
 			Provider: providerName,
@@ -173,4 +190,149 @@ func (h *Handler) requestQoderTokenWithRealm(c *gin.Context, realm string) {
 		"expires_in": 600,
 	}
 	c.JSON(http.StatusOK, response)
+}
+
+// findExistingQoderCredential searches in-memory credentials and auth directory on disk
+// for an existing credential matching the Qoder account.
+func (h *Handler) findExistingQoderCredential(providerName, userID, email, nickname string) *coreauth.Auth {
+	cleanUID := strings.TrimSpace(userID)
+	cleanEmail := strings.TrimSpace(email)
+	cleanNick := strings.TrimSpace(nickname)
+
+	// 1. Search in-memory authManager if available
+	if h != nil && h.authManager != nil {
+		for _, a := range h.authManager.List() {
+			if a == nil {
+				continue
+			}
+			isQoder := strings.EqualFold(a.Provider, providerName) ||
+				strings.HasPrefix(strings.ToLower(a.FileName), providerName+"-") ||
+				strings.HasPrefix(strings.ToLower(a.ID), providerName+"-")
+			if !isQoder {
+				continue
+			}
+
+			// Match by user_id
+			if cleanUID != "" {
+				if a.Attributes != nil && a.Attributes["user_id"] == cleanUID {
+					return a
+				}
+				if a.Metadata != nil {
+					if uid, ok := a.Metadata["user_id"].(string); ok && uid == cleanUID {
+						return a
+					}
+					if uid, ok := a.Metadata["uid"].(string); ok && uid == cleanUID {
+						return a
+					}
+				}
+				if ts, ok := a.Storage.(*qoderauth.QoderTokenStorage); ok && ts != nil && ts.UserID == cleanUID {
+					return a
+				}
+			}
+
+			// Match by email
+			if cleanEmail != "" {
+				if a.Attributes != nil && strings.EqualFold(a.Attributes["email"], cleanEmail) {
+					return a
+				}
+				if a.Metadata != nil {
+					if em, ok := a.Metadata["email"].(string); ok && strings.EqualFold(em, cleanEmail) {
+						return a
+					}
+				}
+				if ts, ok := a.Storage.(*qoderauth.QoderTokenStorage); ok && ts != nil && strings.EqualFold(ts.Email, cleanEmail) {
+					return a
+				}
+			}
+
+			// Match by nickname if user_id and email are empty
+			if cleanUID == "" && cleanEmail == "" && cleanNick != "" {
+				if a.Attributes != nil && strings.EqualFold(a.Attributes["nickname"], cleanNick) {
+					return a
+				}
+				if a.Metadata != nil {
+					if nick, ok := a.Metadata["nickname"].(string); ok && strings.EqualFold(nick, cleanNick) {
+						return a
+					}
+				}
+				if ts, ok := a.Storage.(*qoderauth.QoderTokenStorage); ok && ts != nil && strings.EqualFold(ts.Nickname, cleanNick) {
+					return a
+				}
+			}
+		}
+	}
+
+	// 2. Search on disk in AuthDir if authManager did not find a match
+	if h != nil && h.cfg != nil && strings.TrimSpace(h.cfg.AuthDir) != "" {
+		entries, err := os.ReadDir(h.cfg.AuthDir)
+		if err == nil {
+			prefixLower := strings.ToLower(providerName) + "-"
+			for _, entry := range entries {
+				if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".json") {
+					continue
+				}
+				nameLower := strings.ToLower(entry.Name())
+				if !strings.HasPrefix(nameLower, prefixLower) && !strings.HasPrefix(nameLower, "qoder-") {
+					continue
+				}
+				filePath := filepath.Join(h.cfg.AuthDir, entry.Name())
+				data, errRead := os.ReadFile(filePath)
+				if errRead != nil || len(data) == 0 {
+					continue
+				}
+				parsed := gjson.ParseBytes(data)
+				fileUID := strings.TrimSpace(parsed.Get("user_id").String())
+				if fileUID == "" {
+					fileUID = strings.TrimSpace(parsed.Get("uid").String())
+				}
+				fileEmail := strings.TrimSpace(parsed.Get("email").String())
+				fileNick := strings.TrimSpace(parsed.Get("nickname").String())
+
+				if cleanUID != "" && fileUID == cleanUID {
+					return &coreauth.Auth{
+						ID:       entry.Name(),
+						FileName: entry.Name(),
+						Provider: providerName,
+					}
+				}
+				if cleanEmail != "" && strings.EqualFold(fileEmail, cleanEmail) {
+					return &coreauth.Auth{
+						ID:       entry.Name(),
+						FileName: entry.Name(),
+						Provider: providerName,
+					}
+				}
+				if cleanUID == "" && cleanEmail == "" && cleanNick != "" && strings.EqualFold(fileNick, cleanNick) {
+					return &coreauth.Auth{
+						ID:       entry.Name(),
+						FileName: entry.Name(),
+						Provider: providerName,
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// sanitizeCredentialSlug sanitizes an account identifier to safe alphanumeric, dot, underscore, dash.
+func sanitizeCredentialSlug(s string) string {
+	s = strings.TrimSpace(s)
+	var sb strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' || r == '@' {
+			sb.WriteRune(r)
+		} else {
+			sb.WriteRune('_')
+		}
+	}
+	res := strings.Trim(sb.String(), "._-")
+	if len(res) > 48 {
+		res = res[:48]
+	}
+	if res == "" {
+		res = "account"
+	}
+	return res
 }

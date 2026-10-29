@@ -495,6 +495,38 @@
       }
     }
 
+    // 触发 Qoder 每日签到 (单个凭证或全部)
+    async function triggerQoderCheckin(authId) {
+      const secret = getAdminSecret();
+      if (!secret) {
+        showToast(t('quotas.secretNotConfiguredHint'), 'error');
+        return;
+      }
+      try {
+        const targetLabel = authId ? authId : '全部 Qoder 账号';
+        showToast(`正在为 ${targetLabel} 执行 Qoder 每日签到...`, 'info');
+        const payload = authId ? { auth_id: authId } : {};
+        const res = await fetch('/console/api/cpa/v8/qoder/checkin', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + secret
+          },
+          body: JSON.stringify(payload)
+        });
+        const text = await res.text();
+        let data = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch (_) {}
+        if (!res.ok) throw new Error(data.message || data.error || '签到请求失败');
+        showToast(`Qoder 每日签到完成 (${targetLabel})`, 'success');
+        await fetchUpstreamQuotas(true);
+      } catch (err) {
+        showToast('Qoder 每日签到失败: ' + err.message, 'error');
+      }
+    }
+
     // 批量查询当前筛选 Provider（或全部可查询 Provider）凭证额度
     async function triggerActivateFilteredAccounts() {
       const secret = getAdminSecret();
@@ -627,6 +659,10 @@
       const openrouterBtn = document.getElementById('btn-manage-openrouter');
       if (openrouterBtn) {
         openrouterBtn.style.display = f === 'openrouter' ? 'inline-flex' : 'none';
+      }
+      const qoderCheckinBtn = document.getElementById('btn-qoder-checkin');
+      if (qoderCheckinBtn) {
+        qoderCheckinBtn.style.display = (f === 'qoder' || f === 'qoder-cn') ? 'inline-flex' : 'none';
       }
     }
 

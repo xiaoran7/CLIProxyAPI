@@ -71,50 +71,113 @@ func QueryQuota(ctx context.Context, httpClient *http.Client, auth *cliproxyauth
 	}
 
 	parsed := gjson.ParseBytes(body)
-	code := parsed.Get("code").Int()
-	if code != 0 && code != 200 {
-		msg := parsed.Get("msg").String()
-		if msg == "" {
-			msg = parsed.Get("message").String()
-		}
-		return pluginapi.QuotaFetchResponse{}, fmt.Errorf("qoder: quota error code %d: %s", code, msg)
-	}
-
-	data := parsed.Get("data")
-	total := data.Get("total").Float()
-	if total == 0 {
-		total = data.Get("total_points").Float()
-	}
-	if total == 0 {
-		total = data.Get("quota").Float()
-	}
-	used := data.Get("used").Float()
-	if used == 0 {
-		used = data.Get("used_points").Float()
-	}
-	remaining := data.Get("remaining").Float()
-	if remaining == 0 {
-		remaining = data.Get("remaining_points").Float()
-	}
-	if remaining == 0 {
-		remaining = data.Get("points").Float()
-	}
-	if remaining == 0 {
-		remaining = data.Get("balance").Float()
-	}
-	if remaining == 0 && total > 0 && used > 0 {
-		remaining = total - used
-		if remaining < 0 {
-			remaining = 0
+	if codeRes := parsed.Get("code"); codeRes.Exists() {
+		code := codeRes.Int()
+		if code != 0 && code != 200 {
+			msg := parsed.Get("msg").String()
+			if msg == "" {
+				msg = parsed.Get("message").String()
+			}
+			return pluginapi.QuotaFetchResponse{}, fmt.Errorf("qoder: quota error code %d: %s", code, msg)
 		}
 	}
 
-	tier := data.Get("tier").String()
-	if tier == "" {
-		tier = data.Get("level").String()
+	root := parsed
+	if d := parsed.Get("data"); d.IsObject() {
+		if !parsed.Get("userQuota").Exists() && !parsed.Get("userId").Exists() && !parsed.Get("userType").Exists() {
+			root = d
+		} else if d.Get("userQuota").Exists() {
+			root = d
+		}
 	}
-	if tier == "" {
+
+	var total, used, remaining float64
+	var userTotal, userUsed, userRemaining float64
+	var addOnTotal, addOnUsed, addOnRemaining float64
+	hasStructuredQuota := false
+
+	if uq := root.Get("userQuota"); uq.IsObject() {
+		userTotal = uq.Get("total").Float()
+		userUsed = uq.Get("used").Float()
+		userRemaining = uq.Get("remaining").Float()
+		hasStructuredQuota = true
+	}
+	if aq := root.Get("addOnQuota"); aq.IsObject() {
+		addOnTotal = aq.Get("total").Float()
+		addOnUsed = aq.Get("used").Float()
+		addOnRemaining = aq.Get("remaining").Float()
+		hasStructuredQuota = true
+	}
+
+	if hasStructuredQuota {
+		total = userTotal + addOnTotal
+		used = userUsed + addOnUsed
+		remaining = userRemaining + addOnRemaining
+		if remaining == 0 && total > 0 && used > 0 {
+			remaining = total - used
+			if remaining < 0 {
+				remaining = 0
+			}
+		}
+	} else {
+		total = root.Get("total").Float()
+		if total == 0 {
+			total = root.Get("total_points").Float()
+		}
+		if total == 0 {
+			total = root.Get("quota").Float()
+		}
+		used = root.Get("used").Float()
+		if used == 0 {
+			used = root.Get("used_points").Float()
+		}
+		remaining = root.Get("remaining").Float()
+		if remaining == 0 {
+			remaining = root.Get("remaining_points").Float()
+		}
+		if remaining == 0 {
+			remaining = root.Get("points").Float()
+		}
+		if remaining == 0 {
+			remaining = root.Get("balance").Float()
+		}
+		if remaining == 0 && total > 0 && used > 0 {
+			remaining = total - used
+			if remaining < 0 {
+				remaining = 0
+			}
+		}
+	}
+
+	userTypeRaw := root.Get("userType").String()
+	if userTypeRaw == "" {
+		userTypeRaw = root.Get("user_type").String()
+	}
+	if userTypeRaw == "" {
+		userTypeRaw = root.Get("tier").String()
+	}
+	if userTypeRaw == "" {
+		userTypeRaw = root.Get("level").String()
+	}
+
+	var tier string
+	switch strings.ToLower(strings.TrimSpace(userTypeRaw)) {
+	case "personal_professional_trial", "pro_trial", "trial":
+		tier = "Pro Trial"
+	case "personal_professional", "professional", "pro":
+		tier = "Pro"
+	case "personal_standard", "standard":
+		tier = "Standard"
+	case "personal_free", "free":
 		tier = "Free"
+	case "team", "enterprise":
+		tier = "Enterprise"
+	default:
+		if userTypeRaw != "" {
+			tier = userTypeRaw
+		} else {
+			tier = "Free"
+		}
 	}
 
 	planName := fmt.Sprintf("%s · %s", editionLabel, tier)
@@ -142,6 +205,24 @@ func QueryQuota(ctx context.Context, httpClient *http.Client, auth *cliproxyauth
 			Format: "number",
 		})
 	}
+	if hasStructuredQuota && userTotal > 0 {
+		summary = append(summary, pluginapi.QuotaMetric{
+			Key:    "user_quota_remain",
+			Label:  "Monthly Allowance",
+			Value:  userRemaining,
+			Unit:   "pts",
+			Format: "number",
+		})
+	}
+	if hasStructuredQuota && addOnTotal > 0 {
+		summary = append(summary, pluginapi.QuotaMetric{
+			Key:    "addon_quota_remain",
+			Label:  "Bonus / Check-in Quota",
+			Value:  addOnRemaining,
+			Unit:   "pts",
+			Format: "number",
+		})
+	}
 
 	remainingFrac := 1.0
 	if total > 0 {
@@ -154,12 +235,15 @@ func QueryQuota(ctx context.Context, httpClient *http.Client, auth *cliproxyauth
 	}
 
 	var resetTime string
-	expireSec := data.Get("expire_at").Int()
+	expireSec := root.Get("expiresAt").Int()
 	if expireSec == 0 {
-		expireSec = data.Get("expires_at").Int()
+		expireSec = root.Get("expires_at").Int()
 	}
 	if expireSec == 0 {
-		expireSec = data.Get("expire_time").Int()
+		expireSec = root.Get("expire_at").Int()
+	}
+	if expireSec == 0 {
+		expireSec = root.Get("expire_time").Int()
 	}
 	if expireSec > 1e11 {
 		expireSec /= 1000

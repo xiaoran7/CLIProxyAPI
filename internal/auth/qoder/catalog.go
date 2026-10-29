@@ -3,7 +3,6 @@
 package qoder
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -44,22 +43,19 @@ func FetchUpstreamModels(ctx context.Context, httpClient *http.Client, auth *cli
 		jobToken = AccessToken(auth)
 	}
 
-	// 1. Attempt gateway model list with COSY signing: /algo/api/v2/model/list?Encode=1 (POST then GET)
-	for _, method := range []string{http.MethodPost, http.MethodGet} {
-		gatewayURL := baseURL + ModelListPath + "?Encode=1"
-		reqGateway, errReq := http.NewRequestWithContext(ctx, method, gatewayURL, bytes.NewReader([]byte("{}")))
-		if errReq == nil {
-			reqGateway.Header.Set("Content-Type", "application/json")
-			reqGateway.Header.Set("Accept", "application/json")
-			if errSign := SignRequest(reqGateway, auth, jobToken, "{}"); errSign == nil {
-				resp, errDo := client.Do(reqGateway)
-				if errDo == nil {
-					defer func() { _ = resp.Body.Close() }()
-					if resp.StatusCode == http.StatusOK {
-						body, errRead := io.ReadAll(resp.Body)
-						if errRead == nil && len(body) > 0 {
-							return body, nil
-						}
+	// 1. Attempt gateway model list with COSY signing: GET /algo/api/v2/model/list
+	gatewayURL := baseURL + ModelListPath
+	reqGateway, errReq := http.NewRequestWithContext(ctx, http.MethodGet, gatewayURL, nil)
+	if errReq == nil {
+		reqGateway.Header.Set("Accept", "application/json")
+		if errSign := SignRequest(reqGateway, auth, jobToken, ""); errSign == nil {
+			resp, errDo := client.Do(reqGateway)
+			if errDo == nil {
+				defer func() { _ = resp.Body.Close() }()
+				if resp.StatusCode == http.StatusOK {
+					body, errRead := io.ReadAll(resp.Body)
+					if errRead == nil && len(body) > 0 {
+						return body, nil
 					}
 				}
 			}

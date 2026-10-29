@@ -406,6 +406,20 @@ func DeviceRefreshToken(auth *cliproxyauth.Auth) string {
 	return ""
 }
 
+// ResolveRefreshToken returns the refresh token string (device or job refresh token) from auth.
+func ResolveRefreshToken(auth *cliproxyauth.Auth) string {
+	if auth == nil {
+		return ""
+	}
+	if rt := DeviceRefreshToken(auth); rt != "" {
+		return rt
+	}
+	if rt := JobRefreshToken(auth); rt != "" {
+		return rt
+	}
+	return ""
+}
+
 // DeviceToken returns the raw device token (dt-...) if present in auth metadata/attributes.
 func DeviceToken(auth *cliproxyauth.Auth) string {
 	if auth == nil {

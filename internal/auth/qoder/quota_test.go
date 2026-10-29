@@ -206,3 +206,88 @@ func TestQueryQuota_Errors(t *testing.T) {
 		t.Errorf("expected error for API error code")
 	}
 }
+
+func TestQueryQuota_RealUpstreamUserQuotaFormat(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"userId":               "01a15e15-7421-7847-99f8-eaf5298e1804",
+			"userType":             "personal_professional_trial",
+			"usageType":            "credits",
+			"totalUsagePercentage": 0.02,
+			"isQuotaExceeded":      false,
+			"expiresAt":            1793789426886,
+			"userQuota": map[string]any{
+				"total":      300.0,
+				"used":       13.0,
+				"remaining":  287.0,
+				"percentage": 0.05,
+				"unit":       "credits",
+			},
+			"addOnQuota": map[string]any{
+				"total":      300.0,
+				"used":       0.0,
+				"remaining":  300.0,
+				"percentage": 0.0,
+				"unit":       "credits",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	t.Setenv("QODER_CN_OPENAPI", srv.URL)
+
+	auth := &cliproxyauth.Auth{
+		ID:       "test-qoder-cn",
+		Provider: "qoder-cn",
+		Attributes: map[string]string{
+			"access_token": "Bearer dt-test-token",
+			"realm":        "cn",
+		},
+	}
+
+	resp, err := QueryQuota(context.Background(), srv.Client(), auth)
+	if err != nil {
+		t.Fatalf("QueryQuota failed on real upstream format: %v", err)
+	}
+
+	if resp.Subscription == nil || resp.Subscription.Plan != "Qoder Mainland (cn) · Pro Trial" {
+		t.Errorf("unexpected plan: %#v", resp.Subscription)
+	}
+
+	metricMap := make(map[string]float64)
+	for _, m := range resp.Summary {
+		metricMap[m.Key] = m.Value
+	}
+
+	// 287 (userQuota) + 300 (addOnQuota) = 587
+	if metricMap["points_remain"] != 587 {
+		t.Errorf("points_remain = %v, want 587", metricMap["points_remain"])
+	}
+	// 300 + 300 = 600
+	if metricMap["points_total"] != 600 {
+		t.Errorf("points_total = %v, want 600", metricMap["points_total"])
+	}
+	// 13 + 0 = 13
+	if metricMap["points_used"] != 13 {
+		t.Errorf("points_used = %v, want 13", metricMap["points_used"])
+	}
+	if metricMap["user_quota_remain"] != 287 {
+		t.Errorf("user_quota_remain = %v, want 287", metricMap["user_quota_remain"])
+	}
+	if metricMap["addon_quota_remain"] != 300 {
+		t.Errorf("addon_quota_remain = %v, want 300", metricMap["addon_quota_remain"])
+	}
+
+	if len(resp.Groups) == 0 || len(resp.Groups[0].Buckets) == 0 {
+		t.Fatalf("expected non-empty quota buckets")
+	}
+	b := resp.Groups[0].Buckets[0]
+	// 587 / 600 approx 0.9783
+	if b.RemainingFraction < 0.97 || b.RemainingFraction > 0.98 {
+		t.Errorf("expected RemainingFraction ~0.978, got %v", b.RemainingFraction)
+	}
+	if b.ResetTime == "" {
+		t.Errorf("expected non-empty ResetTime from expiresAt ms")
+	}
+}

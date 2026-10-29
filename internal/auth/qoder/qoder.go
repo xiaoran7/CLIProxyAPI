@@ -254,6 +254,38 @@ func ResolveUserID(auth *cliproxyauth.Auth) string {
 	return "anonymous"
 }
 
+// ResolveNickname returns the user display name or nickname for the given auth object.
+func ResolveNickname(auth *cliproxyauth.Auth) string {
+	if auth == nil {
+		return "user"
+	}
+	if auth.Metadata != nil {
+		if n, ok := auth.Metadata["nickname"].(string); ok && strings.TrimSpace(n) != "" {
+			return strings.TrimSpace(n)
+		}
+		if n, ok := auth.Metadata["name"].(string); ok && strings.TrimSpace(n) != "" {
+			return strings.TrimSpace(n)
+		}
+	}
+	if auth.Attributes != nil {
+		if n := strings.TrimSpace(auth.Attributes["nickname"]); n != "" {
+			return n
+		}
+		if n := strings.TrimSpace(auth.Attributes["name"]); n != "" {
+			return n
+		}
+	}
+	if ts, ok := auth.Storage.(*QoderTokenStorage); ok && ts != nil {
+		if strings.TrimSpace(ts.Nickname) != "" {
+			return strings.TrimSpace(ts.Nickname)
+		}
+	}
+	if uid := ResolveUserID(auth); uid != "" && uid != "anonymous" {
+		return uid
+	}
+	return "user"
+}
+
 // ResolveMachineID derives or returns a deterministic machine identifier.
 func ResolveMachineID(auth *cliproxyauth.Auth) string {
 	if auth != nil {

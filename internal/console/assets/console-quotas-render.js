@@ -853,6 +853,9 @@
             ${isDisabled ? '' : `<button class="priority-btn" style="color:#2563eb; border-color:rgba(37,99,235,0.3); background:rgba(37,99,235,0.06); padding:3px 9px; font-size:11px;" data-filename="${safeFilename}" data-provider="${escapeHtml(acc.provider || '')}" data-authindex="${escapeHtml(acc.auth_index || '')}" onclick="triggerActivateQuotaWindow(this.dataset.filename, this.dataset.provider, this.dataset.authindex)" title="${t('quotas.requeryQuotaTitle')}">
               ${t('quotas.refreshQuotaBtn')}
             </button>`}
+            ${!isDisabled && acc.provider && acc.provider.toLowerCase().startsWith('qoder') ? `<button class="priority-btn" style="color:#6366f1; border-color:rgba(99,102,241,0.3); background:rgba(99,102,241,0.06); padding:3px 8px; font-size:11px;" data-filename="${safeFilename}" onclick="triggerQoderCheckin(this.dataset.filename)" title="执行 Qoder 每日签到获取积分">
+              ${t('quotas.qoderCheckinAll')}
+            </button>` : ''}
             <button class="priority-btn" style="padding:3px 8px; font-size:11px;" data-filename="${safeFilename}" onclick="openPriorityModal(this.dataset.filename)" title="${t('quotas.priority.adjustTitle')}">
               ${t('quotas.priority.adjustBtn')}
             </button>
@@ -1192,6 +1195,9 @@
               ${isDisabled ? '' : `<button class="priority-btn" style="color:#2563eb; border-color:rgba(37,99,235,0.35); background:rgba(37,99,235,0.06);" data-filename="${safeFilename}" data-provider="${escapeHtml(acc.provider || '')}" data-authindex="${escapeHtml(acc.auth_index || '')}" onclick="triggerActivateQuotaWindow(this.dataset.filename, this.dataset.provider, this.dataset.authindex)" title="${t('quotas.requeryQuotaTitle')}">
                 ${t('quotas.refreshQuotaBtn')}
               </button>`}
+              ${!isDisabled && acc.provider && acc.provider.toLowerCase().startsWith('qoder') ? `<button class="priority-btn" style="color:#6366f1; border-color:rgba(99,102,241,0.35); background:rgba(99,102,241,0.06);" data-filename="${safeFilename}" onclick="triggerQoderCheckin(this.dataset.filename)" title="执行 Qoder 每日签到获取积分">
+                ${t('quotas.qoderCheckinAll')}
+              </button>` : ''}
               <button class="priority-btn" data-filename="${safeFilename}" onclick="openPriorityModal(this.dataset.filename)" title="${t('quotas.priority.adjustAccountTitle')}">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
                 ${t('quotas.priority.adjustBtn')}

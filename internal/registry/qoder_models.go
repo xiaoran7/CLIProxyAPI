@@ -523,7 +523,11 @@ func ParseQoderCatalogModels(body []byte, realm string) []*ModelInfo {
 
 	// Determine array of model definitions
 	var items []gjson.Result
-	if d := parsed.Get("data.models"); d.IsArray() {
+	if d := parsed.Get("chat"); d.IsArray() {
+		items = d.Array()
+	} else if d := parsed.Get("data.chat"); d.IsArray() {
+		items = d.Array()
+	} else if d := parsed.Get("data.models"); d.IsArray() {
 		items = d.Array()
 	} else if d := parsed.Get("data"); d.IsArray() {
 		items = d.Array()
@@ -550,7 +554,10 @@ func ParseQoderCatalogModels(body []byte, realm string) []*ModelInfo {
 	seen := make(map[string]bool, len(items))
 
 	for _, item := range items {
-		id := strings.TrimSpace(item.Get("id").String())
+		id := strings.TrimSpace(item.Get("key").String())
+		if id == "" {
+			id = strings.TrimSpace(item.Get("id").String())
+		}
 		if id == "" {
 			id = strings.TrimSpace(item.Get("model").String())
 		}
@@ -582,6 +589,15 @@ func ParseQoderCatalogModels(body []byte, realm string) []*ModelInfo {
 		maxInputTokens := int(item.Get("max_input_tokens").Int())
 		if maxInputTokens == 0 {
 			maxInputTokens = int(item.Get("default_context_window").Int())
+		}
+		if maxInputTokens == 0 {
+			if cc := item.Get("context_config"); cc.IsObject() {
+				for _, conf := range cc.Map() {
+					if tc := int(conf.Get("token_count").Int()); tc > maxInputTokens {
+						maxInputTokens = tc
+					}
+				}
+			}
 		}
 		if maxInputTokens == 0 {
 			maxInputTokens = 200000
@@ -619,6 +635,10 @@ func ParseQoderCatalogModels(body []byte, realm string) []*ModelInfo {
 				m.Thinking = &ThinkingSupport{
 					Levels: levels,
 				}
+			}
+		} else if item.Get("is_reasoning").Bool() {
+			m.Thinking = &ThinkingSupport{
+				Levels: []string{"low", "medium", "high"},
 			}
 		}
 

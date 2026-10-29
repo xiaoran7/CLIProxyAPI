@@ -651,6 +651,8 @@
     'quotas.refreshAllProgressToast': { zh: '已查询 {successCount} 个凭证的额度，正在刷新...', en: 'Queried the quota for {successCount} credentials, refreshing...' },
     'quotas.refreshAllQoderQuota': { zh: '刷新全部 Qoder 额度', en: 'Refresh all Qoder quotas' },
     'quotas.refreshAllQoderQuotaTitle': { zh: '对所有有效 Qoder / 通义灵码凭据批量查询最新额度', en: 'Batch-query the latest quota for all valid Qoder / Tongyi Lingma credentials' },
+    'quotas.qoderCheckinAll': { zh: '每日签到', en: 'Daily Check-in' },
+    'quotas.qoderCheckinTitle': { zh: '批量为全部 Qoder 账号执行每日签到', en: 'Run daily check-in for all Qoder accounts' },
     'quotas.refreshAllQuotaBtn': { zh: '刷新全部额度', en: 'Refresh all quotas' },
     'quotas.refreshAllWorkBuddyQuota': { zh: '刷新全部 WorkBuddy 额度', en: 'Refresh all WorkBuddy quotas' },
     'quotas.refreshAllWorkBuddyQuotaTitle': { zh: '对所有有效 WorkBuddy / CodeBuddy 凭据批量查询最新额度', en: 'Batch-query the latest quota for all valid WorkBuddy / CodeBuddy credentials' },
