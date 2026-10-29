@@ -192,12 +192,46 @@ func (h *Handler) requestQoderTokenWithRealm(c *gin.Context, realm string) {
 	c.JSON(http.StatusOK, response)
 }
 
+// qoderRealmForProvider maps a Qoder provider name onto its realm so global (qoder)
+// and mainland (qoder-cn) credentials are never deduplicated against each other.
+func qoderRealmForProvider(providerName string) string {
+	if strings.EqualFold(strings.TrimSpace(providerName), "qoder-cn") {
+		return qoderauth.RealmCN
+	}
+	return qoderauth.RealmIntl
+}
+
+// qoderCredentialRealm resolves the realm a stored Qoder credential belongs to,
+// preferring explicit provider/realm fields and falling back to the file-name prefix.
+func qoderCredentialRealm(provider, realm, fileName, id string) string {
+	fileName = strings.ToLower(strings.TrimSpace(fileName))
+	id = strings.ToLower(strings.TrimSpace(id))
+	for _, candidate := range []string{provider, realm} {
+		switch strings.ToLower(strings.TrimSpace(candidate)) {
+		case "qoder-cn", qoderauth.RealmCN:
+			return qoderauth.RealmCN
+		case "qoder", qoderauth.RealmIntl:
+			return qoderauth.RealmIntl
+		}
+	}
+	for _, candidate := range []string{fileName, id} {
+		switch {
+		case strings.HasPrefix(candidate, "qoder-cn-") || candidate == "qoder-cn":
+			return qoderauth.RealmCN
+		case strings.HasPrefix(candidate, "qoder-") || candidate == "qoder":
+			return qoderauth.RealmIntl
+		}
+	}
+	return ""
+}
+
 // findExistingQoderCredential searches in-memory credentials and auth directory on disk
-// for an existing credential matching the Qoder account.
+// for an existing credential matching the Qoder account within the same realm.
 func (h *Handler) findExistingQoderCredential(providerName, userID, email, nickname string) *coreauth.Auth {
 	cleanUID := strings.TrimSpace(userID)
 	cleanEmail := strings.TrimSpace(email)
 	cleanNick := strings.TrimSpace(nickname)
+	wantRealm := qoderRealmForProvider(providerName)
 
 	// 1. Search in-memory authManager if available
 	if h != nil && h.authManager != nil {
@@ -205,10 +239,27 @@ func (h *Handler) findExistingQoderCredential(providerName, userID, email, nickn
 			if a == nil {
 				continue
 			}
-			isQoder := strings.EqualFold(a.Provider, providerName) ||
-				strings.HasPrefix(strings.ToLower(a.FileName), providerName+"-") ||
-				strings.HasPrefix(strings.ToLower(a.ID), providerName+"-")
-			if !isQoder {
+			if !strings.HasPrefix(strings.ToLower(a.Provider), "qoder") &&
+				!strings.HasPrefix(strings.ToLower(a.FileName), "qoder") &&
+				!strings.HasPrefix(strings.ToLower(a.ID), "qoder") {
+				continue
+			}
+			attrRealm := ""
+			if a.Attributes != nil {
+				attrRealm = a.Attributes["realm"]
+			}
+			candRealm := qoderCredentialRealm(a.Provider, attrRealm, a.FileName, a.ID)
+			if candRealm == "" && a.Metadata != nil {
+				if metaRealm, ok := a.Metadata["realm"].(string); ok {
+					candRealm = qoderCredentialRealm("", metaRealm, a.FileName, a.ID)
+				}
+			}
+			if candRealm == "" {
+				if ts, ok := a.Storage.(*qoderauth.QoderTokenStorage); ok && ts != nil {
+					candRealm = qoderCredentialRealm("", ts.Realm, a.FileName, a.ID)
+				}
+			}
+			if candRealm != wantRealm {
 				continue
 			}
 
@@ -266,13 +317,12 @@ func (h *Handler) findExistingQoderCredential(providerName, userID, email, nickn
 	if h != nil && h.cfg != nil && strings.TrimSpace(h.cfg.AuthDir) != "" {
 		entries, err := os.ReadDir(h.cfg.AuthDir)
 		if err == nil {
-			prefixLower := strings.ToLower(providerName) + "-"
 			for _, entry := range entries {
 				if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".json") {
 					continue
 				}
 				nameLower := strings.ToLower(entry.Name())
-				if !strings.HasPrefix(nameLower, prefixLower) && !strings.HasPrefix(nameLower, "qoder-") {
+				if !strings.HasPrefix(nameLower, "qoder") {
 					continue
 				}
 				filePath := filepath.Join(h.cfg.AuthDir, entry.Name())
@@ -281,6 +331,15 @@ func (h *Handler) findExistingQoderCredential(providerName, userID, email, nickn
 					continue
 				}
 				parsed := gjson.ParseBytes(data)
+				fileRealm := qoderCredentialRealm(
+					parsed.Get("type").String(),
+					parsed.Get("realm").String(),
+					entry.Name(),
+					"",
+				)
+				if fileRealm != wantRealm {
+					continue
+				}
 				fileUID := strings.TrimSpace(parsed.Get("user_id").String())
 				if fileUID == "" {
 					fileUID = strings.TrimSpace(parsed.Get("uid").String())
