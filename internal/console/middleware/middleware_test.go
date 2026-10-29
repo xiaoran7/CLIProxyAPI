@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -643,5 +644,116 @@ func TestNonInferenceDiscoveryAndUtilityNotRecorded(t *testing.T) {
 	}
 	if cleaned != 1 {
 		t.Fatalf("expected 1 cleaned phantom event, got %d", cleaned)
+	}
+}
+
+func TestModelGuard_WorkBuddyNamespaceRewriteAndListing(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_wb_rewrite.db")
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	rawKey := "sk-cpa-workbuddy-rewrite-test"
+	keyID, err := database.InsertKey(ctx, rawKey, "WorkBuddy Whitelist Key")
+	if err != nil {
+		t.Fatalf("insert key failed: %v", err)
+	}
+
+	dailyLimit := int64(1000)
+	rule := &db.QuotaRuleRow{
+		KeyID:          keyID,
+		Enabled:        1,
+		DailyLimit:     &dailyLimit,
+		HardRatio:      1.5,
+		RPMLimit:       100,
+		ModelWhitelist: `["workbuddy/claude-opus-5-5", "workbuddy-cn/deepseek-v4.1-flash"]`,
+	}
+	if err := database.UpsertQuotaRule(ctx, rule); err != nil {
+		t.Fatalf("insert quota rule failed: %v", err)
+	}
+
+	eng, err := engine.NewEngine(database, 50*time.Millisecond)
+	if err != nil {
+		t.Fatalf("new engine failed: %v", err)
+	}
+	defer eng.Stop()
+
+	r := gin.New()
+	for _, mw := range Gateway(eng) {
+		r.Use(mw)
+	}
+
+	var receivedBodyModel string
+	var receivedCtxModel string
+	r.POST("/v1/chat/completions", func(c *gin.Context) {
+		body, _ := io.ReadAll(c.Request.Body)
+		receivedBodyModel = gjson.GetBytes(body, "model").String()
+		receivedCtxModel = c.GetString(ContextModel)
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+	r.GET("/v1/models", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"object": "list",
+			"data": []gin.H{
+				{"id": "claude-opus-5-5", "object": "model", "owned_by": "antigravity"},
+				{"id": "workbuddy/claude-opus-5-5", "object": "model", "owned_by": "workbuddy"},
+				{"id": "deepseek-v4.1-flash", "object": "model", "owned_by": "deepseek"},
+				{"id": "workbuddy-cn/deepseek-v4.1-flash", "object": "model", "owned_by": "workbuddy-cn"},
+				{"id": "gpt-4o", "object": "model", "owned_by": "openai"},
+			},
+		})
+	})
+
+	// 1. Send bare claude-opus-5-5 -> must be rewritten to workbuddy/claude-opus-5-5
+	req1 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(`{"model":"claude-opus-5-5"}`))
+	req1.Header.Set("Authorization", "Bearer "+rawKey)
+	req1.Header.Set("Content-Type", "application/json")
+	w1 := httptest.NewRecorder()
+	r.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected 200 for bare claude-opus-5-5, got %d", w1.Code)
+	}
+	if receivedBodyModel != "workbuddy/claude-opus-5-5" {
+		t.Fatalf("body model = %q, want rewritten 'workbuddy/claude-opus-5-5'", receivedBodyModel)
+	}
+	if receivedCtxModel != "workbuddy/claude-opus-5-5" {
+		t.Fatalf("context model = %q, want 'workbuddy/claude-opus-5-5'", receivedCtxModel)
+	}
+
+	// 2. Send bare deepseek-v4.1-flash -> must be rewritten to workbuddy-cn/deepseek-v4.1-flash
+	req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(`{"model":"deepseek-v4.1-flash"}`))
+	req2.Header.Set("Authorization", "Bearer "+rawKey)
+	req2.Header.Set("Content-Type", "application/json")
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 for bare deepseek-v4.1-flash, got %d", w2.Code)
+	}
+	if receivedBodyModel != "workbuddy-cn/deepseek-v4.1-flash" {
+		t.Fatalf("body model = %q, want rewritten 'workbuddy-cn/deepseek-v4.1-flash'", receivedBodyModel)
+	}
+
+	// 3. GET /v1/models -> must only list the two namespaced models, suppressing bare unrouted models
+	reqModels := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	reqModels.Header.Set("Authorization", "Bearer "+rawKey)
+	wModels := httptest.NewRecorder()
+	r.ServeHTTP(wModels, reqModels)
+	if wModels.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /v1/models, got %d", wModels.Code)
+	}
+	dataArr := gjson.GetBytes(wModels.Body.Bytes(), "data").Array()
+	if len(dataArr) != 2 {
+		t.Fatalf("expected exactly 2 models in /v1/models, got %d: %s", len(dataArr), wModels.Body.String())
+	}
+	m1 := dataArr[0].Get("id").String()
+	m2 := dataArr[1].Get("id").String()
+	if m1 != "workbuddy/claude-opus-5-5" || m2 != "workbuddy-cn/deepseek-v4.1-flash" {
+		t.Fatalf("unexpected filtered models: %s, %s", m1, m2)
 	}
 }

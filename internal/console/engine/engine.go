@@ -331,7 +331,8 @@ func (e *Engine) CheckRateLimit(keyID int64) CheckResult {
 	}
 }
 
-// CheckModelAllowed verifies whether the requested model satisfies the key's whitelist.
+// CheckModelAllowed verifies whether the requested model satisfies the key's whitelist,
+// and resolves any unambiguous provider namespace rewriting.
 func (e *Engine) CheckModelAllowed(keyID int64, requestedModel string) CheckResult {
 	if requestedModel == "" {
 		return CheckResult{Allowed: true}
@@ -345,13 +346,21 @@ func (e *Engine) CheckModelAllowed(keyID int64, requestedModel string) CheckResu
 		return CheckResult{Allowed: true}
 	}
 
-	if IsModelPermitted(requestedModel, allowedList) {
-		return CheckResult{Allowed: true}
+	allowed, targetModel, reason := ResolveModelTarget(requestedModel, allowedList)
+	if allowed {
+		res := CheckResult{Allowed: true}
+		if targetModel != "" && targetModel != requestedModel {
+			res.RewrittenModel = targetModel
+		}
+		return res
 	}
 
+	if reason == "" {
+		reason = fmt.Sprintf("Model '%s' is not permitted for this API key. Permitted models: %s", requestedModel, strings.Join(allowedList, ", "))
+	}
 	return CheckResult{
 		Allowed: false,
-		Reason:  fmt.Sprintf("Model '%s' is not permitted for this API key. Permitted models: %s", requestedModel, strings.Join(allowedList, ", ")),
+		Reason:  reason,
 	}
 }
 

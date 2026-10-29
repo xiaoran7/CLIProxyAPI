@@ -70,3 +70,82 @@ func TestIsModelPermitted(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveModelTarget(t *testing.T) {
+	tests := []struct {
+		name           string
+		requestedModel string
+		allowedRules   []string
+		wantAllowed    bool
+		wantTarget     string
+	}{
+		{
+			name:           "workbuddy specific namespaced model rewrites bare request",
+			requestedModel: "claude-opus-5-5",
+			allowedRules:   []string{"workbuddy/claude-opus-5-5"},
+			wantAllowed:    true,
+			wantTarget:     "workbuddy/claude-opus-5-5",
+		},
+		{
+			name:           "workbuddy wildcard namespace rewrites bare request",
+			requestedModel: "claude-opus-5-5",
+			allowedRules:   []string{"workbuddy/*"},
+			wantAllowed:    true,
+			wantTarget:     "workbuddy/claude-opus-5-5",
+		},
+		{
+			name:           "workbuddy-cn specific model rewrites bare request",
+			requestedModel: "deepseek-v4.1-flash",
+			allowedRules:   []string{"workbuddy-cn/deepseek-v4.1-flash"},
+			wantAllowed:    true,
+			wantTarget:     "workbuddy-cn/deepseek-v4.1-flash",
+		},
+		{
+			name:           "bare model allowed does not rewrite",
+			requestedModel: "claude-opus-5-5",
+			allowedRules:   []string{"claude-opus-5-5"},
+			wantAllowed:    true,
+			wantTarget:     "claude-opus-5-5",
+		},
+		{
+			name:           "universal wildcard does not rewrite",
+			requestedModel: "claude-opus-5-5",
+			allowedRules:   []string{"*"},
+			wantAllowed:    true,
+			wantTarget:     "claude-opus-5-5",
+		},
+		{
+			name:           "both bare and namespaced allowed does not rewrite",
+			requestedModel: "claude-opus-5-5",
+			allowedRules:   []string{"claude-opus-5-5", "workbuddy/claude-opus-5-5"},
+			wantAllowed:    true,
+			wantTarget:     "claude-opus-5-5",
+		},
+		{
+			name:           "prefixed request preserved",
+			requestedModel: "workbuddy/claude-opus-5-5",
+			allowedRules:   []string{"workbuddy/claude-opus-5-5"},
+			wantAllowed:    true,
+			wantTarget:     "workbuddy/claude-opus-5-5",
+		},
+		{
+			name:           "disallowed model rejected",
+			requestedModel: "gpt-4o",
+			allowedRules:   []string{"workbuddy/claude-opus-5-5"},
+			wantAllowed:    false,
+			wantTarget:     "gpt-4o",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			allowed, target, _ := ResolveModelTarget(tc.requestedModel, tc.allowedRules)
+			if allowed != tc.wantAllowed {
+				t.Errorf("ResolveModelTarget(%q, %v) allowed = %v, want %v", tc.requestedModel, tc.allowedRules, allowed, tc.wantAllowed)
+			}
+			if target != tc.wantTarget {
+				t.Errorf("ResolveModelTarget(%q, %v) target = %q, want %q", tc.requestedModel, tc.allowedRules, target, tc.wantTarget)
+			}
+		})
+	}
+}

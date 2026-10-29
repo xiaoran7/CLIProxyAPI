@@ -53,10 +53,11 @@ type RequestInfo struct {
 
 // CheckResult represents the verdict of a quota, RPM, or model authorization check.
 type CheckResult struct {
-	Allowed   bool   `json:"allowed"`
-	Reason    string `json:"reason,omitempty"`
-	Usage     int64  `json:"usage,omitempty"`
-	Limit     int64  `json:"limit,omitempty"`
-	HardLimit int64  `json:"hard_limit,omitempty"`
-	RPMLimit  int    `json:"rpm_limit,omitempty"`
+	Allowed        bool   `json:"allowed"`
+	Reason         string `json:"reason,omitempty"`
+	Usage          int64  `json:"usage,omitempty"`
+	Limit          int64  `json:"limit,omitempty"`
+	HardLimit      int64  `json:"hard_limit,omitempty"`
+	RPMLimit       int    `json:"rpm_limit,omitempty"`
+	RewrittenModel string `json:"rewritten_model,omitempty"`
 }

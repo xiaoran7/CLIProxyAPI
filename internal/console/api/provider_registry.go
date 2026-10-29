@@ -128,6 +128,9 @@ var InitialProviderRegistry = []SeedProvider{
 		ProviderKey: "workbuddy-cn",
 		Label:       "WorkBuddy (CodeBuddy)",
 		ModelPatterns: []PatternItem{
+			{P: "workbuddy-cn/", Anchor: "^"},
+			{P: "codebuddy/", Anchor: "^"},
+			{P: "wb-cn/", Anchor: "^"},
 			{P: "workbuddy-cn", Anchor: ""},
 			{P: "codebuddy", Anchor: ""},
 		},
@@ -141,6 +144,9 @@ var InitialProviderRegistry = []SeedProvider{
 		ProviderKey: "workbuddy",
 		Label:       "腾讯 WorkBuddy",
 		ModelPatterns: []PatternItem{
+			{P: "workbuddy/", Anchor: "^"},
+			{P: "workbuddy-intl/", Anchor: "^"},
+			{P: "wb/", Anchor: "^"},
 			{P: "workbuddy", Anchor: ""},
 			{P: "copilot.tencent", Anchor: ""},
 		},
@@ -717,6 +723,31 @@ func (pe *ProviderRegistryEngine) InferProvider(model, authIndex string) Provide
 
 	// 2. Evaluate model_patterns, ordered by sort_order
 	if modelStr != "" {
+		// 2a. Check explicit namespace prefix first (e.g. "workbuddy/claude-opus-5-5" -> "workbuddy")
+		if slashIdx := strings.Index(modelStr, "/"); slashIdx > 0 {
+			candPrefix := modelStr[:slashIdx]
+			for _, cp := range pe.providers {
+				if strings.EqualFold(cp.ProviderKey, candPrefix) {
+					return ProviderInferenceResult{
+						Key:       cp.ProviderKey,
+						Label:     cp.Label,
+						MatchedBy: "model",
+						Source:    cp.Source,
+					}
+				}
+				for _, pat := range cp.ModelPatterns {
+					if strings.EqualFold(pat.P, candPrefix) || strings.EqualFold(pat.P, candPrefix+"/") || (pat.Anchor == "^" && pat.Regex.MatchString(candPrefix+"/")) {
+						return ProviderInferenceResult{
+							Key:       cp.ProviderKey,
+							Label:     cp.Label,
+							MatchedBy: "model",
+							Source:    cp.Source,
+						}
+					}
+				}
+			}
+		}
+
 		for _, cp := range pe.providers {
 			for _, pat := range cp.ModelPatterns {
 				if pat.Regex.MatchString(modelStr) {

@@ -36,9 +36,11 @@ func ModelGuardMiddleware(eng *engine.Engine) gin.HandlerFunc {
 		// 2. Extract model name and reasoning effort for execution endpoints
 		var model string
 		var reasoningEffort string
+		var bodyBytes []byte
 
 		if c.Request.Body != nil && (c.Request.ContentLength == -1 || (c.Request.ContentLength > 0 && c.Request.ContentLength < 16*1024*1024)) {
-			bodyBytes, err := io.ReadAll(io.LimitReader(c.Request.Body, 16*1024*1024))
+			var err error
+			bodyBytes, err = io.ReadAll(io.LimitReader(c.Request.Body, 16*1024*1024))
 			if err == nil {
 				c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
@@ -58,14 +60,7 @@ func ModelGuardMiddleware(eng *engine.Engine) gin.HandlerFunc {
 			}
 		}
 
-		if model != "" {
-			c.Set(ContextModel, model)
-		}
-		if reasoningEffort != "" {
-			c.Set(ContextReasoning, reasoningEffort)
-		}
-
-		// 3. Enforce model allowlist if key is authenticated
+		// 3. Enforce model allowlist and unambiguous namespace rewriting if key is authenticated
 		if val, exists := c.Get(ContextKeyID); exists {
 			if keyID, ok := val.(int64); ok && keyID > 0 && model != "" {
 				res := eng.CheckModelAllowed(keyID, model)
@@ -79,9 +74,31 @@ func ModelGuardMiddleware(eng *engine.Engine) gin.HandlerFunc {
 					})
 					return
 				}
+				if res.RewrittenModel != "" && res.RewrittenModel != model {
+					rewritten := res.RewrittenModel
+					if len(bodyBytes) > 0 {
+						newBodyBytes, errSet := sjson.SetBytes(bodyBytes, "model", rewritten)
+						if errSet == nil {
+							c.Request.Body = io.NopCloser(bytes.NewBuffer(newBodyBytes))
+							c.Request.ContentLength = int64(len(newBodyBytes))
+							c.Request.Header.Set("Content-Length", strconv.Itoa(len(newBodyBytes)))
+							bodyBytes = newBodyBytes
+						}
+					}
+					if match := geminiPathModelRegex.FindStringSubmatch(c.Request.URL.Path); len(match) > 1 && match[1] == model {
+						c.Request.URL.Path = strings.Replace(c.Request.URL.Path, "/models/"+match[1], "/models/"+rewritten, 1)
+					}
+					model = rewritten
+				}
 			}
 		}
 
+		if model != "" {
+			c.Set(ContextModel, model)
+		}
+		if reasoningEffort != "" {
+			c.Set(ContextReasoning, reasoningEffort)
+		}
 		c.Next()
 	}
 }
@@ -143,10 +160,13 @@ func filterModelsJSON(raw []byte, keyID int64, eng *engine.Engine) []byte {
 		var filtered []interface{}
 		for _, item := range data.Array() {
 			id := item.Get("id").String()
-			if id != "" && eng.CheckModelAllowed(keyID, id).Allowed {
-				var val interface{}
-				if err := json.Unmarshal([]byte(item.Raw), &val); err == nil {
-					filtered = append(filtered, val)
+			if id != "" {
+				chk := eng.CheckModelAllowed(keyID, id)
+				if chk.Allowed && (chk.RewrittenModel == "" || strings.Contains(id, "/")) {
+					var val interface{}
+					if err := json.Unmarshal([]byte(item.Raw), &val); err == nil {
+						filtered = append(filtered, val)
+					}
 				}
 			}
 		}
@@ -161,10 +181,14 @@ func filterModelsJSON(raw []byte, keyID int64, eng *engine.Engine) []byte {
 		var filtered []interface{}
 		for _, item := range models.Array() {
 			name := item.Get("name").String()
-			if name != "" && eng.CheckModelAllowed(keyID, name).Allowed {
-				var val interface{}
-				if err := json.Unmarshal([]byte(item.Raw), &val); err == nil {
-					filtered = append(filtered, val)
+			if name != "" {
+				cleanName := strings.TrimPrefix(name, "models/")
+				chk := eng.CheckModelAllowed(keyID, cleanName)
+				if chk.Allowed && (chk.RewrittenModel == "" || strings.Contains(cleanName, "/")) {
+					var val interface{}
+					if err := json.Unmarshal([]byte(item.Raw), &val); err == nil {
+						filtered = append(filtered, val)
+					}
 				}
 			}
 		}

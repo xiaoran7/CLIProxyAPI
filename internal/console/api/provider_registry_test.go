@@ -365,3 +365,40 @@ func TestProviderRegistryEngine_ZCode(t *testing.T) {
 		t.Errorf("expected key 'zcode-cn' for bigmodel auth, got %q", resAuthBigModel.Key)
 	}
 }
+
+func TestProviderRegistryEngine_WorkBuddyNamespacePrefix(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_wb_prefix.db")
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	pe, err := NewProviderRegistryEngine(database)
+	if err != nil {
+		t.Fatalf("failed to create provider registry engine: %v", err)
+	}
+
+	tests := []struct {
+		model       string
+		expectedKey string
+	}{
+		{"workbuddy/claude-opus-5-5", "workbuddy"},
+		{"workbuddy/gemini-2.5-flash", "workbuddy"},
+		{"workbuddy/deepseek-v4.1-flash", "workbuddy"},
+		{"workbuddy-cn/deepseek-v4.1-flash", "workbuddy-cn"},
+		{"codebuddy/deepseek-v4.1-flash", "workbuddy-cn"},
+		{"claude-opus-5-5", "claude"},
+		{"gemini-2.5-flash", "gemini"},
+	}
+
+	for _, tc := range tests {
+		res := pe.InferProvider(tc.model, "")
+		if res.Key != tc.expectedKey {
+			t.Errorf("model %q: expected provider %q, got %q", tc.model, tc.expectedKey, res.Key)
+		}
+	}
+}

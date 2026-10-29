@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -136,13 +137,16 @@ func IsModelPermitted(requestedModel string, allowedModels []string) bool {
 		}
 
 		// 4. Wildcard matching (glob to regex)
-		if strings.Contains(pattern, "*") {
-			escaped := regexp.QuoteMeta(pattern)
-			regexStr := "^" + strings.ReplaceAll(escaped, "\\*", ".*") + "$"
-			if re, err := regexp.Compile(regexStr); err == nil {
-				for _, t := range targets {
-					if re.MatchString(t) {
-						return true
+		patWildcards := []string{pattern, patStripped, patUnmultiplied, patStrippedUnmultiplied}
+		for _, pw := range patWildcards {
+			if strings.Contains(pw, "*") {
+				escaped := regexp.QuoteMeta(pw)
+				regexStr := "^" + strings.ReplaceAll(escaped, "\\*", ".*") + "$"
+				if re, err := regexp.Compile(regexStr); err == nil {
+					for _, t := range targets {
+						if re.MatchString(t) {
+							return true
+						}
 					}
 				}
 			}
@@ -165,4 +169,69 @@ func IsModelPermitted(requestedModel string, allowedModels []string) bool {
 	}
 
 	return false
+}
+
+// ResolveModelTarget checks if requestedModel satisfies the whitelist, and if an unprefixed
+// model was requested against a whitelist with a uniquely matching provider prefix (e.g. "workbuddy/claude-opus-5-5"
+// or "workbuddy/*"), resolves targetModel to the namespaced model so requests route strictly to the intended provider.
+func ResolveModelTarget(requestedModel string, allowedModels []string) (allowed bool, targetModel string, reason string) {
+	if len(allowedModels) == 0 {
+		return true, requestedModel, ""
+	}
+	reqTrimmed := strings.TrimSpace(requestedModel)
+	if reqTrimmed == "" {
+		return true, "", ""
+	}
+
+	if !IsModelPermitted(reqTrimmed, allowedModels) {
+		return false, reqTrimmed, fmt.Sprintf("Model '%s' is not permitted for this API key. Permitted models: %s", reqTrimmed, strings.Join(allowedModels, ", "))
+	}
+
+	reqLower := strings.ToLower(reqTrimmed)
+
+	// If the request already has a provider prefix, or universal wildcard '*' allows all models,
+	// no rewriting is needed.
+	if strings.Contains(reqLower, "/") {
+		return true, reqTrimmed, ""
+	}
+	for _, p := range allowedModels {
+		if p == "*" {
+			return true, reqTrimmed, ""
+		}
+	}
+
+	// Check if the exact bare model is explicitly permitted without any provider prefix
+	for _, p := range allowedModels {
+		pLower := strings.ToLower(strings.TrimSpace(p))
+		if !strings.Contains(pLower, "/") {
+			// Bare pattern like "claude-opus-5-5", "claude*", etc.
+			if IsModelPermitted(reqTrimmed, []string{p}) {
+				return true, reqTrimmed, ""
+			}
+		}
+	}
+
+	// The bare model was permitted only via prefixed pattern(s).
+	// Find all matching provider prefixes from the whitelist.
+	matchedPrefixes := make(map[string]string)
+	for _, p := range allowedModels {
+		pLower := strings.ToLower(strings.TrimSpace(p))
+		slashIdx := strings.Index(pLower, "/")
+		if slashIdx == -1 {
+			continue
+		}
+		prefix := pLower[:slashIdx]
+		if IsModelPermitted(reqTrimmed, []string{p}) {
+			matchedPrefixes[prefix] = prefix + "/" + reqTrimmed
+		}
+	}
+
+	// If exactly one unique provider prefix matched, rewrite to that namespace
+	if len(matchedPrefixes) == 1 {
+		for _, rewritten := range matchedPrefixes {
+			return true, rewritten, ""
+		}
+	}
+
+	return true, reqTrimmed, ""
 }

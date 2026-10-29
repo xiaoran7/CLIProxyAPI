@@ -147,14 +147,32 @@ func HandleGetCpaModels(eng *engine.Engine, cpa *CpaClient, providers *ProviderR
 								}
 							}
 							if mID != "" {
-								if _, exists := catalogMap[mID]; !exists {
-									catalogMap[mID] = CpaModelItem{
-										ID:        mID,
-										Name:      mID,
+								catalogID := mID
+								catalogName := mID
+								cleanProv := strings.ToLower(strings.TrimSpace(prov))
+								switch cleanProv {
+								case "workbuddy", "workbuddy-intl":
+									if !strings.HasPrefix(catalogID, "workbuddy/") && !strings.HasPrefix(catalogID, "workbuddy-cn/") {
+										catalogID = "workbuddy/" + catalogID
+										catalogName = catalogID
+									}
+								case "workbuddy-cn", "codebuddy":
+									if !strings.HasPrefix(catalogID, "workbuddy/") && !strings.HasPrefix(catalogID, "workbuddy-cn/") {
+										catalogID = "workbuddy-cn/" + catalogID
+										catalogName = catalogID
+									}
+								}
+								if item, exists := catalogMap[catalogID]; !exists {
+									catalogMap[catalogID] = CpaModelItem{
+										ID:        catalogID,
+										Name:      catalogName,
 										Provider:  prov,
 										Available: !f.Disabled,
 										Source:    f.Name,
 									}
+								} else if !f.Disabled && !item.Available {
+									item.Available = true
+									catalogMap[catalogID] = item
 								}
 							}
 						}
