@@ -26,6 +26,7 @@ func ShouldSkipGateway(path string) bool {
 		strings.HasPrefix(path, "/auth") ||
 		path == "/callback" ||
 		path == "/management.html" ||
+		path == "/management" ||
 		strings.HasPrefix(path, "/management/") ||
 		path == "/healthz" ||
 		path == "/readyz" ||

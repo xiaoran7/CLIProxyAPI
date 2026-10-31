@@ -192,6 +192,25 @@ func TestUpstreamProxy(t *testing.T) {
 		}
 	})
 
+	// 5b. Console prefix alias without extension /console/upstream/management
+	t.Run("Console prefix alias without extension", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/console/upstream/management", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  GateAdminTokenCookie,
+			Value: adminSecret,
+		})
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rr.Code)
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, "rewriteUrl") {
+			t.Fatalf("expected body to contain rewriteUrl")
+		}
+	})
+
 	// 6. Upstream API proxying with loopback authorization injection
 	t.Run("Upstream API proxying", func(t *testing.T) {
 		upstreamHit = false

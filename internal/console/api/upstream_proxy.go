@@ -173,6 +173,7 @@ func HandleUpstreamProxy(cfg RouterConfig) gin.HandlerFunc {
 			isHTML := strings.Contains(accept, "text/html") ||
 				path == "/admin/upstream" || path == "/admin/upstream/" ||
 				path == "/console/upstream" || path == "/console/upstream/" ||
+				path == "/admin/upstream/management" || path == "/console/upstream/management" ||
 				strings.HasSuffix(path, ".html")
 
 			if isHTML {
@@ -218,7 +219,7 @@ func HandleUpstreamProxy(cfg RouterConfig) gin.HandlerFunc {
 		}
 
 		// 5. Direct static management.html delivery with script injection
-		if targetPath == "/management.html" || targetPath == "management.html" {
+		if targetPath == "/management.html" || targetPath == "management.html" || targetPath == "/management" || targetPath == "management" {
 			var htmlBytes []byte
 			if data, err := os.ReadFile("static/management.html"); err == nil && len(data) > 0 {
 				htmlBytes = data
