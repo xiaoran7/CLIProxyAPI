@@ -1073,5 +1073,14 @@ WHERE (model IS NULL OR model = '' OR model = 'unknown')
 `
 	_, _ = d.ExecContext(ctx, queryDaily)
 
+	// Clean phantom error events from unauthenticated external network scans
+	queryErrors := `
+DELETE FROM error_events
+WHERE (key_id IS NULL OR key_id <= 0)
+  AND (auth_index IS NULL OR auth_index = '')
+  AND (model IS NULL OR model = '' OR model = 'unknown')
+`
+	_, _ = d.ExecContext(ctx, queryErrors)
+
 	return res.RowsAffected()
 }

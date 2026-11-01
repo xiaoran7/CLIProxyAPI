@@ -757,3 +757,136 @@ func TestModelGuard_WorkBuddyNamespaceRewriteAndListing(t *testing.T) {
 		t.Fatalf("unexpected filtered models: %s, %s", m1, m2)
 	}
 }
+
+func TestAccounting_DiscardUnauthenticatedProbeAndScanner(t *testing.T) {
+	database, eng, _, _ := setupTestEnvironment(t)
+	defer func() { _ = database.Close() }()
+
+	ctx := context.Background()
+
+	r := gin.New()
+	for _, mw := range Gateway(eng) {
+		r.Use(mw)
+	}
+	r.POST("/v1/chat/completions", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"id": "ok"})
+	})
+
+	// 1. Send simulated scanner requests without any API Key to non-inference endpoints
+	scannerPaths := []string{
+		"/.git/config",
+		"/wp-json/gravitysmtp/v1/tests/mock-data",
+		"/cdn-cgi/rum",
+		"/mcp",
+		"/theme/default/assets/umi.js",
+	}
+
+	for _, p := range scannerPaths {
+		req := httptest.NewRequest(http.MethodGet, p, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 for scanner path %s, got %d", p, w.Code)
+		}
+	}
+
+	// Flush usage to ensure any outbox items are processed
+	if err := eng.Flusher().FlushUsage(ctx); err != nil {
+		t.Fatalf("flush usage failed: %v", err)
+	}
+
+	// Verify error_events has ZERO records inserted
+	errorEvents, err := database.SelectRecentErrorEvents(ctx, 100)
+	if err != nil {
+		t.Fatalf("select recent error events failed: %v", err)
+	}
+	if len(errorEvents) != 0 {
+		t.Fatalf("expected 0 error events from unauthenticated scanner probes, got %d (first: %+v)", len(errorEvents), errorEvents[0])
+	}
+
+	// Verify request_events has ZERO records inserted
+	reqEvents, err := database.SelectRecentEvents(ctx, 100)
+	if err != nil {
+		t.Fatalf("select recent request events failed: %v", err)
+	}
+	if len(reqEvents) != 0 {
+		t.Fatalf("expected 0 request events from unauthenticated scanner probes, got %d", len(reqEvents))
+	}
+
+	// 2. Test CleanPhantomEvents cleans legacy unauthenticated error_events
+	errType := "upstream_status_401"
+	errBody := `{"error":{"code":"invalid_api_key"}}`
+	_, _ = database.InsertErrorEvent(ctx, &db.ErrorEventRow{
+		TS:        time.Now().Unix(),
+		Status:    http.StatusUnauthorized,
+		ErrorType: &errType,
+		ErrorBody: &errBody,
+	})
+	cleaned, err := database.CleanPhantomEvents(ctx)
+	if err != nil {
+		t.Fatalf("clean phantom events failed: %v", err)
+	}
+	_ = cleaned
+
+	afterCleanErrors, err := database.SelectRecentErrorEvents(ctx, 100)
+	if err != nil {
+		t.Fatalf("select error events after clean failed: %v", err)
+	}
+	if len(afterCleanErrors) != 0 {
+		t.Fatalf("expected 0 error events after CleanPhantomEvents, got %d", len(afterCleanErrors))
+	}
+}
+
+func TestAccounting_GatewayLocalErrorTypeClassification(t *testing.T) {
+	database, eng, keyID, rawKey := setupTestEnvironment(t)
+	defer func() { _ = database.Close() }()
+
+	ctx := context.Background()
+
+	// Set model whitelist allowing only gpt-4o
+	rule := &db.QuotaRuleRow{
+		KeyID:          keyID,
+		Enabled:        1,
+		HardRatio:      1.0,
+		RPMLimit:       100,
+		ModelWhitelist: `["gpt-4o"]`,
+	}
+	if err := database.UpsertQuotaRule(ctx, rule); err != nil {
+		t.Fatalf("upsert quota rule failed: %v", err)
+	}
+	if err := eng.ReloadQuotaRules(ctx); err != nil {
+		t.Fatalf("reload quota rules failed: %v", err)
+	}
+
+	r := gin.New()
+	for _, mw := range Gateway(eng) {
+		r.Use(mw)
+	}
+	r.POST("/v1/chat/completions", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"id": "ok"})
+	})
+
+	// 1. Request forbidden model claude-3-opus -> must trigger 403 model_not_allowed
+	reqForbidden := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(`{"model":"claude-3-opus"}`))
+	reqForbidden.Header.Set("Authorization", "Bearer "+rawKey)
+	reqForbidden.Header.Set("Content-Type", "application/json")
+	wForbidden := httptest.NewRecorder()
+	r.ServeHTTP(wForbidden, reqForbidden)
+
+	if wForbidden.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for forbidden model, got %d: %s", wForbidden.Code, wForbidden.Body.String())
+	}
+
+	// Verify error event classified as model_forbidden (not upstream_status_403)
+	errors, err := database.SelectRecentErrorEvents(ctx, 10)
+	if err != nil {
+		t.Fatalf("select error events failed: %v", err)
+	}
+	if len(errors) != 1 {
+		t.Fatalf("expected 1 error event for model_not_allowed, got %d", len(errors))
+	}
+	if errors[0].ErrorType == nil || *errors[0].ErrorType != "model_forbidden" {
+		t.Fatalf("expected error_type 'model_forbidden', got %v", errors[0].ErrorType)
+	}
+}

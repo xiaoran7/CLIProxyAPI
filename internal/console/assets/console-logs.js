@@ -550,6 +550,7 @@
     }
 
     function errorTypeLabel(type) {
+      if (!type) return 'error';
       const map = {
         quota_exceeded: t('logs.errorQuotaExceeded'),
         rate_limited: t('logs.errorRateLimited'),
@@ -559,7 +560,11 @@
         connection_error: t('logs.errorConnectionLost'),
         stream_loop_detected: t('logs.errorThinkingLoopBreaker'),
         payload_too_large: t('logs.errorPayloadTooLarge'),
-        upstream_validation_required: t('logs.errorUpstreamVerification')
+        upstream_validation_required: t('logs.errorUpstreamVerification'),
+        invalid_api_key: t('logs.errorInvalidKey'),
+        gateway_auth_failed: t('logs.errorGatewayAuthFailed'),
+        gateway_forbidden: t('logs.errorGatewayForbidden'),
+        client_closed: t('logs.errorClientClosed')
       };
       return map[type] || type;
     }
@@ -722,7 +727,7 @@
           <td>${authDisplay}</td>
           <td><span class="tag-pill">${escapeHtml(ev.model || '—')}</span></td>
           <td><span class="chip ${statusClass}">${ev.status}</span></td>
-          <td><span class="flag-pill" style="${ev.error_type === 'upstream_validation_required' ? 'background:rgba(239,68,68,0.15); color:var(--danger); border-color:rgba(239,68,68,0.4);' : ''}">${escapeHtml(ev.error_type || 'error')}</span></td>
+          <td><span class="flag-pill" style="${ev.error_type === 'upstream_validation_required' ? 'background:rgba(239,68,68,0.15); color:var(--danger); border-color:rgba(239,68,68,0.4);' : ''}" title="${escapeHtml(ev.error_type || '')}">${escapeHtml(errorTypeLabel(ev.error_type))}</span></td>
           <td>${circuitStatus}</td>
           <td style="max-width:320px; font-size:11px; color:var(--text-muted); line-height:1.4; word-break:break-all;">${bodySnippet}</td>
         </tr>`;

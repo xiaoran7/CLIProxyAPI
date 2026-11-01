@@ -253,14 +253,21 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 		}
 	}
 
+	// Discard non-inference, probe, and unauthenticated scanner requests that consumed zero tokens,
+	// targeted no model, have no associated Key ID, and contacted no upstream provider.
+	// This prevents automated network scans (e.g. GET /.git/config, /wp-json/..., /cdn-cgi/rum, /mcp)
+	// from cluttering the Error & Circuit-Breaker Center and usage telemetry.
+	if (strings.TrimSpace(model) == "" || strings.EqualFold(strings.TrimSpace(model), "unknown")) &&
+		w.totalTokens == 0 &&
+		authIndex == "" &&
+		keyIDPtr == nil &&
+		!w.isStreaming {
+		return
+	}
+
 	// Error & Validation URL Interception
 	var errorType string
 	if status >= 400 {
-		errorType = fmt.Sprintf("upstream_status_%d", status)
-		if status == 499 {
-			errorType = "client_closed"
-		}
-
 		errBody := w.body.String()
 		validationURL := extractGoogleValidationURL(errBody)
 		if validationURL != "" || (status == 403 && strings.Contains(errBody, "VALIDATION_REQUIRED")) {
@@ -285,6 +292,32 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 					UpdatedAt:     now,
 				})
 			}
+		} else if status == 499 || c.Request.Context().Err() == context.Canceled {
+			errorType = "client_closed"
+		} else if authIndex == "" {
+			// Gateway local enforcement or rejection (no upstream provider was contacted)
+			errCode := gjson.Get(errBody, "error.code").String()
+			switch errCode {
+			case "quota_exceeded":
+				errorType = "quota_exceeded"
+			case "rate_limit_exceeded":
+				errorType = "rate_limited"
+			case "model_not_allowed":
+				errorType = "model_forbidden"
+			case "invalid_api_key":
+				errorType = "invalid_api_key"
+			default:
+				if status == http.StatusUnauthorized {
+					errorType = "gateway_auth_failed"
+				} else if status == http.StatusForbidden {
+					errorType = "gateway_forbidden"
+				} else {
+					errorType = fmt.Sprintf("gateway_status_%d", status)
+				}
+			}
+		} else {
+			// Real upstream provider error
+			errorType = fmt.Sprintf("upstream_status_%d", status)
 		}
 
 		summary := errBody
