@@ -40,6 +40,26 @@ func TestSanitizeQoderPayload(t *testing.T) {
 	if model != "qwen3.8-flash" {
 		t.Errorf("expected model 'qwen3.8-flash', got '%s'", model)
 	}
+
+	// DeepSeek aliases -> dfmodel
+	rawDS := []byte(`{"model":"deepseek-flash","messages":[{"role":"user","content":"hi"}]}`)
+	sanitizedDS := SanitizeQoderPayload(rawDS)
+	if m := gjson.GetBytes(sanitizedDS, "model").String(); m != "dfmodel" {
+		t.Errorf("expected model 'dfmodel' for deepseek-flash, got '%s'", m)
+	}
+
+	rawDSChat := []byte(`{"model":"qoder/deepseek-chat-free","messages":[{"role":"user","content":"hi"}]}`)
+	sanitizedDSChat := SanitizeQoderPayload(rawDSChat)
+	if m := gjson.GetBytes(sanitizedDSChat, "model").String(); m != "dfmodel" {
+		t.Errorf("expected model 'dfmodel' for qoder/deepseek-chat-free, got '%s'", m)
+	}
+
+	// Qwen max aliases -> qmodel_38max
+	rawQwen := []byte(`{"model":"qwen3.8-max","messages":[{"role":"user","content":"hi"}]}`)
+	sanitizedQwen := SanitizeQoderPayload(rawQwen)
+	if m := gjson.GetBytes(sanitizedQwen, "model").String(); m != "qmodel_38max" {
+		t.Errorf("expected model 'qmodel_38max' for qwen3.8-max, got '%s'", m)
+	}
 }
 
 func TestAggregateQoderStream(t *testing.T) {

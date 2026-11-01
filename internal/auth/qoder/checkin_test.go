@@ -323,3 +323,48 @@ func TestCheckinEngine_EnabledToggle(t *testing.T) {
 		t.Fatal("expected reloaded engine 2 to retain enabled state")
 	}
 }
+
+func TestResolveUserIdentity(t *testing.T) {
+	// 1. Nickname from Metadata
+	auth1 := &cliproxyauth.Auth{
+		ID: "qoder-1",
+		Metadata: map[string]any{
+			"nickname": "唐万桂",
+			"email":    "a2749024255@gmail.com",
+			"user_id":  "019f36b9-cabc-7881-a7a8-9243e16a22d1",
+		},
+	}
+	disp1, nick1, em1, _ := ResolveUserIdentity(auth1)
+	if disp1 != "唐万桂" {
+		t.Errorf("expected dispName '唐万桂', got %s", disp1)
+	}
+	if nick1 != "唐万桂" || em1 != "a2749024255@gmail.com" {
+		t.Errorf("unexpected nickname/email: %s, %s", nick1, em1)
+	}
+
+	// 2. Fallback to Email if nickname missing or UUID
+	auth2 := &cliproxyauth.Auth{
+		ID: "qoder-2",
+		Metadata: map[string]any{
+			"email":   "dev@example.com",
+			"user_id": "019f36b9-cabc-7881-a7a8-9243e16a22d1",
+		},
+	}
+	disp2, _, em2, _ := ResolveUserIdentity(auth2)
+	if disp2 != "dev@example.com" {
+		t.Errorf("expected dispName 'dev@example.com', got %s", disp2)
+	}
+	if em2 != "dev@example.com" {
+		t.Errorf("expected email 'dev@example.com', got %s", em2)
+	}
+
+	// 3. Fallback to Label
+	auth3 := &cliproxyauth.Auth{
+		ID:    "qoder-3",
+		Label: "我的主账号",
+	}
+	disp3, _, _, _ := ResolveUserIdentity(auth3)
+	if disp3 != "我的主账号" {
+		t.Errorf("expected dispName '我的主账号', got %s", disp3)
+	}
+}

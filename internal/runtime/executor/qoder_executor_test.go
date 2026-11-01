@@ -61,6 +61,19 @@ func TestQoderExecutorPrepareRequest(t *testing.T) {
 	if req.Header.Get("x-anthropic-billing-header") != "" {
 		t.Error("x-anthropic-billing-header was not stripped")
 	}
+	if req.Header.Get("x-model-key") != "qwen3.8-flash" {
+		t.Errorf("x-model-key expected qwen3.8-flash, got %s", req.Header.Get("x-model-key"))
+	}
+
+	// Test x-model-key injection for dfmodel
+	req2, _ := http.NewRequest(http.MethodPost, "https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation", nil)
+	body2 := `{"model":"dfmodel","messages":[]}`
+	if err2 := exec.PrepareRequest(req2, auth, "jt-12345", body2); err2 != nil {
+		t.Fatalf("PrepareRequest failed: %v", err2)
+	}
+	if req2.Header.Get("x-model-key") != "dfmodel" {
+		t.Errorf("x-model-key expected dfmodel, got %s", req2.Header.Get("x-model-key"))
+	}
 }
 
 func TestQoderExecutorExecuteNonStream(t *testing.T) {

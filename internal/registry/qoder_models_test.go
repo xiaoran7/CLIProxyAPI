@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -220,13 +221,20 @@ func TestParseQoderCatalogModels_GatewayChatFormat(t *testing.T) {
 	}`)
 
 	models := ParseQoderCatalogModels(gatewayJSON, "cn")
-	if len(models) != 3 {
-		t.Fatalf("expected 3 parsed models from gateway chat format, got %d", len(models))
+	if len(models) < 3 {
+		t.Fatalf("expected at least 3 parsed models from gateway chat format, got %d", len(models))
 	}
 
-	m0 := models[0]
-	if m0.ID != "auto" {
-		t.Errorf("expected ID 'auto', got %s", m0.ID)
+	byID := make(map[string]*ModelInfo)
+	for _, m := range models {
+		if m != nil {
+			byID[strings.ToLower(m.ID)] = m
+		}
+	}
+
+	m0, ok0 := byID["auto"]
+	if !ok0 {
+		t.Fatalf("expected model 'auto' to be present")
 	}
 	if m0.ContextLength != 200000 {
 		t.Errorf("expected ContextLength 200000, got %d", m0.ContextLength)
@@ -235,9 +243,9 @@ func TestParseQoderCatalogModels_GatewayChatFormat(t *testing.T) {
 		t.Errorf("expected Thinking support for auto")
 	}
 
-	m1 := models[1]
-	if m1.ID != "qmodel_38max" {
-		t.Errorf("expected ID 'qmodel_38max', got %s", m1.ID)
+	m1, ok1 := byID["qmodel_38max"]
+	if !ok1 {
+		t.Fatalf("expected model 'qmodel_38max' to be present")
 	}
 	if m1.DisplayName != "Qwen3.8-Max" {
 		t.Errorf("expected DisplayName 'Qwen3.8-Max', got %s", m1.DisplayName)
@@ -249,11 +257,86 @@ func TestParseQoderCatalogModels_GatewayChatFormat(t *testing.T) {
 		t.Errorf("expected Credits Multiplier 0.5, got %v", m1.Credits)
 	}
 
-	m2 := models[2]
-	if m2.ID != "dfmodel" {
-		t.Errorf("expected ID 'dfmodel', got %s", m2.ID)
+	m2, ok2 := byID["dfmodel"]
+	if !ok2 {
+		t.Fatalf("expected model 'dfmodel' to be present")
 	}
 	if m2.Thinking != nil {
 		t.Errorf("expected no Thinking support for non-reasoning dfmodel")
+	}
+	if m2.OwnedBy != "deepseek" {
+		t.Errorf("expected dfmodel OwnedBy 'deepseek', got %s", m2.OwnedBy)
+	}
+
+	// Verify enriched canonical models and aliases
+	mDSFlash, okDSFlash := byID["deepseek-flash"]
+	if !okDSFlash {
+		t.Fatalf("expected canonical model 'deepseek-flash' to be present")
+	}
+	if mDSFlash.OwnedBy != "deepseek" {
+		t.Errorf("expected deepseek-flash OwnedBy 'deepseek', got %s", mDSFlash.OwnedBy)
+	}
+	if mDSFlash.ContextLength != 1000000 {
+		t.Errorf("expected deepseek-flash ContextLength 1000000, got %d", mDSFlash.ContextLength)
+	}
+
+	if _, okDSChat := byID["deepseek-chat"]; !okDSChat {
+		t.Errorf("expected alias 'deepseek-chat' to be present")
+	}
+	if _, okDSV3 := byID["deepseek-v3"]; !okDSV3 {
+		t.Errorf("expected alias 'deepseek-v3' to be present")
+	}
+
+	mQwen38Max, okQwen := byID["qwen3.8-max"]
+	if !okQwen {
+		t.Fatalf("expected canonical model 'qwen3.8-max' to be present")
+	}
+	if mQwen38Max.OwnedBy != "alibaba" {
+		t.Errorf("expected qwen3.8-max OwnedBy 'alibaba', got %s", mQwen38Max.OwnedBy)
+	}
+	if _, okQwenMax := byID["qwen-max"]; !okQwenMax {
+		t.Errorf("expected alias 'qwen-max' to be present")
+	}
+}
+
+func TestQoderModelAliasAndKeyResolution(t *testing.T) {
+	// DeepSeek aliases -> dfmodel
+	dsCases := []string{
+		"dfmodel",
+		"deepseek-flash",
+		"deepseek-chat",
+		"deepseek-v3",
+		"deepseek-v4-flash",
+		"deepseek",
+		"qoder/deepseek-flash",
+		"qoder-cn/deepseek-chat-free",
+	}
+	for _, tc := range dsCases {
+		if got := ResolveQoderUpstreamModelKey(tc); got != "dfmodel" {
+			t.Errorf("ResolveQoderUpstreamModelKey(%q) = %q, want 'dfmodel'", tc, got)
+		}
+	}
+
+	// Qwen max aliases -> qmodel_38max
+	qwenMaxCases := []string{
+		"qmodel_38max",
+		"qwen3.8-max",
+		"qwen-3.8-max",
+		"qwen-max",
+		"qwen-max-latest",
+		"qoder/qwen3.8-max-free",
+	}
+	for _, tc := range qwenMaxCases {
+		if got := ResolveQoderUpstreamModelKey(tc); got != "qmodel_38max" {
+			t.Errorf("ResolveQoderUpstreamModelKey(%q) = %q, want 'qmodel_38max'", tc, got)
+		}
+	}
+
+	// Direct passthrough
+	if got := ResolveQoderUpstreamModelKey("auto"); got != "auto" {
+		t.Errorf("ResolveQoderUpstreamModelKey('auto') = %q, want 'auto'", got)
+	}
+	if got := ResolveQoderUpstreamModelKey("custom-unmapped-model"); got != "custom-unmapped-model" {
+		t.Errorf("ResolveQoderUpstreamModelKey('custom-unmapped-model') = %q, want 'custom-unmapped-model'", got)
 	}
 }

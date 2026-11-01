@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -28,7 +29,8 @@ func StripQoderForbiddenHeaders(req *http.Request) {
 	req.Header.Del("x-session-id")
 }
 
-// SanitizeQoderPayload normalizes model IDs (e.g. stripping -free suffixes)
+// SanitizeQoderPayload normalizes model IDs (stripping -free suffixes and mapping friendly aliases
+// like deepseek-flash / deepseek-chat to upstream routing keys like dfmodel)
 // to ensure compliance with upstream Qoder gateway routing.
 func SanitizeQoderPayload(payload []byte) []byte {
 	if len(payload) == 0 {
@@ -36,8 +38,8 @@ func SanitizeQoderPayload(payload []byte) []byte {
 	}
 	if modelRes := gjson.GetBytes(payload, "model"); modelRes.Exists() {
 		m := strings.TrimSpace(modelRes.String())
-		if strings.HasSuffix(strings.ToLower(m), "-free") {
-			cleanModel := m[:len(m)-len("-free")]
+		cleanModel := registry.ResolveQoderUpstreamModelKey(m)
+		if cleanModel != m {
 			if updated, err := sjson.SetBytes(payload, "model", cleanModel); err == nil {
 				payload = updated
 			}

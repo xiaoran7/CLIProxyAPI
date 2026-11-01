@@ -2,6 +2,7 @@ package management
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -66,30 +67,63 @@ func (h *Handler) GetQoderCheckin(c *gin.Context) {
 			}
 
 			realm := qoder.ResolveRealm(a)
+			dispName, nick, em, lbl := qoder.ResolveUserIdentity(a)
+
 			if existing, exists := records[a.ID]; exists {
-				if rec, ok := existing.(qoder.CheckinResult); ok && rec.Realm == "" {
-					rec.Realm = realm
+				if rec, ok := existing.(qoder.CheckinResult); ok {
+					if rec.Realm == "" {
+						rec.Realm = realm
+					}
+					if rec.DisplayName == "" || isUUIDLike(rec.DisplayName) {
+						rec.DisplayName = dispName
+					}
+					if rec.User == "" || isUUIDLike(rec.User) {
+						rec.User = dispName
+					}
+					if rec.Nickname == "" {
+						rec.Nickname = nick
+					}
+					if rec.Email == "" {
+						rec.Email = em
+					}
+					if rec.Label == "" {
+						rec.Label = lbl
+					}
 					records[a.ID] = rec
+				} else if mRec, ok := existing.(map[string]any); ok {
+					if mRec["display_name"] == nil || isUUIDLike(fmt.Sprint(mRec["display_name"])) {
+						mRec["display_name"] = dispName
+					}
+					if mRec["user"] == nil || isUUIDLike(fmt.Sprint(mRec["user"])) {
+						mRec["user"] = dispName
+					}
+					if mRec["nickname"] == nil {
+						mRec["nickname"] = nick
+					}
+					if mRec["email"] == nil {
+						mRec["email"] = em
+					}
+					if mRec["label"] == nil {
+						mRec["label"] = lbl
+					}
+					records[a.ID] = mRec
 				}
 				continue
 			}
 
-			user := qoder.ResolveUserID(a)
-			if a.Metadata != nil {
-				if nick, ok := a.Metadata["nickname"].(string); ok && strings.TrimSpace(nick) != "" {
-					user = strings.TrimSpace(nick)
-				}
-			}
-
 			records[a.ID] = gin.H{
-				"auth_id": a.ID,
-				"user":    user,
-				"day":     today,
-				"date":    today,
-				"outcome": "pending",
-				"status":  "pending",
-				"realm":   realm,
-				"message": "Check-in pending today",
+				"auth_id":      a.ID,
+				"user":         dispName,
+				"display_name": dispName,
+				"nickname":     nick,
+				"email":        em,
+				"label":        lbl,
+				"day":          today,
+				"date":         today,
+				"outcome":      "pending",
+				"status":       "pending",
+				"realm":        realm,
+				"message":      "今日待打卡",
 			}
 		}
 	}
@@ -146,8 +180,12 @@ func (h *Handler) PostQoderCheckin(c *gin.Context) {
 			if engine != nil && res != nil {
 				engine.RecordCheckin(targetAuth.ID, *res)
 			}
+			errMsg := err.Error()
+			if strings.Contains(strings.ToLower(errMsg), "unauthorized") || strings.Contains(errMsg, "401") {
+				errMsg = "登录凭证已失效或过期，请重新登录授权"
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":  err.Error(),
+				"error":  errMsg,
 				"result": res,
 			})
 			return
@@ -195,4 +233,9 @@ func (h *Handler) PutQoderCheckin(c *gin.Context) {
 		"status":  "ok",
 		"enabled": engine != nil && engine.IsEnabled(),
 	})
+}
+
+func isUUIDLike(s string) bool {
+	s = strings.TrimSpace(s)
+	return len(s) >= 32 && strings.Count(s, "-") >= 3
 }

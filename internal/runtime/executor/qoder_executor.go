@@ -18,6 +18,7 @@ import (
 	cliproxyauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+	"github.com/tidwall/gjson"
 )
 
 // QoderExecutor executes chat completions against Qoder Global (api3.qoder.sh)
@@ -45,6 +46,11 @@ func (e *QoderExecutor) RequestToFormat(_ cliproxyexecutor.Request, _ cliproxyex
 func (e *QoderExecutor) PrepareRequest(req *http.Request, auth *cliproxyauth.Auth, jobToken, requestBody string) error {
 	if req == nil {
 		return nil
+	}
+	if req.Header.Get("x-model-key") == "" && len(requestBody) > 0 {
+		if modelKey := strings.TrimSpace(gjson.Get(requestBody, "model").String()); modelKey != "" {
+			req.Header.Set("x-model-key", modelKey)
+		}
 	}
 	if errSign := qoderauth.SignRequest(req, auth, jobToken, requestBody); errSign != nil {
 		return fmt.Errorf("qoder executor: sign request failed: %w", errSign)

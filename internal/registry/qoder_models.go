@@ -2,6 +2,7 @@
 package registry
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -611,10 +612,16 @@ func ParseQoderCatalogModels(body []byte, realm string) []*ModelInfo {
 			maxCompletionTokens = 64000
 		}
 
+		modelOwnedBy := ownedBy
+		spec := NormalizeQoderModelAlias(id, displayName)
+		if spec != nil && spec.OwnedBy != "" {
+			modelOwnedBy = spec.OwnedBy
+		}
+
 		m := &ModelInfo{
 			ID:                  id,
 			Object:              "model",
-			OwnedBy:             ownedBy,
+			OwnedBy:             modelOwnedBy,
 			Type:                "qoder",
 			DisplayName:         displayName,
 			ContextLength:       maxInputTokens,
@@ -656,9 +663,134 @@ func ParseQoderCatalogModels(body []byte, realm string) []*ModelInfo {
 		}
 
 		models = append(models, m)
+
+		// Enrich with friendly canonical model ID and common aliases
+		if spec != nil {
+			if spec.CanonicalID != "" && !seen[strings.ToLower(spec.CanonicalID)] {
+				seen[strings.ToLower(spec.CanonicalID)] = true
+				cModel := cloneModelInfo(m)
+				cModel.ID = spec.CanonicalID
+				cModel.OwnedBy = spec.OwnedBy
+				cModel.DisplayName = displayName
+				models = append(models, cModel)
+			}
+			for _, alias := range spec.Aliases {
+				if alias == "" || seen[strings.ToLower(alias)] {
+					continue
+				}
+				seen[strings.ToLower(alias)] = true
+				aModel := cloneModelInfo(m)
+				aModel.ID = alias
+				aModel.OwnedBy = spec.OwnedBy
+				aModel.DisplayName = fmt.Sprintf("%s (%s)", displayName, alias)
+				models = append(models, aModel)
+			}
+		}
 	}
 
 	return models
+}
+
+// QoderModelAliasSpec defines the canonical identity and known aliases for upstream Qoder keys.
+type QoderModelAliasSpec struct {
+	CanonicalID string
+	Aliases     []string
+	OwnedBy     string
+}
+
+// NormalizeQoderModelAlias returns the canonical ID, common aliases, and manufacturer owner for an upstream key and display name.
+func NormalizeQoderModelAlias(key, displayName string) *QoderModelAliasSpec {
+	kLower := strings.ToLower(strings.TrimSpace(key))
+	dLower := strings.ToLower(strings.TrimSpace(displayName))
+
+	// 1. DeepSeek models: only remap weird internal keys (dfmodel, dpmodel)
+	if kLower == "dfmodel" || (strings.Contains(dLower, "deepseek-flash") && !strings.HasPrefix(kLower, "deepseek")) {
+		return &QoderModelAliasSpec{
+			CanonicalID: "deepseek-flash",
+			Aliases:     []string{"deepseek-chat", "deepseek-v3", "deepseek-v4-flash"},
+			OwnedBy:     "deepseek",
+		}
+	}
+	if kLower == "dpmodel" || (strings.Contains(dLower, "deepseek-pro") && !strings.HasPrefix(kLower, "deepseek")) {
+		return &QoderModelAliasSpec{
+			CanonicalID: "deepseek-pro",
+			Aliases:     []string{"deepseek-r1", "deepseek-v4-pro"},
+			OwnedBy:     "deepseek",
+		}
+	}
+
+	// 2. Qwen models: remap weird qmodel_* internal keys
+	if kLower == "qmodel_38max" || (strings.Contains(dLower, "qwen3.8-max") && !strings.HasPrefix(kLower, "qwen")) {
+		return &QoderModelAliasSpec{
+			CanonicalID: "qwen3.8-max",
+			Aliases:     []string{"qwen-max", "qwen-max-latest"},
+			OwnedBy:     "alibaba",
+		}
+	}
+	if kLower == "qmodel_38plus" || (strings.Contains(dLower, "qwen3.8-plus") && !strings.HasPrefix(kLower, "qwen")) {
+		return &QoderModelAliasSpec{
+			CanonicalID: "qwen3.8-plus",
+			Aliases:     []string{"qwen-plus"},
+			OwnedBy:     "alibaba",
+		}
+	}
+	if kLower == "qmodel_38flash" || (strings.Contains(dLower, "qwen3.8-flash") && !strings.HasPrefix(kLower, "qwen")) {
+		return &QoderModelAliasSpec{
+			CanonicalID: "qwen3.8-flash",
+			Aliases:     []string{"qwen-flash"},
+			OwnedBy:     "alibaba",
+		}
+	}
+	if strings.HasPrefix(kLower, "qmodel_") {
+		suffix := strings.TrimPrefix(kLower, "qmodel_")
+		return &QoderModelAliasSpec{
+			CanonicalID: "qwen" + suffix,
+			OwnedBy:     "alibaba",
+		}
+	}
+
+	// For already well-named DeepSeek models in raw catalog (e.g. "id": "deepseek-v4-pro")
+	if strings.HasPrefix(kLower, "deepseek") {
+		return &QoderModelAliasSpec{
+			OwnedBy: "deepseek",
+		}
+	}
+
+	return nil
+}
+
+// ResolveQoderUpstreamModelKey maps any client-requested model identifier (including friendly aliases
+// like "deepseek-flash", "deepseek-chat", "qwen3.8-max") onto the actual internal key expected by
+// the upstream Qoder gateway (such as "dfmodel", "qmodel_38max").
+func ResolveQoderUpstreamModelKey(requestedModel string) string {
+	clean := strings.ToLower(strings.TrimSpace(requestedModel))
+	// Strip provider prefix if present, e.g. "qoder/deepseek-flash" -> "deepseek-flash"
+	if idx := strings.Index(clean, "/"); idx >= 0 {
+		clean = clean[idx+1:]
+	}
+	// Strip trailing -free suffix
+	if strings.HasSuffix(clean, "-free") {
+		clean = clean[:len(clean)-len("-free")]
+	}
+
+	switch clean {
+	case "dfmodel", "deepseek-flash", "deepseek-chat", "deepseek-v3", "deepseek-v4-flash", "deepseek":
+		return "dfmodel"
+	case "dpmodel", "deepseek-pro", "deepseek-r1", "deepseek-v4-pro":
+		return "dpmodel"
+	case "qmodel_38max", "qwen3.8-max", "qwen-3.8-max", "qwen-max", "qwen-max-latest":
+		return "qmodel_38max"
+	case "qmodel_38plus", "qwen3.8-plus", "qwen-3.8-plus", "qwen-plus":
+		return "qmodel_38plus"
+	case "qmodel_38flash":
+		return "qmodel_38flash"
+	case "auto":
+		return "auto"
+	case "ultimate":
+		return "ultimate"
+	default:
+		return clean
+	}
 }
 
 func qoderModelsSliceChanged(oldList, newList []*ModelInfo) bool {

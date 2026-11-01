@@ -55,23 +55,128 @@ func TodayBeijing() string {
 
 // CheckinResult holds the outcome of a check-in attempt.
 type CheckinResult struct {
-	AuthID  string    `json:"auth_id,omitempty"`
-	User    string    `json:"user,omitempty"`
-	Realm   string    `json:"realm"`
-	Date    string    `json:"date"`
-	Day     string    `json:"day,omitempty"`
-	Status  string    `json:"status"`
-	Outcome string    `json:"outcome,omitempty"`
-	Points  int64     `json:"points,omitempty"`
-	Credit  float64   `json:"credit,omitempty"`
-	Message string    `json:"message,omitempty"`
-	Checked time.Time `json:"checked_at"`
-	At      time.Time `json:"at,omitempty"`
+	AuthID      string    `json:"auth_id,omitempty"`
+	User        string    `json:"user,omitempty"`
+	DisplayName string    `json:"display_name,omitempty"`
+	Nickname    string    `json:"nickname,omitempty"`
+	Email       string    `json:"email,omitempty"`
+	Label       string    `json:"label,omitempty"`
+	Realm       string    `json:"realm"`
+	Date        string    `json:"date"`
+	Day         string    `json:"day,omitempty"`
+	Status      string    `json:"status"`
+	Outcome     string    `json:"outcome,omitempty"`
+	Points      int64     `json:"points,omitempty"`
+	Credit      float64   `json:"credit,omitempty"`
+	Message     string    `json:"message,omitempty"`
+	Checked     time.Time `json:"checked_at"`
+	At          time.Time `json:"at,omitempty"`
+}
+
+// ResolveUserIdentity extracts human-readable display name, nickname, email and label for an auth object.
+func ResolveUserIdentity(auth *cliproxyauth.Auth) (displayName, nickname, email, label string) {
+	if auth == nil {
+		return "user", "", "", ""
+	}
+	if auth.Metadata != nil {
+		if nick, ok := auth.Metadata["nickname"].(string); ok && strings.TrimSpace(nick) != "" {
+			nickname = strings.TrimSpace(nick)
+		}
+		if em, ok := auth.Metadata["email"].(string); ok && strings.TrimSpace(em) != "" {
+			email = strings.TrimSpace(em)
+		}
+		if lbl, ok := auth.Metadata["label"].(string); ok && strings.TrimSpace(lbl) != "" {
+			label = strings.TrimSpace(lbl)
+		}
+	}
+	if auth.Attributes != nil {
+		if nickname == "" {
+			if nick := strings.TrimSpace(auth.Attributes["nickname"]); nick != "" {
+				nickname = nick
+			}
+		}
+		if email == "" {
+			if em := strings.TrimSpace(auth.Attributes["email"]); em != "" {
+				email = em
+			}
+		}
+		if label == "" {
+			if lbl := strings.TrimSpace(auth.Attributes["label"]); lbl != "" {
+				label = lbl
+			}
+		}
+	}
+	if label == "" && strings.TrimSpace(auth.Label) != "" {
+		label = strings.TrimSpace(auth.Label)
+	}
+
+	// Priority: nickname > label > email > user_id
+	if nickname != "" && !strings.Contains(nickname, "-") && len(nickname) < 40 {
+		displayName = nickname
+	} else if label != "" && !strings.EqualFold(label, "qoder") && !strings.EqualFold(label, "qoder-cn") {
+		displayName = label
+	} else if email != "" {
+		displayName = email
+	} else if nickname != "" {
+		displayName = nickname
+	} else {
+		displayName = ResolveUserID(auth)
+	}
+	return displayName, nickname, email, label
+}
+
+func refreshQoderToken(ctx context.Context, httpClient *http.Client, auth *cliproxyauth.Auth, realm string) (string, error) {
+	if auth == nil {
+		return "", fmt.Errorf("auth is nil")
+	}
+	openAPIBase := ResolveOpenAPIBaseURLForAuth(realm, auth)
+	if drt := DeviceRefreshToken(auth); drt != "" {
+		resp, err := RefreshDeviceTokenWithBase(ctx, httpClient, openAPIBase, drt)
+		if err == nil && resp != nil && (resp.Token != "" || resp.DeviceToken != "") {
+			newToken := resp.Token
+			if newToken == "" {
+				newToken = resp.DeviceToken
+			}
+			if auth.Metadata == nil {
+				auth.Metadata = make(map[string]any)
+			}
+			auth.Metadata["access_token"] = newToken
+			auth.Metadata["device_token"] = newToken
+			if resp.RefreshToken != "" {
+				auth.Metadata["refresh_token"] = resp.RefreshToken
+				auth.Metadata["device_refresh"] = resp.RefreshToken
+			}
+			if auth.Attributes != nil {
+				auth.Attributes["access_token"] = newToken
+			}
+			if ts, ok := auth.Storage.(*QoderTokenStorage); ok && ts != nil {
+				ts.AccessToken = newToken
+				ts.DeviceToken = newToken
+				if resp.RefreshToken != "" {
+					ts.RefreshToken = resp.RefreshToken
+					ts.DeviceRefresh = resp.RefreshToken
+				}
+				if auth.Attributes != nil {
+					if path := strings.TrimSpace(auth.Attributes["path"]); path != "" {
+						_ = ts.SaveTokenToFile(path)
+					}
+				}
+			}
+			return newToken, nil
+		}
+	}
+	return "", fmt.Errorf("no usable refresh token")
 }
 
 func syncCheckinResult(result *CheckinResult) {
 	if result == nil {
 		return
+	}
+	if result.DisplayName == "" && result.User != "" {
+		result.DisplayName = result.User
+	}
+	if result.User == "" && result.DisplayName != "" {
+		result.User = result.DisplayName
 	}
 	if result.Outcome == "" {
 		result.Outcome = result.Status
@@ -122,38 +227,65 @@ func Checkin(ctx context.Context, httpClient *http.Client, auth *cliproxyauth.Au
 	}
 
 	realm := ResolveRealm(auth)
-	uid := ResolveUserID(auth)
+	displayName, nickname, email, label := ResolveUserIdentity(auth)
 	today := TodayBeijing()
 	result := &CheckinResult{
-		AuthID:  auth.ID,
-		User:    uid,
-		Realm:   realm,
-		Date:    today,
-		Day:     today,
-		Checked: time.Now(),
-		At:      time.Now(),
+		AuthID:      auth.ID,
+		User:        displayName,
+		DisplayName: displayName,
+		Nickname:    nickname,
+		Email:       email,
+		Label:       label,
+		Realm:       realm,
+		Date:        today,
+		Day:         today,
+		Checked:     time.Now(),
+		At:          time.Now(),
 	}
 	defer func() {
 		syncCheckinResult(result)
 	}()
 
-	token := AccessToken(auth)
-	token = strings.TrimPrefix(token, "Bearer ")
-	token = strings.TrimSpace(token)
-	if token == "" {
-		result.Status = CheckinFailed
-		result.Outcome = CheckinFailed
-		result.Message = "no usable access token"
-		return result, fmt.Errorf("qoder: no access token")
-	}
-
-	openAPIBase := ResolveOpenAPIBaseURLForAuth(realm, auth)
 	client := httpClient
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
+
+	token := strings.TrimSpace(strings.TrimPrefix(AccessToken(auth), "Bearer "))
+	if token == "" || IsTokenExpired(auth) {
+		if refreshed, errRef := refreshQoderToken(ctx, client, auth, realm); errRef == nil && refreshed != "" {
+			token = refreshed
+		}
+	}
+	if token == "" {
+		result.Status = CheckinFailed
+		result.Outcome = CheckinFailed
+		result.Message = "缺少有效访问凭证，请重新登录"
+		return result, fmt.Errorf("qoder: 缺少有效访问凭证，请重新登录授权")
+	}
+
+	openAPIBase := ResolveOpenAPIBaseURLForAuth(realm, auth)
 	machineID := ResolveMachineID(auth)
 
+	res, err := executeCheckinAttempts(ctx, client, openAPIBase, token, machineID, result)
+	if err != nil && isUnauthorizedError(err) {
+		// Attempt refreshing token and retry once
+		if refreshed, errRef := refreshQoderToken(ctx, client, auth, realm); errRef == nil && refreshed != "" {
+			return executeCheckinAttempts(ctx, client, openAPIBase, refreshed, machineID, result)
+		}
+	}
+	return res, err
+}
+
+func isUnauthorizedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "unauthorized") || strings.Contains(s, "expired") || strings.Contains(s, "401")
+}
+
+func executeCheckinAttempts(ctx context.Context, client *http.Client, openAPIBase, token, machineID string, result *CheckinResult) (*CheckinResult, error) {
 	// Step 1: Query campaigns list via OpenAPI
 	listURL := openAPIBase + CampaignsPath
 	reqList, errList := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
@@ -230,7 +362,7 @@ func Checkin(ctx context.Context, httpClient *http.Client, auth *cliproxyauth.Au
 									result.Outcome = CheckinClaimed
 									result.Points = pts
 									result.Credit = float64(pts)
-									result.Message = "successfully claimed"
+									result.Message = "今日签到成功"
 									return result, nil
 								}
 
@@ -241,13 +373,13 @@ func Checkin(ctx context.Context, httpClient *http.Client, auth *cliproxyauth.Au
 								if strings.Contains(strings.ToLower(msg), "already") || claimCode == 1001 || claimCode == 10001 {
 									result.Status = CheckinDone
 									result.Outcome = CheckinDone
-									result.Message = "already claimed today"
+									result.Message = "今日已打卡"
 									return result, nil
 								}
 								if strings.Contains(strings.ToLower(msg), "ineligible") || claimCode == 1002 {
 									result.Status = CheckinIneligible
 									result.Outcome = CheckinIneligible
-									result.Message = msg
+									result.Message = "暂不满足签到资格"
 									return result, nil
 								}
 							}
@@ -255,7 +387,7 @@ func Checkin(ctx context.Context, httpClient *http.Client, auth *cliproxyauth.Au
 					} else if alreadyClaimed {
 						result.Status = CheckinDone
 						result.Outcome = CheckinDone
-						result.Message = "already claimed today"
+						result.Message = "今日已打卡"
 						return result, nil
 					}
 				}
@@ -263,8 +395,8 @@ func Checkin(ctx context.Context, httpClient *http.Client, auth *cliproxyauth.Au
 		} else if respList.StatusCode == http.StatusUnauthorized {
 			result.Status = CheckinFailed
 			result.Outcome = CheckinFailed
-			result.Message = "unauthorized: invalid or expired access token"
-			return result, fmt.Errorf("qoder: unauthorized token")
+			result.Message = "登录凭证已失效或过期，请重新登录授权"
+			return result, fmt.Errorf("qoder: 登录凭证已失效或过期，请重新登录授权")
 		}
 	}
 
@@ -304,7 +436,7 @@ func Checkin(ctx context.Context, httpClient *http.Client, auth *cliproxyauth.Au
 				result.Outcome = CheckinClaimed
 				result.Points = pts
 				result.Credit = float64(pts)
-				result.Message = "successfully claimed"
+				result.Message = "今日签到成功"
 				return result, nil
 			}
 
@@ -316,33 +448,33 @@ func Checkin(ctx context.Context, httpClient *http.Client, auth *cliproxyauth.Au
 			if strings.Contains(msgLower, "already") || strings.Contains(msg, "已签到") || strings.Contains(msg, "已领取") || code == 1001 || code == 10001 {
 				result.Status = CheckinDone
 				result.Outcome = CheckinDone
-				result.Message = "already claimed today"
+				result.Message = "今日已打卡"
 				return result, nil
 			}
 			if strings.Contains(msgLower, "ineligible") || strings.Contains(msgLower, "not eligible") || code == 1002 {
 				result.Status = CheckinIneligible
 				result.Outcome = CheckinIneligible
-				result.Message = msg
+				result.Message = "暂不满足签到资格"
 				return result, nil
 			}
 			if strings.Contains(msgLower, "ended") || strings.Contains(msgLower, "inactive") || code == 1003 {
 				result.Status = CheckinInactive
 				result.Outcome = CheckinInactive
-				result.Message = msg
+				result.Message = "打卡活动已结束或未开放"
 				return result, nil
 			}
 		} else if respDirect.StatusCode == http.StatusUnauthorized {
 			result.Status = CheckinFailed
 			result.Outcome = CheckinFailed
-			result.Message = "unauthorized: invalid or expired access token"
-			return result, fmt.Errorf("qoder: unauthorized token")
+			result.Message = "登录凭证已失效或过期，请重新登录授权"
+			return result, fmt.Errorf("qoder: 登录凭证已失效或过期，请重新登录授权")
 		}
 	}
 
 	// If no campaigns and direct endpoint was not available, treat as inactive or completed
 	result.Status = CheckinDone
 	result.Outcome = CheckinDone
-	result.Message = "no active check-in campaigns available or already checked in"
+	result.Message = "今日暂无可领活动或已完成打卡"
 	return result, nil
 }
 
