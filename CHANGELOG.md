@@ -14,6 +14,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Wired `qoder.InitGlobalCheckinEngine` and graceful `Stop` into `sdk/cliproxy/service_lifecycle.go`, and protected `qoder_checkins.json` from exposure as a virtual user credential in `internalStorageFileNames`.
   - Added comprehensive unit tests in `internal/auth/qoder/checkin_test.go` and `internal/api/handlers/management/qoder_checkin_test.go`.
 
+### Operations
+- **Sandbox (us-zenix) Control Panel Mount Resync (`/opt/cliproxyapi/static/management.html`)**:
+  - The bind-mounted runtime panel under `/opt/cliproxyapi/static/` still carried the pre-`f0761ec5` build (MD5 `84be2f294413b2a9258e7415f78f347f`), while both in-repo copies had already advanced to `c8b2c8585ab12aca7920a24500eaedfa`. Because the mount shadows the embedded asset, the sandbox container kept serving the defective `QoderSuite` bundle, which `node --check` on the extracted module block rejects with `SyntaxError: Unexpected token ')'` - leaving the panel blank for anyone opening `/management.html`.
+  - Resynced the mount from the repo copy (backup kept at `management.html.bak-20261031-234429`), restarted only the sandbox container, and confirmed `/management.html` now serves `c8b2c8585ab12aca7920a24500eaedfa` with its inline ES module parsing clean, alongside `console=200`, `healthz=200`, and `mgmt-config=401` on `127.0.0.1:8317`. No Tokyo production host was touched.
+
 ### Fixed
 - **Management Web UI JavaScript AST Closure Defect & Route Redirection Alignment (`static/management.html`, `internal/managementasset/assets/management.html`, `internal/console/api/upstream_proxy.go`, `internal/console/middleware/gateway.go`, `internal/api/server_routes.go`)**:
   - In commit `b395dc2b`, minified JSX AST closures inside `QoderSuite` had bracket mismatches (missing closing `}` in `R.map` row card wrapper, missing closure on `C.map` container before empty state, and missing root closure on `c==="checkin"`). Browsers parsing `<script type="module">` encountered `SyntaxError: Unexpected token ')'` during script compilation, halting React mount and rendering a blank page when opening `/console/upstream/management.html`.
