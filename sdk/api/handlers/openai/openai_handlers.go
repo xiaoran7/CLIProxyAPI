@@ -141,8 +141,9 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 		}
 
 		cleanBaseModel := registry.TrimWorkBuddyPrefixes(modelID)
+		cleanBaseModel = registry.TrimQoderPrefixes(cleanBaseModel)
 
-		// Determine registered providers for this model to decouple multi-realm WorkBuddy models
+		// Determine registered providers for this model to decouple multi-realm WorkBuddy and Qoder models
 		providers := modelRegistry.GetModelProviders(cleanBaseModel)
 		if len(providers) == 0 {
 			providers = modelRegistry.GetModelProviders(modelID)
@@ -150,6 +151,8 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 
 		hasWBIntl := false
 		hasWBCN := false
+		hasQoderIntl := false
+		hasQoderCN := false
 		hasNonWorkBuddy := false
 		var nonWBOwnedBy string
 
@@ -166,6 +169,10 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 				} else {
 					hasWBIntl = true
 				}
+			case "qoder", "qoder-intl", "qoder-en":
+				hasQoderIntl = true
+			case "qoder-cn":
+				hasQoderCN = true
 			default:
 				hasNonWorkBuddy = true
 				if nonWBOwnedBy == "" {
@@ -184,10 +191,18 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 			hasWBIntl = true
 			hasWBCN = false
 			hasNonWorkBuddy = false
+		} else if strings.HasPrefix(lowerID, "qoder-cn/") {
+			hasQoderIntl = false
+			hasQoderCN = true
+			hasNonWorkBuddy = false
+		} else if strings.HasPrefix(lowerID, "qoder/") || strings.HasPrefix(lowerID, "qoder-intl/") || strings.HasPrefix(lowerID, "qoder-en/") {
+			hasQoderIntl = true
+			hasQoderCN = false
+			hasNonWorkBuddy = false
 		}
 
 		// Fallback when registry does not have active provider entries (e.g. offline/mock tests)
-		if !hasWBIntl && !hasWBCN && !hasNonWorkBuddy {
+		if !hasWBIntl && !hasWBCN && !hasQoderIntl && !hasQoderCN && !hasNonWorkBuddy {
 			ownedBy, _ := model["owned_by"].(string)
 			modelType, _ := model["type"].(string)
 			if strings.HasPrefix(strings.ToLower(cleanBaseModel), "hy") {
@@ -199,6 +214,8 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 				} else {
 					hasWBIntl = true
 				}
+			} else if strings.EqualFold(ownedBy, "qoder") || strings.EqualFold(modelType, "qoder") {
+				hasQoderIntl = true
 			}
 		}
 
@@ -271,6 +288,10 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 				filteredModel["owned_by"] = "workbuddy-cn"
 			} else if hasWBIntl && !hasWBCN {
 				filteredModel["owned_by"] = "workbuddy"
+			} else if hasQoderCN && !hasQoderIntl {
+				filteredModel["owned_by"] = "qoder-cn"
+			} else if hasQoderIntl && !hasQoderCN {
+				filteredModel["owned_by"] = "qoder"
 			}
 			if dn, exists := model["display_name"]; exists && dn != nil {
 				filteredModel["display_name"] = dn
@@ -282,12 +303,16 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 			// "compact" (default): Emit exactly one clean entry per model provider.
 			// For multi-provider models (e.g. WorkBuddy Intl and WorkBuddy CN, or WorkBuddy and non-WorkBuddy),
 			// emit distinct namespaced entries so routes are never masked.
-			if hasNonWorkBuddy {
+			if hasNonWorkBuddy || hasQoderIntl || hasQoderCN {
 				if !seenIDs[cleanBaseModel] {
 					seenIDs[cleanBaseModel] = true
 					bareOwnedBy := nonWBOwnedBy
 					if bareOwnedBy == "" {
-						if origOwnedBy, ok := model["owned_by"].(string); ok && origOwnedBy != "" && !strings.HasPrefix(strings.ToLower(origOwnedBy), "workbuddy") && !strings.HasPrefix(strings.ToLower(origOwnedBy), "codebuddy") {
+						if hasQoderCN && !hasQoderIntl {
+							bareOwnedBy = "qoder-cn"
+						} else if hasQoderIntl {
+							bareOwnedBy = "qoder"
+						} else if origOwnedBy, ok := model["owned_by"].(string); ok && origOwnedBy != "" && !strings.HasPrefix(strings.ToLower(origOwnedBy), "workbuddy") && !strings.HasPrefix(strings.ToLower(origOwnedBy), "codebuddy") {
 							bareOwnedBy = origOwnedBy
 						}
 					}
@@ -363,8 +388,54 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 				}
 			}
 
-			// If not provided by WorkBuddy at all and not yet emitted as bare non-WorkBuddy model
-			if !hasWBIntl && !hasWBCN && !hasNonWorkBuddy {
+			// Emit Qoder International variant if provided
+			if hasQoderIntl {
+				targetID := "qoder/" + cleanBaseModel
+				displayName := "qoder/" + cleanBaseModel
+				if !seenIDs[targetID] {
+					seenIDs[targetID] = true
+					compactModel := map[string]any{
+						"id":           targetID,
+						"object":       model["object"],
+						"display_name": displayName,
+						"name":         displayName,
+						"owned_by":     "qoder",
+					}
+					if created, exists := model["created"]; exists {
+						compactModel["created"] = created
+					}
+					if cMap, exists := model["credits"]; exists && cMap != nil {
+						compactModel["credits"] = cMap
+					}
+					filteredModels = append(filteredModels, compactModel)
+				}
+			}
+
+			// Emit Qoder Domestic (CN) variant if provided
+			if hasQoderCN {
+				targetID := "qoder-cn/" + cleanBaseModel
+				displayName := "qoder-cn/" + cleanBaseModel
+				if !seenIDs[targetID] {
+					seenIDs[targetID] = true
+					compactModel := map[string]any{
+						"id":           targetID,
+						"object":       model["object"],
+						"display_name": displayName,
+						"name":         displayName,
+						"owned_by":     "qoder-cn",
+					}
+					if created, exists := model["created"]; exists {
+						compactModel["created"] = created
+					}
+					if cMap, exists := model["credits"]; exists && cMap != nil {
+						compactModel["credits"] = cMap
+					}
+					filteredModels = append(filteredModels, compactModel)
+				}
+			}
+
+			// If not provided by WorkBuddy or Qoder at all and not yet emitted as bare model
+			if !hasWBIntl && !hasWBCN && !hasQoderIntl && !hasQoderCN && !hasNonWorkBuddy {
 				targetID := cleanBaseModel
 				displayName := cleanBaseModel
 				targetOwnedBy, _ := model["owned_by"].(string)
@@ -537,6 +608,42 @@ func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 					}
 					if cMap != nil {
 						prefixedModel["credits"] = cMap
+					}
+					filteredModels = append(filteredModels, prefixedModel)
+				}
+			}
+
+			if hasQoderIntl {
+				prefixedBaseID := fmt.Sprintf("qoder/%s", cleanBaseModel)
+				if !seenIDs[prefixedBaseID] {
+					seenIDs[prefixedBaseID] = true
+					prefixedModel := map[string]any{
+						"id":           prefixedBaseID,
+						"object":       model["object"],
+						"owned_by":     "qoder",
+						"display_name": fmt.Sprintf("qoder/%s", cleanBaseModel),
+						"name":         fmt.Sprintf("qoder/%s", cleanBaseModel),
+					}
+					if created, exists := model["created"]; exists {
+						prefixedModel["created"] = created
+					}
+					filteredModels = append(filteredModels, prefixedModel)
+				}
+			}
+
+			if hasQoderCN {
+				prefixedBaseID := fmt.Sprintf("qoder-cn/%s", cleanBaseModel)
+				if !seenIDs[prefixedBaseID] {
+					seenIDs[prefixedBaseID] = true
+					prefixedModel := map[string]any{
+						"id":           prefixedBaseID,
+						"object":       model["object"],
+						"owned_by":     "qoder-cn",
+						"display_name": fmt.Sprintf("qoder-cn/%s", cleanBaseModel),
+						"name":         fmt.Sprintf("qoder-cn/%s", cleanBaseModel),
+					}
+					if created, exists := model["created"]; exists {
+						prefixedModel["created"] = created
 					}
 					filteredModels = append(filteredModels, prefixedModel)
 				}

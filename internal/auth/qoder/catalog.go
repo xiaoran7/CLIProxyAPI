@@ -37,10 +37,19 @@ func FetchUpstreamModels(ctx context.Context, httpClient *http.Client, auth *cli
 		}
 	}
 
+	if IsTokenExpired(auth) {
+		_, _ = refreshQoderToken(ctx, client, auth, realm)
+	}
+
 	jobToken, errJob := EnsureValidJobToken(ctx, client, auth)
 	if errJob != nil {
-		// If job token cannot be obtained, attempt using raw access token
-		jobToken = AccessToken(auth)
+		// If job token cannot be obtained, attempt proactive device refresh
+		if _, errRef := refreshQoderToken(ctx, client, auth, realm); errRef == nil {
+			jobToken, _ = EnsureValidJobToken(ctx, client, auth)
+		}
+		if jobToken == "" {
+			jobToken = AccessToken(auth)
+		}
 	}
 
 	// 1. Attempt gateway model list with COSY signing: GET /algo/api/v2/model/list
@@ -79,6 +88,21 @@ func FetchUpstreamModels(ctx context.Context, httpClient *http.Client, auth *cli
 	resp2, errDo2 := client.Do(reqOpenAPI)
 	if errDo2 != nil {
 		return nil, fmt.Errorf("qoder: fetch openapi models failed: %w", errDo2)
+	}
+
+	if resp2.StatusCode == http.StatusUnauthorized {
+		_ = resp2.Body.Close()
+		if newToken, errRef := refreshQoderToken(ctx, client, auth, realm); errRef == nil && newToken != "" {
+			reqRetry, errReqRetry := http.NewRequestWithContext(ctx, http.MethodGet, openapiURL, nil)
+			if errReqRetry == nil {
+				reqRetry.Header.Set("Authorization", "Bearer "+newToken)
+				reqRetry.Header.Set("Accept", "application/json")
+				reqRetry.Header.Set("User-Agent", DefaultUserAgent)
+				if respRetry, errRetry := client.Do(reqRetry); errRetry == nil {
+					resp2 = respRetry
+				}
+			}
+		}
 	}
 	defer func() {
 		_ = resp2.Body.Close()

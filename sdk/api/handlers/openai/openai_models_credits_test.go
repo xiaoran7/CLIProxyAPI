@@ -352,6 +352,71 @@ func TestOpenAIModelsDualRealmWorkBuddyDeepSeek(t *testing.T) {
 	}
 }
 
+func TestOpenAIModelsQoderNamespacingAndBareEmission(t *testing.T) {
+	qoderClientID := "test-qoder-models-client"
+	opencodeClientID := "test-opencode-models-client"
+
+	modelRegistry := registry.GetGlobalRegistry()
+	modelRegistry.RegisterClient(qoderClientID, "qoder", []*registry.ModelInfo{
+		{
+			ID:          "deepseek-flash",
+			OwnedBy:     "deepseek",
+			Type:        "qoder",
+			DisplayName: "DeepSeek Flash",
+		},
+		{
+			ID:          "deepseek-v4-flash",
+			OwnedBy:     "deepseek",
+			Type:        "qoder",
+			DisplayName: "DeepSeek V4 Flash",
+		},
+	})
+
+	modelRegistry.RegisterClient(opencodeClientID, "opencode", []*registry.ModelInfo{
+		{
+			ID:          "deepseek-v4-flash",
+			OwnedBy:     "opencode",
+			Type:        "opencode",
+			DisplayName: "DeepSeek V4 Flash",
+		},
+	})
+
+	t.Cleanup(func() {
+		modelRegistry.UnregisterClient(qoderClientID)
+		modelRegistry.UnregisterClient(opencodeClientID)
+	})
+
+	got := getModelsResponseWithConfig(t, &config.SDKConfig{
+		ModelVariantMode: config.ModelVariantModeCompact,
+	})
+
+	// 1. Check namespaced qoder/deepseek-flash
+	if qoderFlash, ok := findModel(t, got, "qoder/deepseek-flash"); !ok {
+		t.Errorf("expected 'qoder/deepseek-flash' in /v1/models")
+	} else if ownedBy, _ := qoderFlash["owned_by"].(string); ownedBy != "qoder" {
+		t.Errorf("'qoder/deepseek-flash' owned_by = %q, want 'qoder'", ownedBy)
+	}
+
+	// 2. Check bare deepseek-flash
+	if bareFlash, ok := findModel(t, got, "deepseek-flash"); !ok {
+		t.Errorf("expected bare 'deepseek-flash' in /v1/models")
+	} else if ownedBy, _ := bareFlash["owned_by"].(string); ownedBy != "deepseek" && ownedBy != "qoder" {
+		t.Errorf("bare 'deepseek-flash' owned_by = %q, want 'deepseek' or 'qoder'", ownedBy)
+	}
+
+	// 3. Check namespaced qoder/deepseek-v4-flash (coexists with OpenCode)
+	if qoderV4Flash, ok := findModel(t, got, "qoder/deepseek-v4-flash"); !ok {
+		t.Errorf("expected 'qoder/deepseek-v4-flash' in /v1/models to coexist with opencode")
+	} else if ownedBy, _ := qoderV4Flash["owned_by"].(string); ownedBy != "qoder" {
+		t.Errorf("'qoder/deepseek-v4-flash' owned_by = %q, want 'qoder'", ownedBy)
+	}
+
+	// 4. Check bare deepseek-v4-flash is present
+	if _, ok := findModel(t, got, "deepseek-v4-flash"); !ok {
+		t.Errorf("expected bare 'deepseek-v4-flash' in /v1/models")
+	}
+}
+
 func getModelsResponse(t *testing.T) map[string]any {
 	return getModelsResponseWithConfig(t, &config.SDKConfig{})
 }

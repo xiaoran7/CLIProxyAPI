@@ -340,3 +340,64 @@ func TestQoderModelAliasAndKeyResolution(t *testing.T) {
 		t.Errorf("ResolveQoderUpstreamModelKey('custom-unmapped-model') = %q, want 'custom-unmapped-model'", got)
 	}
 }
+
+func TestQoderBaselineIncludesDeepSeekAndQwen(t *testing.T) {
+	ClearQoderCatalogModels("")
+
+	models := GetQoderModels("intl")
+	byID := make(map[string]*ModelInfo)
+	for _, m := range models {
+		if m != nil {
+			byID[strings.ToLower(m.ID)] = m
+		}
+	}
+
+	required := []string{
+		"deepseek-flash", "deepseek-chat", "deepseek-v3", "dfmodel",
+		"deepseek-pro", "deepseek-r1", "dpmodel",
+		"qwen3.8-max", "qmodel_38max", "qwen3.8-plus", "qmodel_38plus",
+		"qwen3.8-flash", "qmodel_38flash",
+		"auto", "ultimate",
+	}
+
+	for _, reqID := range required {
+		if _, ok := byID[reqID]; !ok {
+			t.Errorf("expected baseline model %q to be present in GetQoderModels(intl)", reqID)
+		}
+	}
+
+	// Verify LookupStaticModelProviders finds qoder for deepseek-flash
+	providers := LookupStaticModelProviders("deepseek-flash")
+	foundQoder := false
+	for _, p := range providers {
+		if p == "qoder" {
+			foundQoder = true
+			break
+		}
+	}
+	if !foundQoder {
+		t.Errorf("expected LookupStaticModelProviders('deepseek-flash') to include 'qoder', got %v", providers)
+	}
+
+	// Test TrimQoderPrefixes
+	if got := TrimQoderPrefixes("qoder/deepseek-flash"); got != "deepseek-flash" {
+		t.Errorf("TrimQoderPrefixes('qoder/deepseek-flash') = %q, want 'deepseek-flash'", got)
+	}
+	if got := TrimQoderPrefixes("qoder-cn/deepseek-chat"); got != "deepseek-chat" {
+		t.Errorf("TrimQoderPrefixes('qoder-cn/deepseek-chat') = %q, want 'deepseek-chat'", got)
+	}
+	if got := TrimQoderPrefixes("qoder-intl/dfmodel"); got != "dfmodel" {
+		t.Errorf("TrimQoderPrefixes('qoder-intl/dfmodel') = %q, want 'dfmodel'", got)
+	}
+
+	// Test ResolveQoderUpstreamModelKey
+	if got := ResolveQoderUpstreamModelKey("qoder/deepseek-flash"); got != "dfmodel" {
+		t.Errorf("ResolveQoderUpstreamModelKey('qoder/deepseek-flash') = %q, want 'dfmodel'", got)
+	}
+	if got := ResolveQoderUpstreamModelKey("deepseek-flash"); got != "dfmodel" {
+		t.Errorf("ResolveQoderUpstreamModelKey('deepseek-flash') = %q, want 'dfmodel'", got)
+	}
+	if got := ResolveQoderUpstreamModelKey("qoder/qwen3.8-max"); got != "qmodel_38max" {
+		t.Errorf("ResolveQoderUpstreamModelKey('qoder/qwen3.8-max') = %q, want 'qmodel_38max'", got)
+	}
+}

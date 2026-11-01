@@ -133,6 +133,20 @@ func TestParseModelMultiplier(t *testing.T) {
 			wantBase:    "gemini-3.8-flash-high",
 			wantHasMult: false,
 		},
+		{
+			name:        "qoder namespace prefix without multiplier",
+			input:       "qoder/deepseek-flash",
+			wantClean:   "deepseek-flash",
+			wantBase:    "deepseek-flash",
+			wantHasMult: false,
+		},
+		{
+			name:        "qoder-cn namespace prefix without multiplier",
+			input:       "qoder-cn/deepseek-chat",
+			wantClean:   "deepseek-chat",
+			wantBase:    "deepseek-chat",
+			wantHasMult: false,
+		},
 	}
 
 	for _, tc := range tests {
