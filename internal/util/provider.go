@@ -48,6 +48,62 @@ func GetProviderName(modelName string) []string {
 		return nil
 	}
 
+	providers := collectRegisteredModelProviders(modelName)
+	if len(providers) > 0 {
+		return providers
+	}
+
+	// Fall back to static catalog definitions when dynamic registry has no active clients for this model.
+	return StaticModelProviders(modelName)
+}
+
+// StaticModelProviders resolves the providers that advertise modelName in the
+// static catalogs, ignoring the dynamic registry. Callers that must honour
+// force-model-prefix use it to tell an unsuffixed catalog hit apart from a
+// dynamically registered credential that actually accepts the bare name.
+func StaticModelProviders(modelName string) []string {
+	if modelName == "" {
+		return nil
+	}
+
+	providers := make([]string, 0, 4)
+	seen := make(map[string]struct{})
+
+	appendProvider := func(name string) {
+		if name == "" {
+			return
+		}
+		if _, exists := seen[name]; exists {
+			return
+		}
+		seen[name] = struct{}{}
+		providers = append(providers, name)
+	}
+
+	for _, provider := range registry.LookupStaticModelProviders(modelName) {
+		appendProvider(provider)
+	}
+	if len(providers) == 0 && strings.ToLower(modelName) != modelName {
+		for _, provider := range registry.LookupStaticModelProviders(strings.ToLower(modelName)) {
+			appendProvider(provider)
+		}
+	}
+
+	return providers
+}
+
+// RegisteredModelProviders returns only the providers registered dynamically for
+// modelName, skipping the static catalog fallback.
+func RegisteredModelProviders(modelName string) []string {
+	if modelName == "" {
+		return nil
+	}
+	return collectRegisteredModelProviders(modelName)
+}
+
+// collectRegisteredModelProviders returns the providers registered dynamically
+// for modelName, preserving registration order.
+func collectRegisteredModelProviders(modelName string) []string {
 	providers := make([]string, 0, 4)
 	seen := make(map[string]struct{})
 
@@ -67,20 +123,6 @@ func GetProviderName(modelName string) []string {
 	}
 	if len(providers) == 0 && strings.ToLower(modelName) != modelName {
 		for _, provider := range registry.GetGlobalRegistry().GetModelProviders(strings.ToLower(modelName)) {
-			appendProvider(provider)
-		}
-	}
-
-	if len(providers) > 0 {
-		return providers
-	}
-
-	// Fall back to static catalog definitions when dynamic registry has no active clients for this model.
-	for _, provider := range registry.LookupStaticModelProviders(modelName) {
-		appendProvider(provider)
-	}
-	if len(providers) == 0 && strings.ToLower(modelName) != modelName {
-		for _, provider := range registry.LookupStaticModelProviders(strings.ToLower(modelName)) {
 			appendProvider(provider)
 		}
 	}

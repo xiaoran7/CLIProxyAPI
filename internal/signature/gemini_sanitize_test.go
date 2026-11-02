@@ -610,3 +610,79 @@ func TestSanitizeGeminiRequestThoughtSignatures_MixedToolCallAndUnsignedFunction
 		t.Fatalf("functionCall signature = %q, want bypass %q. Output: %s", got, GeminiSkipThoughtSignatureValidator, string(out))
 	}
 }
+
+func bareTinkReplayPayload(sig string) []byte {
+	return []byte(`{"contents":[` +
+		`{"role":"user","parts":[{"text":"list"}]},` +
+		`{"role":"model","parts":[` +
+		`{"text":"thinking","thought":true},` +
+		`{"functionCall":{"name":"list_dir","args":{"path":"."}},"thoughtSignature":"` + sig + `"}]},` +
+		`{"role":"user","parts":[{"functionResponse":{"name":"list_dir","response":{"files":[]}}}]},` +
+		`{"role":"model","parts":[{"text":"done","thoughtSignature":"` + sig + `"}]}]}`)
+}
+
+func TestSanitizeGeminiRequestThoughtSignatures_PreservesVertexBareTink(t *testing.T) {
+	sig := testGeminiBareTinkSignature(405)
+	out := SanitizeGeminiRequestThoughtSignatures(bareTinkReplayPayload(sig), "contents")
+
+	if got := gjson.GetBytes(out, "contents.1.parts.1.thoughtSignature").String(); got != sig {
+		t.Fatalf("functionCall signature = %q, want original bare-Tink value", got)
+	}
+	if got := gjson.GetBytes(out, "contents.3.parts.0.thoughtSignature").String(); got != sig {
+		t.Fatalf("text signature = %q, want original bare-Tink value", got)
+	}
+}
+
+func TestSanitizeNonVertexGeminiRequestThoughtSignatures_ReplacesVertexBareTink(t *testing.T) {
+	sig := testGeminiBareTinkSignature(405)
+	out := SanitizeNonVertexGeminiRequestThoughtSignatures(bareTinkReplayPayload(sig), "contents")
+
+	if got := gjson.GetBytes(out, "contents.1.parts.1.thoughtSignature").String(); got != GeminiSkipThoughtSignatureValidator {
+		t.Fatalf("functionCall signature = %q, want bypass sentinel", got)
+	}
+	if gjson.GetBytes(out, "contents.3.parts.0.thoughtSignature").Exists() {
+		t.Fatalf("text signature should be dropped: %s", out)
+	}
+	if got := gjson.GetBytes(out, "contents.1.parts.0.thought").Bool(); !got {
+		t.Fatalf("thought part must stay untouched: %s", out)
+	}
+}
+
+func TestSanitizeNonVertexGeminiRequestThoughtSignatures_PreservesWrappedEnvelope(t *testing.T) {
+	sig := testGeminiThoughtSignatureEnvelope()
+	out := SanitizeNonVertexGeminiRequestThoughtSignatures(bareTinkReplayPayload(sig), "contents")
+
+	if got := gjson.GetBytes(out, "contents.1.parts.1.thoughtSignature").String(); got != sig {
+		t.Fatalf("functionCall signature = %q, want wrapped envelope preserved", got)
+	}
+	if got := gjson.GetBytes(out, "contents.3.parts.0.thoughtSignature").String(); got != sig {
+		t.Fatalf("text signature = %q, want wrapped envelope preserved", got)
+	}
+}
+
+func TestSanitizeGeminiRequestThoughtSignatures_StripsEmptySystemInstructionParts(t *testing.T) {
+	t.Run("drops_systemInstruction_when_all_parts_are_empty_objects", func(t *testing.T) {
+		input := []byte(`{"request":{"systemInstruction":{"parts":[{}]},"contents":[{"role":"user","parts":[{"text":"hi"}]}]}}`)
+		out := SanitizeGeminiRequestThoughtSignatures(input, "request.contents")
+		if gjson.GetBytes(out, "request.systemInstruction").Exists() {
+			t.Fatalf("expected request.systemInstruction to be removed, got %s", out)
+		}
+	})
+
+	t.Run("retains_non_empty_systemInstruction_parts", func(t *testing.T) {
+		input := []byte(`{"systemInstruction":{"parts":[{},{"text":"keep rule"},{}]},"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
+		out := SanitizeGeminiRequestThoughtSignatures(input, "contents")
+		parts := gjson.GetBytes(out, "systemInstruction.parts").Array()
+		if len(parts) != 1 || parts[0].Get("text").String() != "keep rule" {
+			t.Fatalf("unexpected systemInstruction.parts: %s", out)
+		}
+	})
+
+	t.Run("reuses_payload_when_systemInstruction_parts_are_valid", func(t *testing.T) {
+		input := []byte(`{"systemInstruction":{"parts":[{"text":"keep rule"}]},"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
+		out := SanitizeGeminiRequestThoughtSignatures(input, "contents")
+		if &out[0] != &input[0] {
+			t.Fatal("valid systemInstruction payload was unexpectedly copied")
+		}
+	})
+}

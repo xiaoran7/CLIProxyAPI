@@ -272,6 +272,21 @@ var staticOpenCodeModels = []*ModelInfo{
 		InputTokenLimit:     1048576,
 		OutputTokenLimit:    64000,
 	},
+	{
+		ID:                  "flint-40b-free",
+		Object:              "model",
+		Created:             1793625063,
+		OwnedBy:             "opencode",
+		Type:                "opencode",
+		DisplayName:         "Flint 40B (Free)",
+		ContextLength:       262144,
+		MaxCompletionTokens: 65536,
+		InputTokenLimit:     262144,
+		OutputTokenLimit:    65536,
+		Thinking: &ThinkingSupport{
+			Levels: []string{"low", "medium", "high", "xhigh", "max"},
+		},
+	},
 
 	// --- Zen Standard / Flagship Models ---
 	{

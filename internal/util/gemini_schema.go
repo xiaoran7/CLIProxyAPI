@@ -133,9 +133,11 @@ func CleanJSONSchemaForGeminiJSONSchema(jsonStr string) string {
 // cleanJSONSchema performs the core cleaning operations on the JSON schema.
 func cleanJSONSchema(jsonStr string, options jsonSchemaCleanOptions) string {
 	// Phase 0: Normalize malformed schemas (e.g. bare property maps and boolean required from MCP tools).
-	// For JSON Schema, defer array placeholders until refs and conjunctions are known. A target
-	// without items may rely on its reference siblings to constrain the elements.
-	jsonStr = normalizeMalformedSchemaObjects(jsonStr, options.addMissingArrayItems && !options.preserveStandardConstraints)
+	// Array placeholders and array type inference are deferred to Phase 3 (sanitizeArrayItems) after
+	// local references are inlined and allOf/union structures are resolved, so synthetic placeholders
+	// do not clobber items supplied by $ref targets or allOf branches.
+	jsonStr = normalizeMalformedSchemaObjects(jsonStr)
+	jsonStr = NormalizeJSONSchemaNumericConstraints(jsonStr)
 
 	// Phase 1: Convert and add hints. Every cleaner removes $defs/definitions later, so local
 	// references must be expanded here for every route; otherwise nested fields are lost.
@@ -346,8 +348,8 @@ func removePlaceholderFields(jsonStr string) string {
 // certain MCP tool definitions (e.g. Asana MCP server):
 // 1. Bare property maps missing the "type": "object" and "properties": {...} wrappers are wrapped.
 // 2. Boolean "required": true on property definitions are stripped and promoted to the parent's "required" array.
-// 3. Tool array schemas missing "items" receive a string item schema required by Gemini and Antigravity.
-func normalizeMalformedSchemaObjects(jsonStr string, addMissingArrayItems bool) string {
+// 3. Boolean true subschemas are normalized to empty schema objects.
+func normalizeMalformedSchemaObjects(jsonStr string) string {
 	if jsonStr == "" {
 		return jsonStr
 	}
@@ -371,7 +373,7 @@ func normalizeMalformedSchemaObjects(jsonStr string, addMissingArrayItems bool) 
 	// If wrapped in single-key {"schema": ...} by cleanNestedSchema, unwrap, repair, and re-wrap.
 	if len(rootMap) == 1 {
 		if innerSchema, ok := rootMap["schema"].(map[string]any); ok {
-			repairedInner, modified := repairSchemaNode(innerSchema, addMissingArrayItems)
+			repairedInner, modified := repairSchemaNode(innerSchema)
 			if !modified {
 				return jsonStr
 			}
@@ -389,7 +391,7 @@ func normalizeMalformedSchemaObjects(jsonStr string, addMissingArrayItems bool) 
 		}
 	}
 
-	repaired, modified := repairSchemaNode(rootMap, addMissingArrayItems)
+	repaired, modified := repairSchemaNode(rootMap)
 	if !modified {
 		return jsonStr
 	}
@@ -484,7 +486,7 @@ func isAPIRequestDocument(m map[string]any) bool {
 	return false
 }
 
-func repairSchemaNode(node map[string]any, addMissingArrayItems bool) (map[string]any, bool) {
+func repairSchemaNode(node map[string]any) (map[string]any, bool) {
 	if node == nil {
 		return nil, false
 	}
@@ -510,7 +512,7 @@ func repairSchemaNode(node map[string]any, addMissingArrayItems bool) (map[strin
 		}
 
 		if len(bareProps) > 0 {
-			repairedProps, promotedReqs, _ := repairPropertyMap(bareProps, addMissingArrayItems)
+			repairedProps, promotedReqs, _ := repairPropertyMap(bareProps)
 			for k := range bareProps {
 				delete(clone, k)
 			}
@@ -541,9 +543,9 @@ func repairSchemaNode(node map[string]any, addMissingArrayItems bool) (map[strin
 	}
 
 	// 2. Repair declared properties without inferring a type before refs are expanded.
-	// Final sanitization handles native object schemas once the conjunction context is known.
+	// Final sanitization handles native object and array schemas once refs and conjunctions are resolved.
 	if propsVal, ok := clone["properties"].(map[string]any); ok {
-		repairedProps, promotedReqs, propsMod := repairPropertyMap(propsVal, addMissingArrayItems)
+		repairedProps, promotedReqs, propsMod := repairPropertyMap(propsVal)
 		if propsMod {
 			clone["properties"] = repairedProps
 			modified = true
@@ -556,33 +558,15 @@ func repairSchemaNode(node map[string]any, addMissingArrayItems bool) (map[strin
 		}
 	}
 
-	// Gemini and Antigravity reject tool array schemas without an items definition,
-	// and reject tool schemas with items whose type is not ARRAY. A node still holding an
-	// unresolved $ref gets neither a placeholder items nor a synthesized type: both would become
-	// sibling keywords during inlining and clobber the referenced definition's real values.
-	if addMissingArrayItems && clone["$ref"] == nil {
-		if isArrayDeclaredType(clone["type"]) {
-			if _, hasItems := clone["items"]; !hasItems {
-				clone["items"] = map[string]any{"type": "string"}
-				modified = true
-			}
-		} else if _, hasItems := clone["items"]; hasItems {
-			if clone["type"] == nil || clone["type"] == "" {
-				clone["type"] = "array"
-				modified = true
-			}
-		}
-	}
-
 	// 3. Recurse into all other standard schema containers
 	if itemsVal, ok := clone["items"].(map[string]any); ok {
-		repairedItems, itemsMod := repairSchemaNode(itemsVal, addMissingArrayItems)
+		repairedItems, itemsMod := repairSchemaNode(itemsVal)
 		if itemsMod {
 			clone["items"] = repairedItems
 			modified = true
 		}
 	} else if itemsList, ok := clone["items"].([]any); ok {
-		repairedList, listMod := repairSchemaList(itemsList, addMissingArrayItems)
+		repairedList, listMod := repairSchemaList(itemsList)
 		if listMod {
 			clone["items"] = repairedList
 			modified = true
@@ -593,7 +577,7 @@ func repairSchemaNode(node map[string]any, addMissingArrayItems bool) (map[strin
 	}
 
 	if addProps, ok := clone["additionalProperties"].(map[string]any); ok {
-		repairedAddProps, addPropsMod := repairSchemaNode(addProps, addMissingArrayItems)
+		repairedAddProps, addPropsMod := repairSchemaNode(addProps)
 		if addPropsMod {
 			clone["additionalProperties"] = repairedAddProps
 			modified = true
@@ -601,7 +585,7 @@ func repairSchemaNode(node map[string]any, addMissingArrayItems bool) (map[strin
 	}
 
 	if patProps, ok := clone["patternProperties"].(map[string]any); ok {
-		repairedPatProps, _, patMod := repairPropertyMap(patProps, addMissingArrayItems)
+		repairedPatProps, _, patMod := repairPropertyMap(patProps)
 		if patMod {
 			clone["patternProperties"] = repairedPatProps
 			modified = true
@@ -610,7 +594,7 @@ func repairSchemaNode(node map[string]any, addMissingArrayItems bool) (map[strin
 
 	for _, key := range []string{"if", "then", "else", "not", "contains", "propertyNames", "unevaluatedProperties", "unevaluatedItems", "contentSchema", "additionalItems"} {
 		if subVal, ok := clone[key].(map[string]any); ok {
-			repairedSub, subMod := repairSchemaNode(subVal, addMissingArrayItems)
+			repairedSub, subMod := repairSchemaNode(subVal)
 			if subMod {
 				clone[key] = repairedSub
 				modified = true
@@ -623,7 +607,7 @@ func repairSchemaNode(node map[string]any, addMissingArrayItems bool) (map[strin
 
 	for _, key := range []string{"anyOf", "oneOf", "allOf", "prefixItems"} {
 		if listVal, ok := clone[key].([]any); ok {
-			repairedList, listMod := repairSchemaList(listVal, addMissingArrayItems)
+			repairedList, listMod := repairSchemaList(listVal)
 			if listMod {
 				clone[key] = repairedList
 				modified = true
@@ -637,7 +621,7 @@ func repairSchemaNode(node map[string]any, addMissingArrayItems bool) (map[strin
 			defsModified := false
 			for dk, dv := range defsVal {
 				if defMap, ok := dv.(map[string]any); ok {
-					repairedDef, defMod := repairSchemaNode(defMap, addMissingArrayItems)
+					repairedDef, defMod := repairSchemaNode(defMap)
 					repairedDefs[dk] = repairedDef
 					if defMod {
 						defsModified = true
@@ -660,12 +644,12 @@ func repairSchemaNode(node map[string]any, addMissingArrayItems bool) (map[strin
 	return clone, modified
 }
 
-func repairSchemaList(list []any, addMissingArrayItems bool) ([]any, bool) {
+func repairSchemaList(list []any) ([]any, bool) {
 	var repairedList []any
 	listModified := false
 	for _, item := range list {
 		if itemMap, ok := item.(map[string]any); ok {
-			repairedItem, itemMod := repairSchemaNode(itemMap, addMissingArrayItems)
+			repairedItem, itemMod := repairSchemaNode(itemMap)
 			repairedList = append(repairedList, repairedItem)
 			if itemMod {
 				listModified = true
@@ -680,7 +664,7 @@ func repairSchemaList(list []any, addMissingArrayItems bool) ([]any, bool) {
 	return repairedList, listModified
 }
 
-func repairPropertyMap(props map[string]any, addMissingArrayItems bool) (map[string]any, []string, bool) {
+func repairPropertyMap(props map[string]any) (map[string]any, []string, bool) {
 	out := make(map[string]any, len(props))
 	var promotedReqs []string
 	modified := false
@@ -711,7 +695,7 @@ func repairPropertyMap(props map[string]any, addMissingArrayItems bool) (map[str
 			}
 		}
 
-		repairedChild, childMod := repairSchemaNode(childClone, addMissingArrayItems)
+		repairedChild, childMod := repairSchemaNode(childClone)
 		if childMod {
 			modified = true
 		}
@@ -1434,6 +1418,132 @@ func addAdditionalPropertiesHints(jsonStr string) string {
 		}
 	}
 	return jsonStr
+}
+
+var numericSchemaConstraintKeywords = []string{
+	"minLength", "maxLength",
+	"minItems", "maxItems",
+	"minProperties", "maxProperties",
+}
+
+type numericConstraintEdit struct {
+	offset      int
+	end         int
+	replacement string
+}
+
+// NormalizeJSONSchemaNumericConstraints converts string-encoded integer values on JSON Schema
+// numeric constraint keywords (minLength, maxLength, minItems, maxItems, minProperties,
+// maxProperties) to JSON numbers. Google's Protobuf Schema format represents these int64
+// fields as strings, whereas standard JSON Schema carriers (such as parametersJsonSchema)
+// require numeric values.
+func NormalizeJSONSchemaNumericConstraints(jsonStr string) string {
+	if !hasNumericSchemaConstraintKeyword(jsonStr) && !strings.Contains(jsonStr, `\u`) && !strings.Contains(jsonStr, `\U`) {
+		return jsonStr
+	}
+	root := gjson.Parse(jsonStr)
+	if !root.IsObject() {
+		return jsonStr
+	}
+	doc := root.Raw
+	root.Index = 0
+	var edits []numericConstraintEdit
+	collectNumericConstraintEdits(doc, root, &edits)
+	if len(edits) == 0 {
+		return jsonStr
+	}
+	var sb strings.Builder
+	sb.Grow(len(doc))
+	cursor := 0
+	for _, edit := range edits {
+		if edit.offset < cursor || edit.end > len(doc) {
+			return jsonStr
+		}
+		sb.WriteString(doc[cursor:edit.offset])
+		sb.WriteString(edit.replacement)
+		cursor = edit.end
+	}
+	sb.WriteString(doc[cursor:])
+	return sb.String()
+}
+
+func collectNumericConstraintEdits(doc string, node gjson.Result, edits *[]numericConstraintEdit) {
+	if !node.IsObject() {
+		return
+	}
+	node.ForEach(func(key, val gjson.Result) bool {
+		keyStr := key.String()
+		switch keyStr {
+		case "minLength", "maxLength", "minItems", "maxItems", "minProperties", "maxProperties":
+			if val.Type == gjson.String {
+				if n, ok := parseSchemaNonNegativeInt(val.String()); ok {
+					end := val.Index + len(val.Raw)
+					if val.Index >= 0 && end <= len(doc) && doc[val.Index:end] == val.Raw {
+						*edits = append(*edits, numericConstraintEdit{
+							offset:      val.Index,
+							end:         end,
+							replacement: strconv.FormatInt(n, 10),
+						})
+					}
+				}
+			}
+		case "properties", "patternProperties", "dependentSchemas", "dependencies", "$defs", "definitions":
+			if val.IsObject() {
+				val.ForEach(func(_, propVal gjson.Result) bool {
+					if propVal.IsObject() {
+						collectNumericConstraintEdits(doc, propVal, edits)
+					}
+					return true
+				})
+			}
+		case "items":
+			if val.IsObject() {
+				collectNumericConstraintEdits(doc, val, edits)
+			} else if val.IsArray() {
+				val.ForEach(func(_, item gjson.Result) bool {
+					if item.IsObject() {
+						collectNumericConstraintEdits(doc, item, edits)
+					}
+					return true
+				})
+			}
+		case "additionalProperties", "additionalItems", "unevaluatedProperties", "unevaluatedItems",
+			"if", "then", "else", "not", "contains", "propertyNames", "contentSchema":
+			if val.IsObject() {
+				collectNumericConstraintEdits(doc, val, edits)
+			}
+		case "prefixItems", "anyOf", "oneOf", "allOf":
+			if val.IsArray() {
+				val.ForEach(func(_, item gjson.Result) bool {
+					if item.IsObject() {
+						collectNumericConstraintEdits(doc, item, edits)
+					}
+					return true
+				})
+			}
+		}
+		return true
+	})
+}
+
+func hasNumericSchemaConstraintKeyword(jsonStr string) bool {
+	for _, key := range numericSchemaConstraintKeywords {
+		if strings.Contains(jsonStr, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func parseSchemaNonNegativeInt(raw string) (int64, bool) {
+	if raw == "" {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 0 || strconv.FormatInt(n, 10) != raw {
+		return 0, false
+	}
+	return n, true
 }
 
 var unsupportedConstraints = []string{

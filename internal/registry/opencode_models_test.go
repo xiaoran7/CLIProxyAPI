@@ -23,6 +23,7 @@ func TestOpenCodeModelsCatalog(t *testing.T) {
 		{"big-pickle", 200000, false, "opencode"},
 		{"cat-jam-free", 262144, true, "opencode"},
 		{"deepseek-v4.1-flash-free", 1048576, true, "deepseek"},
+		{"flint-40b-free", 262144, true, "opencode"},
 		{"claude-sonnet-5-5", 1000000, true, "anthropic"},
 	}
 

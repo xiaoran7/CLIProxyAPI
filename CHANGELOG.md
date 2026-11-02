@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Sync Upstream v8.0.43 - v8.0.51 Core Fixes, Features & Security Hardening (`router-for-me/CLIProxyAPI`)**:
+  - Merged upstream commits from `v8.0.42` through `v8.0.51` (including release tags `v8.0.49`, `v8.0.50`, `v8.0.51` and PRs #7010, #7016, #7042, #7057, #7074, #7092, #7095, #7101, #7102, #7106, #7109, #7113, #7141, #7142, #7143, #7149, #7154).
+  - **LAN Discovery & ZeroConf (`internal/discovery/`)**: Aligned TXT schema with draft-su-ai-gateway-discovery-00, implemented split mDNS resolution caching, and documented discovery boundaries.
+  - **Structured Usage & Telemetry (`sdk/cliproxy/usage/detail.go`, `internal/logging/request_capture.go`)**: Captured structured Gemini, Vertex, AI Studio, Antigravity, OpenAI/Codex, xAI, and Anthropic usage details across SSE frames, chat, responses, and media endpoints.
+  - **Per-API-Key Connection Pooling & uTLS (`internal/config/`, `sdk/cliproxy/`, `helps/proxy_pool_*`)**: Added per-API-key upstream connection pooling settings, uTLS dialer keepalive stamping, fenced transport cleanups, and stale compat executor rebinding.
+  - **Codex Commentary & Compression (`helps/codex_commentary.go`, `translator/codex/claude/`)**: Added opt-in visible Codex commentary with preserved replay, full-chain compression for upstream/downstream traffic, and compaction capsule expansion.
+  - **Plugin Host Multi-OAuth & Stream Deframing (`internal/pluginhost/`)**: Supported multi-entry OAuth logins with per-entry name/logo, deframed same-format plugin executor streams, and multi-provider model registrations.
+  - **Model Definitions & Image Models (`internal/registry/model_definitions.go`)**: Injected xAI Grok Imagine Video 1.5 Lite (`grok-imagine-video-1.5-lite`) model definition and updated upstream model catalog snapshot.
+  - **Conflict Resolution & Fork Invariant Preservation**:
+    - `internal/api/handlers/management/auth_files_v8.go` & `auth_files_provider_oauth.go`: Prioritized plugin-registered OAuth providers while maintaining native WorkBuddy, Qoder, and ZCode login routing.
+    - `internal/api/handlers/management/plugins.go`: Preserved `Domain` and `Flow` fields on plugin entries alongside upstream `OAuthProviders` and `OAuthProviderEntries`.
+    - `sdk/cliproxy/auth/conductor_execution.go` & `conductor_stream.go`: Retained zero-knowledge HMAC `redactor` payload masking, 15s keepalive, and `LoopGuard` breaker alongside upstream `streamPayloadCompletionFlags` and usage identity capture.
+    - `sdk/api/handlers/handlers_routing.go`: Preserved `force-model-prefix` enforcement so that static catalog fallbacks cannot bypass caller namespace requirements.
+- **OpenCode Zen 40B Free-Tier Model Registration (`internal/registry/opencode_models.go`, `internal/registry/opencode_models_test.go`)**:
+  - Synced live Zen model catalog from `https://opencode.ai/zen/v1/models` and npm package `opencode-ai` v1.19.5 (Core v2.2.5).
+  - Added `flint-40b-free` (262,144 context, 65,536 output token limit, thinking levels `["low", "medium", "high", "xhigh", "max"]`) to `staticOpenCodeModels`.
+  - Added unit test assertion in `internal/registry/opencode_models_test.go`.
+- **WorkBuddy DSH File Reference WAF Sanitization & Tool Name Validation (`internal/runtime/executor/helps/workbuddy_cloaking.go`, `internal/runtime/executor/helps/workbuddy_cloaking_test.go`)**:
+  - Synced reference upstream `ardeyouxipianyi/workbuddy2api-hub` v1.8.0 -> v1.10.1 (PR #683, #726).
+  - Implemented `workbuddyDshFilerefRegex` in `sanitizeWorkBuddyIdentityString`: neutralizes `@deepseek-ai/dsh-file-reference` system prompt fingerprint (`Tokens prefixed with @ are paths the user explicitly referenced.` -> `... paths that the user ...`), preventing WAF 11128 false-positive rejections on multi-turn conversations referencing files. Idempotently preserves text if `that ` is already present.
+  - Implemented `SanitizeWorkBuddyTools`: validates `tools` array against upstream Go validator requirements (`^[A-Za-z0-9_-]{1,64}$`), drops bare server-side tool declarations (such as `{"type": "web_search"}`) that lack a function object, deduplicates duplicate names, and purges empty `tools`/`tool_choice` blocks to eliminate upstream 400 Bad Request / code 11133 parameter rejection.
+  - Added unit regression tests in `internal/runtime/executor/helps/workbuddy_cloaking_test.go`.
 - **Qoder Automated Daily Check-in Engine & Management API (`internal/auth/qoder/checkin.go`, `internal/api/handlers/management/qoder_checkin.go`, `sdk/cliproxy/service_lifecycle.go`)**:
   - Restored and elevated Qoder daily check-in (100 daily Credits reward, resetting at 10:00 CST / Beijing time) with full multi-channel API support, including OpenAPI user campaigns listing (`/sash/api/v1/me/campaigns`) and reward claim (`/sash/api/v1/me/campaigns/{id}/claim`), with automatic fallback to direct daily check-in endpoints (`/sash/api/v1/me/daily-check-in/claim`, `/sash/api/v1/me/daily-checkin`).
   - Implemented authentic desktop client header emulation (`Cosy-ClientType: 10`, `Cosy-MachineType: 5`, `Cosy-Version: 0.1.43`, `Cosy-MachineToken`, `User-Agent`) required by Qoder's risk control and campaign discovery systems.

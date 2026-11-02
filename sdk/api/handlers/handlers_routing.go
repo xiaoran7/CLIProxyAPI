@@ -213,6 +213,15 @@ func (h *BaseAPIHandler) getRequestDetailsWithOptions(modelName string, allowIma
 		// namespace prefix (e.g. "workbuddy/claude-opus-5-5:3.33x"), route strictly to that
 		// provider to prevent egress leakage to third-party or official providers.
 		providers = []string{multDetails.TargetProvider}
+	} else if h != nil && h.CurrentConfig() != nil && h.CurrentConfig().ForceModelPrefix {
+		// force-model-prefix requires the caller to name the credential namespace.
+		// Only dynamically registered (prefixed) names may match here: the static
+		// catalog fallback would otherwise resolve a bare catalog id and silently
+		// bypass the prefix requirement.
+		providers = util.RegisteredModelProviders(baseModel)
+		if len(providers) == 0 && baseModel != resolvedModelName {
+			providers = util.RegisteredModelProviders(resolvedModelName)
+		}
 	} else {
 		providers = util.GetProviderName(baseModel)
 		// Fallback: if baseModel has no provider but differs from resolvedModelName,
@@ -383,6 +392,7 @@ func (h *BaseAPIHandler) applyModelRouter(ctx context.Context, handlerType, mode
 		return decision
 	}
 	meta := requestExecutionMetadata(ctx)
+	addCallerScopeMetadata(meta, execOptions.CallerScope)
 	meta[coreexecutor.RequestedModelMetadataKey] = modelName
 	addModelExecutionSourceMetadata(meta, execOptions.InternalSource)
 	resp, ok := routeModel(ctx, host, pluginapi.ModelRouteRequest{

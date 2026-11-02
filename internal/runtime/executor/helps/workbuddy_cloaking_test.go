@@ -376,3 +376,78 @@ func TestSanitizeWorkBuddyPromptWAF_AssistantHistoryAndDshGui(t *testing.T) {
 		t.Errorf("Tool content should remain untouched: %s", toolContent)
 	}
 }
+
+func TestSanitizeWorkBuddyPromptWAF_DSHFileReference(t *testing.T) {
+	prompt := "Tokens prefixed with @ are paths the user explicitly referenced. Please read @/workspace/main.go"
+	input := []byte(`{"messages":[{"role":"system","content":"` + prompt + `"}]}`)
+
+	sanitized := SanitizeWorkBuddyPromptWAF(input)
+	content := gjson.GetBytes(sanitized, "messages.0.content").String()
+
+	want := "Tokens prefixed with @ are paths that the user explicitly referenced. Please read @/workspace/main.go"
+	if content != want {
+		t.Errorf("got %q, want %q", content, want)
+	}
+
+	// Idempotency: when already containing "that ", it must not double "that that"
+	alreadySanitized := []byte(`{"messages":[{"role":"system","content":"` + want + `"}]}`)
+	sanitizedAgain := SanitizeWorkBuddyPromptWAF(alreadySanitized)
+	contentAgain := gjson.GetBytes(sanitizedAgain, "messages.0.content").String()
+	if contentAgain != want {
+		t.Errorf("idempotency failed: got %q, want %q", contentAgain, want)
+	}
+}
+
+func TestSanitizeWorkBuddyTools(t *testing.T) {
+	// Case 1: Bare server-side tools (e.g. web_search) without function object and invalid names
+	input := []byte(`{
+		"tools": [
+			{"type": "web_search"},
+			{"type": "function", "function": {"name": "valid_tool_1", "description": "valid"}},
+			{"type": "function", "function": {"name": "invalid name with space", "description": "invalid"}},
+			{"type": "function", "function": {"name": "valid_tool_1", "description": "duplicate"}},
+			{"type": "function", "function": {"name": "", "description": "empty name"}},
+			{"type": "function", "function": {"name": "valid-tool-2"}}
+		],
+		"tool_choice": "auto"
+	}`)
+
+	sanitized := SanitizeWorkBuddyTools(input)
+	tools := gjson.GetBytes(sanitized, "tools").Array()
+	if len(tools) != 2 {
+		t.Fatalf("expected 2 valid tools, got %d: %s", len(tools), string(sanitized))
+	}
+	if tools[0].Get("function.name").String() != "valid_tool_1" {
+		t.Errorf("tool[0] name = %q, want valid_tool_1", tools[0].Get("function.name").String())
+	}
+	if tools[1].Get("function.name").String() != "valid-tool-2" {
+		t.Errorf("tool[1] name = %q, want valid-tool-2", tools[1].Get("function.name").String())
+	}
+	if gjson.GetBytes(sanitized, "tool_choice").String() != "auto" {
+		t.Errorf("tool_choice was unexpectedly dropped when valid tools remain")
+	}
+
+	// Case 2: When all tools are dropped, "tools" and "tool_choice" should both be removed
+	allInvalid := []byte(`{
+		"tools": [
+			{"type": "web_search"},
+			{"type": "web_fetch"},
+			{"type": "function", "function": {"name": "invalid.tool.with.dots"}}
+		],
+		"tool_choice": "required"
+	}`)
+	cleaned := SanitizeWorkBuddyTools(allInvalid)
+	if gjson.GetBytes(cleaned, "tools").Exists() {
+		t.Errorf("tools field should have been removed: %s", string(cleaned))
+	}
+	if gjson.GetBytes(cleaned, "tool_choice").Exists() {
+		t.Errorf("tool_choice field should have been removed when tools is empty: %s", string(cleaned))
+	}
+
+	// Case 3: Empty tools array removes both
+	emptyTools := []byte(`{"tools":[],"tool_choice":"none"}`)
+	emptyCleaned := SanitizeWorkBuddyTools(emptyTools)
+	if gjson.GetBytes(emptyCleaned, "tools").Exists() || gjson.GetBytes(emptyCleaned, "tool_choice").Exists() {
+		t.Errorf("empty tools/tool_choice should be removed: %s", string(emptyCleaned))
+	}
+}

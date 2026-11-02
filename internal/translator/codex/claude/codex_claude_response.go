@@ -12,6 +12,7 @@ import (
 	"math"
 	"strings"
 
+	sigcompat "github.com/router-for-me/CLIProxyAPI/v8/internal/signature"
 	translatorcommon "github.com/router-for-me/CLIProxyAPI/v8/internal/translator/common"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/util"
 	"github.com/tidwall/gjson"
@@ -25,6 +26,13 @@ var (
 // codexThinkingSummaryPartSeparator joins consecutive reasoning summary parts inside
 // the single thinking block that represents one Codex reasoning item.
 const codexThinkingSummaryPartSeparator = "\n\n"
+
+// codexCommentarySignatureMarker is the CLIProxyAPI-internal marker carried in
+// the signature field of the thinking block that relays a Codex commentary
+// message. The shared definition lives in the signature package so every
+// Claude history consumer recognizes and strips it before it can reach an
+// upstream.
+const codexCommentarySignatureMarker = sigcompat.CodexCommentarySignatureMarker
 
 // ConvertCodexResponseToClaudeParams holds parameters for response conversion.
 type ConvertCodexResponseToClaudeParams struct {
@@ -41,18 +49,20 @@ type ConvertCodexResponseToClaudeParams struct {
 	// phase "commentary": a preamble GPT-5.x emits before its final_answer item.
 	// Its text goes into a thinking block, so clients that render or speak text
 	// blocks get the answer once instead of the preamble followed by the answer.
-	CommentaryMessageOpen  bool
-	ThinkingBlockOpen      bool
-	ThinkingSignature      string
-	ThinkingSummarySeen    bool
-	WebSearchToolUseIDs    map[string]struct{}
-	WebSearchToolResultIDs map[string]struct{}
-	LastWebSearchToolUseID string
-	FunctionCalls          map[string]*codexFunctionCallStream
-	FunctionCallQueue      []*codexFunctionCallStream
-	ActiveFunctionCall     *codexFunctionCallStream
-	LastFunctionCall       *codexFunctionCallStream
-	DeferredStreamEvents   [][]byte
+	CommentaryMessageOpen   bool
+	PublicCommentaryText    strings.Builder
+	VisiblePublicCommentary bool
+	ThinkingBlockOpen       bool
+	ThinkingSignature       string
+	ThinkingSummarySeen     bool
+	WebSearchToolUseIDs     map[string]struct{}
+	WebSearchToolResultIDs  map[string]struct{}
+	LastWebSearchToolUseID  string
+	FunctionCalls           map[string]*codexFunctionCallStream
+	FunctionCallQueue       []*codexFunctionCallStream
+	ActiveFunctionCall      *codexFunctionCallStream
+	LastFunctionCall        *codexFunctionCallStream
+	DeferredStreamEvents    [][]byte
 }
 
 type codexFunctionCallStream struct {
@@ -84,10 +94,11 @@ type codexFunctionCallStream struct {
 //
 // Returns:
 //   - [][]byte: A slice of Claude Code-compatible JSON responses
-func ConvertCodexResponseToClaude(_ context.Context, _ string, originalRequestRawJSON, _ []byte, rawJSON []byte, param *any) [][]byte {
+func ConvertCodexResponseToClaude(ctx context.Context, _ string, originalRequestRawJSON, _ []byte, rawJSON []byte, param *any) [][]byte {
 	if *param == nil {
 		*param = &ConvertCodexResponseToClaudeParams{
-			BlockIndex: 0,
+			BlockIndex:              0,
+			VisiblePublicCommentary: translatorcommon.VisibleCodexCommentary(ctx),
 		}
 	}
 
@@ -414,7 +425,7 @@ func codexStreamErrorToClaudeError(rootResult gjson.Result) []byte {
 // This function processes the complete Codex response and transforms it into a single Claude Code-compatible
 // JSON response. It handles message content, tool calls, reasoning content, and usage metadata, combining all
 // the information into a single response that matches the Claude Code API format.
-func ConvertCodexResponseToClaudeNonStream(_ context.Context, _ string, originalRequestRawJSON, _ []byte, rawJSON []byte, _ *any) []byte {
+func ConvertCodexResponseToClaudeNonStream(ctx context.Context, _ string, originalRequestRawJSON, _ []byte, rawJSON []byte, _ *any) []byte {
 	revNames := buildReverseMapFromClaudeOriginalShortToOriginal(originalRequestRawJSON)
 
 	rootResult := gjson.ParseBytes(rawJSON)
@@ -474,6 +485,9 @@ func ConvertCodexResponseToClaudeNonStream(_ context.Context, _ string, original
 								text := part.Get("text").String()
 								if text != "" {
 									contentBlocks = append(contentBlocks, codexMessageTextBlock(blockType, text))
+									if blockType == "thinking" && translatorcommon.VisibleCodexCommentary(ctx) {
+										contentBlocks = append(contentBlocks, codexMessageTextBlock("text", text))
+									}
 								}
 							}
 							return true
@@ -482,6 +496,9 @@ func ConvertCodexResponseToClaudeNonStream(_ context.Context, _ string, original
 						text := content.String()
 						if text != "" {
 							contentBlocks = append(contentBlocks, codexMessageTextBlock(blockType, text))
+							if blockType == "thinking" && translatorcommon.VisibleCodexCommentary(ctx) {
+								contentBlocks = append(contentBlocks, codexMessageTextBlock("text", text))
+							}
 						}
 					}
 				}
@@ -919,24 +936,10 @@ func setClaudeReasoningUsage(out []byte, usage gjson.Result) []byte {
 
 // buildReverseMapFromClaudeOriginalShortToOriginal builds a map[short]original from original Claude request tools.
 func buildReverseMapFromClaudeOriginalShortToOriginal(original []byte) map[string]string {
-	tools := gjson.GetBytes(original, "tools")
 	rev := map[string]string{}
-	if !tools.IsArray() {
-		return rev
-	}
-	var names []string
-	arr := tools.Array()
-	for i := 0; i < len(arr); i++ {
-		n := arr[i].Get("name").String()
-		if n != "" {
-			names = append(names, n)
-		}
-	}
-	if len(names) > 0 {
-		m := buildShortNameMap(names)
-		for orig, short := range m {
-			rev[short] = orig
-		}
+	m := buildReverseMapFromClaudeOriginalToShort(original)
+	for orig, short := range m {
+		rev[short] = orig
 	}
 	return rev
 }
@@ -958,8 +961,9 @@ func startCodexTextBlock(params *ConvertCodexResponseToClaudeParams) []byte {
 }
 
 // finalizeCodexCommentaryBlock closes the thinking block that carries a commentary
-// message. A reasoning item's encrypted_content never belongs to it, so no
-// signature_delta is emitted even if one is pending for a later reasoning item.
+// message. A reasoning item's encrypted_content never belongs to it, so the
+// internal commentary marker is emitted as the block signature instead of any
+// pending reasoning signature.
 func finalizeCodexCommentaryBlock(params *ConvertCodexResponseToClaudeParams) []byte {
 	if !params.CommentaryMessageOpen || !params.ThinkingBlockOpen {
 		return nil
@@ -968,11 +972,13 @@ func finalizeCodexCommentaryBlock(params *ConvertCodexResponseToClaudeParams) []
 }
 
 // codexMessageTextBlock builds a non-stream content block: {"type":"text","text":...}
-// or, for a commentary message, {"type":"thinking","thinking":...}.
+// or, for a commentary message, {"type":"thinking","thinking":...} carrying the
+// internal commentary marker in its signature field.
 func codexMessageTextBlock(blockType, text string) []byte {
 	if blockType == "thinking" {
-		block := []byte(`{"type":"thinking","thinking":""}`)
+		block := []byte(`{"type":"thinking","thinking":"","signature":""}`)
 		block, _ = sjson.SetBytes(block, "thinking", text)
+		block, _ = sjson.SetBytes(block, "signature", codexCommentarySignatureMarker)
 		return block
 	}
 	block := []byte(`{"type":"text","text":""}`)
@@ -1045,6 +1051,9 @@ func appendCodexThinkingDelta(params *ConvertCodexResponseToClaudeParams, text s
 	if text == "" {
 		return nil
 	}
+	if params.CommentaryMessageOpen && params.VisiblePublicCommentary {
+		params.PublicCommentaryText.WriteString(text)
+	}
 
 	template := []byte(`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}`)
 	template, _ = sjson.SetBytes(template, "index", params.BlockIndex)
@@ -1069,12 +1078,18 @@ func finalizeCodexThinkingBlock(params *ConvertCodexResponseToClaudeParams) []by
 	}
 
 	output := make([]byte, 0, 256)
-	if !params.CommentaryMessageOpen && params.ThinkingSignature != "" {
+	signatureToEmit := ""
+	if params.CommentaryMessageOpen {
+		signatureToEmit = codexCommentarySignatureMarker
+	} else if params.ThinkingSignature != "" {
+		signatureToEmit = params.ThinkingSignature
+		params.ThinkingSignature = ""
+	}
+	if signatureToEmit != "" {
 		signatureDelta := []byte(`{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":""}}`)
 		signatureDelta, _ = sjson.SetBytes(signatureDelta, "index", params.BlockIndex)
-		signatureDelta, _ = sjson.SetBytes(signatureDelta, "delta.signature", params.ThinkingSignature)
+		signatureDelta, _ = sjson.SetBytes(signatureDelta, "delta.signature", signatureToEmit)
 		output = translatorcommon.AppendSSEEventBytes(output, "content_block_delta", signatureDelta, 2)
-		params.ThinkingSignature = ""
 	}
 
 	contentBlockStop := []byte(`{"type":"content_block_stop","index":0}`)
@@ -1083,6 +1098,20 @@ func finalizeCodexThinkingBlock(params *ConvertCodexResponseToClaudeParams) []by
 
 	params.BlockIndex++
 	params.ThinkingBlockOpen = false
+	// Preserve the phase marker for lossless replay and mirror public commentary
+	// into visible text. Genuine reasoning is never mirrored.
+	if signatureToEmit == codexCommentarySignatureMarker && params.PublicCommentaryText.Len() > 0 {
+		text := params.PublicCommentaryText.String()
+		params.PublicCommentaryText.Reset()
+		output = append(output, startCodexTextBlock(params)...)
+		delta := []byte(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}`)
+		delta, _ = sjson.SetBytes(delta, "index", params.BlockIndex)
+		delta, _ = sjson.SetBytes(delta, "delta.text", text)
+		output = translatorcommon.AppendSSEEventBytes(output, "content_block_delta", delta, 2)
+		output = append(output, stopCodexTextBlock(params)...)
+	} else {
+		params.PublicCommentaryText.Reset()
+	}
 
 	return output
 }

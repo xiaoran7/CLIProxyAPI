@@ -18,9 +18,11 @@ const workbuddyFallbackReasoning = "[reasoning unavailable]"
 var (
 	workbuddyIdentityRegex               = regexp.MustCompile(`(?i)(You are\s+(?:an?\s+|the\s+)?(?:[\w.-]+\s+){0,3}?(?:agent|assistant|model|AI|LLM)?[\s,]*(?:powered by|built on|built by|created by|developed by|made by|trained by)[^\n]*?)(?:\.(?:[\s\r\n]|$)|$)`)
 	workbuddyDshGuiRegex                 = regexp.MustCompile(`(?i)(You are interacting with the user through the DeepSeek[ \t]+Harness[ \t]+Web[ \t]+GUI) whose URL the runtime context names\.`)
+	workbuddyDshFilerefRegex             = regexp.MustCompile(`(?i)(Tokens prefixed with @ are paths )(?:\s*that\s+)?(the user explicitly referenced\.)`)
 	workbuddyBrandRegex                  = regexp.MustCompile(`(?i)DeepSeek[ \t]+Harness`)
 	workbuddyAnthropicBillingHeaderRegex = regexp.MustCompile(`(?i)x-anthropic-billing-header:[^;\r\n]*;?\s*`)
 	workbuddyCCKeyValRegex               = regexp.MustCompile(`(?i)\bcc_[a-z0-9_]+=[^;\r\n]*;?\s*`)
+	workbuddyToolNameRegex               = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 )
 
 func sanitizeWorkBuddyIdentityString(text string) string {
@@ -33,6 +35,7 @@ func sanitizeWorkBuddyIdentityString(text string) string {
 		return "You are a helpful AI assistant." + trailing
 	})
 	text = workbuddyDshGuiRegex.ReplaceAllString(text, "$1 whose URL is named in the runtime context.")
+	text = workbuddyDshFilerefRegex.ReplaceAllString(text, "${1}that ${2}")
 	text = workbuddyBrandRegex.ReplaceAllString(text, "DeepSeek")
 	return text
 }
@@ -218,6 +221,70 @@ func SanitizeWorkBuddyPromptWAF(payload []byte) []byte {
 
 	payload = workbuddyAnthropicBillingHeaderRegex.ReplaceAll(payload, nil)
 	payload = workbuddyCCKeyValRegex.ReplaceAll(payload, nil)
+	payload = SanitizeWorkBuddyTools(payload)
+	return payload
+}
+
+// SanitizeWorkBuddyTools validates tools against upstream WorkBuddy requirements:
+//  1. Discards bare server-side tool declarations (such as {"type": "web_search"})
+//     that lack a function object.
+//  2. Validates function.name against ^[A-Za-z0-9_-]{1,64}$, dropping invalid or empty names.
+//  3. Deduplicates tools by function.name (keeping the first occurrence).
+//  4. Removes "tools" (and any orphaned "tool_choice") if no valid tools remain.
+//
+// This prevents upstream 400 Bad Request with code 11133 ("the request parameters were rejected by the model provider").
+func SanitizeWorkBuddyTools(payload []byte) []byte {
+	if len(payload) == 0 {
+		return payload
+	}
+	tools := gjson.GetBytes(payload, "tools")
+	if !tools.Exists() || !tools.IsArray() {
+		return payload
+	}
+	arr := tools.Array()
+	if len(arr) == 0 {
+		payload, _ = sjson.DeleteBytes(payload, "tools")
+		payload, _ = sjson.DeleteBytes(payload, "tool_choice")
+		return payload
+	}
+
+	validTools := make([]string, 0, len(arr))
+	seen := make(map[string]struct{}, len(arr))
+	hasDropped := false
+
+	for _, item := range arr {
+		fn := item.Get("function")
+		if !fn.Exists() || fn.Type != gjson.JSON {
+			hasDropped = true
+			continue
+		}
+		name := strings.TrimSpace(fn.Get("name").String())
+		if !workbuddyToolNameRegex.MatchString(name) {
+			hasDropped = true
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			hasDropped = true
+			continue
+		}
+		seen[name] = struct{}{}
+		validTools = append(validTools, item.Raw)
+	}
+
+	if !hasDropped {
+		return payload
+	}
+
+	if len(validTools) == 0 {
+		payload, _ = sjson.DeleteBytes(payload, "tools")
+		payload, _ = sjson.DeleteBytes(payload, "tool_choice")
+		return payload
+	}
+
+	newToolsRaw := "[" + strings.Join(validTools, ",") + "]"
+	if updated, err := sjson.SetRawBytes(payload, "tools", []byte(newToolsRaw)); err == nil {
+		return updated
+	}
 	return payload
 }
 
