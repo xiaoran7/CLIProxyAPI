@@ -356,7 +356,7 @@ func reconcileAntigravityQuotaResponse(auth *coreauth.Auth, respBody []byte, now
 			"name":        "models/gemini4_argon",
 			"displayName": "Gemini 4 Argon",
 			"label":       "Gemini 4 Argon",
-			"description": "Google 新一代高规格推理模型池",
+			"description": "",
 			"buckets": []any{
 				map[string]any{
 					"id":                 "gemini-argon-wtu-weekly",

@@ -5,6 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Console Copy Sanitization & Noise Elimination (`internal/console/assets/`, `internal/api/`, `internal/console/api/`)**:
+  - Removed patronizing and redundant explanatory copy across the Native Gateway Console UI:
+    - Stripped model pool descriptions (`Google 官方主力模型池`, `Google 新一代高规格推理模型池`, `第三方 Claude/GPT 模型池`) from Antigravity credential cards in `console-quotas-render.js`, `quota_parse.go`, `api_tools_tokens.go`, and `console-i18n.js`.
+    - Removed redundant channel tag descriptions (`按量实时路由接入`, `API Key 凭据直连`) from OpenCode and OpenRouter cards in `console-quotas-render.js`.
+    - Cleaned up verbose and obvious panel subtitles across all views in `console.html` and `console-i18n.js`: `quotas.panelSubtitle`, `status.panelSubtitle`, `upstreamStats.panelSubtitle`, `chart.providersSubtitle`, `keys.panelSubtitle`, `logs.panelSubtitle`, `errors.panelSubtitle`, and `validations.*`.
+    - Purged outdated Gate migration text (`非 Gate 本地推算`), colloquial estimations (`撑不起全部历史`), and unnecessary user-handholding instructions (`悬停任一柱可查看...`, `系统热路径纳秒级正则匹配...`) across overview cards and modals.
+
 ### Added
 - **Sync Upstream v8.0.43 - v8.0.51 Core Fixes, Features & Security Hardening (`router-for-me/CLIProxyAPI`)**:
   - Merged upstream commits from `v8.0.42` through `v8.0.51` (including release tags `v8.0.49`, `v8.0.50`, `v8.0.51` and PRs #7010, #7016, #7042, #7057, #7074, #7092, #7095, #7101, #7102, #7106, #7109, #7113, #7141, #7142, #7143, #7149, #7154).

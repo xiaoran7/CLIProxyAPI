@@ -899,20 +899,16 @@
 
         let poolBadge = '';
         let displayTitle = escapeHtml(grp.name);
-        let displayDesc = '';
 
         if (isGemini4) {
           poolBadge = `<span class="quota-pool-badge pool-gemini4">Gemini 4</span>`;
           displayTitle = t('quotas.group.gemini4Models');
-          displayDesc = t('quotas.group.gemini4Desc');
         } else if (isGemini) {
           poolBadge = `<span class="quota-pool-badge pool-gemini">Gemini</span>`;
           displayTitle = t('quotas.group.geminiModels');
-          displayDesc = t('quotas.group.geminiDesc');
         } else if (isClaude) {
           poolBadge = `<span class="quota-pool-badge pool-claude">Claude / GPT</span>`;
           displayTitle = t('quotas.group.claudeModels');
-          displayDesc = t('quotas.group.claudeDesc');
         } else if (isCodex) {
           poolBadge = `<span class="quota-pool-badge pool-codex">Codex</span>`;
         } else if (isQoder) {
@@ -980,7 +976,6 @@
                 ${poolBadge}
                 <span class="model-group-title">${displayTitle}</span>
               </div>
-              ${displayDesc ? `<span class="model-group-desc">${escapeHtml(displayDesc)}</span>` : ''}
             </div>
             ${bucketsHtml}
           </div>
@@ -998,7 +993,6 @@
               <span class="quota-pool-badge pool-opencode">OpenCode</span>
               <span class="model-group-title">API 凭据直连渠道</span>
             </div>
-            <span class="model-group-desc">按量实时路由接入</span>
           </div>
           <div style="background:var(--bg-subtle, rgba(234,243,255,0.5)); border:1px solid var(--card-border-subtle, rgba(212,228,245,0.6)); border-radius:8px; padding:12px 16px; margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
             <div>
@@ -1024,7 +1018,6 @@
               <span class="quota-pool-badge pool-openrouter">OpenRouter</span>
               <span class="model-group-title">聚合模型路由渠道</span>
             </div>
-            <span class="model-group-desc">API Key 凭据直连</span>
           </div>
           <div style="background:var(--bg-subtle, rgba(234,243,255,0.5)); border:1px solid var(--card-border-subtle, rgba(212,228,245,0.6)); border-radius:8px; padding:12px 16px; margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
             <div>

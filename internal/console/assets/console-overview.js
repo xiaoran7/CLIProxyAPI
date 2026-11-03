@@ -853,7 +853,6 @@
       <div>
         <div class="ovw-eyebrow">Core metrics</div>
         <h3 class="ovw-title" data-i18n="overview.runtimeKeyMetricsTitle">${t('overview.runtimeKeyMetricsTitle')}</h3>
-        <p class="ovw-desc" data-i18n="overview.runtimeKeyMetricsSubtitle">${t('overview.runtimeKeyMetricsSubtitle')}</p>
       </div>
       <div style="display:flex;align-items:center;gap:10px">
         <span class="ovw-source-tag" id="ovw-source-tag"></span>
@@ -880,7 +879,6 @@
       <div>
         <div class="ovw-eyebrow">Providers</div>
         <h3 class="ovw-title" data-i18n="overview.runtimeProviderCompareTitle">${t('overview.runtimeProviderCompareTitle')}</h3>
-        <p class="ovw-desc" data-i18n="overview.runtimeProviderCompareSubtitle">${t('overview.runtimeProviderCompareSubtitle')}</p>
       </div>
     </div>
     <div class="ovw-fleet" id="ovw-fleet"></div>
@@ -891,7 +889,6 @@
       <div>
         <div class="ovw-eyebrow">Runtime</div>
         <h3 class="ovw-title" data-i18n="overview.runtimeAtGlanceTitle">${t('overview.runtimeAtGlanceTitle')}</h3>
-        <p class="ovw-desc" data-i18n="overview.runtimeAtGlanceSubtitle">${t('overview.runtimeAtGlanceSubtitle')}</p>
       </div>
     </div>
     <div class="ovw-runtime-grid" id="ovw-runtime-grid"></div>

@@ -918,7 +918,7 @@ func reconcileAntigravityQuotaGroups(groups []CpaQuotaGroup, cooldowns []CpaCool
 		argonGrp := CpaQuotaGroup{
 			Name:        "models/gemini4_argon",
 			DisplayName: "Gemini 4 Argon",
-			Description: "Google 新一代高规格推理模型池",
+			Description: "",
 			Buckets: []CpaQuotaBucket{
 				{
 					BucketID:          "gemini-argon-wtu-weekly",
