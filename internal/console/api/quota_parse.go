@@ -835,11 +835,15 @@ func reconcileAntigravityQuotaGroups(groups []CpaQuotaGroup, cooldowns []CpaCool
 	}
 
 	reconciled := make([]CpaQuotaGroup, len(groups))
+	hasArgonGroup := false
 	for i, grp := range groups {
 		gCopy := grp
 		gName := strings.ToLower(fmt.Sprintf("%s %s %s", grp.GroupID, grp.DisplayName, grp.Name))
 		isGemini4 := strings.Contains(gName, "argon") || strings.Contains(gName, "gemini 4") ||
 			strings.Contains(gName, "gemini-4") || strings.Contains(gName, "gemini4")
+		if isGemini4 {
+			hasArgonGroup = true
+		}
 		isClaude := strings.Contains(gName, "claude") || strings.Contains(gName, "gpt") || strings.Contains(gName, "3p")
 		isGemini := !isGemini4 && strings.Contains(gName, "gemini")
 
@@ -901,5 +905,33 @@ func reconcileAntigravityQuotaGroups(groups []CpaQuotaGroup, cooldowns []CpaCool
 		gCopy.Buckets = bktCopies
 		reconciled[i] = gCopy
 	}
+
+	if len(gemini4Cds) > 0 && !hasArgonGroup {
+		zeroFrac := float64(0)
+		zeroPct := 0
+		var latestRetryStr string
+		for _, cd := range gemini4Cds {
+			if cd.RetryAt != "" && cd.RetryAt > latestRetryStr {
+				latestRetryStr = cd.RetryAt
+			}
+		}
+		argonGrp := CpaQuotaGroup{
+			Name:        "models/gemini4_argon",
+			DisplayName: "Gemini 4 Argon",
+			Description: "Google 新一代高规格推理模型池",
+			Buckets: []CpaQuotaBucket{
+				{
+					BucketID:          "gemini-argon-wtu-weekly",
+					Name:              "Gemini 4 Argon Weekly Limit",
+					Window:            "weekly",
+					RemainingFraction: &zeroFrac,
+					RemainingPercent:  &zeroPct,
+					ResetTime:         latestRetryStr,
+				},
+			},
+		}
+		reconciled = append(reconciled, argonGrp)
+	}
+
 	return reconciled
 }

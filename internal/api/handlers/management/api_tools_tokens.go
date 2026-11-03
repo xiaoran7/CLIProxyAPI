@@ -246,6 +246,7 @@ func reconcileAntigravityQuotaResponse(auth *coreauth.Auth, respBody []byte, now
 		return respBody
 	}
 
+	hasArgonGroup := false
 	for _, rawGrp := range groups {
 		grp, okGrp := rawGrp.(map[string]any)
 		if !okGrp {
@@ -253,6 +254,9 @@ func reconcileAntigravityQuotaResponse(auth *coreauth.Auth, respBody []byte, now
 		}
 		gName := strings.ToLower(fmt.Sprintf("%v %v %v %v", grp["label"], grp["displayName"], grp["name"], grp["id"]))
 		isGemini4 := strings.Contains(gName, "argon") || strings.Contains(gName, "gemini 4") || strings.Contains(gName, "gemini-4") || strings.Contains(gName, "gemini4")
+		if isGemini4 {
+			hasArgonGroup = true
+		}
 		isClaude := strings.Contains(gName, "claude") || strings.Contains(gName, "gpt") || strings.Contains(gName, "3p")
 		isGemini := !isGemini4 && strings.Contains(gName, "gemini")
 
@@ -330,6 +334,47 @@ func reconcileAntigravityQuotaResponse(auth *coreauth.Auth, respBody []byte, now
 			}
 		}
 	}
+
+	if len(gemini4Cooldowns) > 0 && !hasArgonGroup {
+		var maxRemaining int64
+		var latestRetry time.Time
+		for _, cd := range gemini4Cooldowns {
+			if cd.RemainingSeconds > maxRemaining {
+				maxRemaining = cd.RemainingSeconds
+			}
+			if cd.RetryAt.After(latestRetry) {
+				latestRetry = cd.RetryAt
+			}
+		}
+		if latestRetry.IsZero() && maxRemaining > 0 {
+			latestRetry = now.Add(time.Duration(maxRemaining) * time.Second)
+		}
+		retryAtStr := latestRetry.UTC().Format(time.RFC3339)
+
+		argonGroup := map[string]any{
+			"id":          "models/gemini4_argon",
+			"name":        "models/gemini4_argon",
+			"displayName": "Gemini 4 Argon",
+			"label":       "Gemini 4 Argon",
+			"description": "Google 新一代高规格推理模型池",
+			"buckets": []any{
+				map[string]any{
+					"id":                 "gemini-argon-wtu-weekly",
+					"bucket_id":          "gemini-argon-wtu-weekly",
+					"name":               "Gemini 4 Argon Weekly Limit",
+					"displayName":        "Gemini 4 Argon Weekly Limit",
+					"label":              "Weekly Limit",
+					"window":             "weekly",
+					"remainingFraction":  float64(0),
+					"remaining_fraction": float64(0),
+					"resetTime":          retryAtStr,
+					"reset_time":         retryAtStr,
+				},
+			},
+		}
+		quotaResp["groups"] = append(groups, argonGroup)
+	}
+
 	reconciled, errMarshal := json.Marshal(quotaResp)
 	if errMarshal != nil {
 		return respBody

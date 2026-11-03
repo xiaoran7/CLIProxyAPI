@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -36,15 +37,17 @@ func computeHealth(file CpaAuthFile) UpstreamAccountHealth {
 		hasCredentialScope := false
 		var reasons []string
 		var modelKeys []string
+		modelKeySeen := make(map[string]bool)
 		minRemaining := activeCooldowns[0].RemainingSeconds
 		primaryReason := activeCooldowns[0].Reason
 
 		for _, cd := range activeCooldowns {
 			if cd.Scope == "credential" {
 				hasCredentialScope = true
-			} else if cd.Scope == "model" {
+			} else if cd.Scope == "model" || cd.Scope == "models" || cd.ModelKey != "" {
 				modelCount++
-				if cd.ModelKey != "" {
+				if cd.ModelKey != "" && !modelKeySeen[cd.ModelKey] {
+					modelKeySeen[cd.ModelKey] = true
 					modelKeys = append(modelKeys, cd.ModelKey)
 				}
 			}
@@ -53,6 +56,7 @@ func computeHealth(file CpaAuthFile) UpstreamAccountHealth {
 			}
 			reasons = append(reasons, cd.Reason)
 		}
+		sort.Strings(modelKeys)
 
 		scopeStr := "models"
 		scopeLabel := fmt.Sprintf("%d 个模型冷却", modelCount)
@@ -72,7 +76,15 @@ func computeHealth(file CpaAuthFile) UpstreamAccountHealth {
 		}
 
 		remText := formatCooldownRemaining(int64(minRemaining))
-		detail := fmt.Sprintf("%s · %s · 最早结束约 %s", reasonLabel, scopeLabel, remText)
+		modelDetail := ""
+		if len(modelKeys) > 0 {
+			if len(modelKeys) <= 3 {
+				modelDetail = fmt.Sprintf(" (%s)", strings.Join(modelKeys, ", "))
+			} else {
+				modelDetail = fmt.Sprintf(" (%s 等 %d 个模型)", strings.Join(modelKeys[:3], ", "), len(modelKeys))
+			}
+		}
+		detail := fmt.Sprintf("%s · %s%s · 最早结束约 %s", reasonLabel, scopeLabel, modelDetail, remText)
 
 		cdSummary := &UpstreamCooldownSummary{
 			Scope:            scopeStr,
@@ -87,9 +99,14 @@ func computeHealth(file CpaAuthFile) UpstreamAccountHealth {
 			ModelKeys:        modelKeys,
 		}
 
+		label := "冷却中"
+		if !hasCredentialScope && modelCount > 0 {
+			label = "部分模型冷却"
+		}
+
 		return UpstreamAccountHealth{
 			State:    "cooldown",
-			Label:    "冷却中",
+			Label:    label,
 			Detail:   detail,
 			Blocked:  hasCredentialScope,
 			Cooldown: cdSummary,

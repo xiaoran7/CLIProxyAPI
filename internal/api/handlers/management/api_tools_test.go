@@ -1906,6 +1906,47 @@ func TestReconcileAntigravityQuotaResponse(t *testing.T) {
 		}
 	})
 
+	t.Run("ArgonModelCooldown_SynthesizesArgonGroup_WhenMissingFromUpstream", func(t *testing.T) {
+		auth := &coreauth.Auth{
+			ID:       "ag-argon-miss@example.com",
+			Provider: "antigravity",
+			ModelStates: map[string]*coreauth.ModelState{
+				"gemini-4-argon-high": {
+					Unavailable:    true,
+					NextRetryAfter: retryAt45h,
+					LastError:      &coreauth.Error{HTTPStatus: 429, Message: "RESOURCE_EXHAUSTED"},
+				},
+			},
+		}
+
+		// mockRawResp only contains Gemini and Claude groups (no Argon)
+		reconciled := reconcileAntigravityQuotaResponse(auth, []byte(mockRawResp), now)
+		var parsed map[string]any
+		if err := json.Unmarshal(reconciled, &parsed); err != nil {
+			t.Fatalf("failed to unmarshal reconciled response: %v", err)
+		}
+		groups := parsed["groups"].([]any)
+		if len(groups) != 3 {
+			t.Fatalf("expected 3 groups with synthesized Argon, got %d", len(groups))
+		}
+
+		synthesized := groups[2].(map[string]any)
+		if synthesized["displayName"] != "Gemini 4 Argon" {
+			t.Errorf("expected synthesized group DisplayName 'Gemini 4 Argon', got %v", synthesized["displayName"])
+		}
+		bList := synthesized["buckets"].([]any)
+		if len(bList) != 1 {
+			t.Fatalf("expected 1 bucket in synthesized Argon, got %d", len(bList))
+		}
+		bMap := bList[0].(map[string]any)
+		if frac, _ := bMap["remainingFraction"].(float64); frac != 0.0 {
+			t.Errorf("synthesized Argon bucket remainingFraction = %v, want 0.0", frac)
+		}
+		if resetTime, _ := bMap["resetTime"].(string); resetTime != retryAt45h.Format(time.RFC3339) {
+			t.Errorf("synthesized Argon bucket resetTime = %v, want %v", resetTime, retryAt45h.Format(time.RFC3339))
+		}
+	})
+
 	t.Run("NoCooldown_Unchanged", func(t *testing.T) {
 		auth := &coreauth.Auth{
 			ID:       "ag-healthy@example.com",

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -159,6 +160,51 @@ func TestReconcileAntigravityQuotaGroups(t *testing.T) {
 			if b.ResetTime != "2026-10-31T04:54:50Z" {
 				t.Errorf("argon bucket %v resetTime = %v, want 2026-10-31T04:54:50Z", b.BucketID, b.ResetTime)
 			}
+		}
+	})
+
+	t.Run("ArgonModelCooldown_SynthesizesArgonGroup_WhenMissingFromUpstream", func(t *testing.T) {
+		groups := makeGroups() // Contains only Gemini and Claude groups
+		cooldowns := []CpaCooldownRecord{
+			{
+				Scope:            "model",
+				ModelKey:         "gemini-4-argon-high",
+				RemainingSeconds: 595000,
+				RetryAt:          "2026-11-09T12:00:00Z",
+			},
+		}
+
+		reconciled := reconcileAntigravityQuotaGroups(groups, cooldowns)
+		if len(reconciled) != 3 {
+			t.Fatalf("expected 3 groups (Argon synthesized), got %d", len(reconciled))
+		}
+
+		// Gemini and Claude must remain 100%
+		for _, b := range reconciled[0].Buckets {
+			if b.RemainingPercent == nil || *b.RemainingPercent != 100 {
+				t.Errorf("gemini bucket %v remainingPercent = %v, want 100", b.BucketID, b.RemainingPercent)
+			}
+		}
+		for _, b := range reconciled[1].Buckets {
+			if b.RemainingPercent == nil || *b.RemainingPercent != 100 {
+				t.Errorf("claude bucket %v remainingPercent = %v, want 100", b.BucketID, b.RemainingPercent)
+			}
+		}
+
+		// Synthesized Argon group must be 0% with reset time
+		argonGrp := reconciled[2]
+		if argonGrp.DisplayName != "Gemini 4 Argon" {
+			t.Errorf("expected group DisplayName 'Gemini 4 Argon', got %q", argonGrp.DisplayName)
+		}
+		if len(argonGrp.Buckets) != 1 {
+			t.Fatalf("expected 1 bucket in synthesized Argon group, got %d", len(argonGrp.Buckets))
+		}
+		bArgon := argonGrp.Buckets[0]
+		if bArgon.RemainingPercent == nil || *bArgon.RemainingPercent != 0 {
+			t.Errorf("argon bucket remainingPercent = %v, want 0", bArgon.RemainingPercent)
+		}
+		if bArgon.ResetTime != "2026-11-09T12:00:00Z" {
+			t.Errorf("argon bucket resetTime = %v, want 2026-11-09T12:00:00Z", bArgon.ResetTime)
 		}
 	})
 
@@ -428,6 +474,12 @@ func TestComputeHealthModelCooldownNotBlockingCredential(t *testing.T) {
 	if hModel.Cooldown == nil || hModel.Cooldown.Scope != "models" {
 		t.Errorf("expected Cooldown info to be populated with scope 'models'")
 	}
+	if hModel.Label != "部分模型冷却" {
+		t.Errorf("expected Label '部分模型冷却', got %q", hModel.Label)
+	}
+	if !strings.Contains(hModel.Detail, "claude-3-5-sonnet") {
+		t.Errorf("expected Detail to mention 'claude-3-5-sonnet', got %q", hModel.Detail)
+	}
 
 	// Credential-scoped cooldown MUST set Blocked: true
 	fileCredCooling := CpaAuthFile{
@@ -444,6 +496,9 @@ func TestComputeHealthModelCooldownNotBlockingCredential(t *testing.T) {
 	hCred := computeHealth(fileCredCooling)
 	if !hCred.Blocked {
 		t.Errorf("credential-scoped cooldown MUST mark credential as blocked")
+	}
+	if hCred.Label != "冷却中" {
+		t.Errorf("expected Label '冷却中', got %q", hCred.Label)
 	}
 }
 
