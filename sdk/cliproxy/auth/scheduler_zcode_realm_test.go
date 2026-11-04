@@ -50,3 +50,47 @@ func TestSchedulerPick_ZCodeRealmProviderKeys(t *testing.T) {
 		})
 	}
 }
+
+// TestSchedulerPick_QoderRealmProviderKeys guards the regression where a
+// Qoder (`qoder-cn`) credential registered its scheduler shard under the
+// executor key `qoder` while requests asked for provider `qoder-cn`, so every
+// Qoder-CN model answered auth_not_found even though the credential was active.
+func TestSchedulerPick_QoderRealmProviderKeys(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		authProv  string
+		reqProv   string
+		model     string
+		registryP string
+	}{
+		{name: "cn realm", authProv: "qoder-cn", reqProv: "qoder-cn", model: "deepseek-flash", registryP: "qoder-cn"},
+		{name: "intl realm", authProv: "qoder", reqProv: "qoder", model: "deepseek-flash", registryP: "qoder"},
+		{name: "bare model via cn", authProv: "qoder-cn", reqProv: "qoder-cn", model: "deepseek-v4.1-flash", registryP: "qoder-cn"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			registerSchedulerModels(t, tc.registryP, tc.model, "qoder-auth-"+tc.authProv)
+			scheduler := newSchedulerForTest(
+				&RoundRobinSelector{},
+				&Auth{ID: "qoder-auth-" + tc.authProv, Provider: tc.authProv},
+			)
+
+			got, errPick := scheduler.pickSingle(context.Background(), tc.reqProv, tc.model, cliproxyexecutor.Options{}, nil)
+			if errPick != nil {
+				t.Fatalf("pickSingle(%q, %q) error = %v", tc.reqProv, tc.model, errPick)
+			}
+			if got == nil {
+				t.Fatalf("pickSingle(%q, %q) returned no auth", tc.reqProv, tc.model)
+			}
+			if got.Provider != tc.authProv {
+				t.Fatalf("picked provider %q, want %q", got.Provider, tc.authProv)
+			}
+		})
+	}
+}
