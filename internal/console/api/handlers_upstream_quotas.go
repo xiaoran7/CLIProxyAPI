@@ -25,6 +25,9 @@ func HandleGetUpstreamQuotas(eng *engine.Engine, cpa *CpaClient, providers *Prov
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		c.Header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+		c.Header("Pragma", "no-cache")
+		c.Header("Expires", "0")
 		c.JSON(http.StatusOK, response)
 	}
 }
@@ -82,7 +85,7 @@ func extractAccountCredits(groups []CpaQuotaGroup) (*float64, *float64, *float64
 func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClient, providers *ProviderRegistryEngine, force bool) (*UpstreamQuotasResponse, error) {
 	if !force {
 		upstreamCacheMu.RLock()
-		if cachedUpstreamQuotasResp != nil && time.Since(cachedUpstreamAt) < 10*time.Second {
+		if cachedUpstreamQuotasResp != nil && time.Since(cachedUpstreamAt) < 5*time.Second && activeBackgroundProbes.Load() == 0 {
 			resp := cachedUpstreamQuotasResp
 			upstreamCacheMu.RUnlock()
 			return resp, nil
@@ -193,6 +196,7 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 			}
 		}
 		if len(probeFiles) > 0 {
+			activeBackgroundProbes.Add(int32(len(probeFiles)))
 			go func(pList []CpaAuthFile) {
 				sem := make(chan struct{}, 4)
 				var pWg sync.WaitGroup
@@ -200,6 +204,7 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 					pWg.Add(1)
 					go func(fl CpaAuthFile) {
 						defer pWg.Done()
+						defer activeBackgroundProbes.Add(-1)
 						sem <- struct{}{}
 						defer func() { <-sem }()
 						pCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -715,7 +720,7 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 		PendingValidations: pendingVals,
 		DefaultPriority:    defaultAuthPriority,
 		LastUpdated:        nowMs,
-		IsLoading:          false,
+		IsLoading:          activeBackgroundProbes.Load() > 0,
 		Error:              nil,
 	}
 

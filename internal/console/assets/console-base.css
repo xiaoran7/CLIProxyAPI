@@ -141,6 +141,13 @@
     .live-row-highlight {
       animation: rowLiveFade 1.8s cubic-bezier(0.16, 1, 0.3, 1);
     }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .spin {
+      animation: spin 1s linear infinite;
+    }
     /* Modern Custom Dropdown UI (Pure CSS & JS floating layer, zero native OS popup) */
     .dropdown {
       position: relative;

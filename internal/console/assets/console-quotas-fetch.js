@@ -390,6 +390,7 @@
 
     // 0. 获取上游凭证配额 (Antigravity & Codex 账号卡片)
     let isFetchingUpstreamQuotas = false;
+    let quotaBackgroundFollowupTimer = null;
     function setUpstreamPlaceholder(html) {
       const cards = document.getElementById('upstream-cards-container');
       const compact = document.getElementById('upstream-compact-container');
@@ -430,6 +431,23 @@
           upstreamLoaded = true;
           renderUpstreamCards();
           renderStatusCards();
+
+          const refreshBtn = document.getElementById('btn-refresh-upstream-quotas');
+          const refreshIcon = refreshBtn ? refreshBtn.querySelector('.refresh-icon') : null;
+
+          // 若后端提示存在异步探针正在执行，启动 3.5 秒后静默复查，让最新额度自动更新至界面
+          if (data && data.is_loading) {
+            if (refreshIcon) refreshIcon.classList.add('spin');
+            if (quotaBackgroundFollowupTimer) clearTimeout(quotaBackgroundFollowupTimer);
+            quotaBackgroundFollowupTimer = setTimeout(() => {
+              quotaBackgroundFollowupTimer = null;
+              if (activeNavTab === 'quotas' || activeNavTab === 'status') {
+                fetchUpstreamQuotas(false).catch(() => {});
+              }
+            }, 3500);
+          } else {
+            if (refreshIcon) refreshIcon.classList.remove('spin');
+          }
         } else if (res.status === 401 || res.status === 403) {
           upstreamLoaded = false;
           cachedUpstream = { accounts: [] };
@@ -460,8 +478,15 @@
 
     async function refreshUpstreamQuotas(force = false) {
       setUpstreamPlaceholder(`<div class="upstream-empty-state">${t('quotas.loadingUpstreamData')}</div>`);
-      await fetchUpstreamQuotas(force);
-      showToast(t('quotas.quotaUpdatedToast'), 'success');
+      const refreshBtn = document.getElementById('btn-refresh-upstream-quotas');
+      const refreshIcon = refreshBtn ? refreshBtn.querySelector('.refresh-icon') : null;
+      if (refreshIcon) refreshIcon.classList.add('spin');
+      try {
+        await fetchUpstreamQuotas(force);
+        showToast(t('quotas.quotaUpdatedToast'), 'success');
+      } finally {
+        if (refreshIcon) refreshIcon.classList.remove('spin');
+      }
     }
 
     // 向上游重新查询额度，然后刷新卡片。

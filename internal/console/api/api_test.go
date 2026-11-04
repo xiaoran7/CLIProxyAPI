@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -488,6 +489,9 @@ func TestNewConsoleEndpoints(t *testing.T) {
 		r.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
 			t.Fatalf("expected 200 for %s, got %d: %s", path, w.Code, w.Body.String())
+		}
+		if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+			t.Fatalf("expected Cache-Control to contain no-store for %s, got %q", path, cc)
 		}
 		var qResp struct {
 			Accounts []interface{} `json:"accounts"`

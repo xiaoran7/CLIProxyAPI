@@ -2,6 +2,7 @@ package api
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -9,6 +10,7 @@ var (
 	upstreamCacheMu          sync.RWMutex
 	cachedUpstreamQuotasResp *UpstreamQuotasResponse
 	cachedUpstreamAt         time.Time
+	activeBackgroundProbes   atomic.Int32
 )
 
 // InvalidateUpstreamQuotaCache forces the next fetch to query fresh data
@@ -17,6 +19,11 @@ func InvalidateUpstreamQuotaCache() {
 	defer upstreamCacheMu.Unlock()
 	cachedUpstreamQuotasResp = nil
 	cachedUpstreamAt = time.Time{}
+}
+
+// ActiveBackgroundProbeCount returns the count of in-flight background probes
+func ActiveBackgroundProbeCount() int32 {
+	return activeBackgroundProbes.Load()
 }
 
 // CachedAccountQuota stores parsed on-demand quota snapshots in memory
