@@ -455,6 +455,8 @@
         else if (tpsNum >= 50) speedColor = '#06b6d4';
         else if (tpsNum < 20) speedColor = '#f59e0b';
         tpsHtml = `<span class="speed-badge" style="color:${speedColor}; font-weight:600; font-size:11.5px;" title="${t('logs.generationRateTitle', { tpsNum: tpsNum })}">${tpsNum} <span style="font-size:10px; font-weight:400; opacity:0.8;">tok/s</span></span>`;
+      } else if (ev.stream && ev.latency_ms > 0 && ev.ttft_ms && ev.ttft_ms > 0 && (ev.latency_ms - ev.ttft_ms) < 200) {
+        tpsHtml = `<span style="color:var(--text-dim); font-size:11.5px; cursor:help;" title="${t('logs.rateBurstTitle')}">—</span>`;
       }
 
       return `<tr${rowClassAttr} data-id="${escapeHtml(String(ev.id || ''))}">

@@ -75,16 +75,56 @@ func TestExtractUsageFromJSON_RootTokens(t *testing.T) {
 }
 
 func TestCalculateTokensPerSec(t *testing.T) {
-	// 100 tokens, 1000ms latency -> 100 tok/s
+	// 1. Non-stream: 100 tokens, 1000ms latency -> 100 tok/s
 	tps := CalculateTokensPerSec(100, 1000, 0, false)
 	if tps != 100.0 {
 		t.Errorf("expected 100.0, got %f", tps)
 	}
 
-	// Stream with TTFT: 100 tokens, 1500ms latency, 500ms TTFT -> generation window = 1000ms -> 100 tok/s
+	// 2. Normal stream with TTFT: 100 tokens, 1500ms latency, 500ms TTFT -> generation window = 1000ms -> 100 tok/s
 	tpsStream := CalculateTokensPerSec(100, 1500, 500, true)
 	if tpsStream != 100.0 {
 		t.Errorf("expected 100.0, got %f", tpsStream)
+	}
+
+	// 3. Realistic sustained streaming: 1234 tokens, 15800ms latency, 5100ms TTFT -> 10700ms -> 115.3 tok/s
+	tpsRealStream := CalculateTokensPerSec(1234, 15800, 5100, true)
+	if tpsRealStream != 115.3 {
+		t.Errorf("expected 115.3, got %f", tpsRealStream)
+	}
+
+	// 4. Realistic fast streaming: 106 tokens, 4600ms latency, 4132ms TTFT -> 468ms -> 226.5 tok/s
+	tpsFastStream := CalculateTokensPerSec(106, 4600, 4132, true)
+	if tpsFastStream != 226.5 {
+		t.Errorf("expected 226.5, got %f", tpsFastStream)
+	}
+
+	// 5. Short burst window (<100ms): 132 tokens, 9400ms latency, 9330ms TTFT -> genMs = 70ms -> burst returns 0
+	tpsBurstShort := CalculateTokensPerSec(132, 9400, 9330, true)
+	if tpsBurstShort != 0 {
+		t.Errorf("expected 0 for burst delivery < 100ms, got %f", tpsBurstShort)
+	}
+
+	// 6. Implausible burst rate (>500 tok/s): 217 tokens, 22200ms latency, 22056ms TTFT -> genMs = 144ms -> rate > 500 -> returns 0
+	tpsBurstHighRate := CalculateTokensPerSec(217, 22200, 22056, true)
+	if tpsBurstHighRate != 0 {
+		t.Errorf("expected 0 for implausible burst rate, got %f", tpsBurstHighRate)
+	}
+
+	// 7. Missing or invalid TTFT in stream: returns 0
+	if got := CalculateTokensPerSec(100, 1000, 0, true); got != 0 {
+		t.Errorf("expected 0 for stream without TTFT, got %f", got)
+	}
+	if got := CalculateTokensPerSec(100, 1000, 1000, true); got != 0 {
+		t.Errorf("expected 0 for stream with TTFT >= latency, got %f", got)
+	}
+
+	// 8. Zero or negative completion tokens or latency
+	if got := CalculateTokensPerSec(0, 1000, 500, true); got != 0 {
+		t.Errorf("expected 0 for 0 completion tokens, got %f", got)
+	}
+	if got := CalculateTokensPerSec(100, 0, 0, false); got != 0 {
+		t.Errorf("expected 0 for 0 latency, got %f", got)
 	}
 }
 

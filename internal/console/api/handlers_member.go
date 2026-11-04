@@ -322,11 +322,11 @@ func HandleMemberRequests(eng *engine.Engine, pricing *PricingEngine, providers 
 			}
 
 			tps := e.TokensPerSec
-			if tps <= 0 {
-				var ttftVal int64
-				if e.TtftMs != nil {
-					ttftVal = *e.TtftMs
-				}
+			var ttftVal int64
+			if e.TtftMs != nil {
+				ttftVal = *e.TtftMs
+			}
+			if tps <= 0 || tps > engine.MaxPlausibleTokensPerSec || (e.Stream == 1 && ttftVal > 0 && e.LatencyMs-ttftVal < engine.MinStreamingGenerationMs) {
 				tps = engine.CalculateTokensPerSec(e.CompletionTokens, e.LatencyMs, ttftVal, e.Stream == 1)
 			}
 

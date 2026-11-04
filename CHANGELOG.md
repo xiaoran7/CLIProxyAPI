@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Changed
+- **Console Token Generation Rate Calculation & Burst Anti-Distortion (`internal/console/engine/`, `internal/console/api/`, `internal/console/assets/`)**:
+  - Eliminated the artificial threshold cliff in `CalculateTokensPerSec` where output duration windows shorter than 100ms fell back to total request latency (including tens of seconds of prefill/thinking), causing identical tool-call bursts to swing wildly between 14 tok/s and 1500+ tok/s.
+  - Implemented `MinStreamingGenerationMs` (100ms) and `MaxPlausibleTokensPerSec` (500.0 tok/s) physical boundary checks. Instantaneous single-packet deliveries (such as pre-buffered tool call or short function-call JSON) return `0` instead of calculating distorted rates from packet arrival jitter.
+  - Dynamically sanitized historical distorted burst records in `handlers_requests.go` and `handlers_member.go` so legacy anomalies are cleansed without database migrations.
+  - Enhanced frontend rendering in `console-logs.js` and `console-i18n.js` to show `—` with an informative tooltip (`logs.rateBurstTitle`) explaining that instant single-packet/tool-call deliveries lack a sustained streaming duration window.
+  - Added comprehensive test cases in `token_estimator_test.go` covering sustained streaming, fast streaming, burst delivery, rate limits, and missing TTFT.
 - **Upstream Credential Quota Cache & Probe Follow-up Optimization (`internal/console/api/`, `internal/console/assets/`)**:
   - Added strict HTTP anti-caching headers (`Cache-Control: no-store, no-cache, must-revalidate, max-age=0`, `Pragma: no-cache`, `Expires: 0`) to `/console/api/upstream-quotas` so browsers never serve stale quota responses on routine requests.
   - Dynamically tuned memory response cache TTL from 10s down to 5s, bypassing cache immediately if active background probes are in-flight.

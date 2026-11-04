@@ -199,23 +199,56 @@ func ExtractReasoningEffort(body []byte) string {
 	return ""
 }
 
+const (
+	// MinStreamingGenerationMs is the minimum output duration window (100ms) required to
+	// separate token generation from network transport jitter.
+	MinStreamingGenerationMs = 100
+
+	// MaxPlausibleTokensPerSec is the physical ceiling for continuous token decoding across LLM APIs.
+	// When calculated tokens/sec exceeds this limit, the tokens were delivered as an atomic burst
+	// (such as a pre-buffered tool call or single-chunk payload) rather than steady-state streaming.
+	MaxPlausibleTokensPerSec = 500.0
+)
+
 // CalculateTokensPerSec calculates generation speed in tokens per second.
-// For streaming responses with valid TTFT, TTFT is subtracted from duration to isolate generation phase.
+// For streaming responses with valid TTFT, TTFT is subtracted from duration to isolate the generation phase.
+// If the generation phase is an instantaneous burst (< 100ms or exceeding plausible physical decoding rates),
+// 0 is returned to indicate that continuous streaming rate is not applicable.
 func CalculateTokensPerSec(completionTokens, latencyMs, ttftMs int64, isStream bool) float64 {
 	if completionTokens <= 0 || latencyMs <= 0 {
 		return 0
 	}
 
-	durationMs := latencyMs
-	if isStream && ttftMs > 0 && latencyMs > ttftMs && (latencyMs-ttftMs) >= 100 {
-		durationMs = latencyMs - ttftMs
+	if isStream {
+		if ttftMs <= 0 || latencyMs <= ttftMs {
+			// Missing or invalid TTFT in streaming response; pure generation phase cannot be determined.
+			return 0
+		}
+
+		genMs := latencyMs - ttftMs
+		if genMs < MinStreamingGenerationMs {
+			// Single-chunk or atomic burst delivery; window is too small for meaningful rate statistics.
+			return 0
+		}
+
+		sec := float64(genMs) / 1000.0
+		tps := float64(completionTokens) / sec
+		if tps > MaxPlausibleTokensPerSec {
+			// Physical impossibility check: packet burst rather than progressive decoding.
+			return 0
+		}
+
+		return math.Round(tps*10.0) / 10.0
 	}
 
-	sec := float64(durationMs) / 1000.0
+	// Non-streaming response: compute end-to-end generation throughput.
+	sec := float64(latencyMs) / 1000.0
 	if sec <= 0 {
 		return 0
 	}
-
 	tps := float64(completionTokens) / sec
+	if tps > MaxPlausibleTokensPerSec {
+		return math.Round(MaxPlausibleTokensPerSec*10.0) / 10.0
+	}
 	return math.Round(tps*10.0) / 10.0
 }

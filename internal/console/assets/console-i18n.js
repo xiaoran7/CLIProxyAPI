@@ -1065,6 +1065,7 @@
     'logs.filteredByProvider': { zh: '已仅筛选服务商 {value} 的请求流水', en: 'Filtered to requests from {value} only' },
     'logs.filteredByUpstreamAccount': { zh: '已仅筛选上游账号 {name} 的请求流水', en: 'Filtered to requests from upstream account {name} only' },
     'logs.generationRateTitle': { zh: '生成速率: {tpsNum} tokens/s (纯输出阶段速率)', en: 'Generation rate: {tpsNum} tokens/s (output-only phase rate)' },
+    'logs.rateBurstTitle': { zh: '单包瞬时下发（如工具调用/短回答），无持续流式生成窗口', en: 'Instant burst delivery (e.g. tool call / short output), no sustained generation window' },
     'logs.googleVerificationBlocked': { zh: 'Google 账号安全验证拦截', en: 'Google account verification blocked' },
     'logs.httpSuccessStatus': { zh: '{status} 成功', en: '{status} OK' },
     'logs.jumpedToErrorLogs': { zh: '已跳转至请求流水并筛选异常错误', en: 'Jumped to the request log and filtered abnormal errors' },
