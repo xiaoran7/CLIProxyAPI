@@ -477,13 +477,17 @@
     }
 
     async function refreshUpstreamQuotas(force = false) {
-      setUpstreamPlaceholder(`<div class="upstream-empty-state">${t('quotas.loadingUpstreamData')}</div>`);
+      if (!upstreamLoaded || !cachedUpstream || !Array.isArray(cachedUpstream.accounts) || cachedUpstream.accounts.length === 0) {
+        setUpstreamPlaceholder(`<div class="upstream-empty-state">${t('quotas.loadingUpstreamData')}</div>`);
+      }
       const refreshBtn = document.getElementById('btn-refresh-upstream-quotas');
       const refreshIcon = refreshBtn ? refreshBtn.querySelector('.refresh-icon') : null;
       if (refreshIcon) refreshIcon.classList.add('spin');
       try {
         await fetchUpstreamQuotas(force);
-        showToast(t('quotas.quotaUpdatedToast'), 'success');
+        if (force) {
+          showToast(t('quotas.quotaUpdatedToast'), 'success');
+        }
       } finally {
         if (refreshIcon) refreshIcon.classList.remove('spin');
       }

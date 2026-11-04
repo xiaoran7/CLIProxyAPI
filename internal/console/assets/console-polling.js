@@ -44,13 +44,15 @@
       resetPolling();
     }
 
+    let lastUserTypingTime = 0;
+    document.addEventListener('input', () => { lastUserTypingTime = Date.now(); }, { passive: true });
+
     function isUserBusyInteracting() {
       // 1. 存在打开的弹窗
       const openModal = document.querySelector('.modal-backdrop[style*="display: block"], .modal-backdrop[style*="display: flex"]');
       if (openModal) return true;
-      // 2. 焦点位于正在打字的输入框
-      const el = document.activeElement;
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && !el.readOnly) return true;
+      // 2. 用户在过去 3.5 秒内正在打字输入
+      if (Date.now() - lastUserTypingTime < 3500) return true;
       // 3. 流水页正在看深层分页（非第 1 页）
       if (activeNavTab === 'logs' && logsPage > 1) return true;
       // 4. 运行总览 tooltip 正在悬停

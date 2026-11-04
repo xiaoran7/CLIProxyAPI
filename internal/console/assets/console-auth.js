@@ -115,7 +115,19 @@
 
     function getAdminSecret() {
       if (isMemberAuth()) return '';
-      return adminSecretStore.get();
+      const s = adminSecretStore.get();
+      if (s) return s;
+      const cookieMatch = document.cookie.match(/(?:^|;\s*)gate_admin_token=([^;]+)/);
+      if (cookieMatch && cookieMatch[1]) {
+        try {
+          const cookieVal = decodeURIComponent(cookieMatch[1]).trim();
+          if (cookieVal && !cookieVal.startsWith('sk-')) {
+            adminSecretStore.set(cookieVal);
+            return cookieVal;
+          }
+        } catch {}
+      }
+      return '';
     }
 
     function getMemberKey() {

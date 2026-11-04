@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Changed
+- **Console Live DOM Hot-Update & Activity-Driven Upstream Quota Invalidation (`internal/console/`)**:
+  - Upgraded live reset countdown format in `console-format.js` to second precision (`${hours}h ${mins}m ${secs}s` / `${hours}小时 ${mins}分 ${secs}秒`), causing DOM countdown elements to dynamically tick down every second in-place without page reloads.
+  - Rendered real-time usage telemetry (`今日: X 次 · Y tokens` and 5h requests) on both compact and full quota cards in `console-quotas-render.js`, making proxy activity instantly visible on the screen.
+  - Implemented activity-driven quota staleness detection in `handlers_upstream_quotas.go` & `quota_probe.go`: credentials serving new requests (`currentRequests > lastReqs`) are automatically flagged stale and re-probed with a fast 5s throttle.
+  - Fixed permanent polling pause in `console-polling.js`: replaced static `document.activeElement` check with a 3.5s typing debounce so input focus never freezes the background polling loop.
+  - Fixed `getAdminSecret` cookie fallback in `console-auth.js` to prevent false secret-missing states during routine background polls.
+  - Preserved loaded card DOM in `console-quotas-fetch.js` during refreshes, eliminating jarring blank loading placeholders.
 - **Console Token Generation Rate Calculation & Burst Anti-Distortion (`internal/console/engine/`, `internal/console/api/`, `internal/console/assets/`)**:
   - Eliminated the artificial threshold cliff in `CalculateTokensPerSec` where output duration windows shorter than 100ms fell back to total request latency (including tens of seconds of prefill/thinking), causing identical tool-call bursts to swing wildly between 14 tok/s and 1500+ tok/s.
   - Implemented `MinStreamingGenerationMs` (100ms) and `MaxPlausibleTokensPerSec` (500.0 tok/s) physical boundary checks. Instantaneous single-packet deliveries (such as pre-buffered tool call or short function-call JSON) return `0` instead of calculating distorted rates from packet arrival jitter.

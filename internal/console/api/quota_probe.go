@@ -232,6 +232,19 @@ func fetchSingleAccountQuota(ctx context.Context, eng *engine.Engine, cpa *CpaCl
 
 	if len(groups) > 0 {
 		totCreds, remCreds, usedCreds, expAt := extractAccountCredits(groups)
+		var lastReqs, lastToks int64
+		if eng != nil && eng.DB() != nil {
+			todayDate := engine.ShanghaiDate(time.Now())
+			if statRow, err := eng.DB().SelectUpstreamDailyForDate(ctx, todayDate); err == nil {
+				for _, s := range statRow {
+					if s.AuthIndex == authIdx || (fname != "" && s.AuthIndex == fname) {
+						lastReqs = s.Requests
+						lastToks = s.TotalTokens
+						break
+					}
+				}
+			}
+		}
 		accountQuotaCacheMu.Lock()
 		cached := CachedAccountQuota{
 			Groups:           groups,
@@ -242,6 +255,8 @@ func fetchSingleAccountQuota(ctx context.Context, eng *engine.Engine, cpa *CpaCl
 			RemainingCredits: remCreds,
 			UsedCredits:      usedCreds,
 			ExpiresAt:        expAt,
+			LastRequests:     lastReqs,
+			LastTokens:       lastToks,
 		}
 		if authIdx != "" {
 			accountQuotaCache[authIdx] = cached

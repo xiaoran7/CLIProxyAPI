@@ -37,6 +37,8 @@ type CachedAccountQuota struct {
 	RemainingCredits *float64
 	UsedCredits      *float64
 	ExpiresAt        string
+	LastRequests     int64
+	LastTokens       int64
 }
 
 var (

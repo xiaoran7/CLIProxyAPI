@@ -122,7 +122,7 @@
       }
       return t('reset.absDateTimeNoYear', vars);
     }
-    // 客户端实时重置倒计时计算
+    // 客户端实时重置倒计时计算 (带秒级精度，页面常开实时动态刷新)
     function formatResetCountdownLive(targetTime) {
       if (!targetTime) return '';
       const target = typeof targetTime === 'number' ? targetTime : new Date(targetTime).getTime();
@@ -130,24 +130,32 @@
       const now = Date.now();
       const diff = target - now;
       if (diff <= 0) return t('reset.justReset');
-      const hours = Math.floor(diff / (1000 * 60 * 60));
-      const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      if (hours > 24) {
-        const days = Math.floor(hours / 24);
-        if (days >= 365) {
-          const years = Math.floor(days / 365);
-          if (years >= 3) return t('reset.longTerm');
-          const remMonths = Math.floor((days % 365) / 30);
-          return remMonths >= 1
-            ? t('reset.yearsMonths', { years, remMonths })
-            : t('reset.yearsOnly', { years });
-        }
-        const remHours = hours % 24;
+      const totalSecs = Math.floor(diff / 1000);
+      const days = Math.floor(totalSecs / 86400);
+      const hours = Math.floor((totalSecs % 86400) / 3600);
+      const mins = Math.floor((totalSecs % 3600) / 60);
+      const secs = totalSecs % 60;
+      if (days >= 365) {
+        const years = Math.floor(days / 365);
+        if (years >= 3) return t('reset.longTerm');
+        const remMonths = Math.floor((days % 365) / 30);
+        return remMonths >= 1
+          ? t('reset.yearsMonths', { years, remMonths })
+          : t('reset.yearsOnly', { years });
+      }
+      if (days > 0) {
+        const remHours = hours;
         return t('reset.daysHours', { days, remHours });
       }
-      return t('reset.hoursMinutes', { hours, mins });
+      if (hours > 0) {
+        return `${hours}小时 ${mins}分 ${secs}秒`;
+      }
+      if (mins > 0) {
+        return `${mins}分 ${secs}秒`;
+      }
+      return `${secs}秒`;
     }
-    // 客户端极简紧凑重置倒计时（例如 2h 51m / 1d 9h / 45m / 长期 / 即将重置）
+    // 客户端极简紧凑重置倒计时（例如 4h 52m 18s / 1d 9h / 45m 12s / 长期 / 即将重置）
     function formatCompactCountdownLive(targetTime) {
       if (!targetTime) return '';
       let target;
@@ -165,23 +173,26 @@
       const now = Date.now();
       const diff = target - now;
       if (diff <= 0) return t('reset.soon');
-      const totalMins = Math.floor(diff / (1000 * 60));
-      const hours = Math.floor(totalMins / 60);
-      const mins = totalMins % 60;
-      if (hours >= 24) {
-        const days = Math.floor(hours / 24);
-        if (days >= 365) {
-          const years = Math.floor(days / 365);
-          if (years >= 2) return t('reset.compactLongTerm') || t('reset.longTerm');
-          return `${years}y`;
-        }
-        const remHours = hours % 24;
-        return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`;
+      const totalSecs = Math.floor(diff / 1000);
+      const days = Math.floor(totalSecs / 86400);
+      const hours = Math.floor((totalSecs % 86400) / 3600);
+      const mins = Math.floor((totalSecs % 3600) / 60);
+      const secs = totalSecs % 60;
+      if (days >= 365) {
+        const years = Math.floor(days / 365);
+        if (years >= 2) return t('reset.compactLongTerm') || t('reset.longTerm');
+        return `${years}y`;
+      }
+      if (days > 0) {
+        return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
       }
       if (hours > 0) {
-        return `${hours}h ${mins}m`;
+        return `${hours}h ${mins}m ${secs}s`;
       }
-      return `${Math.max(1, mins)}m`;
+      if (mins > 0) {
+        return `${mins}m ${secs}s`;
+      }
+      return `${secs}s`;
     }
     window.formatCompactCountdownLive = formatCompactCountdownLive;
 

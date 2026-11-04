@@ -153,7 +153,42 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 		}
 	}
 
-	// 4. Background probe for active credentials lacking recent quotas (non-blocking)
+	// 4. Fetch authentic local usage statistics from SQLite first to detect credential activity
+	todayDate := engine.ShanghaiDate(time.Now())
+	var todayStats []db.UpstreamDailyStatRow
+	if eng != nil && eng.DB() != nil {
+		todayStats, _ = eng.DB().SelectUpstreamDailyForDate(ctx, todayDate)
+	}
+	if todayStats == nil {
+		todayStats = []db.UpstreamDailyStatRow{}
+	}
+	todayStatsMap := make(map[string]db.UpstreamDailyStatRow)
+	for _, s := range todayStats {
+		todayStatsMap[s.AuthIndex] = s
+	}
+
+	var windowStatsMap map[string]db.UpstreamWindowStat
+	if eng != nil && eng.DB() != nil {
+		fiveHoursAgo := time.Now().Add(-5 * time.Hour).Unix()
+		windowStatsMap, _ = eng.DB().SelectUpstreamWindowStats(ctx, fiveHoursAgo)
+	}
+	if windowStatsMap == nil {
+		windowStatsMap = make(map[string]db.UpstreamWindowStat)
+	}
+
+	var lifetimeStats []db.UpstreamDailyStatRow
+	if eng != nil && eng.DB() != nil {
+		lifetimeStats, _ = eng.DB().SelectUpstreamDailyAgg(ctx)
+	}
+	if lifetimeStats == nil {
+		lifetimeStats = []db.UpstreamDailyStatRow{}
+	}
+	lifetimeStatsMap := make(map[string]db.UpstreamDailyStatRow)
+	for _, s := range lifetimeStats {
+		lifetimeStatsMap[s.AuthIndex] = s
+	}
+
+	// 5. Background probe for active credentials lacking recent quotas or having new request activity (non-blocking)
 	if !force && eng != nil {
 		var probeFiles []CpaAuthFile
 		for _, f := range authFilesResp.Files {
@@ -167,31 +202,54 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 			if f.Disabled || f.Status == "disabled" {
 				continue
 			}
+			key := f.AuthIndex
+			if key == "" {
+				key = f.Name
+			}
+
 			accountQuotaCacheMu.RLock()
 			cached1, found1 := accountQuotaCache[f.AuthIndex]
 			cached2, found2 := accountQuotaCache[f.Name]
 			accountQuotaCacheMu.RUnlock()
 
+			var currentRequests int64
+			if stat, ok := todayStatsMap[f.AuthIndex]; ok {
+				currentRequests = stat.Requests
+			} else if stat, ok := todayStatsMap[f.Name]; ok {
+				currentRequests = stat.Requests
+			}
+
 			isStale := false
+			var lastReqs int64
 			if !found1 && !found2 {
 				isStale = true
 			} else {
 				var lastUpdate time.Time
 				if found1 && cached1.UpdatedAt.After(lastUpdate) {
 					lastUpdate = cached1.UpdatedAt
+					lastReqs = cached1.LastRequests
 				}
 				if found2 && cached2.UpdatedAt.After(lastUpdate) {
 					lastUpdate = cached2.UpdatedAt
+					if cached2.LastRequests > lastReqs {
+						lastReqs = cached2.LastRequests
+					}
 				}
-				if lastUpdate.IsZero() || time.Since(lastUpdate) > 60*time.Second {
+				// Staleness condition 1: Exceeded 45s
+				if lastUpdate.IsZero() || time.Since(lastUpdate) > 45*time.Second {
+					isStale = true
+				}
+				// Staleness condition 2: New requests served since last probe!
+				if currentRequests > lastReqs {
 					isStale = true
 				}
 			}
-			key := f.AuthIndex
-			if key == "" {
-				key = f.Name
+
+			throttleInterval := 30 * time.Second
+			if isStale && currentRequests > lastReqs {
+				throttleInterval = 5 * time.Second
 			}
-			if isStale && shouldProbeAccount(key, 30*time.Second) {
+			if isStale && shouldProbeAccount(key, throttleInterval) {
 				probeFiles = append(probeFiles, f)
 			}
 		}
@@ -220,32 +278,6 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 				InvalidateUpstreamQuotaCache()
 			}(probeFiles)
 		}
-	}
-
-	// 5. Fetch authentic local usage statistics from SQLite
-	todayDate := engine.ShanghaiDate(time.Now())
-	todayStats, err := eng.DB().SelectUpstreamDailyForDate(ctx, todayDate)
-	if err != nil {
-		todayStats = []db.UpstreamDailyStatRow{}
-	}
-	todayStatsMap := make(map[string]db.UpstreamDailyStatRow)
-	for _, s := range todayStats {
-		todayStatsMap[s.AuthIndex] = s
-	}
-
-	fiveHoursAgo := time.Now().Add(-5 * time.Hour).Unix()
-	windowStatsMap, err := eng.DB().SelectUpstreamWindowStats(ctx, fiveHoursAgo)
-	if err != nil {
-		windowStatsMap = make(map[string]db.UpstreamWindowStat)
-	}
-
-	lifetimeStats, err := eng.DB().SelectUpstreamDailyAgg(ctx)
-	if err != nil {
-		lifetimeStats = []db.UpstreamDailyStatRow{}
-	}
-	lifetimeStatsMap := make(map[string]db.UpstreamDailyStatRow)
-	for _, s := range lifetimeStats {
-		lifetimeStatsMap[s.AuthIndex] = s
 	}
 
 	populateLocalStats := func(item *UpstreamAccountItem, key, altKey string) {
