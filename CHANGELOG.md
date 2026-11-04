@@ -32,6 +32,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
     - Purged outdated Gate migration text (`非 Gate 本地推算`), colloquial estimations (`撑不起全部历史`), and unnecessary user-handholding instructions (`悬停任一柱可查看...`, `系统热路径纳秒级正则匹配...`) across overview cards and modals.
 
 ### Added
+- **Credential Pinning via `X-CPA-Auth-ID` & Fuzzy Target Resolution (`sdk/api/handlers/`, `sdk/cliproxy/auth/`)**:
+  - Added support for explicit credential pinning via `X-CPA-Auth-ID` and `X-Auth-ID` HTTP headers in `requestExecutionMetadata` (`sdk/api/handlers/handlers.go`).
+  - Implemented `pinnedAuthMatches` in `sdk/cliproxy/auth/conductor_selection.go` to support exact ID matches, filenames with/without `.json`, provider-prefixed IDs (e.g. `antigravity-...`), and account emails across metadata and attributes.
+  - Wired pinned credential bypass into `SessionAffinitySelector` (`sdk/cliproxy/auth/selector.go`) and scheduler shard lookup (`sdk/cliproxy/auth/scheduler.go`), allowing diagnostic tools and operational probes to target specific accounts without interfering with session affinity or default fill-first/round-robin schedulers.
+  - Added unit regression test `TestRequestExecutionMetadata_CapturesPinnedAuthIDHeader` in `sdk/api/handlers/handlers_metadata_test.go`.
 - **Sync Upstream v8.0.43 - v8.0.51 Core Fixes, Features & Security Hardening (`router-for-me/CLIProxyAPI`)**:
   - Merged upstream commits from `v8.0.42` through `v8.0.51` (including release tags `v8.0.49`, `v8.0.50`, `v8.0.51` and PRs #7010, #7016, #7042, #7057, #7074, #7092, #7095, #7101, #7102, #7106, #7109, #7113, #7141, #7142, #7143, #7149, #7154).
   - **LAN Discovery & ZeroConf (`internal/discovery/`)**: Aligned TXT schema with draft-su-ai-gateway-discovery-00, implemented split mDNS resolution caching, and documented discovery boundaries.

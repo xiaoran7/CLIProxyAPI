@@ -474,6 +474,15 @@ func (s *authScheduler) pickMixedWithStrategy(ctx context.Context, providers []s
 	}
 	if pinnedAuthID != "" {
 		providerKey := s.authProviders[pinnedAuthID]
+		if providerKey == "" {
+			for id, prov := range s.authProviders {
+				if pinnedAuthMatches(&Auth{ID: id}, pinnedAuthID) {
+					pinnedAuthID = id
+					providerKey = prov
+					break
+				}
+			}
+		}
 		if providerKey == "" || !containsProvider(normalized, providerKey) {
 			return nil, "", &Error{Code: "auth_not_found", Message: "no auth available"}
 		}
@@ -713,7 +722,7 @@ func scheduledAuthPredicate(eligibility authSelectionEligibility, tried map[stri
 		if requirePositiveWeight && (entry.meta == nil || entry.meta.weight <= 0) {
 			return false
 		}
-		if pinnedAuthID != "" && entry.auth.ID != pinnedAuthID {
+		if pinnedAuthID != "" && entry.auth.ID != pinnedAuthID && !pinnedAuthMatches(entry.auth, pinnedAuthID) {
 			return false
 		}
 		if len(tried) > 0 {

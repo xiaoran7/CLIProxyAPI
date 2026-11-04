@@ -1311,7 +1311,7 @@ func (m *Manager) closestCooldownWaitWithAttempted(providers []string, model str
 		if auth == nil || auth.Disabled || auth.Status == StatusDisabled {
 			continue
 		}
-		if pinnedAuthID != "" && auth.ID != pinnedAuthID {
+		if pinnedAuthID != "" && auth.ID != pinnedAuthID && !pinnedAuthMatches(auth, pinnedAuthID) {
 			continue
 		}
 		if !eligibility.allows(auth) {
@@ -1409,7 +1409,7 @@ func (m *Manager) retryAllowed(attempt int, providers []string, model string, el
 		if auth == nil || auth.Disabled || auth.Status == StatusDisabled {
 			continue
 		}
-		if pinnedAuthID != "" && auth.ID != pinnedAuthID {
+		if pinnedAuthID != "" && auth.ID != pinnedAuthID && !pinnedAuthMatches(auth, pinnedAuthID) {
 			continue
 		}
 		if !eligibility.allows(auth) {
@@ -1757,6 +1757,31 @@ func canonicalSchedulingProvider(key string) string {
 	}
 }
 
+func pinnedAuthMatches(auth *Auth, pinned string) bool {
+	if auth == nil || pinned == "" {
+		return false
+	}
+	if auth.ID == pinned {
+		return true
+	}
+	lower := strings.ToLower(strings.TrimSpace(pinned))
+	aIDLower := strings.ToLower(strings.TrimSpace(auth.ID))
+	if aIDLower == lower || aIDLower == lower+".json" || aIDLower == "antigravity-"+lower || aIDLower == "antigravity-"+lower+".json" {
+		return true
+	}
+	if auth.Attributes != nil {
+		if email := strings.ToLower(strings.TrimSpace(auth.Attributes["email"])); email != "" && email == lower {
+			return true
+		}
+	}
+	if auth.Metadata != nil {
+		if email, ok := auth.Metadata["email"].(string); ok && strings.EqualFold(strings.TrimSpace(email), pinned) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Manager) executorLocked(provider string) (ProviderExecutor, bool) {
 	provider = strings.TrimSpace(provider)
 	if provider == "" {
@@ -1961,7 +1986,7 @@ func (m *Manager) pickNextLegacy(ctx context.Context, provider, model string, op
 		if candidate == nil || canonicalSchedulingProvider(executorKeyFromAuth(candidate)) != targetKey || candidate.Disabled {
 			continue
 		}
-		if pinnedAuthID != "" && candidate.ID != pinnedAuthID {
+		if pinnedAuthID != "" && candidate.ID != pinnedAuthID && !pinnedAuthMatches(candidate, pinnedAuthID) {
 			continue
 		}
 		if !eligibility.allows(candidate) {
@@ -2300,7 +2325,7 @@ func (m *Manager) pickNextMixedLegacy(ctx context.Context, providers []string, m
 		if candidate == nil || candidate.Disabled {
 			continue
 		}
-		if pinnedAuthID != "" && candidate.ID != pinnedAuthID {
+		if pinnedAuthID != "" && candidate.ID != pinnedAuthID && !pinnedAuthMatches(candidate, pinnedAuthID) {
 			continue
 		}
 		if !eligibility.allows(candidate) {
@@ -2539,7 +2564,7 @@ func (m *Manager) warnLogAuthUnavailable(ctx context.Context, providers []string
 		if _, ok := m.executorLocked(providerKey); !ok {
 			continue
 		}
-		if pinnedAuthID != "" && candidate.ID != pinnedAuthID {
+		if pinnedAuthID != "" && candidate.ID != pinnedAuthID && !pinnedAuthMatches(candidate, pinnedAuthID) {
 			continue
 		}
 		if !eligibility.allows(candidate) {

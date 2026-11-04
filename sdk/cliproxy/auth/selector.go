@@ -1221,6 +1221,14 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
 		}
 	}
 
+	if pinnedAuthID := pinnedAuthIDFromMetadata(opts.Metadata); pinnedAuthID != "" {
+		for _, a := range auths {
+			if a != nil && (a.ID == pinnedAuthID || pinnedAuthMatches(a, pinnedAuthID)) {
+				return a, nil
+			}
+		}
+	}
+
 	primaryID, fallbackID := explicitID, explicitFallbackID
 	if primaryID == "" {
 		primaryID, fallbackID = extractSessionIDs(opts.Headers, opts.OriginalRequest, opts.Metadata)

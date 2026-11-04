@@ -247,6 +247,20 @@ func TestExtractSessionIDsFromRequestCanonicalHierarchy(t *testing.T) {
 	}
 }
 
+func TestRequestExecutionMetadata_CapturesPinnedAuthIDHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ginCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ginCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	ginCtx.Request.Header.Set("X-CPA-Auth-ID", "antigravity-ellaking638@gmail.com.json")
+
+	ctx := context.WithValue(context.Background(), "gin", ginCtx)
+	meta := requestExecutionMetadata(ctx)
+
+	if got := meta[coreexecutor.PinnedAuthMetadataKey]; got != "antigravity-ellaking638@gmail.com.json" {
+		t.Fatalf("PinnedAuthMetadataKey = %v, want antigravity-ellaking638@gmail.com.json", got)
+	}
+}
+
 func TestEnrichContextWithSessionHierarchyFromBody(t *testing.T) {
 	ctx := context.Background()
 

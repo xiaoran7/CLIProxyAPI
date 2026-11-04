@@ -275,6 +275,12 @@ func requestExecutionMetadata(ctx context.Context) map[string]any {
 	}
 	if pinnedAuthID := pinnedAuthIDFromContext(ctx); pinnedAuthID != "" {
 		meta[coreexecutor.PinnedAuthMetadataKey] = pinnedAuthID
+	} else if ginCtx != nil {
+		if pinned := strings.TrimSpace(ginCtx.GetHeader("X-CPA-Auth-ID")); pinned != "" {
+			meta[coreexecutor.PinnedAuthMetadataKey] = pinned
+		} else if pinned := strings.TrimSpace(ginCtx.GetHeader("X-Auth-ID")); pinned != "" {
+			meta[coreexecutor.PinnedAuthMetadataKey] = pinned
+		}
 	}
 	if selectedCallback := selectedAuthIDCallbackFromContext(ctx); selectedCallback != nil {
 		meta[coreexecutor.SelectedAuthCallbackMetadataKey] = selectedCallback
