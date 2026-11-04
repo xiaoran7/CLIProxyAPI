@@ -449,6 +449,21 @@ var staticQoderIntlModels = []*ModelInfo{
 		},
 	},
 	{
+		ID:                  "deepseek-v4.1-flash",
+		Object:              "model",
+		OwnedBy:             "deepseek",
+		Type:                "qoder",
+		DisplayName:         "DeepSeek V4.1 Flash",
+		ContextLength:       1048576,
+		MaxCompletionTokens: 64000,
+		InputTokenLimit:     1048576,
+		OutputTokenLimit:    64000,
+		Credits: &ModelCredits{
+			Multiplier: 0.5,
+			Source:     "qoder",
+		},
+	},
+	{
 		ID:                       "qwen-max-latest",
 		Object:                   "model",
 		OwnedBy:                  "alibaba",
@@ -798,6 +813,21 @@ var staticQoderCNModels = []*ModelInfo{
 		},
 	},
 	{
+		ID:                  "deepseek-v4.1-flash",
+		Object:              "model",
+		OwnedBy:             "deepseek",
+		Type:                "qoder",
+		DisplayName:         "DeepSeek V4.1 Flash (Qoder CN)",
+		ContextLength:       1048576,
+		MaxCompletionTokens: 64000,
+		InputTokenLimit:     1048576,
+		OutputTokenLimit:    64000,
+		Credits: &ModelCredits{
+			Multiplier: 0.5,
+			Source:     "qoder",
+		},
+	},
+	{
 		ID:                       "qwen-max-latest",
 		Object:                   "model",
 		OwnedBy:                  "alibaba",
@@ -1133,14 +1163,14 @@ func NormalizeQoderModelAlias(key, displayName string) *QoderModelAliasSpec {
 	if kLower == "dfmodel" || (strings.Contains(dLower, "deepseek-flash") && !strings.HasPrefix(kLower, "deepseek")) {
 		return &QoderModelAliasSpec{
 			CanonicalID: "deepseek-flash",
-			Aliases:     []string{"deepseek-chat", "deepseek-v3", "deepseek-v4-flash"},
+			Aliases:     []string{"deepseek-chat", "deepseek-v3", "deepseek-v4-flash", "deepseek-v4.1-flash"},
 			OwnedBy:     "deepseek",
 		}
 	}
 	if kLower == "dpmodel" || (strings.Contains(dLower, "deepseek-pro") && !strings.HasPrefix(kLower, "deepseek")) {
 		return &QoderModelAliasSpec{
 			CanonicalID: "deepseek-pro",
-			Aliases:     []string{"deepseek-r1", "deepseek-v4-pro"},
+			Aliases:     []string{"deepseek-r1", "deepseek-v4-pro", "deepseek-v4.1-pro"},
 			OwnedBy:     "deepseek",
 		}
 	}
@@ -1218,9 +1248,9 @@ func ResolveQoderUpstreamModelKey(requestedModel string) string {
 	}
 
 	switch clean {
-	case "dfmodel", "deepseek-flash", "deepseek-chat", "deepseek-v3", "deepseek-v4-flash", "deepseek":
+	case "dfmodel", "deepseek-flash", "deepseek-chat", "deepseek-v3", "deepseek-v4-flash", "deepseek-v4.1-flash", "deepseek":
 		return "dfmodel"
-	case "dpmodel", "deepseek-pro", "deepseek-r1", "deepseek-v4-pro":
+	case "dpmodel", "deepseek-pro", "deepseek-r1", "deepseek-v4-pro", "deepseek-v4.1-pro":
 		return "dpmodel"
 	case "qmodel_38max", "qwen3.8-max", "qwen-3.8-max", "qwen-max", "qwen-max-latest":
 		return "qmodel_38max"

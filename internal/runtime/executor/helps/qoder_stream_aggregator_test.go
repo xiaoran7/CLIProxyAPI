@@ -111,3 +111,80 @@ func TestAggregateQoderStreamToolCalls(t *testing.T) {
 		t.Errorf("expected arguments '{\"x\":1}', got '%s'", parsed.Get("choices.0.message.tool_calls.0.function.arguments").String())
 	}
 }
+
+func TestUnwrapQoderSSELine(t *testing.T) {
+	// 1. Wrapped Spring ResponseEntity chunk
+	wrappedChunk := []byte(`data: {"headers":{"Content-Type":["application/json"]},"body":"{\"choices\":[{\"delta\":{\"content\":\"Hello\"},\"index\":0}]}","statusCodeValue":200,"statusCode":"OK"}`)
+	unwrapped, ok := UnwrapQoderSSELine(wrappedChunk)
+	if !ok {
+		t.Fatalf("expected unwrapped chunk to be ok")
+	}
+	want := `data: {"choices":[{"delta":{"content":"Hello"},"index":0}]}`
+	if string(unwrapped) != want {
+		t.Errorf("got %q, want %q", string(unwrapped), want)
+	}
+
+	// 2. Wrapped [DONE]
+	wrappedDone := []byte(`data: {"headers":{"Content-Type":["application/json"]},"body":"[DONE]","statusCodeValue":200,"statusCode":"OK"}`)
+	unwrappedDone, okDone := UnwrapQoderSSELine(wrappedDone)
+	if !okDone {
+		t.Fatalf("expected unwrapped done to be ok")
+	}
+	if string(unwrappedDone) != "data: [DONE]" {
+		t.Errorf("got %q, want 'data: [DONE]'", string(unwrappedDone))
+	}
+
+	// 3. Raw standard [DONE]
+	rawDone := []byte("data: [DONE]")
+	unwrappedRawDone, okRawDone := UnwrapQoderSSELine(rawDone)
+	if !okRawDone || string(unwrappedRawDone) != "data: [DONE]" {
+		t.Errorf("got %q, ok=%v, want 'data: [DONE]', ok=true", string(unwrappedRawDone), okRawDone)
+	}
+
+	// 4. Raw standard OpenAI chunk
+	rawChunk := []byte(`data: {"id":"c1","choices":[{"delta":{"content":"hi"}}]}`)
+	unwrappedRaw, okRaw := UnwrapQoderSSELine(rawChunk)
+	if !okRaw || string(unwrappedRaw) != string(rawChunk) {
+		t.Errorf("got %q, ok=%v, want %q", string(unwrappedRaw), okRaw, string(rawChunk))
+	}
+
+	// 5. Telemetry & non-JSON events should be skipped
+	telemetry := []byte(`data: {"firstTokenDuration":106,"totalDuration":634,"serverDuration":168}`)
+	if _, okTel := UnwrapQoderSSELine(telemetry); okTel {
+		t.Errorf("expected telemetry event to be skipped")
+	}
+
+	eventFinish := []byte("data: event:finish")
+	if _, okFinish := UnwrapQoderSSELine(eventFinish); okFinish {
+		t.Errorf("expected event:finish to be skipped")
+	}
+
+	emptyLine := []byte("   \n")
+	if _, okEmpty := UnwrapQoderSSELine(emptyLine); okEmpty {
+		t.Errorf("expected empty line to be skipped")
+	}
+}
+
+func TestAggregateQoderStreamSpringWrapped(t *testing.T) {
+	stream := []byte("data: {\"headers\":{\"Content-Type\":[\"application/json\"]},\"body\":\"{\\\"choices\\\":[{\\\"delta\\\":{\\\"reasoning_content\\\":\\\"Thinking... \\\"},\\\"index\\\":0}]}\",\"statusCodeValue\":200,\"statusCode\":\"OK\"}\n\n" +
+		"data: {\"headers\":{\"Content-Type\":[\"application/json\"]},\"body\":\"{\\\"choices\\\":[{\\\"delta\\\":{\\\"content\\\":\\\"The answer is 42.\\\"},\\\"finish_reason\\\":\\\"stop\\\",\\\"index\\\":0}]}\",\"statusCodeValue\":200,\"statusCode\":\"OK\"}\n\n" +
+		"data: {\"headers\":{\"Content-Type\":[\"application/json\"]},\"body\":\"[DONE]\",\"statusCodeValue\":200,\"statusCode\":\"OK\"}\n\n" +
+		"data: event:finish\n\n" +
+		"data: {\"firstTokenDuration\":77,\"totalDuration\":812,\"serverDuration\":102}\n\n")
+
+	agg, err := AggregateQoderStream(stream, "dfmodel")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	parsed := gjson.ParseBytes(agg)
+	if got := parsed.Get("choices.0.message.content").String(); got != "The answer is 42." {
+		t.Errorf("expected content 'The answer is 42.', got %q", got)
+	}
+	if got := parsed.Get("choices.0.message.reasoning_content").String(); got != "Thinking... " {
+		t.Errorf("expected reasoning 'Thinking... ', got %q", got)
+	}
+	if got := parsed.Get("choices.0.finish_reason").String(); got != "stop" {
+		t.Errorf("expected finish_reason 'stop', got %q", got)
+	}
+}

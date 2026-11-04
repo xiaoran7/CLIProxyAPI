@@ -307,13 +307,30 @@ func TestQoderModelAliasAndKeyResolution(t *testing.T) {
 		"deepseek-chat",
 		"deepseek-v3",
 		"deepseek-v4-flash",
+		"deepseek-v4.1-flash",
 		"deepseek",
 		"qoder/deepseek-flash",
+		"qoder/deepseek-v4.1-flash",
 		"qoder-cn/deepseek-chat-free",
 	}
 	for _, tc := range dsCases {
 		if got := ResolveQoderUpstreamModelKey(tc); got != "dfmodel" {
 			t.Errorf("ResolveQoderUpstreamModelKey(%q) = %q, want 'dfmodel'", tc, got)
+		}
+	}
+
+	// DeepSeek pro aliases -> dpmodel
+	dsProCases := []string{
+		"dpmodel",
+		"deepseek-pro",
+		"deepseek-r1",
+		"deepseek-v4-pro",
+		"deepseek-v4.1-pro",
+		"qoder/deepseek-v4.1-pro",
+	}
+	for _, tc := range dsProCases {
+		if got := ResolveQoderUpstreamModelKey(tc); got != "dpmodel" {
+			t.Errorf("ResolveQoderUpstreamModelKey(%q) = %q, want 'dpmodel'", tc, got)
 		}
 	}
 

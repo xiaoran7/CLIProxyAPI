@@ -13,6 +13,82 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+// UnwrapQoderSSELine unescapes Spring Boot ResponseEntity SSE chunks from Qoder
+// (e.g. `data: {"headers":{...},"body":"{\"choices\":[...]}","statusCodeValue":200}`)
+// into standard OpenAI SSE lines (`data: {"choices":[...]}`).
+// It returns (unwrappedLine, true) for valid OpenAI stream events or [DONE],
+// and (nil, false) for ignorable telemetry / metadata events.
+func UnwrapQoderSSELine(line []byte) ([]byte, bool) {
+	trimmed := bytes.TrimSpace(line)
+	if len(trimmed) == 0 {
+		return nil, false
+	}
+	if !bytes.HasPrefix(trimmed, []byte("data:")) {
+		return nil, false
+	}
+	data := bytes.TrimSpace(trimmed[5:])
+	if len(data) == 0 {
+		return nil, false
+	}
+	if bytes.Equal(data, []byte("[DONE]")) {
+		return []byte("data: [DONE]"), true
+	}
+
+	// Non-JSON events like "data: event:finish"
+	if !gjson.ValidBytes(data) {
+		return nil, false
+	}
+
+	parsed := gjson.ParseBytes(data)
+
+	// Check if wrapped in Spring ResponseEntity: {"headers": ..., "body": "...", "statusCodeValue": ...}
+	if bodyRes := parsed.Get("body"); bodyRes.Exists() {
+		rawBody := strings.TrimSpace(bodyRes.String())
+		if rawBody == "[DONE]" {
+			return []byte("data: [DONE]"), true
+		}
+		if len(rawBody) > 0 && (rawBody[0] == '{' || rawBody[0] == '[') && gjson.Valid(rawBody) {
+			return []byte("data: " + rawBody), true
+		}
+		return nil, false
+	}
+
+	// Telemetry lines without choices/id (e.g. {"firstTokenDuration":...})
+	if !parsed.Get("choices").Exists() && !parsed.Get("id").Exists() && !parsed.Get("error").Exists() && !parsed.Get("code").Exists() {
+		return nil, false
+	}
+
+	// Already standard OpenAI SSE line
+	return trimmed, true
+}
+
+// ParseQoderStreamError checks if an SSE line or data chunk contains an embedded Qoder error response.
+func ParseQoderStreamError(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if bytes.HasPrefix(trimmed, []byte("data:")) {
+		trimmed = bytes.TrimSpace(trimmed[5:])
+	}
+	if len(trimmed) == 0 || !gjson.ValidBytes(trimmed) {
+		return nil
+	}
+	parsed := gjson.ParseBytes(trimmed)
+	if codeVal := parsed.Get("code"); codeVal.Exists() && codeVal.Int() != 0 && codeVal.Int() != 200 {
+		msg := parsed.Get("msg").String()
+		if msg == "" {
+			msg = parsed.Get("message").String()
+		}
+		return fmt.Errorf("qoder upstream error (code %d): %s", codeVal.Int(), msg)
+	}
+	if errVal := parsed.Get("error"); errVal.Exists() {
+		msg := errVal.Get("message").String()
+		if msg == "" {
+			msg = errVal.String()
+		}
+		return fmt.Errorf("qoder upstream error: %s", msg)
+	}
+	return nil
+}
+
 // AggregateQoderStream folds an SSE stream from Qoder into a single standard OpenAI
 // non-streaming chat.completion response.
 func AggregateQoderStream(stream []byte, fallbackModel string) ([]byte, error) {
@@ -34,7 +110,12 @@ func AggregateQoderStream(stream []byte, fallbackModel string) ([]byte, error) {
 	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 
 	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
+		rawLine := scanner.Bytes()
+		unwrapped, ok := UnwrapQoderSSELine(rawLine)
+		if !ok {
+			continue
+		}
+		line := bytes.TrimSpace(unwrapped)
 		if len(line) == 0 {
 			continue
 		}
@@ -46,19 +127,14 @@ func AggregateQoderStream(stream []byte, fallbackModel string) ([]byte, error) {
 			continue
 		}
 
+		if errStream := ParseQoderStreamError(data); errStream != nil {
+			return nil, errStream
+		}
+
 		if !gjson.ValidBytes(data) {
 			continue
 		}
 		parsed := gjson.ParseBytes(data)
-
-		// Check for error responses embedded in stream
-		if codeVal := parsed.Get("code"); codeVal.Exists() && codeVal.Int() != 0 && codeVal.Int() != 200 {
-			msg := parsed.Get("msg").String()
-			if msg == "" {
-				msg = parsed.Get("message").String()
-			}
-			return nil, fmt.Errorf("qoder upstream error (code %d): %s", codeVal.Int(), msg)
-		}
 
 		if idVal := parsed.Get("id").String(); idVal != "" {
 			respID = idVal

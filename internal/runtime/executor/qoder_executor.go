@@ -359,19 +359,35 @@ func (e *QoderExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		scanner := bufio.NewScanner(httpResp.Body)
 		scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 
+		claudeInputTokens := helps.NewClaudeInputTokenState(from, to, responseFormat, originalPayload)
 		var streamUsage helps.StreamUsageBuffer
 		defer streamUsage.Publish(ctx, reporter)
 
 		var param any
 		for scanner.Scan() {
-			line := scanner.Bytes()
+			rawLine := scanner.Bytes()
+			line, ok := helps.UnwrapQoderSSELine(rawLine)
+			if !ok {
+				continue
+			}
+
+			if errStream := helps.ParseQoderStreamError(line); errStream != nil {
+				helps.RecordAPIResponseError(ctx, e.cfg, errStream)
+				reporter.PublishFailure(ctx, errStream)
+				select {
+				case out <- cliproxyexecutor.StreamChunk{Err: errStream}:
+				case <-ctx.Done():
+				}
+				return
+			}
+
 			helps.AppendAPIResponseChunk(ctx, e.cfg, line)
 			helps.AppendAPIResponseChunk(ctx, e.cfg, []byte("\n"))
 			reporter.ObserveResponseModel(line)
 
 			streamUsage.ObserveOpenAIStream(line)
 
-			lines := sdktranslator.TranslateStream(ctx, sdktranslator.FormatOpenAI, responseFormat, req.Model, originalPayload, translated, line, &param)
+			lines := helps.TranslateStreamWithClaudeInputTokens(ctx, sdktranslator.FormatOpenAI, responseFormat, req.Model, originalPayload, translated, line, &param, claudeInputTokens)
 			for _, converted := range lines {
 				select {
 				case out <- cliproxyexecutor.StreamChunk{Payload: converted}:
@@ -387,6 +403,19 @@ func (e *QoderExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 			select {
 			case out <- cliproxyexecutor.StreamChunk{Err: errScan}:
 			case <-ctx.Done():
+			}
+			return
+		}
+
+		// Guarantee terminal events are emitted if upstream stream closed before explicit [DONE]
+		if responseFormat == sdktranslator.FormatClaude {
+			doneLines := helps.TranslateStreamWithClaudeInputTokens(ctx, sdktranslator.FormatOpenAI, responseFormat, req.Model, originalPayload, translated, []byte("data: [DONE]"), &param, claudeInputTokens)
+			for _, converted := range doneLines {
+				select {
+				case out <- cliproxyexecutor.StreamChunk{Payload: converted}:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()

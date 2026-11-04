@@ -198,6 +198,71 @@ func TestQoderExecutorExecuteStream(t *testing.T) {
 	}
 }
 
+func TestQoderExecutorExecuteStreamSpringWrappedToClaude(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"headers\":{\"Content-Type\":[\"application/json\"]},\"body\":\"{\\\"choices\\\":[{\\\"delta\\\":{\\\"reasoning_content\\\":\\\"Thinking... \\\"},\\\"index\\\":0}]}\",\"statusCodeValue\":200,\"statusCode\":\"OK\"}\n\n"))
+		_, _ = w.Write([]byte("data: {\"headers\":{\"Content-Type\":[\"application/json\"]},\"body\":\"{\\\"choices\\\":[{\\\"delta\\\":{\\\"content\\\":\\\"Hello from Qoder!\\\"},\\\"finish_reason\\\":\\\"stop\\\",\\\"index\\\":0}]}\",\"statusCodeValue\":200,\"statusCode\":\"OK\"}\n\n"))
+		_, _ = w.Write([]byte("data: {\"headers\":{\"Content-Type\":[\"application/json\"]},\"body\":\"[DONE]\",\"statusCodeValue\":200,\"statusCode\":\"OK\"}\n\n"))
+		_, _ = w.Write([]byte("data: event:finish\n\n"))
+		_, _ = w.Write([]byte("data: {\"firstTokenDuration\":77,\"totalDuration\":812,\"serverDuration\":102}\n\n"))
+	}))
+	defer server.Close()
+
+	exec := NewQoderExecutor(&config.Config{})
+	auth := &cliproxyauth.Auth{
+		ID: "user-qoder-claude",
+		Attributes: map[string]string{
+			"base_url": server.URL,
+			"realm":    "cn",
+		},
+		Metadata: map[string]any{
+			"job_token": "jt-claude-test",
+			"realm":     "cn",
+			"user_id":   "uid-qoder-claude",
+		},
+	}
+
+	claudePayload := []byte(`{
+		"model": "qoder/deepseek-flash",
+		"max_tokens": 1024,
+		"messages": [{"role": "user", "content": "hi"}],
+		"stream": true
+	}`)
+
+	streamRes, err := exec.ExecuteStream(context.Background(), auth, cliproxyexecutor.Request{
+		Model:   "qoder/deepseek-flash",
+		Payload: claudePayload,
+	}, cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FormatClaude,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteStream failed: %v", err)
+	}
+
+	var combined strings.Builder
+	var chunkCount int
+	for chunk := range streamRes.Chunks {
+		if chunk.Err != nil {
+			t.Fatalf("stream chunk error: %v", chunk.Err)
+		}
+		combined.Write(chunk.Payload)
+		chunkCount++
+	}
+
+	if chunkCount == 0 {
+		t.Fatal("expected non-empty stream chunks for Claude format from Spring-wrapped Qoder stream")
+	}
+
+	output := combined.String()
+	if !strings.Contains(output, "Hello from Qoder!") {
+		t.Errorf("expected output to contain 'Hello from Qoder!', got: %s", output)
+	}
+	if !strings.Contains(output, "message_stop") {
+		t.Errorf("expected output to contain 'message_stop', got: %s", output)
+	}
+}
+
 func TestQoderExecutorCountTokens(t *testing.T) {
 	exec := NewQoderExecutor(&config.Config{})
 	reqPayload := []byte(`{
