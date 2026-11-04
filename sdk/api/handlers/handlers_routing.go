@@ -212,7 +212,31 @@ func (h *BaseAPIHandler) getRequestDetailsWithOptions(modelName string, allowIma
 		// Strict security constraint: when the downstream explicitly requests a provider
 		// namespace prefix (e.g. "workbuddy/claude-opus-5-5:3.33x"), route strictly to that
 		// provider to prevent egress leakage to third-party or official providers.
-		providers = []string{multDetails.TargetProvider}
+		targetProvider := multDetails.TargetProvider
+		if targetProvider == "qoder" && multDetails.TargetRealm == "" {
+			// Brand family fallback: when the caller requests generic "qoder/..." without an
+			// explicit realm ("qoder-intl" or "qoder-en"), check if international "qoder"
+			// credentials exist. If not, but domestic "qoder-cn" credentials exist, converge
+			// gracefully to "qoder-cn".
+			hasQoder := false
+			hasQoderCN := false
+			candidates := util.RegisteredModelProviders(baseModel)
+			if len(candidates) == 0 {
+				candidates = util.GetProviderName(baseModel)
+			}
+			for _, p := range candidates {
+				if p == "qoder" {
+					hasQoder = true
+				}
+				if p == "qoder-cn" {
+					hasQoderCN = true
+				}
+			}
+			if !hasQoder && hasQoderCN {
+				targetProvider = "qoder-cn"
+			}
+		}
+		providers = []string{targetProvider}
 	} else if h != nil && h.CurrentConfig() != nil && h.CurrentConfig().ForceModelPrefix {
 		// force-model-prefix requires the caller to name the credential namespace.
 		// Only dynamically registered (prefixed) names may match here: the static

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Changed
+- **Upstream Credential Quota Cache & Probe Follow-up Optimization (`internal/console/api/`, `internal/console/assets/`)**:
+  - Added strict HTTP anti-caching headers (`Cache-Control: no-store, no-cache, must-revalidate, max-age=0`, `Pragma: no-cache`, `Expires: 0`) to `/console/api/upstream-quotas` so browsers never serve stale quota responses on routine requests.
+  - Dynamically tuned memory response cache TTL from 10s down to 5s, bypassing cache immediately if active background probes are in-flight.
+  - Set `is_loading: true` when background probes are dispatched and wired frontend 3.5s silent follow-up timer in `console-quotas-fetch.js`, ensuring freshly resolved quota snapshots automatically update without requiring manual page reload.
+  - Added unit test assertion in `internal/console/api/api_test.go`.
 - **Console Copy Sanitization & Noise Elimination (`internal/console/assets/`, `internal/api/`, `internal/console/api/`)**:
   - Removed patronizing and redundant explanatory copy across the Native Gateway Console UI:
     - Stripped model pool descriptions (`Google 官方主力模型池`, `Google 新一代高规格推理模型池`, `第三方 Claude/GPT 模型池`) from Antigravity credential cards in `console-quotas-render.js`, `quota_parse.go`, `api_tools_tokens.go`, and `console-i18n.js`.
@@ -50,10 +55,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Resynced the mount from the repo copy (backup kept at `management.html.bak-20261031-234429`), restarted only the sandbox container, and confirmed `/management.html` now serves `c8b2c8585ab12aca7920a24500eaedfa` with its inline ES module parsing clean, alongside `console=200`, `healthz=200`, and `mgmt-config=401` on `127.0.0.1:8317`. No Tokyo production host was touched.
 
 ### Fixed
-- **Qoder-CN & WorkBuddy Realm Provider Key Folding in Scheduler (`sdk/cliproxy/auth/conductor_selection.go`)**:
-  - Resolved `auth_not_found: no auth available (providers=qoder-cn, model=deepseek-flash)` (503) errors: `qoder-cn`, `qoder-intl`, and `qoder-en` credentials registered their scheduler shards under the unified executor key `qoder` (`executorKeyFromAuth`), while request routing (`splitProviderPrefix` or bare models registered by `qoder-cn`) asked the scheduler for provider key `qoder-cn`. Because `canonicalSchedulingProvider` lacked fold mappings for Qoder and WorkBuddy-Intl, `s.providers[providerKey]` evaluated to nil on every `qoder-cn` request.
-  - Aligned `canonicalSchedulingProvider` with `executorKeyFromAuth` by folding `qoder-cn`, `qoder-intl`, `qoder-en` onto `qoder` and `workbuddy-intl` onto `workbuddy`.
-  - Added unit regression tests in `sdk/cliproxy/auth/scheduler_zcode_realm_test.go` (`TestSchedulerPick_QoderRealmProviderKeys`).
+- **Qoder-CN Sovereign Dual-Realm Partitioning & Brand Family Alias Convergence (`sdk/cliproxy/auth/`, `internal/registry/`, `sdk/api/handlers/`)**:
+  - Partitioned Qoder domestic (`qoder-cn` / Tongyi Lingma) and international (`qoder` / Qoder Global) into sovereign dual-realm providers following the WorkBuddy dual-realm gold standard:
+    - `executorKeyFromAuth` and `canonicalSchedulingProvider` (`sdk/cliproxy/auth/conductor_execution.go`, `conductor_selection.go`) now maintain independent scheduling shards `s.providers["qoder-cn"]` and `s.providers["qoder"]`. Domestic accounts no longer conflate into the international shard.
+    - Partitioned static model catalog in `internal/registry/model_definitions.go`: `GetQoderModels("cn")` maps to `qoder-cn`, while `GetQoderModels("intl")` maps to `qoder`.
+    - `service_models.go`: Domestic credentials now strictly normalize `provider = "qoder-cn"`, ensuring models register under `qoder-cn` in the dynamic registry.
+    - Implemented Brand Family Alias Convergence in `sdk/api/handlers/handlers_routing.go` and `handlers_multiplier.go`: requests specifying generic brand prefix `qoder/...` without an explicit realm (`multDetails.TargetRealm == ""`) gracefully converge to `qoder-cn` when only domestic credentials exist, while explicit realm prefixes (`qoder-cn/...`, `qoder-intl/...`) enforce strict realm boundaries without leakage.
+    - Added comprehensive unit regression tests in `sdk/api/handlers/handlers_request_details_test.go` (`TestGetRequestDetails_QoderSovereignAndBrandAliasRouting`).
 - **Qoder Spring ResponseEntity SSE Stream Unwrapping & DeepSeek V4.1 Model Aliasing (`internal/runtime/executor/helps/qoder_stream_aggregator.go`, `internal/runtime/executor/qoder_executor.go`, `internal/registry/qoder_models.go`)**:
   - Resolved `empty_stream: upstream stream closed before first payload` (500) and cascading `auth_unavailable: no auth available` (503) errors when invoking Qoder with Claude Messages (`/v1/messages`) or OpenAI chat clients: Qoder's upstream gateway returns SSE chunks wrapped in Spring Boot `ResponseEntity` JSON structures (`data: {"headers":{...},"body":"{\"choices\":[...]}","statusCodeValue":200}` and `body: "[DONE]"`).
   - Implemented `UnwrapQoderSSELine` and `ParseQoderStreamError` in `internal/runtime/executor/helps/qoder_stream_aggregator.go`: extracts the clean inner OpenAI payload string from `body`, normalizes `[DONE]`, skips non-JSON/telemetry lines (e.g. `event:finish`, `firstTokenDuration`), and captures embedded error payloads.

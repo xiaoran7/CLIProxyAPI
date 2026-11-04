@@ -321,3 +321,53 @@ func TestExecuteImageWithAuthManager_AllowsImageOnlyModels(t *testing.T) {
 		})
 	}
 }
+
+func TestGetRequestDetails_QoderSovereignAndBrandAliasRouting(t *testing.T) {
+	modelRegistry := registry.GetGlobalRegistry()
+	clientID := "test-qoder-cn-auth-client"
+
+	modelRegistry.RegisterClient(clientID, "qoder-cn", []*registry.ModelInfo{
+		{ID: "deepseek-flash", DisplayName: "DeepSeek Flash"},
+	})
+	t.Cleanup(func() {
+		modelRegistry.UnregisterClient(clientID)
+	})
+
+	handler := NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, coreauth.NewManager(nil, nil, nil))
+
+	// 1. Explicit qoder-cn prefix -> routes strictly to qoder-cn
+	providers1, m1, err1 := handler.getRequestDetails("qoder-cn/deepseek-flash")
+	if err1 != nil {
+		t.Fatalf("expected no error for qoder-cn/deepseek-flash, got: %v", err1)
+	}
+	if !reflect.DeepEqual(providers1, []string{"qoder-cn"}) || m1 != "deepseek-flash" {
+		t.Errorf("qoder-cn/deepseek-flash -> providers=%v, model=%q; want [qoder-cn], deepseek-flash", providers1, m1)
+	}
+
+	// 2. Generic brand qoder/ prefix -> converges to qoder-cn because only qoder-cn is registered
+	providers2, m2, err2 := handler.getRequestDetails("qoder/deepseek-flash")
+	if err2 != nil {
+		t.Fatalf("expected no error for qoder/deepseek-flash brand convergence, got: %v", err2)
+	}
+	if !reflect.DeepEqual(providers2, []string{"qoder-cn"}) || m2 != "deepseek-flash" {
+		t.Errorf("qoder/deepseek-flash -> providers=%v, model=%q; want [qoder-cn], deepseek-flash", providers2, m2)
+	}
+
+	// 3. Explicit qoder-intl prefix -> strictly routes to qoder (does NOT converge to qoder-cn)
+	providers3, m3, err3 := handler.getRequestDetails("qoder-intl/deepseek-flash")
+	if err3 != nil {
+		t.Fatalf("expected no error for qoder-intl/deepseek-flash, got: %v", err3)
+	}
+	if !reflect.DeepEqual(providers3, []string{"qoder"}) || m3 != "deepseek-flash" {
+		t.Errorf("qoder-intl/deepseek-flash -> providers=%v, model=%q; want [qoder], deepseek-flash", providers3, m3)
+	}
+
+	// 4. Bare deepseek-flash -> routes to qoder-cn
+	providers4, m4, err4 := handler.getRequestDetails("deepseek-flash")
+	if err4 != nil {
+		t.Fatalf("expected no error for bare deepseek-flash, got: %v", err4)
+	}
+	if !reflect.DeepEqual(providers4, []string{"qoder-cn"}) || m4 != "deepseek-flash" {
+		t.Errorf("bare deepseek-flash -> providers=%v, model=%q; want [qoder-cn], deepseek-flash", providers4, m4)
+	}
+}

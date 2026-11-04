@@ -1941,7 +1941,19 @@ func executorKeyFromAuth(auth *Auth) string {
 		return "kimi"
 	case "kimi.ai":
 		return "kimi-ai"
-	case "qoder-cn", "qoder-intl", "qoder-en":
+	case "qoder-cn":
+		return "qoder-cn"
+	case "qoder-intl", "qoder-en":
+		return "qoder"
+	case "qoder":
+		if auth.Attributes != nil && strings.EqualFold(auth.Attributes["realm"], "cn") {
+			return "qoder-cn"
+		}
+		if auth.Metadata != nil {
+			if r, ok := auth.Metadata["realm"].(string); ok && strings.EqualFold(r, "cn") {
+				return "qoder-cn"
+			}
+		}
 		return "qoder"
 	case "zcode-zai", "zcode-bigmodel", "zcode-cn":
 		return "zcode"

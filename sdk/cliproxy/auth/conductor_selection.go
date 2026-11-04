@@ -1746,8 +1746,10 @@ func canonicalSchedulingProvider(key string) string {
 		return "kimi-ai"
 	case "zcode-zai", "zcode-bigmodel", "zcode-cn":
 		return "zcode"
-	case "qoder-cn", "qoder-intl", "qoder-en":
+	case "qoder-intl", "qoder-en":
 		return "qoder"
+	case "qoder-cn":
+		return "qoder-cn"
 	case "workbuddy-intl":
 		return "workbuddy"
 	default:

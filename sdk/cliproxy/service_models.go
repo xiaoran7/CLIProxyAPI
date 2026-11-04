@@ -233,6 +233,9 @@ func (s *Service) registerModelsForAuthWithConfigAndCache(ctx context.Context, c
 		realm := "intl"
 		if provider == "qoder-cn" || (a.Attributes != nil && strings.EqualFold(a.Attributes["realm"], "cn")) {
 			realm = "cn"
+			provider = "qoder-cn"
+		} else {
+			provider = "qoder"
 		}
 		s.warmQoderCatalogForAuth(ctx, a, realm)
 		models = registry.GetQoderModels(realm)
