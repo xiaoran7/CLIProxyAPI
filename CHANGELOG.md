@@ -35,6 +35,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
     - Purged outdated Gate migration text (`非 Gate 本地推算`), colloquial estimations (`撑不起全部历史`), and unnecessary user-handholding instructions (`悬停任一柱可查看...`, `系统热路径纳秒级正则匹配...`) across overview cards and modals.
 
 ### Added
+- **Visual Gateway Real-time Topology & Multi-tenant Client IP Identification (`internal/traffichub/`, `internal/api/`, `internal/console/`, `static/management.html`)**:
+  - Implemented `ExtractClientIP` prioritizing `X-Forwarded-For` (first hop), `X-Real-IP`, and fallback `RemoteAddr` with port and IPv6 bracket stripping.
+  - Implemented in-memory thread-safe circular buffer `Hub` (`DefaultCapacity: 500`) in `internal/traffichub/` capturing timestamps, client IPs, key labels, models, channels, HTTP statuses, latency, and tokens.
+  - Exposed authenticated traffic management API `GET /v0/management/traffic`, `GET /v8/management/traffic`, and `GET /console/api/traffic` returning live stream records, active IP statistics, and aggregated multi-stage flow topology (`Client IP -> Model -> Channel -> Status`).
+  - Added "可视化网关 (Visual Gateway)" independent tab to `static/management.html` and synced `internal/managementasset/assets/management.html` (MD5: `e4e7c95e62af221040046925dd03e24c`), featuring top metrics cards (active IPs, 5m requests, avg latency, success rate), an interactive SVG flow topology diagram, and a real-time stream log table with multi-dimensional filtering (IP, model, status) and 2s-5s polling controls.
+  - Added unit test suites across `internal/traffichub/` and `internal/api/handlers/management/`.
 - **Credential Pinning via `X-CPA-Auth-ID` & Fuzzy Target Resolution (`sdk/api/handlers/`, `sdk/cliproxy/auth/`)**:
   - Added support for explicit credential pinning via `X-CPA-Auth-ID` and `X-Auth-ID` HTTP headers in `requestExecutionMetadata` (`sdk/api/handlers/handlers.go`).
   - Implemented `pinnedAuthMatches` in `sdk/cliproxy/auth/conductor_selection.go` to support exact ID matches, filenames with/without `.json`, provider-prefixed IDs (e.g. `antigravity-...`), and account emails across metadata and attributes.

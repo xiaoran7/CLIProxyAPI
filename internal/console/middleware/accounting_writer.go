@@ -15,6 +15,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/db"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/engine"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/traffichub"
 	"github.com/tidwall/gjson"
 )
 
@@ -383,6 +384,52 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 	}
 
 	_ = eng.RecordRequest(context.Background(), info)
+
+	// Record to in-memory TrafficHub for real-time visual gateway topology
+	clientIP := traffichub.GetClientIP(c)
+	keyLabel := "-"
+	if keyIDPtr != nil && eng != nil {
+		if km := eng.GetKeyMeta(*keyIDPtr); km != nil {
+			if km.Alias != "" {
+				keyLabel = km.Alias
+			} else if km.DisplayKey != "" {
+				keyLabel = km.DisplayKey
+			}
+		}
+	}
+	if keyLabel == "-" {
+		if raw := c.GetString(ContextRawKey); raw != "" {
+			if len(raw) > 8 {
+				keyLabel = raw[:8] + "..."
+			} else {
+				keyLabel = raw
+			}
+		}
+	}
+
+	channel := ""
+	if eng != nil {
+		channel = eng.ResolveProvider(model, authIndex)
+	}
+	if channel == "" {
+		channel = traffichub.InferChannel(model, authIndex)
+	}
+
+	toks := w.totalTokens
+	if toks == 0 && (w.promptTokens > 0 || w.completionTokens > 0) {
+		toks = w.promptTokens + w.completionTokens
+	}
+
+	traffichub.Default().Record(traffichub.TrafficRecord{
+		Timestamp: w.startTime.Unix(),
+		ClientIP:  clientIP,
+		KeyLabel:  keyLabel,
+		Model:     model,
+		Channel:   channel,
+		Status:    status,
+		LatencyMs: latencyMs,
+		Tokens:    toks,
+	})
 }
 
 func (w *accountingWriter) extractAuthIndex(c *gin.Context) string {

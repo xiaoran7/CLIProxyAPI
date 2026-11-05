@@ -65,6 +65,14 @@ func (e *Engine) SetProviderResolver(fn func(model, authIndex string) string) {
 	}
 }
 
+// ResolveProvider resolves the provider key from model and authIndex using the configured resolver.
+func (e *Engine) ResolveProvider(model, authIndex string) string {
+	if e != nil && e.flusher != nil {
+		return e.flusher.resolveProvider(model, authIndex)
+	}
+	return ""
+}
+
 // Memory returns the in-memory state tracker.
 func (e *Engine) Memory() *MemoryState {
 	return e.mem
