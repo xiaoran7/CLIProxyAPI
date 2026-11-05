@@ -209,6 +209,21 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 	model := c.GetString(ContextModel)
 	reasoningEffort := c.GetString(ContextReasoning)
 
+	reqModel, actualModel, actualChannel := logging.GetGinCPAExecution(c)
+	effectiveModel := model
+	if actualModel != "" {
+		effectiveModel = actualModel
+	}
+	if reqModel == "" {
+		reqModel = c.GetString(ContextRequestModel)
+		if reqModel == "" {
+			reqModel = model
+		}
+	}
+	if model == "" {
+		model = effectiveModel
+	}
+
 	// Extract KeyID
 	var keyIDPtr *int64
 	if val, exists := c.Get(ContextKeyID); exists {
@@ -389,18 +404,6 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 	if w.ttftMs > 0 {
 		ttft := w.ttftMs
 		ttftPtr = &ttft
-	}
-
-	reqModel, actualModel, actualChannel := logging.GetGinCPAExecution(c)
-	effectiveModel := model
-	if actualModel != "" {
-		effectiveModel = actualModel
-	}
-	if reqModel == "" {
-		reqModel = c.GetString(ContextRequestModel)
-		if reqModel == "" {
-			reqModel = model
-		}
 	}
 
 	channel := actualChannel

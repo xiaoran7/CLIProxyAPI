@@ -13,40 +13,61 @@ const (
 	ContextClientIP = "cpa_client_ip"
 )
 
-// ExtractClientIP extracts the real client IP from incoming HTTP request headers,
-// prioritizing the first hop in X-Forwarded-For, then X-Real-IP, and falling back
-// to RemoteAddr with port stripped.
+// ExtractClientIP extracts the authentic client IP from HTTP headers, prioritizing:
+// 1. CF-Connecting-IP (Cloudflare edge verified visitor IP)
+// 2. True-Client-IP (Cloudflare Enterprise / Akamai / Fastly)
+// 3. X-Forwarded-For (leftmost valid public IP, fallback to leftmost valid IP)
+// 4. X-Real-IP
+// 5. RemoteAddr (port stripped)
 func ExtractClientIP(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
 
-	// 1. Check X-Forwarded-For first hop
+	// 1. Check CF-Connecting-IP (Cloudflare authoritative visitor IP)
+	if cfIP := r.Header.Get("CF-Connecting-IP"); cfIP != "" {
+		if clean := CleanIP(cfIP); clean != "" && isValidIP(clean) {
+			return clean
+		}
+	}
+
+	// 2. Check True-Client-IP (Cloudflare Enterprise / Akamai)
+	if trueIP := r.Header.Get("True-Client-IP"); trueIP != "" {
+		if clean := CleanIP(trueIP); clean != "" && isValidIP(clean) {
+			return clean
+		}
+	}
+
+	// 3. Check X-Forwarded-For: parse left-to-right, prioritize first valid public IP
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")
+		var firstValid string
 		for _, part := range parts {
-			trimmed := strings.TrimSpace(part)
-			if trimmed != "" {
-				if clean := CleanIP(trimmed); clean != "" {
+			clean := CleanIP(part)
+			if clean != "" && isValidIP(clean) {
+				if firstValid == "" {
+					firstValid = clean
+				}
+				if isPublicIP(clean) {
 					return clean
 				}
 			}
 		}
-	}
-
-	// 2. Check X-Real-IP
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		trimmed := strings.TrimSpace(xri)
-		if trimmed != "" {
-			if clean := CleanIP(trimmed); clean != "" {
-				return clean
-			}
+		if firstValid != "" {
+			return firstValid
 		}
 	}
 
-	// 3. Fallback to RemoteAddr
+	// 4. Check X-Real-IP
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		if clean := CleanIP(xri); clean != "" && isValidIP(clean) {
+			return clean
+		}
+	}
+
+	// 5. Fallback to RemoteAddr
 	if r.RemoteAddr != "" {
-		if clean := CleanIP(r.RemoteAddr); clean != "" {
+		if clean := CleanIP(r.RemoteAddr); clean != "" && isValidIP(clean) {
 			return clean
 		}
 	}
@@ -61,15 +82,53 @@ func CleanIP(addr string) string {
 		return ""
 	}
 
-	// Try splitting host and port
 	host, _, err := net.SplitHostPort(addr)
 	if err == nil && host != "" {
 		return strings.Trim(host, "[]")
 	}
 
-	// If no port, strip surrounding brackets for IPv6 literals
 	clean := strings.Trim(addr, "[]")
 	return strings.TrimSpace(clean)
+}
+
+func isValidIP(addr string) bool {
+	ip := net.ParseIP(addr)
+	return ip != nil
+}
+
+func isPublicIP(addr string) bool {
+	ip := net.ParseIP(addr)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return false
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		// RFC 1918 private IPv4 ranges
+		// 10.0.0.0/8
+		if ip4[0] == 10 {
+			return false
+		}
+		// 172.16.0.0/12
+		if ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31 {
+			return false
+		}
+		// 192.168.0.0/16
+		if ip4[0] == 192 && ip4[1] == 168 {
+			return false
+		}
+		// CGNAT 100.64.0.0/10 (e.g. Tailscale / carrier grade NAT)
+		if ip4[0] == 100 && (ip4[1]&0xc0) == 64 {
+			return false
+		}
+		return true
+	}
+	// IPv6 ULA (fc00::/7)
+	if len(ip) == 16 && (ip[0]&0xfe) == 0xfc {
+		return false
+	}
+	return true
 }
 
 // Middleware returns a Gin middleware that extracts and caches client IP in Gin context.

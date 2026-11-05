@@ -1,27 +1,41 @@
-/* Visual Gateway & Real-time Topology Styles for Console 工作台 */
+/**
+ * Gate Admin Console - Visual Gateway (Magpie Architecture)
+ * 现代轻量无依赖流向感知拓扑面板样式
+ */
 
+/* 1. 顶层容器与全局排版 */
+.traffic-workspace-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-bottom: 32px;
+}
+
+/* 2. 核心指标卡片 */
 .traffic-metrics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
-  margin-bottom: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
 }
 
 .traffic-metric-card {
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--card-border, #dce8f3);
-  border-radius: var(--radius-lg, 12px);
-  padding: 16px 18px;
-  box-shadow: 0 4px 12px rgba(35, 72, 106, .03);
+  position: relative;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
+  border-radius: 16px;
+  padding: 18px 20px;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  transition: all 0.2s ease;
+  gap: 8px;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+  overflow: hidden;
 }
 
 .traffic-metric-card:hover {
-  border-color: rgba(59, 130, 246, 0.3);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.08);
+  border-color: rgba(59, 130, 246, 0.35);
 }
 
 .traffic-metric-header {
@@ -33,51 +47,64 @@
 .traffic-metric-label {
   font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--text-muted, #64748b);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.traffic-metric-icon {
-  font-size: 16px;
+.traffic-metric-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(59, 130, 246, 0.08);
+  color: #3b82f6;
 }
 
 .traffic-metric-val {
-  font-family: var(--mono, monospace);
-  font-size: 26px;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: 28px;
   font-weight: 700;
-  line-height: 1.1;
+  line-height: 1.15;
   color: var(--text-main, #0f172a);
 }
 
 .traffic-metric-val small {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-muted, #64748b);
-  margin-left: 4px;
+  margin-left: 6px;
 }
 
 .traffic-metric-desc {
-  font-size: 11px;
+  font-size: 11.5px;
+  line-height: 1.4;
   color: var(--text-muted, #94a3b8);
 }
 
-/* Topology Canvas */
-.traffic-topology-wrapper {
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--card-border, #dce8f3);
-  border-radius: var(--radius-lg, 12px);
-  padding: 18px;
-  margin-bottom: 18px;
+/* 3. 动态流向拓扑面板 */
+.traffic-topology-panel {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04);
 }
 
-.traffic-topology-header {
+.traffic-topology-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 14px;
-  border-bottom: 1px solid var(--border-subtle, rgba(0,0,0,0.06));
-  padding-bottom: 12px;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
 }
 
 .traffic-topology-title {
@@ -89,52 +116,270 @@
   gap: 8px;
 }
 
-.traffic-topology-svg-container {
+.traffic-topology-canvas-wrap {
   width: 100%;
   overflow-x: auto;
-  border-radius: var(--radius-md, 8px);
-  background: rgba(15, 23, 42, 0.03);
-  border: 1px solid var(--border-subtle, rgba(0,0,0,0.05));
-  padding: 12px 6px;
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.7);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.05));
+  padding: 16px 8px;
+  position: relative;
 }
 
-body.theme-beszel .traffic-topology-svg-container,
-body.dark .traffic-topology-svg-container {
-  background: rgba(15, 23, 42, 0.4);
+body.theme-beszel .traffic-topology-canvas-wrap,
+body.dark .traffic-topology-canvas-wrap {
+  background: rgba(15, 23, 42, 0.45);
+  border-color: rgba(255, 255, 255, 0.06);
 }
 
-/* IP Ledger Grid */
+/* SVG 拓扑动效 */
+@keyframes traffic-flow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.traffic-link-path {
+  transition: stroke 0.2s ease, stroke-width 0.2s ease, opacity 0.2s ease;
+}
+
+.traffic-link-path.is-active {
+  stroke-dasharray: 6 3;
+  animation: traffic-flow 1.2s linear infinite;
+}
+
+.traffic-link-path.is-dimmed {
+  opacity: 0.12 !important;
+}
+
+.traffic-node-group {
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.traffic-node-group:hover rect.node-box {
+  filter: brightness(1.05);
+  stroke-width: 1.8px;
+}
+
+.traffic-node-group.is-dimmed {
+  opacity: 0.25;
+}
+
+.traffic-node-group.is-selected rect.node-box {
+  stroke-width: 2px !important;
+  stroke: #06b6d4 !important;
+}
+
+/* 4. 活跃 IP 台账 Grid */
+.traffic-ip-ledger-panel {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
+  border-radius: 16px;
+  padding: 18px 20px;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04);
+}
+
 .traffic-ip-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 10px;
-  margin-top: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
 }
 
-.traffic-ip-pill {
-  padding: 10px 12px;
-  border-radius: var(--radius-md, 8px);
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--card-border, #dce8f3);
+.traffic-ip-card {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.traffic-ip-pill:hover {
+.traffic-ip-card:hover {
+  border-color: rgba(6, 182, 212, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.08);
+}
+
+.traffic-ip-card.is-active {
   border-color: #06b6d4;
-  background: rgba(6, 182, 212, 0.05);
+  background: rgba(6, 182, 212, 0.07);
+  box-shadow: 0 0 0 1px #06b6d4;
 }
 
-.traffic-ip-pill.active {
-  border-color: #06b6d4;
-  background: rgba(6, 182, 212, 0.12);
+.traffic-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  display: inline-block;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+  animation: traffic-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Detail Table */
+@keyframes traffic-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.92);
+  }
+}
+
+/* 5. 实时调用流水明细表 */
 .traffic-table-panel {
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--card-border, #dce8f3);
-  border-radius: var(--radius-lg, 12px);
-  padding: 18px;
-  margin-bottom: 24px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04);
+}
+
+.traffic-filter-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.traffic-filter-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.traffic-input {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  border: 1px solid var(--card-border, #cbd5e1);
+  background: var(--input-bg, #ffffff);
+  color: var(--text-main, #0f172a);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.traffic-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.traffic-select {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  border: 1px solid var(--card-border, #cbd5e1);
+  background: var(--input-bg, #ffffff);
+  color: var(--text-main, #0f172a);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.traffic-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.traffic-btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.traffic-btn-secondary {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-main, #334155);
+  border-color: var(--card-border, #cbd5e1);
+}
+
+.traffic-btn-secondary:hover {
+  background: rgba(148, 163, 184, 0.18);
+  border-color: #94a3b8;
+}
+
+.traffic-btn-primary {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.traffic-btn-primary:hover {
+  background: #2563eb;
+}
+
+/* Status & Tag Pills */
+.traffic-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--mono, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.traffic-pill-success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.traffic-pill-warning {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.traffic-pill-danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.traffic-pill-channel {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.traffic-pill-model {
+  background: rgba(139, 92, 246, 0.1);
+  color: #7c3aed;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.traffic-pill-ip {
+  background: rgba(6, 182, 212, 0.1);
+  color: #0891b2;
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  cursor: pointer;
+}
+
+.traffic-pill-ip:hover {
+  background: rgba(6, 182, 212, 0.2);
+  color: #0e7490;
 }

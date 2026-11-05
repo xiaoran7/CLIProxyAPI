@@ -1,6 +1,6 @@
 /**
- * Console 工作台 - Visual Gateway (可视化网关) 核心交互模块
- * 负责 Client IP 识别、4 阶段流向拓扑渲染、活跃 IP 台账与实时调用明细流水。
+ * Gate Admin Console - Visual Gateway (Magpie Architecture)
+ * 纯轻量交互式 SVG 拓扑流向图、多用户 Client IP 台账与全链路追踪
  */
 
 let cachedTrafficData = null;
@@ -9,7 +9,20 @@ let trafficSelectedModel = '';
 let trafficSelectedStatus = 'all';
 let trafficSearchQuery = '';
 let trafficTimer = null;
-let trafficPollingInterval = 3; // 默认 3s 轮询
+let trafficPollingInterval = 3;
+let trafficHighlightedNode = null; // 选中高亮的拓扑节点 ID
+
+// SVG 图标库 (Lucide 规范，1.5px 极细线条单色矢量，杜绝原生 Emoji)
+const TRAFFIC_ICONS = {
+  globe: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>',
+  activity: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+  zap: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+  shield: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  refresh: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>',
+  layers: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
+  search: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+  arrowRight: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>'
+};
 
 // 1. 获取并渲染可视化网关数据
 async function fetchTrafficData(force = false) {
@@ -21,7 +34,7 @@ async function fetchTrafficData(force = false) {
     const data = await res.json();
     cachedTrafficData = data;
 
-    // 更新侧边栏导航徽章
+    // 更新侧边栏导航徽章 (活跃客户端 IP 数)
     const badge = document.getElementById('nav-badge-traffic');
     if (badge && data.summary) {
       badge.textContent = String(data.summary.active_ips || 0);
@@ -46,19 +59,19 @@ function renderTrafficUI(data) {
   const elTotal = document.getElementById('traffic-val-total');
 
   if (elIps) elIps.innerHTML = `${summary.active_ips || 0}<small>个活跃 IP</small>`;
-  if (elReqs) elReqs.innerHTML = `${summary.requests_5m || 0}<small>次 / 5min</small>`;
+  if (elReqs) elReqs.innerHTML = `${summary.requests_5m || 0}<small>次 / 5m</small>`;
   if (elLat) elLat.innerHTML = `${Math.round(summary.avg_latency_ms || 0)}<small>ms</small>`;
   if (elSucc) elSucc.innerHTML = `${((summary.success_rate || 0) * 100).toFixed(1)}<small>%</small>`;
-  if (elTotal) elTotal.textContent = `环形缓冲累计记录: ${summary.total_recorded || 0} 条`;
+  if (elTotal) elTotal.textContent = `环形缓冲累计: ${summary.total_recorded || 0} 条`;
 
-  // 渲染拓扑与台账
+  // 渲染拓扑、IP台账与流水明细
   renderTrafficTopology(data);
   renderTrafficIPLedger(data.ip_stats || []);
   renderTrafficTable(data.records || data.recent_requests || []);
   updateTrafficFilterDropdowns(data.records || data.recent_requests || []);
 }
 
-// 3. 动态渲染轻量交互式 SVG 拓扑图 (Client IP -> Model -> Channel -> Status)
+// 3. 动态渲染 Magpie 级 4 阶段交互式 SVG 拓扑图 (Client IP ➔ Model ➔ Channel ➔ Status)
 function renderTrafficTopology(data) {
   const container = document.getElementById('traffic-topology-canvas-container');
   if (!container) return;
@@ -67,9 +80,11 @@ function renderTrafficTopology(data) {
   if (records.length === 0) {
     container.innerHTML = `
       <div style="padding:48px 16px;text-align:center;color:var(--text-muted);">
-        <div style="font-size:36px;margin-bottom:8px;">🕸️</div>
+        <div style="display:inline-flex;padding:12px;border-radius:12px;background:rgba(59,130,246,0.06);color:#3b82f6;margin-bottom:12px;">
+          ${TRAFFIC_ICONS.layers}
+        </div>
         <div style="font-size:14px;font-weight:600;color:var(--text-main);margin-bottom:4px;">暂无实时流量记录</div>
-        <div style="font-size:12px;">向网关发起请求后，流向感知拓扑图将在此动态呈现。</div>
+        <div style="font-size:12px;color:var(--text-muted);max-width:420px;margin:0 auto;">网关正在实时侦听多用户调用，产生真实请求后全链路流向图将在此实时呈现。</div>
       </div>
     `;
     return;
@@ -82,42 +97,78 @@ function renderTrafficTopology(data) {
   const colStatuses = (topology.nodes || []).filter(n => n.type === 'status').slice(0, 8);
 
   const maxNodes = Math.max(colIPs.length, colModels.length, colChannels.length, colStatuses.length, 1);
-  const svgHeight = Math.max(260, maxNodes * 46 + 40);
-  const nodeW = 140;
-  const nodeH = 28;
+  const svgHeight = Math.max(260, maxNodes * 48 + 48);
+  const nodeW = 144;
+  const nodeH = 30;
   const nodePositions = {};
 
   const calcPositions = (items, x) => {
     const count = items.length;
-    const step = (svgHeight - 40) / Math.max(1, count);
+    const step = (svgHeight - 48) / Math.max(1, count);
     for (let i = 0; i < count; i++) {
       const item = items[i];
-      const yPos = 30 + i * step + (step - nodeH) / 2;
+      const yPos = 36 + i * step + (step - nodeH) / 2;
       nodePositions[item.id] = { x, y: yPos, item };
     }
   };
 
-  calcPositions(colIPs, 20);
-  calcPositions(colModels, 260);
-  calcPositions(colChannels, 500);
-  calcPositions(colStatuses, 740);
+  calcPositions(colIPs, 24);
+  calcPositions(colModels, 268);
+  calcPositions(colChannels, 512);
+  calcPositions(colStatuses, 756);
 
-  // 构建 Links SVG
+  // 判定是否激活链路高亮
+  const isFiltered = Boolean(trafficHighlightedNode);
+  const activeLinks = new Set();
+  const activeNodes = new Set();
+
+  if (isFiltered) {
+    activeNodes.add(trafficHighlightedNode);
+    // 向下游与上游双向追踪关联链路
+    for (const link of (topology.links || [])) {
+      if (link.source === trafficHighlightedNode || link.target === trafficHighlightedNode) {
+        activeLinks.add(`${link.source}|${link.target}`);
+        activeNodes.add(link.source);
+        activeNodes.add(link.target);
+      }
+    }
+    // 第二级级联追踪 (比如 IP -> Model -> Channel -> Status)
+    for (const link of (topology.links || [])) {
+      if (activeNodes.has(link.source) || activeNodes.has(link.target)) {
+        activeLinks.add(`${link.source}|${link.target}`);
+        activeNodes.add(link.source);
+        activeNodes.add(link.target);
+      }
+    }
+  }
+
+  // 构建 Links SVG (Smooth Bezier Curves)
   let linksSvg = '';
   for (const link of (topology.links || [])) {
     const p1 = nodePositions[link.source];
     const p2 = nodePositions[link.target];
     if (!p1 || !p2) continue;
+
+    const linkKey = `${link.source}|${link.target}`;
+    const isLinkActive = !isFiltered || activeLinks.has(linkKey);
     const x1 = p1.x + nodeW;
     const y1 = p1.y + nodeH / 2;
     const x2 = p2.x;
     const y2 = p2.y + nodeH / 2;
-    const dx = (x2 - x1) * 0.5;
+    const dx = (x2 - x1) * 0.52;
     const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
     const isErr = link.target.includes('status:4') || link.target.includes('status:5');
-    const strokeColor = isErr ? 'rgba(239, 68, 68, 0.45)' : 'rgba(99, 102, 241, 0.4)';
-    const strokeW = Math.max(1.5, Math.min(8, Math.sqrt(link.value) * 1.5));
-    linksSvg += `<path d="${d}" fill="none" stroke="${strokeColor}" stroke-width="${strokeW}" />`;
+    let strokeColor = isErr ? 'rgba(239, 68, 68, 0.45)' : 'rgba(59, 130, 246, 0.38)';
+    let strokeW = Math.max(1.5, Math.min(7, Math.sqrt(link.value) * 1.5));
+
+    if (isFiltered && isLinkActive) {
+      strokeColor = isErr ? '#ef4444' : '#06b6d4';
+      strokeW = Math.max(2.5, strokeW + 1.2);
+    }
+
+    const pathClass = `traffic-link-path ${isLinkActive ? 'is-active' : 'is-dimmed'}`;
+    linksSvg += `<path d="${d}" fill="none" stroke="${strokeColor}" stroke-width="${strokeW}" class="${pathClass}" />`;
   }
 
   // 构建 Nodes SVG
@@ -129,71 +180,101 @@ function renderTrafficTopology(data) {
     const isChannel = item.type === 'channel';
     const isStatus = item.type === 'status';
 
-    let borderColor = isIP ? 'rgba(6, 182, 212, 0.6)' : isModel ? 'rgba(139, 92, 246, 0.6)' : isChannel ? 'rgba(245, 158, 11, 0.6)' : 'rgba(16, 185, 129, 0.6)';
-    let bgFill = isIP ? 'rgba(6, 182, 212, 0.12)' : isModel ? 'rgba(139, 92, 246, 0.12)' : isChannel ? 'rgba(245, 158, 11, 0.12)' : 'rgba(16, 185, 129, 0.12)';
+    const isNodeActive = !isFiltered || activeNodes.has(id);
+    const isNodeSelected = trafficHighlightedNode === id;
+
+    let borderColor = isIP ? 'rgba(6, 182, 212, 0.45)' : isModel ? 'rgba(139, 92, 246, 0.45)' : isChannel ? 'rgba(245, 158, 11, 0.45)' : 'rgba(16, 185, 129, 0.45)';
+    let bgFill = isIP ? 'rgba(6, 182, 212, 0.08)' : isModel ? 'rgba(139, 92, 246, 0.08)' : isChannel ? 'rgba(245, 158, 11, 0.08)' : 'rgba(16, 185, 129, 0.08)';
 
     if (isStatus && (item.label.includes('4xx') || item.label.includes('5xx'))) {
-      borderColor = 'rgba(239, 68, 68, 0.7)';
-      bgFill = 'rgba(239, 68, 68, 0.15)';
+      borderColor = 'rgba(239, 68, 68, 0.55)';
+      bgFill = 'rgba(239, 68, 68, 0.12)';
     }
 
     const shortLabel = item.label.length > 15 ? item.label.slice(0, 14) + '…' : item.label;
-    const clickHandler = isIP ? `onclick="filterTrafficByIP('${escapeHtml(item.label)}')" style="cursor:pointer;"` : '';
+    const groupClass = `traffic-node-group ${isNodeActive ? '' : 'is-dimmed'} ${isNodeSelected ? 'is-selected' : ''}`;
 
     nodesSvg += `
-      <g transform="translate(${pos.x}, ${pos.y})" ${clickHandler}>
-        <rect width="${nodeW}" height="${nodeH}" rx="6" fill="${bgFill}" stroke="${borderColor}" stroke-width="1.2" />
-        <text x="8" y="18" fill="var(--text-main, #0f172a)" font-size="11" font-weight="600">${escapeHtml(shortLabel)}</text>
-        <rect x="${nodeW - 32}" y="6" width="26" height="16" rx="8" fill="rgba(255, 255, 255, 0.15)" />
-        <text x="${nodeW - 19}" y="18" fill="var(--text-main, #0f172a)" font-size="9.5" font-weight="700" text-anchor="middle">${item.count}</text>
+      <g transform="translate(${pos.x}, ${pos.y})" class="${groupClass}" onclick="toggleHighlightTrafficNode('${escapeHtml(id)}')">
+        <rect class="node-box" width="${nodeW}" height="${nodeH}" rx="8" fill="${bgFill}" stroke="${borderColor}" stroke-width="1.2" />
+        <text x="10" y="19" fill="var(--text-main, #0f172a)" font-size="11" font-weight="600" font-family="var(--mono, monospace)">${escapeHtml(shortLabel)}</text>
+        <rect x="${nodeW - 32}" y="6" width="24" height="18" rx="9" fill="rgba(15, 23, 42, 0.08)" />
+        <text x="${nodeW - 20}" y="19" fill="var(--text-main, #0f172a)" font-size="9.5" font-weight="700" text-anchor="middle" font-family="var(--mono, monospace)">${item.count}</text>
       </g>
     `;
   }
 
   container.innerHTML = `
-    <svg viewBox="0 0 920 ${svgHeight}" style="width:100%;min-width:860px;height:${svgHeight}px;display:block;">
-      <text x="20" y="18" fill="#06b6d4" font-size="11" font-weight="700">① 客户端真实 IP (CLIENT IP)</text>
-      <text x="260" y="18" fill="#8b5cf6" font-size="11" font-weight="700">② 请求模型 (MODEL)</text>
-      <text x="500" y="18" fill="#f59e0b" font-size="11" font-weight="700">③ 映射上游渠道 (CHANNEL)</text>
-      <text x="740" y="18" fill="#10b981" font-size="11" font-weight="700">④ 响应状态 (STATUS)</text>
+    <svg viewBox="0 0 924 ${svgHeight}" style="width:100%;min-width:880px;height:${svgHeight}px;display:block;">
+      <defs>
+        <linearGradient id="grad-active-link" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#06b6d4" />
+          <stop offset="100%" stop-color="#3b82f6" />
+        </linearGradient>
+      </defs>
+      <!-- Column Stage Headers -->
+      <text x="24" y="20" fill="#0891b2" font-size="11" font-weight="700" letter-spacing="0.04em">STAGE 1 · CLIENT IP</text>
+      <text x="268" y="20" fill="#7c3aed" font-size="11" font-weight="700" letter-spacing="0.04em">STAGE 2 · REQUEST MODEL</text>
+      <text x="512" y="20" fill="#d97706" font-size="11" font-weight="700" letter-spacing="0.04em">STAGE 3 · ROUTED CHANNEL</text>
+      <text x="756" y="20" fill="#059669" font-size="11" font-weight="700" letter-spacing="0.04em">STAGE 4 · OUTCOME STATUS</text>
       <g>${linksSvg}</g>
       <g>${nodesSvg}</g>
     </svg>
   `;
 }
 
-// 4. 渲染多用户 IP 统计台账
+// 4. 拓扑节点交互高亮追踪
+function toggleHighlightTrafficNode(nodeId) {
+  if (trafficHighlightedNode === nodeId) {
+    trafficHighlightedNode = null;
+  } else {
+    trafficHighlightedNode = nodeId;
+    // 如果点击的是 client_ip 节点，同步筛选明细列表
+    if (nodeId.startsWith('ip:')) {
+      const ip = nodeId.slice(3);
+      filterTrafficByIP(ip);
+    }
+  }
+  if (cachedTrafficData) {
+    renderTrafficTopology(cachedTrafficData);
+  }
+}
+
+// 5. 渲染多用户 IP 统计台账 (带活跃呼吸微点)
 function renderTrafficIPLedger(ipStats) {
   const container = document.getElementById('traffic-ip-ledger-grid');
   if (!container) return;
 
   if (ipStats.length === 0) {
-    container.innerHTML = `<div style="color:var(--text-muted);font-size:12px;padding:12px 0;">暂无多用户客户端统计</div>`;
+    container.innerHTML = `<div style="color:var(--text-muted);font-size:12px;padding:12px 0;">暂无活跃客户端 IP 记录</div>`;
     return;
   }
 
   container.innerHTML = ipStats.map(s => {
     const isSelected = trafficSelectedIP === s.ip;
     const timeStr = s.last_seen ? new Date(s.last_seen * 1000).toLocaleTimeString() : '-';
-    const modelsBadge = (s.top_models || []).map(m => `<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(139,92,246,0.12);color:#8b5cf6;border:1px solid rgba(139,92,246,0.25);">${escapeHtml(m)}</span>`).join(' ');
+    const modelsBadge = (s.top_models || []).map(m => `<span class="traffic-pill traffic-pill-model">${escapeHtml(m)}</span>`).join(' ');
 
     return `
-      <div class="traffic-ip-pill ${isSelected ? 'active' : ''}" onclick="filterTrafficByIP('${escapeHtml(s.ip)}')">
+      <div class="traffic-ip-card ${isSelected ? 'is-active' : ''}" onclick="filterTrafficByIP('${escapeHtml(s.ip)}')">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-family:var(--mono, monospace);font-weight:700;font-size:13px;color:${isSelected ? '#06b6d4' : 'inherit'};">${escapeHtml(s.ip)}</span>
+          <div style="display:flex;align-items:center;gap:7px;">
+            <span class="traffic-pulse-dot"></span>
+            <span style="font-family:var(--mono, monospace);font-weight:700;font-size:13px;color:${isSelected ? '#0891b2' : 'var(--text-main)};">${escapeHtml(s.ip)}</span>
+          </div>
           <span style="font-size:11px;color:var(--text-muted);">${timeStr}</span>
         </div>
-        <div style="display:flex;gap:12px;font-size:11.5px;margin:6px 0;color:var(--text-muted);">
-          <span>请求: <strong style="color:#0284c7;">${s.request_count}</strong></span>
-          <span>Tokens: <strong style="color:#7c3aed;">${(s.tokens || 0).toLocaleString()}</strong></span>
+        <div style="display:flex;gap:14px;font-size:11.5px;margin:4px 0;color:var(--text-muted);">
+          <span>请求: <strong style="color:var(--text-main);font-family:var(--mono, monospace);">${s.request_count}</strong></span>
+          <span>Tokens: <strong style="color:#7c3aed;font-family:var(--mono, monospace);">${(s.tokens || 0).toLocaleString()}</strong></span>
         </div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">${modelsBadge}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px;">${modelsBadge}</div>
       </div>
     `;
   }).join('');
 }
 
-// 5. 渲染实时请求明细流水表格
+// 6. 渲染实时调用流水明细表格
 function renderTrafficTable(records) {
   const tbody = document.getElementById('traffic-tbody');
   const countEl = document.getElementById('traffic-records-count');
@@ -201,7 +282,7 @@ function renderTrafficTable(records) {
 
   const filtered = records.filter(r => {
     if (trafficSelectedIP && r.client_ip !== trafficSelectedIP) return false;
-    if (trafficSelectedModel && r.model !== trafficSelectedModel) return false;
+    if (trafficSelectedModel && r.model !== trafficSelectedModel && r.request_model !== trafficSelectedModel) return false;
     if (trafficSelectedStatus !== 'all') {
       if (trafficSelectedStatus === '2xx' && (r.status < 200 || r.status >= 300)) return false;
       if (trafficSelectedStatus === '4xx' && (r.status < 400 || r.status >= 500)) return false;
@@ -211,9 +292,10 @@ function renderTrafficTable(records) {
       const q = trafficSearchQuery.toLowerCase();
       const mIP = r.client_ip && r.client_ip.toLowerCase().includes(q);
       const mModel = r.model && r.model.toLowerCase().includes(q);
+      const mReqModel = r.request_model && r.request_model.toLowerCase().includes(q);
       const mKey = r.key_label && r.key_label.toLowerCase().includes(q);
       const mChan = r.channel && r.channel.toLowerCase().includes(q);
-      if (!mIP && !mModel && !mKey && !mChan) return false;
+      if (!mIP && !mModel && !mReqModel && !mKey && !mChan) return false;
     }
     return true;
   });
@@ -223,38 +305,39 @@ function renderTrafficTable(records) {
   }
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted);">无匹配的流量记录</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:36px;color:var(--text-muted);font-size:12.5px;">无匹配的调用记录</td></tr>`;
     return;
   }
 
   tbody.innerHTML = filtered.slice(0, 100).map(r => {
     const isSuccess = r.status >= 200 && r.status < 300;
     const is4xx = r.status >= 400 && r.status < 500;
-    const statusBg = isSuccess ? 'rgba(16, 185, 129, 0.12)' : is4xx ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)';
-    const statusColor = isSuccess ? '#059669' : is4xx ? '#d97706' : '#dc2626';
+    const statusClass = isSuccess ? 'traffic-pill-success' : is4xx ? 'traffic-pill-warning' : 'traffic-pill-danger';
     const timeStr = r.timestamp ? new Date(r.timestamp * 1000).toLocaleTimeString() : '-';
-    const modelDisplay = (r.request_model && r.request_model !== r.model)
-      ? `<span style="opacity:0.75;" title="客户端请求模型: ${escapeHtml(r.request_model)}">${escapeHtml(r.request_model)}</span> <span style="color:var(--text-muted);">➔</span> <strong>${escapeHtml(r.model || '-')}</strong>`
-      : escapeHtml(r.model || '-');
+
+    // 如果客户端请求模型与实际路由执行模型不同，展示真实透传流向
+    const modelHtml = (r.request_model && r.request_model !== r.model)
+      ? `<span style="opacity:0.8;" title="客户端请求模型: ${escapeHtml(r.request_model)}">${escapeHtml(r.request_model)}</span> <span style="color:var(--text-muted);">${TRAFFIC_ICONS.arrowRight}</span> <strong style="color:#7c3aed;">${escapeHtml(r.model || '-')}</strong>`
+      : `<span style="font-weight:600;">${escapeHtml(r.model || '-')}</span>`;
 
     return `
       <tr style="border-bottom:1px solid var(--border-subtle, rgba(0,0,0,0.05));">
-        <td style="padding:8px 10px;font-family:var(--mono, monospace);color:var(--text-muted);">${timeStr}</td>
-        <td style="padding:8px 10px;">
-          <span onclick="filterTrafficByIP('${escapeHtml(r.client_ip)}')" style="cursor:pointer;font-family:var(--mono, monospace);padding:2px 6px;border-radius:4px;background:rgba(6,182,212,0.1);color:#0891b2;border:1px solid rgba(6,182,212,0.25);" title="点击筛选此 IP">${escapeHtml(r.client_ip || '-')}</span>
+        <td style="padding:10px 12px;font-family:var(--mono, monospace);color:var(--text-muted);">${timeStr}</td>
+        <td style="padding:10px 12px;">
+          <span class="traffic-pill traffic-pill-ip" onclick="filterTrafficByIP('${escapeHtml(r.client_ip)}')" title="点击筛选此 IP">${escapeHtml(r.client_ip || '-')}</span>
         </td>
-        <td style="padding:8px 10px;color:var(--text-muted);">${escapeHtml(r.key_label || '-')}</td>
-        <td style="padding:8px 10px;"><span style="padding:2px 6px;border-radius:4px;background:rgba(139,92,246,0.1);color:#7c3aed;font-size:11px;border:1px solid rgba(139,92,246,0.2);">${modelDisplay}</span></td>
-        <td style="padding:8px 10px;"><span style="padding:2px 6px;border-radius:4px;background:rgba(245,158,11,0.1);color:#d97706;font-size:11px;border:1px solid rgba(245,158,11,0.2);">${escapeHtml(r.channel || '-')}</span></td>
-        <td style="padding:8px 10px;"><span style="padding:2px 6px;border-radius:4px;background:${statusBg};color:${statusColor};font-weight:600;font-size:11px;">${r.status || 200}</span></td>
-        <td style="padding:8px 10px;font-family:var(--mono, monospace);">${r.latency_ms || 0}ms</td>
-        <td style="padding:8px 10px;font-family:var(--mono, monospace);color:#7c3aed;">${(r.tokens || 0).toLocaleString()}</td>
+        <td style="padding:10px 12px;color:var(--text-muted);font-size:11.5px;">${escapeHtml(r.key_label || '-')}</td>
+        <td style="padding:10px 12px;"><span class="traffic-pill traffic-pill-model">${modelHtml}</span></td>
+        <td style="padding:10px 12px;"><span class="traffic-pill traffic-pill-channel">${escapeHtml(r.channel || '-')}</span></td>
+        <td style="padding:10px 12px;"><span class="traffic-pill ${statusClass}">${r.status || 200}</span></td>
+        <td style="padding:10px 12px;font-family:var(--mono, monospace);font-variant-numeric:tabular-nums;color:${r.latency_ms > 3000 ? '#d97706' : 'inherit'};">${r.latency_ms || 0}ms</td>
+        <td style="padding:10px 12px;font-family:var(--mono, monospace);font-variant-numeric:tabular-nums;color:#7c3aed;">${(r.tokens || 0).toLocaleString()}</td>
       </tr>
     `;
   }).join('');
 }
 
-// 6. 更新下拉筛选菜单
+// 7. 更新下拉筛选菜单
 function updateTrafficFilterDropdowns(records) {
   const ipSelect = document.getElementById('traffic-select-ip');
   const modelSelect = document.getElementById('traffic-select-model');
@@ -268,6 +351,7 @@ function updateTrafficFilterDropdowns(records) {
   for (const r of records) {
     if (r.client_ip) ipSet.add(r.client_ip);
     if (r.model) modelSet.add(r.model);
+    if (r.request_model) modelSet.add(r.request_model);
   }
 
   const ips = Array.from(ipSet).sort();
@@ -277,9 +361,10 @@ function updateTrafficFilterDropdowns(records) {
   modelSelect.innerHTML = `<option value="">全部请求模型</option>` + models.map(m => `<option value="${escapeHtml(m)}" ${m === currentModel ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('');
 }
 
-// 7. 交互筛选回调
+// 8. 交互过滤操作
 function filterTrafficByIP(ip) {
   trafficSelectedIP = (trafficSelectedIP === ip) ? '' : ip;
+  trafficHighlightedNode = trafficSelectedIP ? `ip:${trafficSelectedIP}` : null;
   const ipSelect = document.getElementById('traffic-select-ip');
   if (ipSelect) ipSelect.value = trafficSelectedIP;
   if (cachedTrafficData) renderTrafficUI(cachedTrafficData);
@@ -287,11 +372,13 @@ function filterTrafficByIP(ip) {
 
 function onTrafficIPChange(val) {
   trafficSelectedIP = val;
+  trafficHighlightedNode = val ? `ip:${val}` : null;
   if (cachedTrafficData) renderTrafficUI(cachedTrafficData);
 }
 
 function onTrafficModelChange(val) {
   trafficSelectedModel = val;
+  trafficHighlightedNode = val ? `model:${val}` : null;
   if (cachedTrafficData) renderTrafficUI(cachedTrafficData);
 }
 
@@ -310,6 +397,7 @@ function resetTrafficFilters() {
   trafficSelectedModel = '';
   trafficSelectedStatus = 'all';
   trafficSearchQuery = '';
+  trafficHighlightedNode = null;
 
   const ipSel = document.getElementById('traffic-select-ip');
   const mSel = document.getElementById('traffic-select-model');
@@ -339,7 +427,7 @@ function setTrafficPollingRate(rate) {
   }
 }
 
-// 页面初始化时挂载定时轮询
+// 页面加载绑定
 document.addEventListener('DOMContentLoaded', () => {
   setTrafficPollingRate(3);
 });

@@ -16,6 +16,27 @@ func TestExtractClientIP(t *testing.T) {
 		expectedIP string
 	}{
 		{
+			name: "Cloudflare CF-Connecting-IP takes highest priority",
+			headers: map[string]string{
+				"CF-Connecting-IP": "119.39.133.76",
+				"True-Client-IP":   "10.0.0.1",
+				"X-Forwarded-For":  "172.18.0.1, 104.21.45.67",
+				"X-Real-IP":        "172.18.0.1",
+			},
+			remoteAddr: "172.18.0.1:54321",
+			expectedIP: "119.39.133.76",
+		},
+		{
+			name: "True-Client-IP priority when CF-Connecting-IP missing",
+			headers: map[string]string{
+				"True-Client-IP":  "198.51.100.99",
+				"X-Forwarded-For": "10.0.0.1, 198.51.100.99",
+				"X-Real-IP":       "10.0.0.1",
+			},
+			remoteAddr: "10.0.0.1:12345",
+			expectedIP: "198.51.100.99",
+		},
+		{
 			name: "X-Forwarded-For single IP",
 			headers: map[string]string{
 				"X-Forwarded-For": "203.0.113.195",
@@ -24,15 +45,15 @@ func TestExtractClientIP(t *testing.T) {
 			expectedIP: "203.0.113.195",
 		},
 		{
-			name: "X-Forwarded-For multi-hop takes first hop",
+			name: "X-Forwarded-For multi-hop takes first public hop",
 			headers: map[string]string{
-				"X-Forwarded-For": "203.0.113.195, 70.41.3.18, 150.172.238.178",
+				"X-Forwarded-For": "10.0.0.1, 203.0.113.195, 70.41.3.18",
 			},
 			remoteAddr: "192.168.1.1:12345",
 			expectedIP: "203.0.113.195",
 		},
 		{
-			name: "X-Forwarded-For with port in first hop",
+			name: "X-Forwarded-For with port in hop",
 			headers: map[string]string{
 				"X-Forwarded-For": "203.0.113.195:8080, 70.41.3.18",
 			},
@@ -104,7 +125,7 @@ func TestMiddleware(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("X-Forwarded-For", "198.51.100.99, 10.0.0.1")
+	req.Header.Set("CF-Connecting-IP", "119.39.133.76")
 	w := httptest.NewRecorder()
 
 	r.ServeHTTP(w, req)
@@ -112,7 +133,7 @@ func TestMiddleware(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	if capturedIP != "198.51.100.99" {
-		t.Fatalf("expected captured IP '198.51.100.99', got %q", capturedIP)
+	if capturedIP != "119.39.133.76" {
+		t.Fatalf("expected captured IP '119.39.133.76', got %q", capturedIP)
 	}
 }

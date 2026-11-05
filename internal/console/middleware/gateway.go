@@ -18,12 +18,13 @@ func ShouldSkipGateway(path string) bool {
 		strings.HasPrefix(path, "/v0/management") ||
 		strings.HasPrefix(path, "/v8/management") ||
 		strings.HasPrefix(path, "/api/member") ||
-		strings.HasPrefix(path, "/anthropic/") ||
-		strings.HasPrefix(path, "/codex/") ||
-		strings.HasPrefix(path, "/antigravity/") ||
-		strings.HasPrefix(path, "/devin/") ||
-		strings.HasPrefix(path, "/oauth") ||
-		strings.HasPrefix(path, "/auth") ||
+		path == "/anthropic/callback" ||
+		path == "/codex/callback" ||
+		path == "/antigravity/callback" ||
+		path == "/devin/callback" ||
+		path == "/oauth/callback" ||
+		strings.HasPrefix(path, "/oauth/") ||
+		strings.HasPrefix(path, "/auth/") ||
 		path == "/callback" ||
 		path == "/management.html" ||
 		path == "/management" ||
