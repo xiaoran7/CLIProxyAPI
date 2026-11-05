@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	claudemodels "github.com/router-for-me/CLIProxyAPI/v8/internal/client/claude/models"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/engine"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -60,6 +62,11 @@ func ModelGuardMiddleware(eng *engine.Engine) gin.HandlerFunc {
 			}
 		}
 
+		rawClientModel := model
+		if decoded := claudemodels.ResolveClaudeModelIDPrefix(model); decoded != "" && decoded != model {
+			model = decoded
+		}
+
 		// 3. Enforce model allowlist and unambiguous namespace rewriting if key is authenticated
 		if val, exists := c.Get(ContextKeyID); exists {
 			if keyID, ok := val.(int64); ok && keyID > 0 && model != "" {
@@ -93,8 +100,16 @@ func ModelGuardMiddleware(eng *engine.Engine) gin.HandlerFunc {
 			}
 		}
 
+		if rawClientModel != "" {
+			c.Set(ContextRequestModel, rawClientModel)
+			logging.SetGinCPARequestModel(c, rawClientModel)
+		}
 		if model != "" {
 			c.Set(ContextModel, model)
+			if model != rawClientModel {
+				c.Set(ContextActualModel, model)
+				logging.SetGinCPAExecution(c, model, "")
+			}
 		}
 		if reasoningEffort != "" {
 			c.Set(ContextReasoning, reasoningEffort)

@@ -123,6 +123,7 @@ func HandleGetRequests(eng *engine.Engine, pricing *PricingEngine, providers *Pr
 			KeyAlias         string  `json:"key_alias"`
 			DisplayKey       string  `json:"display_key"`
 			Model            string  `json:"model"`
+			RequestModel     string  `json:"request_model,omitempty"`
 			Provider         string  `json:"provider"`
 			ProviderLabel    string  `json:"provider_label"`
 			Status           int     `json:"status"`
@@ -211,6 +212,7 @@ func HandleGetRequests(eng *engine.Engine, pricing *PricingEngine, providers *Pr
 				KeyAlias:         keyAlias,
 				DisplayKey:       displayKey,
 				Model:            e.Model,
+				RequestModel:     e.RequestModel,
 				Provider:         provRes.Key,
 				ProviderLabel:    provRes.Label,
 				Status:           e.Status,

@@ -333,8 +333,33 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 		if authIndex != "" {
 			authIndexPtr = &authIndex
 		}
+		reqModel, actualModel, actualChannel := logging.GetGinCPAExecution(c)
+		effectiveModel := model
+		if actualModel != "" {
+			effectiveModel = actualModel
+		}
+		if reqModel == "" {
+			reqModel = c.GetString(ContextRequestModel)
+			if reqModel == "" {
+				reqModel = model
+			}
+		}
+
+		channel := actualChannel
+		if channel == "" && eng != nil {
+			channel = eng.ResolveProvider(effectiveModel, authIndex)
+			if channel == "" && reqModel != effectiveModel {
+				channel = eng.ResolveProvider(reqModel, authIndex)
+			}
+		}
+		if channel == "" {
+			channel = traffichub.InferChannel(effectiveModel, authIndex)
+		}
+
 		var modelPtr *string
-		if model != "" {
+		if effectiveModel != "" {
+			modelPtr = &effectiveModel
+		} else if model != "" {
 			modelPtr = &model
 		}
 		var errorTypePtr *string
@@ -366,9 +391,33 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 		ttftPtr = &ttft
 	}
 
+	reqModel, actualModel, actualChannel := logging.GetGinCPAExecution(c)
+	effectiveModel := model
+	if actualModel != "" {
+		effectiveModel = actualModel
+	}
+	if reqModel == "" {
+		reqModel = c.GetString(ContextRequestModel)
+		if reqModel == "" {
+			reqModel = model
+		}
+	}
+
+	channel := actualChannel
+	if channel == "" && eng != nil {
+		channel = eng.ResolveProvider(effectiveModel, authIndex)
+		if channel == "" && reqModel != effectiveModel {
+			channel = eng.ResolveProvider(reqModel, authIndex)
+		}
+	}
+	if channel == "" {
+		channel = traffichub.InferChannel(effectiveModel, authIndex)
+	}
+
 	info := &engine.RequestInfo{
 		KeyID:            keyIDPtr,
-		Model:            model,
+		Model:            effectiveModel,
+		RequestModel:     reqModel,
 		Status:           status,
 		PromptTokens:     w.promptTokens,
 		CompletionTokens: w.completionTokens,
@@ -407,28 +456,22 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 		}
 	}
 
-	channel := ""
-	if eng != nil {
-		channel = eng.ResolveProvider(model, authIndex)
-	}
-	if channel == "" {
-		channel = traffichub.InferChannel(model, authIndex)
-	}
-
 	toks := w.totalTokens
 	if toks == 0 && (w.promptTokens > 0 || w.completionTokens > 0) {
 		toks = w.promptTokens + w.completionTokens
 	}
 
 	traffichub.Default().Record(traffichub.TrafficRecord{
-		Timestamp: w.startTime.Unix(),
-		ClientIP:  clientIP,
-		KeyLabel:  keyLabel,
-		Model:     model,
-		Channel:   channel,
-		Status:    status,
-		LatencyMs: latencyMs,
-		Tokens:    toks,
+		Timestamp:    w.startTime.Unix(),
+		ClientIP:     clientIP,
+		KeyLabel:     keyLabel,
+		Model:        effectiveModel,
+		RequestModel: reqModel,
+		ActualModel:  effectiveModel,
+		Channel:      channel,
+		Status:       status,
+		LatencyMs:    latencyMs,
+		Tokens:       toks,
 	})
 }
 

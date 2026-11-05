@@ -475,7 +475,10 @@
           </div>
         </td>
         <td><div class="live-cell-content">${authTdHtml}</div></td>
-        <td><div class="live-cell-content"><span class="tag-pill" title="${escapeHtml(ev.model)}">${escapeHtml(ev.model || '-')}</span></div></td>
+        <td><div class="live-cell-content">
+          <span class="tag-pill" title="${escapeHtml(ev.model)}">${escapeHtml(ev.model || '-')}</span>
+          ${(ev.request_model && ev.request_model !== ev.model) ? `<div style="font-size:10px; color:var(--text-dim); margin-top:2px;" title="客户端请求模型: ${escapeHtml(ev.request_model)}">(${escapeHtml(ev.request_model)})</div>` : ''}
+        </div></td>
         <td><div class="live-cell-content">${reasoningHtml}</div></td>
         <td><div class="live-cell-content"><span class="chip ${statusClass}" title="${escapeHtml(statusTitle)}">${ev.status}</span></div></td>
         <td><div class="live-cell-content">${tpsHtml}</div></td>

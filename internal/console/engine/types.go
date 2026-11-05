@@ -36,6 +36,7 @@ type RequestInfo struct {
 	KeyID            *int64  `json:"key_id"`
 	RawKey           string  `json:"raw_key"`
 	Model            string  `json:"model"`
+	RequestModel     string  `json:"request_model,omitempty"`
 	Status           int     `json:"status"`
 	PromptTokens     int64   `json:"prompt_tokens"`
 	CompletionTokens int64   `json:"completion_tokens"`

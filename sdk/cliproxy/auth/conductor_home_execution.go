@@ -238,6 +238,7 @@ func (m *Manager) executeHomeOnce(ctx context.Context, providers []string, req c
 				executorCtx = withAccessTokenFingerprintObserver(execCtx, setEffectiveAuth)
 			}
 			executor := executorForAuth(selection.Executor, preparedAuth)
+			publishExecutionModelMetadata(execOpts.Metadata, execReq.Model, resolveExecutionChannel(preparedAuth, selection.Provider))
 			execute := func() (cliproxyexecutor.Response, error) {
 				if countTokens {
 					return executor.CountTokens(executorCtx, preparedAuth, execReq, execOpts)

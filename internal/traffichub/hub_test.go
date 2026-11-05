@@ -147,6 +147,9 @@ func TestInferChannel(t *testing.T) {
 		{"deepseek-chat", "", "deepseek"},
 		{"qwen-max", "", "qoder"},
 		{"glm-4-plus", "", "zcode"},
+		{"minimax-m3", "", "minimax"},
+		{"abab6.5s-chat", "", "minimax"},
+		{"minimax-m3", "1a2b3c4d5e6f7089", "minimax"},
 		{"custom-model", "antigravity", "antigravity"},
 		{"unknown-custom", "", "general"},
 	}
@@ -156,5 +159,39 @@ func TestInferChannel(t *testing.T) {
 		if actual != tc.expected {
 			t.Fatalf("InferChannel(%q, %q) = %q; expected %q", tc.model, tc.hint, actual, tc.expected)
 		}
+	}
+}
+
+func TestHubRecordDualModelCompatibility(t *testing.T) {
+	hub := NewHub(10)
+	hub.Record(TrafficRecord{
+		Timestamp:    time.Now().Unix(),
+		ClientIP:     "127.0.0.1",
+		KeyLabel:     "test-key",
+		Model:        "minimax-m3",
+		RequestModel: "claude-3-7-sonnet",
+		ActualModel:  "minimax-m3",
+		Channel:      "minimax",
+		Status:       200,
+		LatencyMs:    120,
+		Tokens:       256,
+	})
+
+	records := hub.GetRecords(10)
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	r := records[0]
+	if r.Model != "minimax-m3" {
+		t.Fatalf("expected Model to be minimax-m3, got %s", r.Model)
+	}
+	if r.RequestModel != "claude-3-7-sonnet" {
+		t.Fatalf("expected RequestModel to be claude-3-7-sonnet, got %s", r.RequestModel)
+	}
+	if r.ActualModel != "minimax-m3" {
+		t.Fatalf("expected ActualModel to be minimax-m3, got %s", r.ActualModel)
+	}
+	if r.Channel != "minimax" {
+		t.Fatalf("expected Channel to be minimax, got %s", r.Channel)
 	}
 }

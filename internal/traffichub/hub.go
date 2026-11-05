@@ -370,8 +370,9 @@ func formatStatusGroup(code int) string {
 
 // InferChannel determines the canonical AI provider channel name based on model name or auth hint.
 func InferChannel(model, channelHint string) string {
-	if channelHint != "" && !strings.HasPrefix(channelHint, "http") && len(channelHint) < 30 {
-		return strings.ToLower(strings.TrimSpace(channelHint))
+	hint := strings.ToLower(strings.TrimSpace(channelHint))
+	if hint != "" && !strings.HasPrefix(hint, "http") && len(hint) < 30 && !isHexHash(hint) {
+		return hint
 	}
 
 	m := strings.ToLower(strings.TrimSpace(model))
@@ -394,9 +395,24 @@ func InferChannel(model, channelHint string) string {
 		return "workbuddy"
 	case strings.Contains(m, "kimi") || strings.Contains(m, "moonshot"):
 		return "kimi"
+	case strings.Contains(m, "minimax") || strings.Contains(m, "abab"):
+		return "minimax"
 	case strings.Contains(m, "grok") || strings.Contains(m, "xai"):
 		return "xai"
 	default:
 		return "general"
 	}
+}
+
+func isHexHash(s string) bool {
+	if len(s) < 8 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
 }

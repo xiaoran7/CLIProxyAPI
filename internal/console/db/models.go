@@ -45,6 +45,7 @@ type RequestEventRow struct {
 	TS               int64   `json:"ts"`
 	KeyID            *int64  `json:"key_id"`
 	Model            string  `json:"model"`
+	RequestModel     string  `json:"request_model,omitempty"`
 	Status           int     `json:"status"`
 	PromptTokens     int64   `json:"prompt_tokens"`
 	CompletionTokens int64   `json:"completion_tokens"`

@@ -163,3 +163,99 @@ func (w *cpaTraceResponseWriter) applyTraceHeader() {
 		w.ResponseWriter.Header().Set(CPATraceIDHeader, traceID)
 	}
 }
+
+const ginCPAExecutionStateKey = "__cpa_execution_state__"
+
+// CPAExecutionState tracks client request model, actual upstream model, and channel.
+type CPAExecutionState struct {
+	mu           sync.RWMutex
+	requestModel string
+	actualModel  string
+	channel      string
+}
+
+func (s *CPAExecutionState) setExecution(actualModel, channel string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if actualModel = strings.TrimSpace(actualModel); actualModel != "" {
+		s.actualModel = actualModel
+	}
+	if channel = strings.TrimSpace(channel); channel != "" {
+		s.channel = channel
+	}
+}
+
+func (s *CPAExecutionState) setRequestModel(reqModel string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if reqModel = strings.TrimSpace(reqModel); reqModel != "" {
+		s.requestModel = reqModel
+	}
+}
+
+func (s *CPAExecutionState) get() (reqModel, actualModel, channel string) {
+	if s == nil {
+		return "", "", ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.requestModel, s.actualModel, s.channel
+}
+
+func ginCPAExecutionState(c *gin.Context) *CPAExecutionState {
+	if c == nil {
+		return nil
+	}
+	if value, exists := c.Get(ginCPAExecutionStateKey); exists {
+		if state, ok := value.(*CPAExecutionState); ok && state != nil {
+			return state
+		}
+	}
+	state := &CPAExecutionState{}
+	c.Set(ginCPAExecutionStateKey, state)
+	return state
+}
+
+// GinCPAExecutionCallback returns a callback safe to call from background execution goroutines.
+func GinCPAExecutionCallback(c *gin.Context) func(string, string) {
+	state := ginCPAExecutionState(c)
+	if state == nil {
+		return nil
+	}
+	return func(actualModel, channel string) {
+		state.setExecution(actualModel, channel)
+	}
+}
+
+// SetGinCPARequestModel sets the original or decoded client request model.
+func SetGinCPARequestModel(c *gin.Context, reqModel string) {
+	if state := ginCPAExecutionState(c); state != nil {
+		state.setRequestModel(reqModel)
+	}
+}
+
+// SetGinCPAExecution directly updates actual execution model and channel.
+func SetGinCPAExecution(c *gin.Context, actualModel, channel string) {
+	if state := ginCPAExecutionState(c); state != nil {
+		state.setExecution(actualModel, channel)
+	}
+}
+
+// GetGinCPAExecution returns the recorded request model, actual model, and channel.
+func GetGinCPAExecution(c *gin.Context) (reqModel, actualModel, channel string) {
+	if c == nil {
+		return "", "", ""
+	}
+	value, exists := c.Get(ginCPAExecutionStateKey)
+	if !exists {
+		return "", "", ""
+	}
+	state, _ := value.(*CPAExecutionState)
+	return state.get()
+}

@@ -5,6 +5,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Claude Compatible Interface Model Recognition & Multi-Channel Visual Telemetry (`sdk/api/handlers/`, `sdk/cliproxy/`, `internal/console/`, `internal/traffichub/`, `internal/logging/`)**:
+  - Implemented real-time execution model callback (`SelectedExecutionModelCallbackMetadataKey`) in `conductor_execution.go`, `conductor_stream.go`, and `conductor_home_execution.go`, transmitting the actual upstream model and provider/channel back to the HTTP handler context.
+  - Resolved `ContextModel` synchronization in `sdk/api/handlers/claude/code_handlers.go`: decoded `claude-fable-5-dd-<reversed>` models are now immediately synced to Gin context and execution state, preventing client-side obfuscated names from lingering.
+  - Added dual-model tracking (`request_model` vs. `actual_model`) across `internal/logging/cpa_trace.go`, `internal/traffichub/types.go`, `internal/console/engine/types.go`, `internal/console/db/models.go`, and `internal/console/api/handlers_requests.go`.
+  - Upgraded `InferChannel` in `internal/traffichub/hub.go` to recognize MiniMax (`minimax`, `abab`) channel rules and ignore raw hex credential hash hints.
+  - Enhanced Native Gateway Console (`console-traffic.js`, `console-logs.js`) to display dual-model transitions (`request_model ➔ actual_model`) when model alias remapping or channel routing takes effect.
+  - Maintained 100% MD5 consistency across `static/management.html` and `internal/managementasset/assets/management.html`.
+
 ### Changed
 - **Console Live DOM Hot-Update & Activity-Driven Upstream Quota Invalidation (`internal/console/`)**:
   - Upgraded live reset countdown format in `console-format.js` to second precision (`${hours}h ${mins}m ${secs}s` / `${hours}小时 ${mins}分 ${secs}秒`), causing DOM countdown elements to dynamically tick down every second in-place without page reloads.

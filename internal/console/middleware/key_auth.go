@@ -9,11 +9,14 @@ import (
 )
 
 const (
-	ContextKeyID     = "console_key_id"
-	ContextRawKey    = "console_raw_key"
-	ContextModel     = "console_model"
-	ContextReasoning = "console_reasoning_effort"
-	ContextAuthIndex = "console_auth_index"
+	ContextKeyID        = "console_key_id"
+	ContextRawKey       = "console_raw_key"
+	ContextModel        = "console_model"
+	ContextRequestModel = "console_request_model"
+	ContextActualModel  = "console_actual_model"
+	ContextChannel      = "console_channel"
+	ContextReasoning    = "console_reasoning_effort"
+	ContextAuthIndex    = "console_auth_index"
 )
 
 // ExtractRawKey extracts the plaintext API key from multiple standard protocol headers and query parameters:

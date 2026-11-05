@@ -233,6 +233,9 @@ function renderTrafficTable(records) {
     const statusBg = isSuccess ? 'rgba(16, 185, 129, 0.12)' : is4xx ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)';
     const statusColor = isSuccess ? '#059669' : is4xx ? '#d97706' : '#dc2626';
     const timeStr = r.timestamp ? new Date(r.timestamp * 1000).toLocaleTimeString() : '-';
+    const modelDisplay = (r.request_model && r.request_model !== r.model)
+      ? `<span style="opacity:0.75;" title="客户端请求模型: ${escapeHtml(r.request_model)}">${escapeHtml(r.request_model)}</span> <span style="color:var(--text-muted);">➔</span> <strong>${escapeHtml(r.model || '-')}</strong>`
+      : escapeHtml(r.model || '-');
 
     return `
       <tr style="border-bottom:1px solid var(--border-subtle, rgba(0,0,0,0.05));">
@@ -241,7 +244,7 @@ function renderTrafficTable(records) {
           <span onclick="filterTrafficByIP('${escapeHtml(r.client_ip)}')" style="cursor:pointer;font-family:var(--mono, monospace);padding:2px 6px;border-radius:4px;background:rgba(6,182,212,0.1);color:#0891b2;border:1px solid rgba(6,182,212,0.25);" title="点击筛选此 IP">${escapeHtml(r.client_ip || '-')}</span>
         </td>
         <td style="padding:8px 10px;color:var(--text-muted);">${escapeHtml(r.key_label || '-')}</td>
-        <td style="padding:8px 10px;"><span style="padding:2px 6px;border-radius:4px;background:rgba(139,92,246,0.1);color:#7c3aed;font-size:11px;border:1px solid rgba(139,92,246,0.2);">${escapeHtml(r.model || '-')}</span></td>
+        <td style="padding:8px 10px;"><span style="padding:2px 6px;border-radius:4px;background:rgba(139,92,246,0.1);color:#7c3aed;font-size:11px;border:1px solid rgba(139,92,246,0.2);">${modelDisplay}</span></td>
         <td style="padding:8px 10px;"><span style="padding:2px 6px;border-radius:4px;background:rgba(245,158,11,0.1);color:#d97706;font-size:11px;border:1px solid rgba(245,158,11,0.2);">${escapeHtml(r.channel || '-')}</span></td>
         <td style="padding:8px 10px;"><span style="padding:2px 6px;border-radius:4px;background:${statusBg};color:${statusColor};font-weight:600;font-size:11px;">${r.status || 200}</span></td>
         <td style="padding:8px 10px;font-family:var(--mono, monospace);">${r.latency_ms || 0}ms</td>

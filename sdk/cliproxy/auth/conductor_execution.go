@@ -685,6 +685,7 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 			}
 			execReq = attachResolvedExecutionModelInfo(routing, execReq, auth, routeModel, upstreamModel, restoreExecutionModel)
 			execCtx = syncMetadataSessionToContext(execCtx, execOpts.Metadata)
+			publishExecutionModelMetadata(execOpts.Metadata, execReq.Model, resolveExecutionChannel(auth, provider))
 			executionSeq := m.nextExecutionSeq()
 			startExec := time.Now()
 			resp, errExec := executor.Execute(execCtx, auth, execReq, execOpts)
@@ -703,6 +704,7 @@ func (m *Manager) executeMixedOnce(ctx context.Context, providers []string, req 
 					didRefreshOnUnauthorized = true
 					execCtx = newUpstreamAttemptContext(execCtx)
 					execCtx = syncMetadataSessionToContext(execCtx, execOpts.Metadata)
+					publishExecutionModelMetadata(execOpts.Metadata, execReq.Model, resolveExecutionChannel(auth, provider))
 					executionSeq = m.nextExecutionSeq()
 					startRetry := time.Now()
 					resp, errExec = executor.Execute(execCtx, auth, execReq, execOpts)
@@ -1880,6 +1882,32 @@ func publishSelectedAuthMetadata(meta map[string]any, auth *Auth) {
 			callback(authIndex)
 		}
 	}
+}
+
+func publishExecutionModelMetadata(meta map[string]any, model, provider string) {
+	if len(meta) == 0 {
+		return
+	}
+	model = strings.TrimSpace(model)
+	provider = strings.TrimSpace(provider)
+	if callback, ok := meta[cliproxyexecutor.SelectedExecutionModelCallbackMetadataKey].(func(string, string)); ok && callback != nil {
+		callback(model, provider)
+	}
+}
+
+func resolveExecutionChannel(auth *Auth, provider string) string {
+	if auth != nil && auth.Attributes != nil {
+		if compat := strings.TrimSpace(auth.Attributes["compat_name"]); compat != "" {
+			return compat
+		}
+		if pkey := strings.TrimSpace(auth.Attributes["provider_key"]); pkey != "" {
+			return pkey
+		}
+	}
+	if auth != nil && strings.TrimSpace(auth.Provider) != "" {
+		return auth.Provider
+	}
+	return provider
 }
 
 func (m *Manager) executorFor(provider string) ProviderExecutor {

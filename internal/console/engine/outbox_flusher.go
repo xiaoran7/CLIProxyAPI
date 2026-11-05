@@ -181,10 +181,19 @@ func NormalizeRequestEvent(info *RequestInfo) *db.RequestEventRow {
 
 	now := time.Now().Unix()
 
+	reqModel := strings.ToLower(strings.TrimSpace(info.RequestModel))
+	if len(reqModel) > 120 {
+		reqModel = reqModel[:120]
+	}
+	if reqModel == "" {
+		reqModel = model
+	}
+
 	return &db.RequestEventRow{
 		TS:               now,
 		KeyID:            info.KeyID,
 		Model:            model,
+		RequestModel:     reqModel,
 		Status:           info.Status,
 		PromptTokens:     prompt,
 		CompletionTokens: completion,

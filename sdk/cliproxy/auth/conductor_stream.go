@@ -525,6 +525,7 @@ func (m *Manager) executeStreamWithModelPool(ctx context.Context, executor Provi
 		}
 		execOpts.Metadata = ensureCanonicalSessionMetadata(execOpts.Metadata, execOpts.Headers, payload)
 		ctx = syncMetadataSessionToContext(ctx, execOpts.Metadata)
+		publishExecutionModelMetadata(execOpts.Metadata, execReq.Model, resolveExecutionChannel(auth, provider))
 		executionSeq := m.nextExecutionSeq()
 		startStream := time.Now()
 		streamResult, errStream := executor.ExecuteStream(ctx, auth, execReq, execOpts)
@@ -547,6 +548,7 @@ func (m *Manager) executeStreamWithModelPool(ctx context.Context, executor Provi
 					didRefreshOnUnauthorized = true
 					ctx = newUpstreamAttemptContext(ctx)
 					ctx = syncMetadataSessionToContext(ctx, execOpts.Metadata)
+					publishExecutionModelMetadata(execOpts.Metadata, execReq.Model, resolveExecutionChannel(auth, provider))
 					executionSeq = m.nextExecutionSeq()
 					startRetry := time.Now()
 					streamResult, errStream = executor.ExecuteStream(ctx, auth, execReq, execOpts)
@@ -626,6 +628,7 @@ func (m *Manager) executeStreamWithModelPool(ctx context.Context, executor Provi
 					discardStreamChunks(streamResult.Chunks)
 					auth = refreshed
 					publishSelectedAuthMetadata(execOpts.Metadata, auth)
+					publishExecutionModelMetadata(execOpts.Metadata, execReq.Model, resolveExecutionChannel(auth, provider))
 					didRefreshOnUnauthorized = true
 					ctx = newUpstreamAttemptContext(ctx)
 					executionSeq = m.nextExecutionSeq()
