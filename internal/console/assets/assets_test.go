@@ -34,6 +34,8 @@ func TestEmbeddedAssets(t *testing.T) {
 		"console-quotas-stats.js",
 		"console-stats.js",
 		"console-logs.js",
+		"console-traffic.css",
+		"console-traffic.js",
 		"console-cpa.js",
 		"console-cpa.css",
 		"console-overview.js",
@@ -132,6 +134,27 @@ func TestStaticRoutesServing(t *testing.T) {
 	}
 	if ct := w.Header().Get("Content-Type"); ct != "image/webp" {
 		t.Fatalf("unexpected image content type: %s", ct)
+	}
+
+	// 8. Test /console/console-traffic.css and /console/console-traffic.js
+	req = httptest.NewRequest(http.MethodGet, "/console/console-traffic.css", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /console/console-traffic.css, got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "text/css; charset=utf-8" {
+		t.Fatalf("unexpected css content type: %s", ct)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/console/console-traffic.js", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /console/console-traffic.js, got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "text/javascript; charset=utf-8" {
+		t.Fatalf("unexpected js content type: %s", ct)
 	}
 
 	// 8. Test legacy image alias /admin/assets/gate-sakura-mark-128.webp
