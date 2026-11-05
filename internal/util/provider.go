@@ -126,6 +126,19 @@ func collectRegisteredModelProviders(modelName string) []string {
 			appendProvider(provider)
 		}
 	}
+	if len(providers) == 0 {
+		lower := strings.ToLower(modelName)
+		for _, m := range registry.GetGlobalRegistry().GetAvailableModelInfos() {
+			if m != nil && strings.ToLower(m.ID) == lower {
+				for _, provider := range registry.GetGlobalRegistry().GetModelProviders(m.ID) {
+					appendProvider(provider)
+				}
+				if len(providers) > 0 {
+					break
+				}
+			}
+		}
+	}
 
 	return providers
 }

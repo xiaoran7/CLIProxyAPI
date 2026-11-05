@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/db"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/engine"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 )
 
 // TestSelectCatalogAuthFilesKeepsEveryProvider guards the fleet-order starvation
@@ -263,5 +264,87 @@ func TestHandleGetCpaModels_WorkBuddyNamespacePrefix(t *testing.T) {
 	// 3. Verify bare claude-opus-5-5 does NOT exist under workbuddy
 	if bare, ok := found["claude-opus-5-5"]; ok && bare.Provider == "workbuddy" {
 		t.Errorf("bare claude-opus-5-5 unexpectedly marked with provider workbuddy: %+v", bare)
+	}
+}
+
+func TestHandleGetCpaModels_IncludesGlobalRegistryModels(t *testing.T) {
+	// Register a mock model into the global registry (e.g. configured via claude-api-key)
+	const clientID = "test-cpa-minimax-client"
+	const modelID = "MiniMax-M3"
+	reg := registry.GetGlobalRegistry()
+	reg.RegisterClient(clientID, "claude", []*registry.ModelInfo{
+		{ID: modelID, OwnedBy: "claude"},
+	})
+	t.Cleanup(func() {
+		reg.UnregisterClient(clientID)
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v0/management/auth-files":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"files": []interface{}{}})
+		case "/v0/management/openai-compatibility":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"openai-compatibility": []interface{}{}})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	u, _ := url.Parse(server.URL)
+	host := u.Hostname()
+	port, _ := strconv.Atoi(u.Port())
+	cpa := NewCpaClient(host, port, "")
+
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_cpa_registry_models.db")
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	eng, err := engine.NewEngine(database, 50*time.Millisecond)
+	if err != nil {
+		t.Fatalf("new engine failed: %v", err)
+	}
+	defer eng.Stop()
+
+	providers, err := NewProviderRegistryEngine(database)
+	if err != nil {
+		t.Fatalf("new provider registry failed: %v", err)
+	}
+
+	r := gin.New()
+	r.GET("/models", HandleGetCpaModels(eng, cpa, providers))
+
+	req := httptest.NewRequest(http.MethodGet, "/models", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Models []CpaModelItem `json:"models"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+
+	foundMiniMax := false
+	for _, m := range resp.Models {
+		if m.ID == modelID {
+			foundMiniMax = true
+			if m.Source != "cpa-registry" {
+				t.Errorf("model source = %q, want cpa-registry", m.Source)
+			}
+			break
+		}
+	}
+	if !foundMiniMax {
+		t.Fatalf("expected %q to be included in catalog models, got: %+v", modelID, resp.Models)
 	}
 }

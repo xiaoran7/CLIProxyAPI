@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Console Upstream Model Catalog Dynamic Registry Federation (`internal/console/api/`, `internal/util/`)**:
+  - Connected `registry.GetGlobalRegistry().GetAvailableModelInfos()` into `HandleGetCpaModels` (`/console/api/cpa/models`), ensuring all dynamically registered and custom-configured upstream models (including `claude-api-key`, `codex`, `gemini`, and custom channels) appear in the Console key creation/editing model picker.
+  - Added case-insensitive model identifier matching in `internal/util/provider.go` to prevent casing mismatches (e.g., `MiniMax-M3` vs `minimax-m3`) from dropping provider resolution.
+  - Added unit test `TestHandleGetCpaModels_IncludesGlobalRegistryModels` in `handlers_cpa_test.go`.
 - **Console Token Generation Rate Single-Chunk & Burst Fallback (`internal/console/engine/`, `internal/console/assets/`, `internal/console/api/`)**:
   - Resolved issue where successful requests with completed output tokens (e.g. Antigravity `gemini-3.8-flash-high` issuing tool calls where TTFT ≈ total latency) displayed dash `—` in the "速率 (tok/s)" column of Live Request Logs.
   - Refined `CalculateTokensPerSec` in `token_estimator.go`: sustained progressive streaming retains pure output-phase decoding speed, while single-chunk bursts (< 100ms window, e.g. Gemini single-frame function call payloads) and packet bursts smoothly fall back to end-to-end throughput across total request latency bounded by `MaxPlausibleTokensPerSec` (500 tok/s), completely eliminating empty dash fallbacks.

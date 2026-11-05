@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/engine"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 )
 
 var safeAuthFilenameRegex = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}\.json$`)
@@ -218,6 +219,30 @@ func HandleGetCpaModels(eng *engine.Engine, cpa *CpaClient, providers *ProviderR
 							}
 						}
 					}
+				}
+			}
+		}
+
+		// 4. From CPA active global model registry (captures all configured api-keys: claude, codex, gemini, etc.)
+		for _, info := range registry.GetGlobalRegistry().GetAvailableModelInfos() {
+			if info == nil || strings.TrimSpace(info.ID) == "" {
+				continue
+			}
+			mID := strings.TrimSpace(info.ID)
+			prov := strings.TrimSpace(info.OwnedBy)
+			if prov == "" {
+				prov = providers.InferProvider(mID, "").Key
+				if prov == "" {
+					prov = "upstream"
+				}
+			}
+			if _, exists := catalogMap[mID]; !exists {
+				catalogMap[mID] = CpaModelItem{
+					ID:        mID,
+					Name:      mID,
+					Provider:  prov,
+					Available: true,
+					Source:    "cpa-registry",
 				}
 			}
 		}
