@@ -60,6 +60,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Redesigned Visual Gateway UI adhering to `ui-design` standards across Native Console (`internal/console/assets/console.html`, `console-traffic.js`, `console-traffic.css`) and Management control panel (`static/management.html`, `internal/managementasset/assets/management.html`): completely eradicated raw emojis with clean Lucide vector SVG icons, implemented interactive bidirectional link highlighting on smooth Bezier curves (highlighting specific routes upon clicking nodes and dimming unrelated links), active pulse dots for IP ledger cards, and responsive tabular-num metric cards.
   - Narrowed `ShouldSkipGateway` bypass rules to exact OAuth callbacks (`/anthropic/callback`, `/codex/callback`, etc.) to prevent premature skipping of proxy requests, and extracted executed models and channels prior to request accounting discard fences.
   - Added unit test suites across `internal/traffichub/`, `internal/api/handlers/management/`, and `internal/console/api/`.
+
+### Fixed
+- **Visual Gateway Review Defect Remediation & Reliability Hardening (`internal/traffichub/`, `internal/console/assets/`, `internal/console/middleware/`, `internal/api/handlers/management/`)**:
+  - Corrected template literal syntax error in `console-traffic.js` preventing script crash under strict parse.
+  - Isolated `tab-btn-traffic` in member authentication mode across `console-auth.js` to ensure zero privilege leakage.
+  - Used background context for SQLite `InsertErrorEvent` and `InsertValidation` in `accounting_writer.go` to prevent client 499 disconnects from canceling error recording.
+  - Populated resolved `Provider` field into `ErrorEventRow` database insertion.
+  - Preserved Tailscale CGNAT IP addresses (`100.64.0.0/10`) in `isPublicIP` to prevent multi-hop XFF proxy IP misattribution.
+  - Corrected idle 5-minute `activeIPCount` metric in `hub.go` to report true 0 rather than falling back to historical totals.
+  - Implemented deterministic tie-breaker sorting in `hub.go` for nodes, links, and IP stats to eliminate UI polling layout shifts.
+  - Hardened topology highlighting in `console-traffic.js` with directed DAG traversal to prevent highlighting leaks through shared status sink nodes.
+  - Added HTTP anti-caching headers (`no-store, no-cache, must-revalidate`) to `GetTraffic` handlers.
 - **Credential Pinning via `X-CPA-Auth-ID` & Fuzzy Target Resolution (`sdk/api/handlers/`, `sdk/cliproxy/auth/`)**:
   - Added support for explicit credential pinning via `X-CPA-Auth-ID` and `X-Auth-ID` HTTP headers in `requestExecutionMetadata` (`sdk/api/handlers/handlers.go`).
   - Implemented `pinnedAuthMatches` in `sdk/cliproxy/auth/conductor_selection.go` to support exact ID matches, filenames with/without `.json`, provider-prefixed IDs (e.g. `antigravity-...`), and account emails across metadata and attributes.

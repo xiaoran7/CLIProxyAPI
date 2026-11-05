@@ -257,9 +257,6 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 	}
 
 	activeIPCount := len(activeIPs5m)
-	if activeIPCount == 0 {
-		activeIPCount = len(overallIPs)
-	}
 
 	// Build nodes and links slice
 	nodes := make([]TopologyNode, 0, len(nodeMap))
@@ -270,7 +267,10 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 		if nodes[i].Type != nodes[j].Type {
 			return nodeTypeOrder(nodes[i].Type) < nodeTypeOrder(nodes[j].Type)
 		}
-		return nodes[i].Count > nodes[j].Count
+		if nodes[i].Count != nodes[j].Count {
+			return nodes[i].Count > nodes[j].Count
+		}
+		return nodes[i].ID < nodes[j].ID
 	})
 
 	links := make([]TopologyLink, 0, len(linkCounts))
@@ -285,7 +285,13 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 		}
 	}
 	sort.Slice(links, func(i, j int) bool {
-		return links[i].Value > links[j].Value
+		if links[i].Value != links[j].Value {
+			return links[i].Value > links[j].Value
+		}
+		if links[i].Source != links[j].Source {
+			return links[i].Source < links[j].Source
+		}
+		return links[i].Target < links[j].Target
 	})
 
 	// Build IP stats slice
@@ -300,7 +306,10 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 			mList = append(mList, mHit{model: m, hits: h})
 		}
 		sort.Slice(mList, func(i, j int) bool {
-			return mList[i].hits > mList[j].hits
+			if mList[i].hits != mList[j].hits {
+				return mList[i].hits > mList[j].hits
+			}
+			return mList[i].model < mList[j].model
 		})
 		topModels := make([]string, 0, 3)
 		for i := 0; i < len(mList) && i < 3; i++ {
@@ -315,7 +324,10 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 		})
 	}
 	sort.Slice(ipStats, func(i, j int) bool {
-		return ipStats[i].RequestCount > ipStats[j].RequestCount
+		if ipStats[i].RequestCount != ipStats[j].RequestCount {
+			return ipStats[i].RequestCount > ipStats[j].RequestCount
+		}
+		return ipStats[i].IP < ipStats[j].IP
 	})
 
 	return TrafficResponse{

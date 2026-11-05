@@ -132,6 +132,16 @@ func TestHubGetSnapshot(t *testing.T) {
 	if snapshot.IPStats[0].IP != "1.1.1.1" || snapshot.IPStats[0].RequestCount != 2 {
 		t.Fatalf("expected top IP to be 1.1.1.1 with 2 reqs, got %+v", snapshot.IPStats[0])
 	}
+
+	// Verify idle period (when all requests are older than 5 minutes)
+	h.nowFunc = func() time.Time { return baseTime.Add(10 * time.Minute) }
+	idleSnapshot := h.GetSnapshot()
+	if idleSnapshot.Summary.ActiveIPs != 0 {
+		t.Fatalf("expected ActiveIPs=0 during idle period, got %d", idleSnapshot.Summary.ActiveIPs)
+	}
+	if idleSnapshot.Summary.Requests5m != 0 {
+		t.Fatalf("expected Requests5m=0 during idle period, got %d", idleSnapshot.Summary.Requests5m)
+	}
 }
 
 func TestInferChannel(t *testing.T) {

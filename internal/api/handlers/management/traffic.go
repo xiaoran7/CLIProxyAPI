@@ -13,6 +13,10 @@ func (h *Handler) GetTraffic(c *gin.Context) {
 	if c == nil {
 		return
 	}
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+
 	snapshot := traffichub.Default().GetSnapshot()
 	c.JSON(http.StatusOK, snapshot)
 }

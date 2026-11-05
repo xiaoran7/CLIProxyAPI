@@ -37,6 +37,14 @@ func TestExtractClientIP(t *testing.T) {
 			expectedIP: "198.51.100.99",
 		},
 		{
+			name: "Tailscale CGNAT IP recognized as valid client in multi-hop XFF",
+			headers: map[string]string{
+				"X-Forwarded-For": "100.79.74.121, 34.84.62.138",
+			},
+			remoteAddr: "172.18.0.1:12345",
+			expectedIP: "100.79.74.121",
+		},
+		{
 			name: "X-Forwarded-For single IP",
 			headers: map[string]string{
 				"X-Forwarded-For": "203.0.113.195",

@@ -224,6 +224,17 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 		model = effectiveModel
 	}
 
+	channel := actualChannel
+	if channel == "" && eng != nil {
+		channel = eng.ResolveProvider(effectiveModel, authIndex)
+		if channel == "" && reqModel != effectiveModel {
+			channel = eng.ResolveProvider(reqModel, authIndex)
+		}
+	}
+	if channel == "" {
+		channel = traffichub.InferChannel(effectiveModel, authIndex)
+	}
+
 	// Extract KeyID
 	var keyIDPtr *int64
 	if val, exists := c.Get(ContextKeyID); exists {
@@ -297,7 +308,7 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 					errMsg = msg
 				}
 				now := time.Now().Unix()
-				_, _ = eng.DB().InsertValidation(c.Request.Context(), &db.UpstreamValidationRow{
+				_, _ = eng.DB().InsertValidation(context.Background(), &db.UpstreamValidationRow{
 					TS:            now,
 					AuthIndex:     authIndex,
 					Provider:      provider,
@@ -348,27 +359,10 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 		if authIndex != "" {
 			authIndexPtr = &authIndex
 		}
-		reqModel, actualModel, actualChannel := logging.GetGinCPAExecution(c)
-		effectiveModel := model
-		if actualModel != "" {
-			effectiveModel = actualModel
-		}
-		if reqModel == "" {
-			reqModel = c.GetString(ContextRequestModel)
-			if reqModel == "" {
-				reqModel = model
-			}
-		}
 
-		channel := actualChannel
-		if channel == "" && eng != nil {
-			channel = eng.ResolveProvider(effectiveModel, authIndex)
-			if channel == "" && reqModel != effectiveModel {
-				channel = eng.ResolveProvider(reqModel, authIndex)
-			}
-		}
-		if channel == "" {
-			channel = traffichub.InferChannel(effectiveModel, authIndex)
+		var providerPtr *string
+		if channel != "" {
+			providerPtr = &channel
 		}
 
 		var modelPtr *string
@@ -383,10 +377,11 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 		}
 		summaryPtr := &summary
 
-		_, _ = eng.DB().InsertErrorEvent(c.Request.Context(), &db.ErrorEventRow{
+		_, _ = eng.DB().InsertErrorEvent(context.Background(), &db.ErrorEventRow{
 			TS:        time.Now().Unix(),
 			KeyID:     keyIDPtr,
 			AuthIndex: authIndexPtr,
+			Provider:  providerPtr,
 			Model:     modelPtr,
 			Status:    status,
 			ErrorType: errorTypePtr,
@@ -404,17 +399,6 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 	if w.ttftMs > 0 {
 		ttft := w.ttftMs
 		ttftPtr = &ttft
-	}
-
-	channel := actualChannel
-	if channel == "" && eng != nil {
-		channel = eng.ResolveProvider(effectiveModel, authIndex)
-		if channel == "" && reqModel != effectiveModel {
-			channel = eng.ResolveProvider(reqModel, authIndex)
-		}
-	}
-	if channel == "" {
-		channel = traffichub.InferChannel(effectiveModel, authIndex)
 	}
 
 	info := &engine.RequestInfo{

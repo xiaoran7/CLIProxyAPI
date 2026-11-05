@@ -117,27 +117,98 @@ function renderTrafficTopology(data) {
   calcPositions(colChannels, 512);
   calcPositions(colStatuses, 756);
 
-  // 判定是否激活链路高亮
+  // 判定是否激活链路高亮 (严格依阶段有向追踪，杜绝共享 Status:2xx 汇聚节点横向泄露)
   const isFiltered = Boolean(trafficHighlightedNode);
   const activeLinks = new Set();
   const activeNodes = new Set();
 
   if (isFiltered) {
     activeNodes.add(trafficHighlightedNode);
-    // 向下游与上游双向追踪关联链路
-    for (const link of (topology.links || [])) {
-      if (link.source === trafficHighlightedNode || link.target === trafficHighlightedNode) {
-        activeLinks.add(`${link.source}|${link.target}`);
-        activeNodes.add(link.source);
-        activeNodes.add(link.target);
+    const allLinks = topology.links || [];
+
+    if (trafficHighlightedNode.startsWith('ip:')) {
+      const activeModels = new Set();
+      const activeChannels = new Set();
+      for (const link of allLinks) {
+        if (link.source === trafficHighlightedNode) {
+          activeLinks.add(`${link.source}|${link.target}`);
+          activeNodes.add(link.target);
+          activeModels.add(link.target);
+        }
       }
-    }
-    // 第二级级联追踪 (比如 IP -> Model -> Channel -> Status)
-    for (const link of (topology.links || [])) {
-      if (activeNodes.has(link.source) || activeNodes.has(link.target)) {
-        activeLinks.add(`${link.source}|${link.target}`);
-        activeNodes.add(link.source);
-        activeNodes.add(link.target);
+      for (const link of allLinks) {
+        if (activeModels.has(link.source)) {
+          activeLinks.add(`${link.source}|${link.target}`);
+          activeNodes.add(link.target);
+          activeChannels.add(link.target);
+        }
+      }
+      for (const link of allLinks) {
+        if (activeChannels.has(link.source)) {
+          activeLinks.add(`${link.source}|${link.target}`);
+          activeNodes.add(link.target);
+        }
+      }
+    } else if (trafficHighlightedNode.startsWith('model:')) {
+      const activeIPs = new Set();
+      const activeChannels = new Set();
+      for (const link of allLinks) {
+        if (link.target === trafficHighlightedNode) {
+          activeLinks.add(`${link.source}|${link.target}`);
+          activeNodes.add(link.source);
+          activeIPs.add(link.source);
+        } else if (link.source === trafficHighlightedNode) {
+          activeLinks.add(`${link.source}|${link.target}`);
+          activeNodes.add(link.target);
+          activeChannels.add(link.target);
+        }
+      }
+      for (const link of allLinks) {
+        if (activeChannels.has(link.source)) {
+          activeLinks.add(`${link.source}|${link.target}`);
+          activeNodes.add(link.target);
+        }
+      }
+    } else if (trafficHighlightedNode.startsWith('channel:')) {
+      const activeModels = new Set();
+      for (const link of allLinks) {
+        if (link.target === trafficHighlightedNode) {
+          activeLinks.add(`${link.source}|${link.target}`);
+          activeNodes.add(link.source);
+          activeModels.add(link.source);
+        } else if (link.source === trafficHighlightedNode) {
+          activeLinks.add(`${link.source}|${link.target}`);
+          activeNodes.add(link.target);
+        }
+      }
+      for (const link of allLinks) {
+        if (activeModels.has(link.target)) {
+          activeLinks.add(`${link.source}|${link.target}`);
+          activeNodes.add(link.source);
+        }
+      }
+    } else if (trafficHighlightedNode.startsWith('status:')) {
+      const activeChannels = new Set();
+      const activeModels = new Set();
+      for (const link of allLinks) {
+        if (link.target === trafficHighlightedNode) {
+          activeLinks.add(`${link.source}|${link.target}`);
+          activeNodes.add(link.source);
+          activeChannels.add(link.source);
+        }
+      }
+      for (const link of allLinks) {
+        if (activeChannels.has(link.target)) {
+          activeLinks.add(`${link.source}|${link.target}`);
+          activeNodes.add(link.source);
+          activeModels.add(link.source);
+        }
+      }
+      for (const link of allLinks) {
+        if (activeModels.has(link.target)) {
+          activeLinks.add(`${link.source}|${link.target}`);
+          activeNodes.add(link.source);
+        }
       }
     }
   }
@@ -227,16 +298,23 @@ function renderTrafficTopology(data) {
 function toggleHighlightTrafficNode(nodeId) {
   if (trafficHighlightedNode === nodeId) {
     trafficHighlightedNode = null;
+    if (nodeId.startsWith('ip:')) {
+      trafficSelectedIP = '';
+      const ipSelect = document.getElementById('traffic-select-ip');
+      if (ipSelect) ipSelect.value = '';
+    }
   } else {
     trafficHighlightedNode = nodeId;
     // 如果点击的是 client_ip 节点，同步筛选明细列表
     if (nodeId.startsWith('ip:')) {
       const ip = nodeId.slice(3);
-      filterTrafficByIP(ip);
+      trafficSelectedIP = ip;
+      const ipSelect = document.getElementById('traffic-select-ip');
+      if (ipSelect) ipSelect.value = ip;
     }
   }
   if (cachedTrafficData) {
-    renderTrafficTopology(cachedTrafficData);
+    renderTrafficUI(cachedTrafficData);
   }
 }
 
@@ -260,7 +338,7 @@ function renderTrafficIPLedger(ipStats) {
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div style="display:flex;align-items:center;gap:7px;">
             <span class="traffic-pulse-dot"></span>
-            <span style="font-family:var(--mono, monospace);font-weight:700;font-size:13px;color:${isSelected ? '#0891b2' : 'var(--text-main)};">${escapeHtml(s.ip)}</span>
+            <span style="font-family:var(--mono, monospace);font-weight:700;font-size:13px;color:${isSelected ? '#0891b2' : 'var(--text-main)'};">${escapeHtml(s.ip)}</span>
           </div>
           <span style="font-size:11px;color:var(--text-muted);">${timeStr}</span>
         </div>

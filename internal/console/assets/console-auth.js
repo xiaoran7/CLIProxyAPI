@@ -224,6 +224,7 @@
       const tabValidations = document.getElementById('tab-btn-validations');
       const tabKeys = document.getElementById('tab-btn-keys');
       const tabErrors = document.getElementById('tab-btn-errors');
+      const tabTraffic = document.getElementById('tab-btn-traffic');
       const tabTextQuotas = document.getElementById('tab-text-quotas');
       const tabTextLogs = document.getElementById('tab-text-logs');
       const memberPanel = document.getElementById('member-quota-panel');
@@ -243,6 +244,7 @@
         if (tabOverview) tabOverview.style.display = 'none';
         if (tabKeys) tabKeys.style.display = 'none';
         if (tabErrors) tabErrors.style.display = 'none';
+        if (tabTraffic) tabTraffic.style.display = 'none';
         // 运行总览聚合的是全站上游调度事实，成员不得查看
         const tabRuntime = document.getElementById('tab-btn-runtime');
         if (tabRuntime) tabRuntime.style.display = 'none';
@@ -267,7 +269,7 @@
         }
         if (keyFilterContainer) keyFilterContainer.style.display = 'none';
         // 如果当前处在不可见的 tab，切回 quotas
-        if (['overview', 'keys', 'errors', 'validations', 'status', 'upstream-stats'].includes(activeNavTab)) {
+        if (['overview', 'keys', 'errors', 'validations', 'status', 'upstream-stats', 'traffic'].includes(activeNavTab)) {
           switchNavTab('quotas');
         }
       } else {
@@ -279,6 +281,7 @@
         if (tabOverview) tabOverview.style.display = 'inline-flex';
         if (tabKeys) tabKeys.style.display = 'inline-flex';
         if (tabErrors) tabErrors.style.display = 'inline-flex';
+        if (tabTraffic) tabTraffic.style.display = 'inline-flex';
         if (tabTextQuotas) tabTextQuotas.innerText = t('nav.quotas');
         if (tabTextLogs) tabTextLogs.innerText = t('nav.logs');
         if (memberPanel) memberPanel.style.display = 'none';

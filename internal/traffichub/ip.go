@@ -118,10 +118,7 @@ func isPublicIP(addr string) bool {
 		if ip4[0] == 192 && ip4[1] == 168 {
 			return false
 		}
-		// CGNAT 100.64.0.0/10 (e.g. Tailscale / carrier grade NAT)
-		if ip4[0] == 100 && (ip4[1]&0xc0) == 64 {
-			return false
-		}
+		// Note: CGNAT 100.64.0.0/10 is specifically preserved as valid client IPs (Tailscale mesh addresses)
 		return true
 	}
 	// IPv6 ULA (fc00::/7)
