@@ -52,6 +52,9 @@ func TestGetTrafficHandler(t *testing.T) {
 	if len(resp.Records) != 1 {
 		t.Fatalf("expected 1 record, got %d", len(resp.Records))
 	}
+	if len(resp.RecentRequests) != 1 {
+		t.Fatalf("expected 1 recent_request, got %d", len(resp.RecentRequests))
+	}
 	if resp.Records[0].ClientIP != "203.0.113.10" {
 		t.Fatalf("expected client IP 203.0.113.10, got %s", resp.Records[0].ClientIP)
 	}

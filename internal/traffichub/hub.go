@@ -136,10 +136,11 @@ func (h *Hub) Reset() {
 func (h *Hub) GetSnapshot() TrafficResponse {
 	if h == nil {
 		return TrafficResponse{
-			Summary:  TrafficSummary{},
-			Records:  []TrafficRecord{},
-			Topology: Topology{Nodes: []TopologyNode{}, Links: []TopologyLink{}},
-			IPStats:  []IPStat{},
+			Summary:        TrafficSummary{},
+			Records:        []TrafficRecord{},
+			RecentRequests: []TrafficRecord{},
+			Topology:       Topology{Nodes: []TopologyNode{}, Links: []TopologyLink{}},
+			IPStats:        []IPStat{},
 		}
 	}
 
@@ -325,7 +326,8 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 			SuccessRate:   successRate,
 			TotalRecorded: totalRec,
 		},
-		Records: records,
+		Records:        records,
+		RecentRequests: records,
 		Topology: Topology{
 			Nodes: nodes,
 			Links: links,

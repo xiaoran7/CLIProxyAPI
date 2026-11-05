@@ -102,6 +102,9 @@ func TestHubGetSnapshot(t *testing.T) {
 	if snapshot.Summary.TotalRecorded != 4 {
 		t.Fatalf("expected TotalRecorded=4, got %d", snapshot.Summary.TotalRecorded)
 	}
+	if len(snapshot.Records) != 4 || len(snapshot.RecentRequests) != 4 {
+		t.Fatalf("expected 4 records and 4 recent_requests, got %d and %d", len(snapshot.Records), len(snapshot.RecentRequests))
+	}
 	if snapshot.Summary.Requests5m != 3 {
 		t.Fatalf("expected Requests5m=3, got %d", snapshot.Summary.Requests5m)
 	}

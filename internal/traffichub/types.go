@@ -54,8 +54,9 @@ type IPStat struct {
 
 // TrafficResponse is the payload returned by GET /v0/management/traffic.
 type TrafficResponse struct {
-	Summary  TrafficSummary  `json:"summary"`
-	Records  []TrafficRecord `json:"records"`
-	Topology Topology        `json:"topology"`
-	IPStats  []IPStat        `json:"ip_stats"`
+	Summary        TrafficSummary  `json:"summary"`
+	Records        []TrafficRecord `json:"records"`
+	RecentRequests []TrafficRecord `json:"recent_requests"`
+	Topology       Topology        `json:"topology"`
+	IPStats        []IPStat        `json:"ip_stats"`
 }
