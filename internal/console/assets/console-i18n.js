@@ -127,6 +127,9 @@
     'reset.yearsOnly': { zh: '{years}年后', en: 'in {years}y' },
     'reset.daysHours': { zh: '{days}天{remHours}小时', en: 'in {days}d {remHours}h' },
     'reset.hoursMinutes': { zh: '{hours}小时{mins}分', en: 'in {hours}h {mins}m' },
+    'reset.hoursMinutesSeconds': { zh: '{hours}小时 {mins}分 {secs}秒', en: 'in {hours}h {mins}m {secs}s' },
+    'reset.minutesSeconds': { zh: '{mins}分 {secs}秒', en: 'in {mins}m {secs}s' },
+    'reset.secondsOnly': { zh: '{secs}秒', en: 'in {secs}s' },
     'reset.soon': { zh: '即将重置', en: 'Resetting' },
 
     // ==== 成员面板（member.*）====
@@ -697,6 +700,10 @@
     'quotas.todayRequestCountLabel': { zh: '今日请求次数', en: 'Requests today' },
     'quotas.todayRequestsLabel': { zh: '今日请求:', en: 'Requests today:' },
     'quotas.todayTokenConsumption': { zh: '今日 Token 消耗', en: 'Tokens consumed today' },
+    'quotas.telemetryCompact': { zh: '今日 {reqs} 次 · {tokens}', en: 'Today {reqs} calls · {tokens}' },
+    'quotas.telemetryCard': { zh: '今日用量: {reqs} 次请求 · {tokens} Tokens', en: 'Today: {reqs} requests · {tokens} Tokens' },
+    'quotas.telemetry5hSuffix': { zh: ' (5h: {reqs}次)', en: ' (5h: {reqs} calls)' },
+    'quotas.telemetryCard5hSuffix': { zh: ' · 5h: {reqs} 次', en: ' · 5h: {reqs} calls' },
     'quotas.tokenConsumption': { zh: 'Token 消耗', en: 'Token consumption' },
     'quotas.tokenConsumptionBreakdown': { zh: 'Token 消耗 (总 / 入 / 出)', en: 'Token consumption (total / in / out)' },
     'quotas.tokenInOutBreakdown': { zh: '入 {value} / 出 {value2}', en: 'In {value} / Out {value2}' },

@@ -237,7 +237,10 @@ func fetchSingleAccountQuota(ctx context.Context, eng *engine.Engine, cpa *CpaCl
 			todayDate := engine.ShanghaiDate(time.Now())
 			if statRow, err := eng.DB().SelectUpstreamDailyForDate(ctx, todayDate); err == nil {
 				for _, s := range statRow {
-					if s.AuthIndex == authIdx || (fname != "" && s.AuthIndex == fname) {
+					if (authIdx != "" && s.AuthIndex == authIdx) ||
+						(authIndex != "" && s.AuthIndex == authIndex) ||
+						(fname != "" && s.AuthIndex == fname) ||
+						(filename != "" && s.AuthIndex == filename) {
 						lastReqs = s.Requests
 						lastToks = s.TotalTokens
 						break

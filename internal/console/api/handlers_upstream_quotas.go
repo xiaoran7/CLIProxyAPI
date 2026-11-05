@@ -313,8 +313,13 @@ func FetchUpstreamAccounts(ctx context.Context, eng *engine.Engine, cpa *CpaClie
 	}
 
 	// 6. Fetch pending validation challenges from SQLite
-	pendingVals, err := eng.DB().SelectValidations(ctx, "pending")
-	if err != nil {
+	var pendingVals []db.UpstreamValidationRow
+	if eng != nil && eng.DB() != nil {
+		if vals, err := eng.DB().SelectValidations(ctx, "pending"); err == nil {
+			pendingVals = vals
+		}
+	}
+	if pendingVals == nil {
 		pendingVals = []db.UpstreamValidationRow{}
 	}
 	valMap := make(map[string]db.UpstreamValidationRow)

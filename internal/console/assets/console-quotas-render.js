@@ -835,8 +835,10 @@
                 <span>ID: ${acc.auth_index ? escapeHtml(String(acc.auth_index).slice(0, 12)) : '—'}</span>
                 ${isCredentialBlocked ? '' : `<span class="account-card-plan ${planClass}" style="padding:1px 6px; font-size:10px;">${escapeHtml(acc.plan_name || acc.plan_type)}</span>`}
                 <span class="compact-usage-telemetry" style="color:var(--text-muted); font-size:10.5px;">
-                  今日 <b style="color:${(acc.today_requests || 0) > 0 ? 'var(--text-main)' : 'var(--text-dim)'};">${acc.today_requests || 0}</b> 次 · <b style="color:${(acc.today_tokens || 0) > 0 ? '#0284c7' : 'var(--text-dim)'};">${formatTokens(acc.today_tokens || 0)}</b>
-                  ${(acc.five_hour_requests || 0) > 0 ? `<span style="color:var(--text-dim); font-size:9.5px; opacity:0.8;">(5h: ${acc.five_hour_requests}次)</span>` : ''}
+                  ${t('quotas.telemetryCompact', {
+                    reqs: `<b style="color:${(acc.today_requests || 0) > 0 ? 'var(--text-main)' : 'var(--text-dim)'};">${acc.today_requests || 0}</b>`,
+                    tokens: `<b style="color:${(acc.today_tokens || 0) > 0 ? '#0284c7' : 'var(--text-dim)'};">${formatTokens(acc.today_tokens || 0)}</b>`
+                  })}${(acc.five_hour_requests || 0) > 0 ? `<span style="color:var(--text-dim); font-size:9.5px; opacity:0.8;">${t('quotas.telemetry5hSuffix', { reqs: acc.five_hour_requests })}</span>` : ''}
                 </span>
               </div>
             </div>
@@ -1208,7 +1210,10 @@
             <span>${t('quotas.statusLabel')} <b style="color:${stColor};">${isBlocked ? escapeHtml(health.label) : (isPartialCooldown ? escapeHtml(health.label || '部分模型冷却') : (isDisabled ? t('quotas.disabledBadge') : escapeHtml(acc.status)))}</b></span>
           </div>
           <div class="account-card-subinfo" style="margin-top:2px; font-size:11px; color:var(--text-muted);">
-            <span>今日用量: <b style="color:${(acc.today_requests || 0) > 0 ? 'var(--text-main)' : 'var(--text-dim)'};">${acc.today_requests || 0}</b> 次请求 · <b style="color:${(acc.today_tokens || 0) > 0 ? '#0284c7' : 'var(--text-dim)'};">${formatTokens(acc.today_tokens || 0)}</b> Tokens ${(acc.five_hour_requests || 0) > 0 ? `· 5h: ${acc.five_hour_requests} 次` : ''}</span>
+            <span>${t('quotas.telemetryCard', {
+              reqs: `<b style="color:${(acc.today_requests || 0) > 0 ? 'var(--text-main)' : 'var(--text-dim)'};">${acc.today_requests || 0}</b>`,
+              tokens: `<b style="color:${(acc.today_tokens || 0) > 0 ? '#0284c7' : 'var(--text-dim)'};">${formatTokens(acc.today_tokens || 0)}</b>`
+            })}${(acc.five_hour_requests || 0) > 0 ? t('quotas.telemetryCard5hSuffix', { reqs: acc.five_hour_requests }) : ''}</span>
           </div>
           ${hasValidation ? `
             <div style="background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.2); border-radius:6px; padding:8px 10px; margin:4px 0 10px 0; font-size:11.5px; display:flex; justify-content:space-between; align-items:center;">

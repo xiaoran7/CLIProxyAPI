@@ -390,6 +390,7 @@
 
     // 0. 获取上游凭证配额 (Antigravity & Codex 账号卡片)
     let isFetchingUpstreamQuotas = false;
+    let pendingForceUpstreamFetch = false;
     let quotaBackgroundFollowupTimer = null;
     function setUpstreamPlaceholder(html) {
       const cards = document.getElementById('upstream-cards-container');
@@ -400,7 +401,10 @@
 
     async function fetchUpstreamQuotas(force = false) {
       if (isMemberAuth()) return;
-      if (isFetchingUpstreamQuotas) return;
+      if (isFetchingUpstreamQuotas) {
+        if (force) pendingForceUpstreamFetch = true;
+        return;
+      }
       isFetchingUpstreamQuotas = true;
       const secret = getAdminSecret();
       if (!secret) {
@@ -443,6 +447,8 @@
               quotaBackgroundFollowupTimer = null;
               if (activeNavTab === 'quotas' || activeNavTab === 'status') {
                 fetchUpstreamQuotas(false).catch(() => {});
+              } else if (refreshIcon) {
+                refreshIcon.classList.remove('spin');
               }
             }, 3500);
           } else {
@@ -473,6 +479,10 @@
         try {
           renderOperationsStrip();
         } catch (_) {}
+        if (pendingForceUpstreamFetch) {
+          pendingForceUpstreamFetch = false;
+          fetchUpstreamQuotas(true).catch(() => {});
+        }
       }
     }
 
@@ -489,7 +499,9 @@
           showToast(t('quotas.quotaUpdatedToast'), 'success');
         }
       } finally {
-        if (refreshIcon) refreshIcon.classList.remove('spin');
+        if (refreshIcon && !quotaBackgroundFollowupTimer) {
+          refreshIcon.classList.remove('spin');
+        }
       }
     }
 

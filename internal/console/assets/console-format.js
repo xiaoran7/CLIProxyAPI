@@ -148,12 +148,12 @@
         return t('reset.daysHours', { days, remHours });
       }
       if (hours > 0) {
-        return `${hours}小时 ${mins}分 ${secs}秒`;
+        return t('reset.hoursMinutesSeconds', { hours, mins, secs });
       }
       if (mins > 0) {
-        return `${mins}分 ${secs}秒`;
+        return t('reset.minutesSeconds', { mins, secs });
       }
-      return `${secs}秒`;
+      return t('reset.secondsOnly', { secs });
     }
     // 客户端极简紧凑重置倒计时（例如 4h 52m 18s / 1d 9h / 45m 12s / 长期 / 即将重置）
     function formatCompactCountdownLive(targetTime) {

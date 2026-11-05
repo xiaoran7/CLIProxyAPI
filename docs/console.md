@@ -23,7 +23,10 @@ The Gateway Console (`internal/console/`) is a native, high-performance API gate
 4. **Transactional Outbox & Aggregation**:
    Synchronously records request events into `usage_outbox` (WAL mode) and periodically flushes batches into `usage_daily` and `request_events` via atomic transactions, surviving process restarts with automatic crash replay.
 
-5. **Embedded Vanilla JS SPA (`//go:embed`)**:
+5. **Token Generation Rate & Burst Anti-Distortion**:
+   Calculates generation speed (`tok/s`) during the isolated decoding phase (`duration = Latency - TTFT`), eliminating prefill, prompt caching, and silent reasoning delays from the denominator. Enforces dual physical safety bounds (`MinStreamingGenerationMs = 100ms`, `MaxPlausibleTokensPerSec = 500.0 tok/s`) to prevent instantaneous single-packet bursts (e.g. pre-buffered tool calls) from triggering artificial spikes or 100ms threshold cliff fallbacks. Burst deliveries without a sustained streaming window are cleanly rendered as `—` with an informative tooltip.
+
+6. **Embedded Vanilla JS SPA (`//go:embed`)**:
    Single-page console UI embedded into the Go binary at compile-time with 8-byte hex MD5 ETag caching and conditional 304 responses, accessible at `/console` with automatic 301 redirection from legacy `/admin`.
 
 ---
@@ -167,7 +170,10 @@ Legacy asset aliases still resolve: `/console/style.css`, `/admin/style.css`, an
 4. **事务性 Outbox 与状态持久化**：
    基于 SQLite WAL 模式，请求流水毫秒级同步写入 `usage_outbox`，随后按 `CONSOLE_FLUSH_INTERVAL`（默认 100ms）通过单一数据库事务批量落入 `usage_daily` 与 `request_events`，启动时自动重放未落盘流水。
 
-5. **编译期全内嵌 SPA 页面（`//go:embed`）**：
+5. **Token 生成速率计算与突发防失真机制**：
+   针对流式请求精准隔离纯解码阶段（`耗时 = 总延迟 - 首字延迟 TTFT`），将前置 Prompt 缓存命中与思考等待剥离出分母。引入双重物理边界设防（`MinStreamingGenerationMs = 100ms` 与 `MaxPlausibleTokensPerSec = 500.0 tok/s`），彻底消除 100ms 悬崖断层与除以网络微抖动造成的虚高百倍（1500+ tok/s）或暴跌（个位数）缺陷。对于工具调用等单包瞬时投递场景，自动净化显示为 `—` 并附带气泡提示。
+
+6. **编译期全内嵌 SPA 页面（`//go:embed`）**：
    前端资源打入单一二进制文件，配备 8 字节 Hex MD5 ETag 缓存校验，直达 `/console`，原 `/admin` 自动 301 重定向。
 
 ## 路由约定

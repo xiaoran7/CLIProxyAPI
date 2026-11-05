@@ -13,6 +13,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Fixed permanent polling pause in `console-polling.js`: replaced static `document.activeElement` check with a 3.5s typing debounce so input focus never freezes the background polling loop.
   - Fixed `getAdminSecret` cookie fallback in `console-auth.js` to prevent false secret-missing states during routine background polls.
   - Preserved loaded card DOM in `console-quotas-fetch.js` during refreshes, eliminating jarring blank loading placeholders.
+  - Handled concurrent `pendingForceUpstreamFetch` in `console-quotas-fetch.js` to ensure manual refresh clicks are never dropped during active polls, and synchronized the spinning animation with background probe execution.
+  - Added full bilingual i18n support in `console-i18n.js` and `console-format.js` for live countdown ticks and card usage telemetry.
+  - Hardened `handlers_upstream_quotas.go` with nil checks on `eng.DB()` before querying validations to prevent nil pointer exceptions.
 - **Console Token Generation Rate Calculation & Burst Anti-Distortion (`internal/console/engine/`, `internal/console/api/`, `internal/console/assets/`)**:
   - Eliminated the artificial threshold cliff in `CalculateTokensPerSec` where output duration windows shorter than 100ms fell back to total request latency (including tens of seconds of prefill/thinking), causing identical tool-call bursts to swing wildly between 14 tok/s and 1500+ tok/s.
   - Implemented `MinStreamingGenerationMs` (100ms) and `MaxPlausibleTokensPerSec` (500.0 tok/s) physical boundary checks. Instantaneous single-packet deliveries (such as pre-buffered tool call or short function-call JSON) return `0` instead of calculating distorted rates from packet arrival jitter.
