@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="/console/console-theme-v2310.css"/>
 <link rel="stylesheet" href="/console/console-validations.css"/>
 <link rel="stylesheet" href="/console/console-upstream-stats.css"/>
+<link rel="stylesheet" href="/console/console-traffic.css"/>
   <script src="/console/console-i18n.js"></script>
   <script src="/console/console-format.js"></script>
   <script src="/console/console-quotas-priority.js"></script>
@@ -29,6 +30,7 @@
   <script src="/console/console-keys.js"></script>
   <script src="/console/console-stats.js"></script>
   <script src="/console/console-logs.js"></script>
+  <script src="/console/console-traffic.js"></script>
 <link rel="stylesheet" href="/console/console-cpa.css"/>
 <link rel="stylesheet" href="/console/console-overview.css"/>
 </head>
@@ -66,6 +68,9 @@
 </button>
 <button class="nav-tab-btn" id="tab-btn-overview" onclick="switchNavTab('overview')">
 <svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round"></path></svg><span data-i18n="nav.overview">用量趋势</span>
+</button>
+<button class="nav-tab-btn" id="tab-btn-traffic" onclick="switchNavTab('traffic')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-linecap="round" stroke-linejoin="round"></path></svg><span id="tab-text-traffic" data-i18n="nav.traffic">可视化网关</span><span class="tab-badge" id="nav-badge-traffic" title="活跃 IP 数" data-i18n-title="nav.badge.activeIPs">0</span>
 </button>
 <button class="nav-tab-btn" id="tab-btn-logs" onclick="switchNavTab('logs')">
 <svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 015.586-1.414l5.414 5.414V19a2 2 0 01-2 2H7a2 2 0 01-2-2V5" stroke-linecap="round" stroke-linejoin="round"></path></svg><span id="tab-text-logs" data-i18n="nav.logs">请求流水</span><span class="tab-badge" id="nav-badge-logs" title="今日请求数" data-i18n-title="nav.badge.todayRequests">0</span>
@@ -535,6 +540,122 @@
 </table>
 </div>
 </div>
+</div>
+<div class="tab-page" id="tab-page-traffic">
+  <!-- 1. Top metric cards -->
+  <div class="traffic-metrics-grid">
+    <div class="traffic-metric-card">
+      <div class="traffic-metric-header">
+        <span class="traffic-metric-label">活跃客户端 (Client IPs)</span>
+        <span class="traffic-metric-icon" style="color:#06b6d4;">🌐</span>
+      </div>
+      <div class="traffic-metric-val" id="traffic-val-ips" style="color:#06b6d4;">0<small>个活跃 IP</small></div>
+      <span class="traffic-metric-desc">近 5 分钟请求发起唯一真实 IP 地址</span>
+    </div>
+    <div class="traffic-metric-card">
+      <div class="traffic-metric-header">
+        <span class="traffic-metric-label">近 5 分钟请求量 (Requests)</span>
+        <span class="traffic-metric-icon" style="color:#3b82f6;">📈</span>
+      </div>
+      <div class="traffic-metric-val" id="traffic-val-reqs" style="color:#3b82f6;">0<small>次调用</small></div>
+      <span class="traffic-metric-desc" id="traffic-val-total">环形缓冲累计记录: 0 条</span>
+    </div>
+    <div class="traffic-metric-card">
+      <div class="traffic-metric-header">
+        <span class="traffic-metric-label">平均延迟 (Avg Latency)</span>
+        <span class="traffic-metric-icon" style="color:#8b5cf6;">⚡</span>
+      </div>
+      <div class="traffic-metric-val" id="traffic-val-latency" style="color:#8b5cf6;">0<small>ms</small></div>
+      <span class="traffic-metric-desc">近 5 分钟调用平均往返时延</span>
+    </div>
+    <div class="traffic-metric-card">
+      <div class="traffic-metric-header">
+        <span class="traffic-metric-label">调用成功率 (Success Rate)</span>
+        <span class="traffic-metric-icon" style="color:#10b981;">🛡️</span>
+      </div>
+      <div class="traffic-metric-val" id="traffic-val-success" style="color:#10b981;">100.0<small>%</small></div>
+      <span class="traffic-metric-desc">HTTP 2xx 成功调用比例</span>
+    </div>
+  </div>
+
+  <!-- 2. Middle SVG Flow Topology Card -->
+  <div class="traffic-topology-wrapper">
+    <div class="traffic-topology-header">
+      <div>
+        <div class="traffic-topology-title">
+          <svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:#06b6d4;" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span>实时调用流向拓扑 (Traffic Topology)</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">全链路透视：客户端真实 IP ➔ 目标请求模型 ➔ 映射上游渠道 ➔ 响应状态</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <select class="form-select" style="font-size:12px;padding:4px 8px;border-radius:6px;min-height:28px;" onchange="setTrafficPollingRate(this.value)">
+          <option value="2">⚡ 2s 极速轮询</option>
+          <option value="3" selected>🔄 3s 标准轮询</option>
+          <option value="5">⏱️ 5s 稳态轮询</option>
+          <option value="0">⏸️ 暂停自动刷新</option>
+        </select>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="fetchTrafficData(true)">立即刷新</button>
+      </div>
+    </div>
+    <div class="traffic-topology-svg-container" id="traffic-topology-canvas-container">
+      <!-- Dynamic SVG Canvas rendered by console-traffic.js -->
+    </div>
+  </div>
+
+  <!-- 3. Active IP Ledger Card -->
+  <div class="panel" style="padding:16px 18px;margin-bottom:18px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-size:14px;font-weight:700;color:var(--text-main);">多用户 Client IP 统计台账</div>
+      <span style="font-size:11px;color:var(--text-muted);">点击任一 IP 卡片可直接联动下方明细流水</span>
+    </div>
+    <div class="traffic-ip-grid" id="traffic-ip-ledger-grid">
+      <!-- Rendered by console-traffic.js -->
+    </div>
+  </div>
+
+  <!-- 4. Real-time Stream Detail Table -->
+  <div class="traffic-table-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+      <div style="font-size:14px;font-weight:700;color:var(--text-main);">实时请求流水明细</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <input type="text" id="traffic-search-input" oninput="onTrafficSearchChange(this.value)" placeholder="🔍 搜索 IP / 模型 / Key / 渠道..." style="padding:5px 10px;border-radius:6px;font-size:12px;min-width:180px;border:1px solid var(--card-border);background:var(--input-bg, transparent);color:var(--text-main);" />
+        <select id="traffic-select-ip" onchange="onTrafficIPChange(this.value)" style="padding:5px 8px;border-radius:6px;font-size:12px;border:1px solid var(--card-border);background:var(--input-bg, transparent);color:var(--text-main);">
+          <option value="">全部客户端 IP</option>
+        </select>
+        <select id="traffic-select-model" onchange="onTrafficModelChange(this.value)" style="padding:5px 8px;border-radius:6px;font-size:12px;border:1px solid var(--card-border);background:var(--input-bg, transparent);color:var(--text-main);">
+          <option value="">全部请求模型</option>
+        </select>
+        <select id="traffic-select-status" onchange="onTrafficStatusChange(this.value)" style="padding:5px 8px;border-radius:6px;font-size:12px;border:1px solid var(--card-border);background:var(--input-bg, transparent);color:var(--text-main);">
+          <option value="all">全部状态</option>
+          <option value="2xx">🟢 2xx 成功</option>
+          <option value="4xx">🟠 4xx 客户端异常</option>
+          <option value="5xx">🔴 5xx 上游错误</option>
+        </select>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="resetTrafficFilters()">重置</button>
+        <span id="traffic-records-count" style="font-size:11.5px;color:var(--text-muted);margin-left:4px;">展示 0 / 0 条</span>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="table" style="width:100%;font-size:12px;margin:0;">
+        <thead>
+          <tr style="text-align:left;border-bottom:1px solid var(--border-subtle, rgba(0,0,0,0.06));color:var(--text-muted);">
+            <th style="padding:8px 10px;">时间</th>
+            <th style="padding:8px 10px;">客户端真实 IP</th>
+            <th style="padding:8px 10px;">Key 标识</th>
+            <th style="padding:8px 10px;">请求模型</th>
+            <th style="padding:8px 10px;">映射渠道</th>
+            <th style="padding:8px 10px;">状态</th>
+            <th style="padding:8px 10px;">延迟</th>
+            <th style="padding:8px 10px;">Tokens</th>
+          </tr>
+        </thead>
+        <tbody id="traffic-tbody">
+          <tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted);">正在拉取网关实时流量拓扑...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 <div class="tab-page" id="tab-page-logs">
 <!-- 最近请求流水 -->

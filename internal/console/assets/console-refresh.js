@@ -40,6 +40,9 @@
             case 'overview':
               await fetchStatsData();
               break;
+            case 'traffic':
+              await fetchTrafficData(force);
+              break;
             case 'logs':
               await fetchEventsData(force);
               break;

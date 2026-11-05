@@ -292,6 +292,7 @@
       validations: { title: 'nav.validations', eyebrow: 'SECURITY & VALIDATIONS', description: 'page.validations.desc' },
       overview: { title: 'nav.overview', eyebrow: 'USAGE ANALYTICS', description: 'page.overview.desc' },
       keys: { title: 'nav.keys', eyebrow: 'ACCESS CONTROL', description: 'page.keys.desc' },
+      traffic: { title: 'nav.traffic', eyebrow: 'REALTIME TOPOLOGY & CLIENT IP', description: 'page.traffic.desc' },
       logs: { title: 'nav.logs', eyebrow: 'REQUEST ACTIVITY', description: 'page.logs.desc' },
       errors: { title: 'nav.errors', eyebrow: 'INCIDENTS & CIRCUIT BREAKERS', description: 'page.errors.desc' }
     };

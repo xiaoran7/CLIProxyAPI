@@ -26,6 +26,7 @@
     'common.switchKey': { zh: '切换 Key', en: 'Switch Key' },
 
     // ==== 导航（nav.*）====
+    'nav.badge.activeIPs': { zh: '活跃客户端 IP 数', en: 'Active client IP count' },
     'nav.badge.todayErrors': { zh: '今日故障数', en: 'Today\'s error count' },
     'nav.badge.todayRequests': { zh: '今日请求数', en: 'Today\'s request count' },
     'nav.breadcrumbRoot': { zh: '工作台', en: 'Console' },
@@ -41,6 +42,7 @@
     'nav.overview': { zh: '用量趋势', en: 'Usage Trends' },
     'nav.quotas': { zh: '上游凭证', en: 'Upstream Credentials' },
     'nav.status': { zh: '服务状态', en: 'Service Status' },
+    'nav.traffic': { zh: '可视化网关', en: 'Visual Gateway' },
     'nav.upstreamStats': { zh: '凭证统计', en: 'Credential Stats' },
     'nav.validations': { zh: 'Google 验证', en: 'Google Validation' },
     'nav.workspace': { zh: '工作区', en: 'Workspace' },
@@ -68,6 +70,7 @@
     'page.overview.desc': { zh: '追踪请求量、Token 消耗、缓存命中与模型用量。', en: 'Track request volume, token consumption, cache hits and per-model usage.' },
     'page.quotas.desc': { zh: '查看真实上游额度、可用性与近期请求表现。', en: 'Review live upstream quota, availability and recent request performance.' },
     'page.status.desc': { zh: '查看网关与上游凭证的可用率、延迟和心跳。', en: 'Check gateway and upstream credential availability, latency and heartbeat.' },
+    'page.traffic.desc': { zh: '全链路透视多用户 Client IP 来源、目标请求模型、映射上游渠道与响应流向拓扑。', en: 'Inspect real-time client IP flows, model routing and upstream channel topology.' },
     'page.upstreamStats.desc': { zh: '按上游凭证查看请求、成功率与 Token 用量。', en: 'Inspect requests, success rate and token usage per upstream credential.' },
     'page.validations.desc': { zh: '集中管理与处理 Google Antigravity 验证链接 (VALIDATION_REQUIRED)，直达验证页面并维护账号健康。', en: 'Centralize Google Antigravity validation links (VALIDATION_REQUIRED), jump straight to the validation page and keep accounts healthy.' },
 

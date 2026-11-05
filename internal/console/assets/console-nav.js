@@ -24,6 +24,8 @@
         renderMainChart(cachedStats);
       } else if (tabId === 'keys' && cachedKeys && cachedKeys.length > 0) {
         renderKeysTable(cachedKeys);
+      } else if (tabId === 'traffic' && cachedTrafficData) {
+        renderTrafficUI(cachedTrafficData);
       } else if (tabId === 'logs' && cachedEvents && cachedEvents.length > 0) {
         renderEventsTable(cachedEvents, cachedEventsTotal);
       } else if (tabId === 'errors' && cachedErrors && cachedErrors.length > 0) {
