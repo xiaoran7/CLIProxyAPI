@@ -80,7 +80,7 @@ func KeyAuthMiddleware(eng *engine.Engine) gin.HandlerFunc {
 				return
 			}
 
-			keyID, ok := eng.ResolveKeyID(rawKey)
+			keyID, ok := eng.ResolveKeyIDOrReconcile(c.Request.Context(), rawKey)
 			if !ok {
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 					"error": gin.H{
@@ -96,7 +96,7 @@ func KeyAuthMiddleware(eng *engine.Engine) gin.HandlerFunc {
 			c.Set(ContextRawKey, rawKey)
 		} else if rawKey != "" {
 			// If no keys registered yet, optionally associate if rawKey is known
-			if keyID, ok := eng.ResolveKeyID(rawKey); ok {
+			if keyID, ok := eng.ResolveKeyIDOrReconcile(c.Request.Context(), rawKey); ok {
 				c.Set(ContextKeyID, keyID)
 				c.Set(ContextRawKey, rawKey)
 			}

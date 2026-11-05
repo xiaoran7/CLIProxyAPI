@@ -39,7 +39,7 @@ func (p *ConsoleAccessProvider) Authenticate(ctx context.Context, r *http.Reques
 		return nil, sdkaccess.NewNoCredentialsError()
 	}
 
-	keyID, ok := p.eng.ResolveKeyID(rawKey)
+	keyID, ok := p.eng.ResolveKeyIDOrReconcile(ctx, rawKey)
 	if !ok || keyID <= 0 {
 		return nil, sdkaccess.NewInvalidCredentialError()
 	}

@@ -13,10 +13,11 @@ import (
 // Engine is the central coordinator for Console's authentication, rate-limiting,
 // quota enforcement, and asynchronous transactional outbox recording.
 type Engine struct {
-	db      *db.DB
-	mem     *MemoryState
-	flusher *OutboxFlusher
-	logger  *logrus.Entry
+	db               *db.DB
+	mem              *MemoryState
+	flusher          *OutboxFlusher
+	logger           *logrus.Entry
+	fallbackResolver func(ctx context.Context, rawKey string) bool
 }
 
 // NewEngine creates and initializes the Console Engine.
@@ -218,6 +219,14 @@ func (e *Engine) ReloadPreloadedToday(ctx context.Context) error {
 	return nil
 }
 
+// SetFallbackKeyResolver registers an optional fallback to verify and lazily import
+// keys recognized by upstream CPA configuration that haven't been reconciled yet.
+func (e *Engine) SetFallbackKeyResolver(fn func(ctx context.Context, rawKey string) bool) {
+	if e != nil {
+		e.fallbackResolver = fn
+	}
+}
+
 // ResolveKeyID returns the key ID for a plaintext API key if active.
 func (e *Engine) ResolveKeyID(rawKey string) (int64, bool) {
 	if rawKey == "" {
@@ -227,6 +236,24 @@ func (e *Engine) ResolveKeyID(rawKey string) (int64, bool) {
 	defer e.mem.mu.RUnlock()
 	id, ok := e.mem.rawKeyToID[rawKey]
 	return id, ok
+}
+
+// ResolveKeyIDOrReconcile returns the key ID for a plaintext API key if active.
+// If the key is not currently recognized, it invokes the fallback key resolver (if configured)
+// to lazily reconcile new keys provisioned in upstream management.
+func (e *Engine) ResolveKeyIDOrReconcile(ctx context.Context, rawKey string) (int64, bool) {
+	if rawKey == "" {
+		return 0, false
+	}
+	if id, ok := e.ResolveKeyID(rawKey); ok {
+		return id, true
+	}
+	if e != nil && e.fallbackResolver != nil {
+		if e.fallbackResolver(ctx, rawKey) {
+			return e.ResolveKeyID(rawKey)
+		}
+	}
+	return 0, false
 }
 
 // GetKeyMeta returns cached metadata for a key ID.

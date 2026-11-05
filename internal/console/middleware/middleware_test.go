@@ -890,3 +890,86 @@ func TestAccounting_GatewayLocalErrorTypeClassification(t *testing.T) {
 		t.Fatalf("expected error_type 'model_forbidden', got %v", errors[0].ErrorType)
 	}
 }
+
+func TestKeyAuthMiddleware_JITFallbackReconciliation(t *testing.T) {
+	database, eng, _, _ := setupTestEnvironment(t)
+	defer func() { _ = database.Close() }()
+
+	ctx := context.Background()
+	newCpaKey := "sk-cpa-jit-mgmt-new-token-123456"
+
+	// Configure fallback resolver that checks simulated CPA config keys
+	eng.SetFallbackKeyResolver(func(ctx context.Context, rawKey string) bool {
+		if rawKey != newCpaKey {
+			return false
+		}
+		if isDel, _ := database.IsKeyDeleted(ctx, rawKey); isDel {
+			return false
+		}
+		keyID, err := database.InsertKey(ctx, rawKey, "CPA Config Key")
+		if err != nil || keyID <= 0 {
+			return false
+		}
+		rule := &db.QuotaRuleRow{
+			KeyID:          keyID,
+			Enabled:        0,
+			HardRatio:      1.2,
+			RPMLimit:       0,
+			ModelWhitelist: "[]",
+		}
+		_ = database.UpsertQuotaRule(ctx, rule)
+		_ = eng.ReloadState(ctx)
+		return true
+	})
+
+	r := gin.New()
+	for _, mw := range Gateway(eng) {
+		r.Use(mw)
+	}
+	r.POST("/v1/chat/completions", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	// 1. Initial state: newCpaKey is NOT in memory
+	if _, ok := eng.ResolveKeyID(newCpaKey); ok {
+		t.Fatal("expected newCpaKey not in engine before request")
+	}
+
+	// 2. Request with newly provisioned CPA key should trigger JIT reconciliation and succeed (200)
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(`{"model":"gpt-4o"}`))
+	req.Header.Set("Authorization", "Bearer "+newCpaKey)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 after JIT fallback reconciliation, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// 3. Verify key is now recognized in memory
+	if _, ok := eng.ResolveKeyID(newCpaKey); !ok {
+		t.Fatal("expected newCpaKey to be cached in engine memory after JIT reconciliation")
+	}
+
+	// 4. Request with completely unknown key still returns 401
+	badReq := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(`{"model":"gpt-4o"}`))
+	badReq.Header.Set("Authorization", "Bearer sk-random-bad-key")
+	badReq.Header.Set("Content-Type", "application/json")
+	badW := httptest.NewRecorder()
+	r.ServeHTTP(badW, badReq)
+	if badW.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unknown key, got %d", badW.Code)
+	}
+
+	// 5. Tombstoned key should NOT be lazily reconciled
+	tombstoneKey := "sk-cpa-tombstoned-key"
+	_ = database.MarkKeyDeleted(ctx, tombstoneKey)
+	tombReq := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(`{"model":"gpt-4o"}`))
+	tombReq.Header.Set("Authorization", "Bearer "+tombstoneKey)
+	tombReq.Header.Set("Content-Type", "application/json")
+	tombW := httptest.NewRecorder()
+	r.ServeHTTP(tombW, tombReq)
+	if tombW.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for tombstoned key, got %d", tombW.Code)
+	}
+}

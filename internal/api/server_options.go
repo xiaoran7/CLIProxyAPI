@@ -27,6 +27,7 @@ type serverOptionConfig struct {
 	postAuthPersistHook   auth.PostAuthHook
 	pluginHost            *pluginhost.Host
 	configReloadHook      func(context.Context, *config.Config)
+	configUpdateHook      func(context.Context, *config.Config)
 	exampleAPIKeySafeMode bool
 }
 
@@ -139,9 +140,40 @@ func WithPluginHost(host *pluginhost.Host) ServerOption {
 }
 
 // WithConfigReloadHook registers a callback used after management saves config changes.
+// Multiple callbacks are chained in registration order.
 func WithConfigReloadHook(hook func(context.Context, *config.Config)) ServerOption {
 	return func(cfg *serverOptionConfig) {
-		cfg.configReloadHook = hook
+		if hook == nil {
+			return
+		}
+		if cfg.configReloadHook == nil {
+			cfg.configReloadHook = hook
+			return
+		}
+		prev := cfg.configReloadHook
+		cfg.configReloadHook = func(ctx context.Context, c *config.Config) {
+			prev(ctx, c)
+			hook(ctx, c)
+		}
+	}
+}
+
+// WithConfigUpdateHook registers a callback invoked whenever the runtime configuration updates.
+// Multiple callbacks are chained in registration order.
+func WithConfigUpdateHook(hook func(context.Context, *config.Config)) ServerOption {
+	return func(cfg *serverOptionConfig) {
+		if hook == nil {
+			return
+		}
+		if cfg.configUpdateHook == nil {
+			cfg.configUpdateHook = hook
+			return
+		}
+		prev := cfg.configUpdateHook
+		cfg.configUpdateHook = func(ctx context.Context, c *config.Config) {
+			prev(ctx, c)
+			hook(ctx, c)
+		}
 	}
 }
 

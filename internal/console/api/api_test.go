@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1098,5 +1100,76 @@ func TestHandleUpdateQuotaRule_PreservesExistingFields(t *testing.T) {
 	}
 	if finalRule.RPMLimit != 90 {
 		t.Fatalf("expected rpm_limit 90 to be preserved when updating whitelist, got %d", finalRule.RPMLimit)
+	}
+}
+
+func TestHandleGetKeys_SyncsFromCpaClient(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tmpDir, err := os.MkdirTemp("", "cpa_keys_sync_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "keys_sync.db")
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	defer database.Close()
+
+	eng, err := engine.NewEngine(database, 50*time.Millisecond)
+	if err != nil {
+		t.Fatalf("failed to init engine: %v", err)
+	}
+	defer eng.Stop()
+
+	// Mock CPA server that serves /v0/management/api-keys
+	syncedKey := "sk-cpa-synced-from-cpa-mgmt-9999"
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v0/management/api-keys" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"api-keys": []string{syncedKey},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+
+	host, portStr, _ := net.SplitHostPort(strings.TrimPrefix(ts.URL, "http://"))
+	port, _ := strconv.Atoi(portStr)
+	cpaClient := NewCpaClient(host, port, "")
+
+	r := gin.New()
+	r.GET("/console/api/keys", HandleGetKeys(eng, nil, cpaClient))
+
+	// Verify key is not in DB initially
+	if _, ok := eng.ResolveKeyID(syncedKey); ok {
+		t.Fatal("expected syncedKey not in engine before request")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/console/api/keys", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /console/api/keys, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify syncedKey was imported into engine and SQLite
+	keyID, ok := eng.ResolveKeyID(syncedKey)
+	if !ok || keyID <= 0 {
+		t.Fatalf("expected syncedKey to be reconciled into engine after HandleGetKeys, got ok=%v, id=%d", ok, keyID)
+	}
+
+	var resp struct {
+		Keys  []map[string]interface{} `json:"keys"`
+		Total int                      `json:"total"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Total != 1 {
+		t.Fatalf("expected total 1 key, got %d", resp.Total)
 	}
 }

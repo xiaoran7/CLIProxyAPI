@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/db"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/engine"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/middleware"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/managementasset"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v8/sdk/access"
 	sdkhandlers "github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
@@ -33,12 +35,14 @@ var (
 
 // Subsystem represents the running Console instance.
 type Subsystem struct {
-	cfg       SubsystemConfig
-	db        *db.DB
-	engine    *engine.Engine
-	pricing   *consoleapi.PricingEngine
-	providers *consoleapi.ProviderRegistryEngine
-	logger    *logrus.Entry
+	cfg         SubsystemConfig
+	db          *db.DB
+	engine      *engine.Engine
+	pricing     *consoleapi.PricingEngine
+	providers   *consoleapi.ProviderRegistryEngine
+	logger      *logrus.Entry
+	reconcileMu sync.Mutex
+	cpaConfig   atomic.Pointer[serverconfig.Config]
 }
 
 // InitSubsystem initializes database, engine, pricing, and provider registry.
@@ -112,6 +116,52 @@ func InitSubsystem(cfg SubsystemConfig) (*Subsystem, error) {
 		logger:    logger,
 	}
 
+	// Connect fallback key resolver on engine for JIT reconciliation of newly added CPA keys
+	eng.SetFallbackKeyResolver(func(ctx context.Context, rawKey string) bool {
+		trimmed := strings.TrimSpace(rawKey)
+		if trimmed == "" {
+			return false
+		}
+		if isDel, errDel := sub.db.IsKeyDeleted(ctx, trimmed); errDel == nil && isDel {
+			return false
+		}
+		var activeCfg *serverconfig.Config
+		if sub != nil {
+			activeCfg = sub.cpaConfig.Load()
+		}
+		if activeCfg == nil {
+			activeCfg = managementasset.GetCurrentConfig()
+		}
+		if activeCfg == nil || len(activeCfg.APIKeys) == 0 {
+			return false
+		}
+		isKnown := false
+		for _, k := range activeCfg.APIKeys {
+			if strings.TrimSpace(k) == trimmed {
+				isKnown = true
+				break
+			}
+		}
+		if !isKnown {
+			return false
+		}
+		keyID, err := sub.db.InsertKey(ctx, trimmed, "CPA Config Key")
+		if err != nil || keyID <= 0 {
+			return false
+		}
+		rule := &db.QuotaRuleRow{
+			KeyID:          keyID,
+			Enabled:        0,
+			HardRatio:      1.2,
+			RPMLimit:       0,
+			ModelWhitelist: "[]",
+		}
+		_ = sub.db.UpsertQuotaRule(ctx, rule)
+		_ = sub.engine.ReloadState(ctx)
+		sub.logger.Infof("console: lazily reconciled newly configured CPA key %s (id=%d)", consoleapi.MaskAPIKey(trimmed), keyID)
+		return true
+	})
+
 	globalSubsystem = sub
 	logger.Infof("console subsystem initialized successfully (db: %s)", cfg.DBPath)
 	return sub, nil
@@ -164,6 +214,52 @@ func (s *Subsystem) Pricing() *consoleapi.PricingEngine {
 // Providers returns the ProviderRegistryEngine.
 func (s *Subsystem) Providers() *consoleapi.ProviderRegistryEngine {
 	return s.providers
+}
+
+// ReconcileConfigKeys reconciles and imports API keys defined in CPA configuration into Console database.
+func (s *Subsystem) ReconcileConfigKeys(ctx context.Context, apiKeys []string) (int, error) {
+	if s == nil || s.db == nil || s.engine == nil || len(apiKeys) == 0 {
+		return 0, nil
+	}
+	s.reconcileMu.Lock()
+	defer s.reconcileMu.Unlock()
+
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	reconciled := 0
+	for _, k := range apiKeys {
+		trimmed := strings.TrimSpace(k)
+		if trimmed == "" {
+			continue
+		}
+		// Do not resurrect keys explicitly deleted by administrators
+		if isDeleted, errDel := s.db.IsKeyDeleted(ctx, trimmed); errDel == nil && isDeleted {
+			continue
+		}
+		if _, exists := s.engine.ResolveKeyID(trimmed); !exists {
+			keyID, err := s.db.InsertKey(ctx, trimmed, "CPA Config Key")
+			if err == nil && keyID > 0 {
+				rule := &db.QuotaRuleRow{
+					KeyID:          keyID,
+					Enabled:        0,
+					HardRatio:      1.2,
+					RPMLimit:       0,
+					ModelWhitelist: "[]",
+				}
+				_ = s.db.UpsertQuotaRule(ctx, rule)
+				reconciled++
+			}
+		}
+	}
+	if reconciled > 0 {
+		_ = s.engine.ReloadState(ctx)
+		s.logger.Infof("console: reconciled %d keys from CPA configuration", reconciled)
+	}
+	return reconciled, nil
 }
 
 // HydrateCoreAuthManager populates in-memory credential throughput ring buffers and lifetime counters from SQLite.
@@ -321,39 +417,12 @@ func ServerOptions(cfg SubsystemConfig) []api.ServerOption {
 		}
 
 		if serverCfg != nil {
+			sub.cpaConfig.Store(serverCfg)
 			// Reconcile and import API keys defined in CPA server configuration into Console database
 			if len(serverCfg.APIKeys) > 0 {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				reconciled := 0
-				for _, k := range serverCfg.APIKeys {
-					trimmed := strings.TrimSpace(k)
-					if trimmed == "" {
-						continue
-					}
-					// Do not resurrect keys explicitly deleted by administrators
-					if isDeleted, errDel := sub.db.IsKeyDeleted(ctx, trimmed); errDel == nil && isDeleted {
-						continue
-					}
-					if _, exists := sub.engine.ResolveKeyID(trimmed); !exists {
-						keyID, err := sub.db.InsertKey(ctx, trimmed, "CPA Config Key")
-						if err == nil && keyID > 0 {
-							rule := &db.QuotaRuleRow{
-								KeyID:          keyID,
-								Enabled:        0,
-								HardRatio:      1.2,
-								RPMLimit:       0,
-								ModelWhitelist: "[]",
-							}
-							_ = sub.db.UpsertQuotaRule(ctx, rule)
-							reconciled++
-						}
-					}
-				}
-				if reconciled > 0 {
-					_ = sub.engine.ReloadState(ctx)
-					sub.logger.Infof("console: reconciled %d keys from CPA configuration", reconciled)
-				}
+				_, _ = sub.ReconcileConfigKeys(ctx, serverCfg.APIKeys)
 			}
 
 			// Reconcile and proactively register OpenAI compatibility channels into ProviderRegistryEngine
@@ -414,6 +483,22 @@ func ServerOptions(cfg SubsystemConfig) []api.ServerOption {
 		api.WithLocalManagementPassword(loopbackSecret),
 		api.WithMiddleware(gatewayMW...),
 		api.WithRouterConfigurator(routerConfigurator),
+		api.WithConfigReloadHook(func(ctx context.Context, nextCfg *serverconfig.Config) {
+			if nextCfg != nil {
+				sub.cpaConfig.Store(nextCfg)
+				if len(nextCfg.APIKeys) > 0 {
+					_, _ = sub.ReconcileConfigKeys(ctx, nextCfg.APIKeys)
+				}
+			}
+		}),
+		api.WithConfigUpdateHook(func(ctx context.Context, nextCfg *serverconfig.Config) {
+			if nextCfg != nil {
+				sub.cpaConfig.Store(nextCfg)
+				if len(nextCfg.APIKeys) > 0 {
+					_, _ = sub.ReconcileConfigKeys(ctx, nextCfg.APIKeys)
+				}
+			}
+		}),
 	}
 }
 

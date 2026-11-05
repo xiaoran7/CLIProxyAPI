@@ -1,10 +1,13 @@
 package console
 
 import (
+	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,8 +122,130 @@ func TestConsoleSubsystemLifecycle(t *testing.T) {
 }
 
 func TestBootstrap(t *testing.T) {
+	if sub := GetSubsystem(); sub != nil {
+		sub.Stop()
+	}
+	defer func() {
+		if sub := GetSubsystem(); sub != nil {
+			sub.Stop()
+		}
+	}()
 	// Call Bootstrap to ensure it executes without panics or errors
 	Bootstrap()
 	// Second call to test sync.Once idempotency
 	Bootstrap()
+}
+
+func TestConsole_ConfigReloadKeySynchronization(t *testing.T) {
+	if existing := GetSubsystem(); existing != nil {
+		existing.Stop()
+	}
+	gin.SetMode(gin.TestMode)
+	tmpDir, err := os.MkdirTemp("", "console_reload_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbPath := filepath.Join(tmpDir, "reload.db")
+	cfg := Config{
+		Enabled:       true,
+		DBPath:        dbPath,
+		AdminSecret:   "adm-sec-reload",
+		CpaHost:       "127.0.0.1",
+		CpaPort:       8000,
+		CpaSecret:     "cpa-sec-reload",
+		FlushInterval: 50 * time.Millisecond,
+	}
+
+	sub, err := InitSubsystem(cfg)
+	if err != nil {
+		t.Fatalf("InitSubsystem failed: %v", err)
+	}
+	defer sub.Stop()
+
+	opts := ServerOptions(cfg)
+	serverCfg := &serverconfig.Config{
+		Host: "127.0.0.1",
+		Port: 8000,
+		SDKConfig: serverconfig.SDKConfig{
+			APIKeys: []string{"sk-cpa-initial-key-1"},
+		},
+		RemoteManagement: serverconfig.RemoteManagement{
+			SecretKey: "cpa-sec-reload",
+		},
+	}
+	authMgr := auth.NewManager(nil, nil, nil)
+
+	api.ClearGlobalServerOptions()
+	api.RegisterGlobalServerOption(opts...)
+	defer api.ClearGlobalServerOptions()
+
+	srv := api.NewServer(serverCfg, authMgr, nil, "")
+	if srv == nil {
+		t.Fatal("NewServer failed to create server")
+	}
+
+	// 1. Initial key is reconciled
+	if _, ok := sub.Engine().ResolveKeyID("sk-cpa-initial-key-1"); !ok {
+		t.Fatal("expected initial key to be reconciled in console engine")
+	}
+
+	// 2. Simulate new key added to config via Management API
+	newKey := "sk-cpa-mgmt-created-key-2"
+	if _, ok := sub.Engine().ResolveKeyID(newKey); ok {
+		t.Fatal("expected newKey not in engine yet")
+	}
+
+	nextCfg := &serverconfig.Config{
+		Host: "127.0.0.1",
+		Port: 8000,
+		SDKConfig: serverconfig.SDKConfig{
+			APIKeys: []string{"sk-cpa-initial-key-1", newKey},
+		},
+		RemoteManagement: serverconfig.RemoteManagement{
+			SecretKey: "cpa-sec-reload",
+		},
+	}
+
+	// 3. Trigger server client/config update (which invokes configUpdateHook)
+	srv.UpdateClientsContext(context.Background(), nextCfg)
+
+	// 4. Verify new key is immediately reconciled in Console engine and DB
+	keyID, ok := sub.Engine().ResolveKeyID(newKey)
+	if !ok || keyID <= 0 {
+		t.Fatalf("expected newKey to be reconciled after UpdateClientsContext, got ok=%v, id=%d", ok, keyID)
+	}
+
+	// 5. Verify /console/api/keys lists the newly reconciled key
+	reqAuth := httptest.NewRequest(http.MethodGet, "/console/api/keys", nil)
+	reqAuth.Header.Set("Authorization", "Bearer adm-sec-reload")
+	wAuth := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(wAuth, reqAuth)
+	if wAuth.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /console/api/keys, got %d", wAuth.Code)
+	}
+
+	bodyStr := wAuth.Body.String()
+	if !strings.Contains(bodyStr, "sk-cpa...ey-2") || !strings.Contains(bodyStr, `"total":2`) {
+		t.Fatalf("expected /console/api/keys response to contain masked key, got: %s", bodyStr)
+	}
+
+	// 6. Test JIT gateway request with a 3rd key present in config but before reload
+	thirdKey := "sk-cpa-jit-direct-key-3"
+	nextCfg.APIKeys = append(nextCfg.APIKeys, thirdKey)
+	sub.cpaConfig.Store(nextCfg)
+
+	reqProxy := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(`{"model":"gpt-4o"}`))
+	reqProxy.Header.Set("Authorization", "Bearer "+thirdKey)
+	reqProxy.Header.Set("Content-Type", "application/json")
+	wProxy := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(wProxy, reqProxy)
+	// It should NOT be 401 Unauthorized
+	if wProxy.Code == http.StatusUnauthorized {
+		t.Fatalf("gateway intercepted newly created key with 401: %s", wProxy.Body.String())
+	}
+	if _, ok := sub.Engine().ResolveKeyID(thirdKey); !ok {
+		t.Fatal("expected thirdKey to be resolved in engine after gateway request")
+	}
 }

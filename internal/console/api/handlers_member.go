@@ -26,7 +26,7 @@ func MemberAuthMiddleware(eng *engine.Engine) gin.HandlerFunc {
 			return
 		}
 
-		keyID, exists := eng.ResolveKeyID(rawKey)
+		keyID, exists := eng.ResolveKeyIDOrReconcile(c.Request.Context(), rawKey)
 		if !exists || keyID <= 0 {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error": "Unauthorized: invalid or deactivated API key",

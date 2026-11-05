@@ -219,6 +219,9 @@ func (s *Server) UpdateClientsContext(ctx context.Context, cfg *config.Config) b
 		s.mgmt.SetPluginHost(s.pluginHost)
 	}
 	s.refreshPluginManagementRoutes()
+	if s.configUpdateHook != nil {
+		s.configUpdateHook(ctx, cfg)
+	}
 
 	// Count client sources from configuration and auth store.
 	authEntries := 0

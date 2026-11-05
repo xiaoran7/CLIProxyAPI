@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/db"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/engine"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/managementasset"
 )
 
 // GenerateRandomAPIKey generates a secure random API key prefixed with sk-cpa-.
@@ -36,10 +37,54 @@ func MaskAPIKey(raw string) string {
 }
 
 // HandleGetKeys returns a list of all API keys with active quotas and live usage stats.
-func HandleGetKeys(eng *engine.Engine, pricing *PricingEngine) gin.HandlerFunc {
+func HandleGetKeys(eng *engine.Engine, pricing *PricingEngine, cpa ...*CpaClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		database := eng.DB()
+
+		var configKeys []string
+		if len(cpa) > 0 && cpa[0] != nil {
+			var apiKeyResp struct {
+				APIKeys []string `json:"api-keys"`
+			}
+			if err := cpa[0].RequestJSON(ctx, http.MethodGet, "/api-keys", nil, "v0", &apiKeyResp); err == nil && len(apiKeyResp.APIKeys) > 0 {
+				configKeys = apiKeyResp.APIKeys
+			}
+		}
+		if len(configKeys) == 0 {
+			if curCfg := managementasset.GetCurrentConfig(); curCfg != nil && len(curCfg.APIKeys) > 0 {
+				configKeys = curCfg.APIKeys
+			}
+		}
+		if len(configKeys) > 0 {
+			reconciled := 0
+			for _, k := range configKeys {
+				trimmed := strings.TrimSpace(k)
+				if trimmed == "" {
+					continue
+				}
+				if isDel, errDel := database.IsKeyDeleted(ctx, trimmed); errDel == nil && isDel {
+					continue
+				}
+				if _, exists := eng.ResolveKeyID(trimmed); !exists {
+					keyID, err := database.InsertKey(ctx, trimmed, "CPA Config Key")
+					if err == nil && keyID > 0 {
+						rule := &db.QuotaRuleRow{
+							KeyID:          keyID,
+							Enabled:        0,
+							HardRatio:      1.2,
+							RPMLimit:       0,
+							ModelWhitelist: "[]",
+						}
+						_ = database.UpsertQuotaRule(ctx, rule)
+						reconciled++
+					}
+				}
+			}
+			if reconciled > 0 {
+				_ = eng.ReloadState(ctx)
+			}
+		}
 
 		keys, err := database.SelectAllKeys(ctx)
 		if err != nil {
