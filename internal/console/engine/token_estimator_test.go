@@ -99,27 +99,33 @@ func TestCalculateTokensPerSec(t *testing.T) {
 		t.Errorf("expected 226.5, got %f", tpsFastStream)
 	}
 
-	// 5. Short burst window (<100ms): 132 tokens, 9400ms latency, 9330ms TTFT -> genMs = 70ms -> burst returns 0
+	// 5. Short burst window (<100ms): 132 tokens, 9400ms latency, 9330ms TTFT -> genMs = 70ms -> falls back to end-to-end: 132 / 9.4s = 14.0 tok/s
 	tpsBurstShort := CalculateTokensPerSec(132, 9400, 9330, true)
-	if tpsBurstShort != 0 {
-		t.Errorf("expected 0 for burst delivery < 100ms, got %f", tpsBurstShort)
+	if tpsBurstShort != 14.0 {
+		t.Errorf("expected 14.0 for burst delivery < 100ms fallback, got %f", tpsBurstShort)
 	}
 
-	// 6. Implausible burst rate (>500 tok/s): 217 tokens, 22200ms latency, 22056ms TTFT -> genMs = 144ms -> rate > 500 -> returns 0
+	// 6. Implausible burst rate (>500 tok/s): 217 tokens, 22200ms latency, 22056ms TTFT -> genMs = 144ms -> rate > 500 -> falls back to end-to-end: 217 / 22.2s = 9.8 tok/s
 	tpsBurstHighRate := CalculateTokensPerSec(217, 22200, 22056, true)
-	if tpsBurstHighRate != 0 {
-		t.Errorf("expected 0 for implausible burst rate, got %f", tpsBurstHighRate)
+	if tpsBurstHighRate != 9.8 {
+		t.Errorf("expected 9.8 for implausible burst rate fallback, got %f", tpsBurstHighRate)
 	}
 
-	// 7. Missing or invalid TTFT in stream: returns 0
-	if got := CalculateTokensPerSec(100, 1000, 0, true); got != 0 {
-		t.Errorf("expected 0 for stream without TTFT, got %f", got)
-	}
-	if got := CalculateTokensPerSec(100, 1000, 1000, true); got != 0 {
-		t.Errorf("expected 0 for stream with TTFT >= latency, got %f", got)
+	// 7. Gemini single-chunk / tool-call scenario (TTFT == total latency): 93 tokens, 7100ms latency, 7100ms TTFT -> 93 / 7.1s = 13.1 tok/s
+	tpsGeminiBurst := CalculateTokensPerSec(93, 7100, 7100, true)
+	if tpsGeminiBurst != 13.1 {
+		t.Errorf("expected 13.1 for single-chunk tool-call stream, got %f", tpsGeminiBurst)
 	}
 
-	// 8. Zero or negative completion tokens or latency
+	// 8. Missing or invalid TTFT in stream: gracefully falls back to end-to-end throughput
+	if got := CalculateTokensPerSec(100, 1000, 0, true); got != 100.0 {
+		t.Errorf("expected 100.0 for stream without TTFT fallback, got %f", got)
+	}
+	if got := CalculateTokensPerSec(100, 1000, 1000, true); got != 100.0 {
+		t.Errorf("expected 100.0 for stream with TTFT >= latency fallback, got %f", got)
+	}
+
+	// 9. Zero or negative completion tokens or latency
 	if got := CalculateTokensPerSec(0, 1000, 500, true); got != 0 {
 		t.Errorf("expected 0 for 0 completion tokens, got %f", got)
 	}

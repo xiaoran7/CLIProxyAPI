@@ -448,15 +448,31 @@
 
       // 速率 (Tokens/s 生成吞吐)
       let tpsHtml = '<span style="color:var(--text-dim); font-size:11.5px;">—</span>';
-      const tpsNum = Number(ev.tokens_per_sec);
+      let tpsNum = Number(ev.tokens_per_sec);
+      if ((!Number.isFinite(tpsNum) || tpsNum <= 0) && ev.completion_tokens > 0 && ev.latency_ms > 0) {
+        tpsNum = Math.min(500, Math.round((ev.completion_tokens / (ev.latency_ms / 1000)) * 10) / 10);
+      }
       if (Number.isFinite(tpsNum) && tpsNum > 0) {
         let speedColor = '#0284c7';
         if (tpsNum >= 100) speedColor = '#10b981';
         else if (tpsNum >= 50) speedColor = '#06b6d4';
         else if (tpsNum < 20) speedColor = '#f59e0b';
-        tpsHtml = `<span class="speed-badge" style="color:${speedColor}; font-weight:600; font-size:11.5px;" title="${t('logs.generationRateTitle', { tpsNum: tpsNum })}">${tpsNum} <span style="font-size:10px; font-weight:400; opacity:0.8;">tok/s</span></span>`;
-      } else if (ev.stream && ev.latency_ms > 0 && ev.ttft_ms && ev.ttft_ms > 0 && (ev.latency_ms - ev.ttft_ms) < 200) {
-        tpsHtml = `<span style="color:var(--text-dim); font-size:11.5px; cursor:help;" title="${t('logs.rateBurstTitle')}">—</span>`;
+
+        const isPureStream = ev.stream && ev.ttft_ms > 0 && ev.latency_ms > ev.ttft_ms &&
+          (ev.latency_ms - ev.ttft_ms) >= 100 &&
+          (ev.completion_tokens / ((ev.latency_ms - ev.ttft_ms) / 1000) <= 500);
+
+        let tpsTitle = '';
+        let tpsPrefix = '';
+        if (isPureStream) {
+          tpsTitle = t('logs.generationRateTitle', { tpsNum: tpsNum });
+        } else if (ev.stream) {
+          tpsPrefix = '~';
+          tpsTitle = t('logs.rateBurstEstimateTitle', { tpsNum: tpsNum });
+        } else {
+          tpsTitle = t('logs.nonStreamRateTitle', { tpsNum: tpsNum });
+        }
+        tpsHtml = `<span class="speed-badge" style="color:${speedColor}; font-weight:600; font-size:11.5px;" title="${tpsTitle}">${tpsPrefix}${tpsNum} <span style="font-size:10px; font-weight:400; opacity:0.8;">tok/s</span></span>`;
       }
 
       return `<tr${rowClassAttr} data-id="${escapeHtml(String(ev.id || ''))}">

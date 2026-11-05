@@ -211,37 +211,30 @@ const (
 )
 
 // CalculateTokensPerSec calculates generation speed in tokens per second.
-// For streaming responses with valid TTFT, TTFT is subtracted from duration to isolate the generation phase.
-// If the generation phase is an instantaneous burst (< 100ms or exceeding plausible physical decoding rates),
-// 0 is returned to indicate that continuous streaming rate is not applicable.
+// For streaming responses with a valid sustained generation window, TTFT is subtracted from duration
+// to isolate the pure output decoding phase.
+// If the generation phase is an instantaneous single-chunk burst (< 100ms or exceeding the physical streaming
+// limit of 500 tok/s), or for non-streaming requests, it gracefully falls back to end-to-end throughput
+// based on total request latency rather than returning 0.
 func CalculateTokensPerSec(completionTokens, latencyMs, ttftMs int64, isStream bool) float64 {
 	if completionTokens <= 0 || latencyMs <= 0 {
 		return 0
 	}
 
-	if isStream {
-		if ttftMs <= 0 || latencyMs <= ttftMs {
-			// Missing or invalid TTFT in streaming response; pure generation phase cannot be determined.
-			return 0
-		}
-
+	if isStream && ttftMs > 0 && latencyMs > ttftMs {
 		genMs := latencyMs - ttftMs
-		if genMs < MinStreamingGenerationMs {
-			// Single-chunk or atomic burst delivery; window is too small for meaningful rate statistics.
-			return 0
+		if genMs >= MinStreamingGenerationMs {
+			sec := float64(genMs) / 1000.0
+			tps := float64(completionTokens) / sec
+			if tps <= MaxPlausibleTokensPerSec {
+				return math.Round(tps*10.0) / 10.0
+			}
 		}
-
-		sec := float64(genMs) / 1000.0
-		tps := float64(completionTokens) / sec
-		if tps > MaxPlausibleTokensPerSec {
-			// Physical impossibility check: packet burst rather than progressive decoding.
-			return 0
-		}
-
-		return math.Round(tps*10.0) / 10.0
 	}
 
-	// Non-streaming response: compute end-to-end generation throughput.
+	// Fallback to end-to-end throughput:
+	// Applicable for non-streaming calls, missing TTFT, single-chunk / atomic burst deliveries
+	// (where total latency ≈ TTFT, e.g. Gemini tool-call single chunks), or burst packets exceeding 500 tok/s.
 	sec := float64(latencyMs) / 1000.0
 	if sec <= 0 {
 		return 0

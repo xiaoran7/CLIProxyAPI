@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Console Token Generation Rate Single-Chunk & Burst Fallback (`internal/console/engine/`, `internal/console/assets/`, `internal/console/api/`)**:
+  - Resolved issue where successful requests with completed output tokens (e.g. Antigravity `gemini-3.8-flash-high` issuing tool calls where TTFT ≈ total latency) displayed dash `—` in the "速率 (tok/s)" column of Live Request Logs.
+  - Refined `CalculateTokensPerSec` in `token_estimator.go`: sustained progressive streaming retains pure output-phase decoding speed, while single-chunk bursts (< 100ms window, e.g. Gemini single-frame function call payloads) and packet bursts smoothly fall back to end-to-end throughput across total request latency bounded by `MaxPlausibleTokensPerSec` (500 tok/s), completely eliminating empty dash fallbacks.
+  - Upgraded frontend rate rendering in `console-logs.js` and `console-i18n.js`: displays `~X.X tok/s` for instant burst / single-chunk deliveries with descriptive bilingual tooltips distinguishing pure decoding speed vs. overall throughput, with client-side fallback if backend rates are zero.
+  - Added unit regression tests in `token_estimator_test.go` and `handlers_requests_rate_test.go`.
 - **Claude Compatible Interface Model Recognition & Multi-Channel Visual Telemetry (`sdk/api/handlers/`, `sdk/cliproxy/`, `internal/console/`, `internal/traffichub/`, `internal/logging/`)**:
   - Implemented real-time execution model callback (`SelectedExecutionModelCallbackMetadataKey`) in `conductor_execution.go`, `conductor_stream.go`, and `conductor_home_execution.go`, transmitting the actual upstream model and provider/channel back to the HTTP handler context.
   - Resolved `ContextModel` synchronization in `sdk/api/handlers/claude/code_handlers.go`: decoded `claude-fable-5-dd-<reversed>` models are now immediately synced to Gin context and execution state, preventing client-side obfuscated names from lingering.
