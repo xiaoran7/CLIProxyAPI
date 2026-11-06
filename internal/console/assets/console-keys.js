@@ -125,9 +125,11 @@
         if (k.model_whitelist) {
           const list = parseModelList(k.model_whitelist);
           if (list.length === 1) {
-            modelHtml = `<span class="model-perm-badge limited" title="${escapeHtml(list[0])}"><span class="perm-dot limited"></span>${escapeHtml(list[0])}</span>`;
+            const pInfo = getModelProviderInfo(list[0]);
+            modelHtml = `<span class="model-perm-badge limited" title="[${escapeHtml(pInfo.label)}] ${escapeHtml(list[0])}"><span class="perm-dot limited"></span>${escapeHtml(list[0])} <small style="opacity:0.75;font-size:10px;">(${escapeHtml(pInfo.label)})</small></span>`;
           } else if (list.length > 1) {
-            modelHtml = `<span class="model-perm-badge limited" title="${escapeHtml(list.join(', '))}"><span class="perm-dot limited"></span>${t('keys.allowedModelsCount', { count: list.length })}</span>`;
+            const titleWithProv = list.map(m => `[${getModelProviderInfo(m).label}] ${m}`).join(', ');
+            modelHtml = `<span class="model-perm-badge limited" title="${escapeHtml(titleWithProv)}"><span class="perm-dot limited"></span>${t('keys.allowedModelsCount', { count: list.length })}</span>`;
           }
         }
 
@@ -300,6 +302,106 @@
       openModal('edit-modal');
     }
 
+    function getModelProviderInfo(modelName) {
+      if (!modelName) return { key: 'upstream', label: '上游', color: '#64748b', bg: 'rgba(100,116,139,0.1)' };
+      const raw = String(modelName).trim();
+      const lower = raw.toLowerCase();
+
+      if (Array.isArray(cachedUpstreamModelsList)) {
+        const found = cachedUpstreamModelsList.find(item => {
+          const id = typeof item === 'string' ? item : item.id;
+          return id && id.toLowerCase() === lower;
+        });
+        if (found && typeof found === 'object' && found.provider) {
+          return formatProviderLabel(found.provider);
+        }
+      }
+
+      if (lower.startsWith('workbuddy-cn/') || lower.startsWith('copilot-tencent/')) {
+        return { key: 'workbuddy-cn', label: 'WorkBuddy (国内)', color: '#d97706', bg: 'rgba(245,158,11,0.1)' };
+      }
+      if (lower.startsWith('workbuddy/')) {
+        return { key: 'workbuddy', label: 'WorkBuddy', color: '#d97706', bg: 'rgba(245,158,11,0.1)' };
+      }
+      if (lower.startsWith('qoder-cn/') || lower.startsWith('qoder/')) {
+        return { key: 'qoder', label: 'Qoder', color: '#059669', bg: 'rgba(16,185,129,0.1)' };
+      }
+      if (lower.startsWith('zcode-cn/') || lower.startsWith('zcode/')) {
+        return { key: 'zcode', label: 'ZCode', color: '#0284c7', bg: 'rgba(2,132,199,0.1)' };
+      }
+      if (lower.includes('minimax') || lower.includes('abab')) {
+        return { key: 'minimax', label: 'MiniMax', color: '#ec4899', bg: 'rgba(236,72,153,0.1)' };
+      }
+      if (lower.includes('claude')) {
+        return { key: 'claude', label: 'Anthropic', color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' };
+      }
+      if (lower.includes('gemini')) {
+        return { key: 'gemini', label: 'Google Gemini', color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' };
+      }
+      if (lower.includes('gpt') || lower.includes('o1') || lower.includes('o3') || lower.includes('codex')) {
+        return { key: 'openai', label: 'OpenAI', color: '#10b981', bg: 'rgba(16,185,129,0.1)' };
+      }
+      if (lower.includes('deepseek')) {
+        return { key: 'deepseek', label: 'DeepSeek', color: '#2563eb', bg: 'rgba(37,99,235,0.1)' };
+      }
+      if (lower.includes('glm')) {
+        return { key: 'zhipu', label: '智谱 GLM', color: '#0284c7', bg: 'rgba(2,132,199,0.1)' };
+      }
+      if (lower.includes('qwen')) {
+        return { key: 'qwen', label: '通义千问', color: '#059669', bg: 'rgba(16,185,129,0.1)' };
+      }
+      if (lower.includes('grok') || lower.includes('xai')) {
+        return { key: 'xai', label: 'xAI', color: '#475569', bg: 'rgba(71,85,105,0.1)' };
+      }
+      if (lower.includes('antigravity') || lower.includes('argon')) {
+        return { key: 'antigravity', label: 'Antigravity', color: '#6366f1', bg: 'rgba(99,102,241,0.1)' };
+      }
+      if (lower.includes('step')) {
+        return { key: 'stepfun', label: '阶跃星辰', color: '#0891b2', bg: 'rgba(8,145,178,0.1)' };
+      }
+      return { key: 'upstream', label: '直连上游', color: '#64748b', bg: 'rgba(100,116,139,0.1)' };
+    }
+
+    function formatProviderLabel(rawProvider) {
+      const p = String(rawProvider || '').toLowerCase().trim();
+      switch (p) {
+        case 'minimax':
+          return { key: 'minimax', label: 'MiniMax', color: '#ec4899', bg: 'rgba(236,72,153,0.12)' };
+        case 'workbuddy-cn':
+          return { key: 'workbuddy-cn', label: 'WorkBuddy (国内)', color: '#d97706', bg: 'rgba(245,158,11,0.12)' };
+        case 'workbuddy':
+        case 'workbuddy-intl':
+          return { key: 'workbuddy', label: 'WorkBuddy', color: '#d97706', bg: 'rgba(245,158,11,0.12)' };
+        case 'claude':
+        case 'anthropic':
+          return { key: 'claude', label: 'Anthropic', color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)' };
+        case 'openai':
+        case 'codex':
+          return { key: 'openai', label: 'OpenAI', color: '#10b981', bg: 'rgba(16,185,129,0.12)' };
+        case 'gemini':
+          return { key: 'gemini', label: 'Google Gemini', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' };
+        case 'antigravity':
+          return { key: 'antigravity', label: 'Antigravity', color: '#6366f1', bg: 'rgba(99,102,241,0.12)' };
+        case 'deepseek':
+          return { key: 'deepseek', label: 'DeepSeek', color: '#2563eb', bg: 'rgba(37,99,235,0.12)' };
+        case 'qoder':
+        case 'qoder-cn':
+          return { key: 'qoder', label: 'Qoder', color: '#059669', bg: 'rgba(16,185,129,0.12)' };
+        case 'zcode':
+        case 'zcode-cn':
+        case 'zhipu':
+          return { key: 'zcode', label: 'ZCode / 智谱', color: '#0284c7', bg: 'rgba(2,132,199,0.12)' };
+        case 'qwen':
+          return { key: 'qwen', label: '通义千问', color: '#059669', bg: 'rgba(16,185,129,0.12)' };
+        case 'stepfun':
+          return { key: 'stepfun', label: '阶跃星辰', color: '#0891b2', bg: 'rgba(8,145,178,0.12)' };
+        case 'opencode':
+          return { key: 'opencode', label: 'OpenCode', color: '#0284c7', bg: 'rgba(2,132,199,0.12)' };
+        default:
+          return { key: p || 'upstream', label: rawProvider || '上游', color: '#64748b', bg: 'rgba(100,116,139,0.12)' };
+      }
+    }
+
     function renderModelTags() {
       const box = document.getElementById('edit-tags-box');
       if (!box) return;
@@ -309,7 +411,9 @@
       }
       let html = '';
       currentSelectedModels.forEach((m, idx) => {
-        html += `<span class="tag-item"><span>${escapeHtml(m)}</span><span class="tag-close" onclick="removeModel(${idx})">&times;</span></span>`;
+        const pInfo = getModelProviderInfo(m);
+        const provBadge = `<span style="font-size:9.5px;padding:1px 5px;border-radius:4px;background:${pInfo.bg};color:${pInfo.color};font-weight:600;margin-right:5px;border:1px solid ${pInfo.color}33;">${escapeHtml(pInfo.label)}</span>`;
+        html += `<span class="tag-item" style="display:inline-flex;align-items:center;">${provBadge}<span>${escapeHtml(m)}</span><span class="tag-close" onclick="removeModel(${idx})">&times;</span></span>`;
       });
       box.innerHTML = html;
     }
@@ -475,16 +579,17 @@
         matched.forEach(item => {
           const m = typeof item === 'string' ? item : item.id;
           const prov = typeof item === 'object' && item.provider ? item.provider : '';
+          const pInfo = prov ? formatProviderLabel(prov) : getModelProviderInfo(m);
           const isAdded = currentSelectedModels.includes(m.toLowerCase());
-          const provBadge = prov ? `<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(59,130,246,0.1);color:#2563eb;font-weight:600;margin-left:8px;border:1px solid rgba(59,130,246,0.2);">${escapeHtml(prov)}</span>` : '';
+          const provBadge = `<span style="font-size:10px;padding:2px 7px;border-radius:6px;background:${pInfo.bg};color:${pInfo.color};font-weight:600;border:1px solid ${pInfo.color}33;flex-shrink:0;">${escapeHtml(pInfo.label)}</span>`;
           html += `
             <div class="model-picker-item ${isAdded ? 'is-selected' : ''}" onclick="selectModelFromPicker('${escapeHtml(m)}')">
-              <div class="model-picker-item-left" style="display:flex;align-items:center;">
+              <div class="model-picker-item-left" style="display:flex;align-items:center;min-width:0;flex:1;overflow:hidden;">
                 <span class="perm-dot ${isAdded ? 'limited' : 'all'}"></span>
-                <span class="model-picker-item-name" title="${escapeHtml(m)}">${escapeHtml(m)}</span>
-                ${provBadge}
+                <span class="model-picker-item-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(m)}">${escapeHtml(m)}</span>
               </div>
-              <div class="model-picker-item-right">
+              <div class="model-picker-item-right" style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                ${provBadge}
                 ${isAdded ? `<span class="model-picker-badge-added">${t('editModal.modelBadgeInWhitelist')}</span>` : `<span class="model-picker-badge-add">${t('editModal.modelBadgeAdd')}</span>`}
               </div>
             </div>
@@ -496,11 +601,6 @@
       if (query && !cachedUpstreamModelsList.some(item => (typeof item === 'string' ? item : item.id).toLowerCase() === query)) {
         html += `
           <div class="model-picker-custom-add" onclick="selectModelFromPicker('${escapeHtml(query)}')">
-            <svg style="width:13px; height:13px; flex-shrink:0;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>
-            <span>${t('editModal.modelCustomAdd')} <strong>${escapeHtml(query)}</strong></span>
-          </div>
-        `;
-      }
             <svg style="width:13px; height:13px; flex-shrink:0;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>
             <span>${t('editModal.modelCustomAdd')} <strong>${escapeHtml(query)}</strong></span>
           </div>

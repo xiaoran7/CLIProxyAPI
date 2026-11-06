@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Console Comprehensive Provider Identification & Model Badges (`internal/console/assets/`)**:
+  - Eliminated syntax error in `console-keys.js` that caused browser fallback to stale cached scripts.
+  - Added full provider identification across the entire Console key management lifecycle: every model item in the picker dropdown, every selected model tag pill, and keys table rows now prominently display provider badges with distinct thematic styling (e.g. MiniMax, WorkBuddy(国内), OpenAI, Google Gemini, Anthropic, DeepSeek, Qoder, ZCode).
 - **Model Whitelist Provider Isolation & Date Suffix Disambiguation (`internal/console/engine/`, `internal/console/api/`, `internal/console/assets/`)**:
   - Remediated cross-provider leakage in `IsModelPermitted`: requests specifying isolated routed providers (`workbuddy-cn/`, `workbuddy/`, `qoder/`, `zcode/`) can now only match whitelists with the matching provider namespace or universal wildcard `*`, preventing bare rules (e.g. `MiniMax-M3`) from inadvertently allowing `workbuddy-cn/` models.
   - Replaced crude hyphen-prefix matching with strict `dateOrVersionSuffixRegex` (`-(20\d{6}|20\d{2}-\d{2}-\d{2}|latest)$|^@`), preventing single-word rules like `minimax` from inadvertently glob-matching all `minimax-*` models across all providers.
