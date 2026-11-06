@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Antigravity Gemini Attribution & Catalog Pricing Poisoning Remediation (`internal/console/api/`, `internal/console/assets/`)**:
+  - Remediated root cause of Gemini models mislabeled as Google Gemini: `HandleGetCpaModels` previously populated SQLite `model_prices` first with generic `gemini` fallback, which shadowed real Antigravity credentials (`antigravity-*.json`) and injected non-existent phantom models (`gemini-1.5-flash`, `gemini-2.5-flash`, etc.).
+  - Reordered model catalog aggregation to prioritize authentic upstream credentials (`auth-files`, `openai-compatibility`, and `cpa-registry`), using `model_prices` solely as an empty-state fallback.
+  - Ensured all bare `gemini-*` models are unequivocally attributed to `反重力 Antigravity` in both backend catalog responses and frontend badge formatters.
 - **Visual Gateway Magpie-Architecture Redesign, SWR Cache, Brand SVGs & Unknown Model Root-Cause Resolution (`internal/console/`, `internal/traffichub/`, `static/management.html`)**:
   - Resolved root cause for `unknown` model reporting on 403 rejections: `model_guard.go` now populates `ContextModel` and `ContextRequestModel` before evaluating allowlist rules, ensuring that requests blocked by `CheckModelAllowed` retain their requested model (e.g. `gemini-3.8-flash-high`) in both `error_events` and `TrafficHub` rather than lapsing into `unknown` / `other`.
   - Added request `Path` tracking to `TrafficRecord` and smart path-based labelling (`probe:<path>` / `unspecified-model`) for non-model endpoints.
