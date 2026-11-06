@@ -452,6 +452,7 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 		Timestamp:    w.startTime.Unix(),
 		ClientIP:     clientIP,
 		KeyLabel:     keyLabel,
+		Path:         c.Request.URL.Path,
 		Model:        effectiveModel,
 		RequestModel: reqModel,
 		ActualModel:  effectiveModel,

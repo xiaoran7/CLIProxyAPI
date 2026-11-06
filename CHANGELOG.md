@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Visual Gateway Magpie-Architecture Redesign, SWR Cache, Brand SVGs & Unknown Model Root-Cause Resolution (`internal/console/`, `internal/traffichub/`, `static/management.html`)**:
+  - Resolved root cause for `unknown` model reporting on 403 rejections: `model_guard.go` now populates `ContextModel` and `ContextRequestModel` before evaluating allowlist rules, ensuring that requests blocked by `CheckModelAllowed` retain their requested model (e.g. `gemini-3.8-flash-high`) in both `error_events` and `TrafficHub` rather than lapsing into `unknown` / `other`.
+  - Added request `Path` tracking to `TrafficRecord` and smart path-based labelling (`probe:<path>` / `unspecified-model`) for non-model endpoints.
+  - Injected crisp 16px monochrome vector SVG brand micro-badges for models (Claude, Gemini, MiniMax, DeepSeek, StepFun, OpenAI/GPT, Qwen), channels (Antigravity, WorkBuddy, StepFun, MiniMax, Gateway), and network types (Docker Bridge, Tailnet, WAN, LAN) across SVG topology nodes and IP ledger cards.
+  - Implemented `ui-design` Skeleton Shimmer loading state with 1:1 geometry cards and 3-phase gradient light sweep, eliminating spinners.
+  - Implemented client-side SWR (`sessionStorage`) caching in both Console and Management dashboards, enabling 0ms instantaneous rendering on tab navigation without blank screens.
+  - Synchronized `static/management.html` and `internal/managementasset/assets/management.html` with identical MD5 hash (`1197238fbb36f30830861e0217cde1bc`).
 - **Console Comprehensive Provider Identification & Model Badges (`internal/console/assets/`)**:
   - Eliminated syntax error in `console-keys.js` that caused browser fallback to stale cached scripts.
   - Added full provider identification across the entire Console key management lifecycle: every model item in the picker dropdown, every selected model tag pill, and keys table rows now prominently display provider badges with distinct thematic styling (e.g. MiniMax, WorkBuddy(国内), OpenAI, Google Gemini, Anthropic, DeepSeek, Qoder, ZCode).

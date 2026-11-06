@@ -335,8 +335,8 @@
       if (lower.includes('claude')) {
         return { key: 'claude', label: 'Anthropic', color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' };
       }
-      if (lower.includes('gemini')) {
-        return { key: 'gemini', label: 'Google Gemini', color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' };
+      if (lower.includes('gemini') || lower.includes('argon') || lower.includes('antigravity')) {
+        return { key: 'antigravity', label: '反重力 Antigravity', color: '#6366f1', bg: 'rgba(99,102,241,0.1)' };
       }
       if (lower.includes('gpt') || lower.includes('o1') || lower.includes('o3') || lower.includes('codex')) {
         return { key: 'openai', label: 'OpenAI', color: '#10b981', bg: 'rgba(16,185,129,0.1)' };
@@ -352,9 +352,6 @@
       }
       if (lower.includes('grok') || lower.includes('xai')) {
         return { key: 'xai', label: 'xAI', color: '#475569', bg: 'rgba(71,85,105,0.1)' };
-      }
-      if (lower.includes('antigravity') || lower.includes('argon')) {
-        return { key: 'antigravity', label: 'Antigravity', color: '#6366f1', bg: 'rgba(99,102,241,0.1)' };
       }
       if (lower.includes('step')) {
         return { key: 'stepfun', label: '阶跃星辰', color: '#0891b2', bg: 'rgba(8,145,178,0.1)' };
@@ -379,9 +376,8 @@
         case 'codex':
           return { key: 'openai', label: 'OpenAI', color: '#10b981', bg: 'rgba(16,185,129,0.12)' };
         case 'gemini':
-          return { key: 'gemini', label: 'Google Gemini', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' };
         case 'antigravity':
-          return { key: 'antigravity', label: 'Antigravity', color: '#6366f1', bg: 'rgba(99,102,241,0.12)' };
+          return { key: 'antigravity', label: '反重力 Antigravity', color: '#6366f1', bg: 'rgba(99,102,241,0.12)' };
         case 'deepseek':
           return { key: 'deepseek', label: 'DeepSeek', color: '#2563eb', bg: 'rgba(37,99,235,0.12)' };
         case 'qoder':

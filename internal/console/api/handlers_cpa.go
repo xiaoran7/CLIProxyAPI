@@ -93,33 +93,13 @@ type CpaModelItem struct {
 	Source    string `json:"source"`
 }
 
-// HandleGetCpaModels aggregates models from SQLite model_prices, CPA auth-files, and CPA openai-compatibility channels.
+// HandleGetCpaModels aggregates models from CPA auth-files, CPA openai-compatibility channels, and active dynamic model registry.
 func HandleGetCpaModels(eng *engine.Engine, cpa *CpaClient, providers *ProviderRegistryEngine) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		catalogMap := make(map[string]CpaModelItem)
 
-		// 1. From SQLite model_prices
-		prices, err := eng.DB().SelectAllModelPrices(ctx)
-		if err == nil {
-			for _, p := range prices {
-				if p.Pattern != "" {
-					prov := providers.InferProvider(p.Pattern, "").Key
-					if prov == "" {
-						prov = "general"
-					}
-					catalogMap[p.Pattern] = CpaModelItem{
-						ID:        p.Pattern,
-						Name:      p.Pattern,
-						Provider:  prov,
-						Available: true,
-						Source:    "system-catalog",
-					}
-				}
-			}
-		}
-
-		// 2. From CPA auth-files
+		// 1. From CPA auth-files (Antigravity, WorkBuddy, Qoder, ZCode)
 		var authFilesResp struct {
 			Files []catalogAuthFile `json:"files"`
 		}
@@ -182,7 +162,7 @@ func HandleGetCpaModels(eng *engine.Engine, cpa *CpaClient, providers *ProviderR
 			}
 		}
 
-		// 3. From CPA openai-compatibility channels
+		// 2. From CPA openai-compatibility channels
 		var compatResp struct {
 			Compat []struct {
 				Name     string        `json:"name"`
@@ -223,19 +203,21 @@ func HandleGetCpaModels(eng *engine.Engine, cpa *CpaClient, providers *ProviderR
 			}
 		}
 
-		// 4. From CPA active global model registry (captures all configured api-keys: claude, codex, gemini, etc.)
+		// 3. From CPA active global model registry (captures all configured api-keys: claude, codex, gemini, etc.)
 		for _, info := range registry.GetGlobalRegistry().GetAvailableModelInfos() {
 			if info == nil || strings.TrimSpace(info.ID) == "" {
 				continue
 			}
 			mID := strings.TrimSpace(info.ID)
 			// Skip un-namespaced internal WorkBuddy models so they don't leak into the catalog as bare models.
-			// WorkBuddy models are already properly namespaced (workbuddy/ or workbuddy-cn/) in step 2.
+			// WorkBuddy models are already properly namespaced (workbuddy/ or workbuddy-cn/) in step 1.
 			if (info.Type == "workbuddy" || strings.EqualFold(info.OwnedBy, "workbuddy") || strings.EqualFold(info.OwnedBy, "workbuddy-cn")) && !strings.Contains(mID, "/") {
 				continue
 			}
 			prov := strings.TrimSpace(info.OwnedBy)
-			if prov == "" || prov == "claude" || prov == "anthropic" {
+			if strings.HasPrefix(strings.ToLower(mID), "gemini-") && !strings.Contains(mID, "/") {
+				prov = "antigravity"
+			} else if prov == "" || prov == "claude" || prov == "anthropic" {
 				inferred := providers.InferProvider(mID, "").Key
 				if inferred != "" && inferred != "general" && inferred != "unknown" {
 					prov = inferred
@@ -250,6 +232,28 @@ func HandleGetCpaModels(eng *engine.Engine, cpa *CpaClient, providers *ProviderR
 					Provider:  prov,
 					Available: true,
 					Source:    "cpa-registry",
+				}
+			}
+		}
+
+		// 4. Fallback: only if no active upstream credentials or channels exist, populate from SQLite model_prices
+		if len(catalogMap) == 0 {
+			prices, err := eng.DB().SelectAllModelPrices(ctx)
+			if err == nil {
+				for _, p := range prices {
+					if p.Pattern != "" {
+						prov := providers.InferProvider(p.Pattern, "").Key
+						if prov == "" {
+							prov = "general"
+						}
+						catalogMap[p.Pattern] = CpaModelItem{
+							ID:        p.Pattern,
+							Name:      p.Pattern,
+							Provider:  prov,
+							Available: true,
+							Source:    "system-catalog",
+						}
+					}
 				}
 			}
 		}

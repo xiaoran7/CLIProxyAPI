@@ -6,6 +6,7 @@ type TrafficRecord struct {
 	Timestamp    int64  `json:"timestamp"` // Unix timestamp in seconds
 	ClientIP     string `json:"client_ip"`
 	KeyLabel     string `json:"key_label"`
+	Path         string `json:"path,omitempty"`
 	Model        string `json:"model"`
 	RequestModel string `json:"request_model,omitempty"`
 	ActualModel  string `json:"actual_model,omitempty"`

@@ -67,6 +67,21 @@ func ModelGuardMiddleware(eng *engine.Engine) gin.HandlerFunc {
 			model = decoded
 		}
 
+		if rawClientModel != "" {
+			c.Set(ContextRequestModel, rawClientModel)
+			logging.SetGinCPARequestModel(c, rawClientModel)
+		}
+		if model != "" {
+			c.Set(ContextModel, model)
+			if model != rawClientModel {
+				c.Set(ContextActualModel, model)
+				logging.SetGinCPAExecution(c, model, "")
+			}
+		}
+		if reasoningEffort != "" {
+			c.Set(ContextReasoning, reasoningEffort)
+		}
+
 		// 3. Enforce model allowlist and unambiguous namespace rewriting if key is authenticated
 		if val, exists := c.Get(ContextKeyID); exists {
 			if keyID, ok := val.(int64); ok && keyID > 0 && model != "" {
@@ -96,23 +111,11 @@ func ModelGuardMiddleware(eng *engine.Engine) gin.HandlerFunc {
 						c.Request.URL.Path = strings.Replace(c.Request.URL.Path, "/models/"+match[1], "/models/"+rewritten, 1)
 					}
 					model = rewritten
+					c.Set(ContextModel, model)
+					c.Set(ContextActualModel, model)
+					logging.SetGinCPAExecution(c, model, "")
 				}
 			}
-		}
-
-		if rawClientModel != "" {
-			c.Set(ContextRequestModel, rawClientModel)
-			logging.SetGinCPARequestModel(c, rawClientModel)
-		}
-		if model != "" {
-			c.Set(ContextModel, model)
-			if model != rawClientModel {
-				c.Set(ContextActualModel, model)
-				logging.SetGinCPAExecution(c, model, "")
-			}
-		}
-		if reasoningEffort != "" {
-			c.Set(ContextReasoning, reasoningEffort)
 		}
 		c.Next()
 	}

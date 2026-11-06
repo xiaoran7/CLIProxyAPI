@@ -69,8 +69,17 @@ func (h *Hub) Record(rec TrafficRecord) {
 	if rec.ClientIP == "" {
 		rec.ClientIP = "127.0.0.1"
 	}
-	if rec.Model == "" {
-		rec.Model = "unknown"
+	if rec.Model == "" || strings.EqualFold(rec.Model, "unknown") {
+		if rec.Path != "" && rec.Path != "/" {
+			cleanPath := strings.Trim(rec.Path, "/")
+			if cleanPath == "v1/chat/completions" || cleanPath == "v1/messages" || cleanPath == "v1/completions" {
+				rec.Model = "unspecified-model"
+			} else {
+				rec.Model = "probe:" + cleanPath
+			}
+		} else {
+			rec.Model = "unknown"
+		}
 	}
 	if rec.Channel == "" {
 		rec.Channel = InferChannel(rec.Model, "")
@@ -409,6 +418,10 @@ func InferChannel(model, channelHint string) string {
 		return "kimi"
 	case strings.Contains(m, "minimax") || strings.Contains(m, "abab"):
 		return "minimax"
+	case strings.Contains(m, "step") || strings.Contains(m, "stepfun"):
+		return "stepfun"
+	case strings.HasPrefix(m, "probe:") || strings.Contains(m, "unspecified"):
+		return "gateway"
 	case strings.Contains(m, "grok") || strings.Contains(m, "xai"):
 		return "xai"
 	default:
