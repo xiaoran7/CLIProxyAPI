@@ -41,6 +41,17 @@ var InitialProviderRegistry = []SeedProvider{
 		Label:       "反重力 Antigravity",
 		ModelPatterns: []PatternItem{
 			{P: "antigravity", Anchor: "^"},
+			{P: "argon", Anchor: ""},
+			{P: "gemini-4", Anchor: "^"},
+			{P: "gemini-3.8", Anchor: "^"},
+			{P: "gemini-3.5", Anchor: "^"},
+			{P: "gemini-3.1", Anchor: "^"},
+			{P: "gemini-3-flash", Anchor: "^"},
+			{P: "claude-opus-4-6", Anchor: "^"},
+			{P: "claude-sonnet-4-6", Anchor: "^"},
+			{P: "claude-opus-5-5-high", Anchor: "^"},
+			{P: "claude-sonnet-5-5-high", Anchor: "^"},
+			{P: "gpt-oss-120b", Anchor: "^"},
 		},
 		AuthPatterns: []PatternItem{
 			{P: "antigravity", Anchor: ""},

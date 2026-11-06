@@ -12,15 +12,22 @@ var (
 	dateOrVersionSuffixRegex = regexp.MustCompile(`^-(20\d{6}|20\d{2}-\d{2}-\d{2}|latest)$|^@`)
 )
 
-func isIsolatedProviderPrefix(prefix string) bool {
+// isManufacturerPrefix identifies public vendor model namespace aliases (e.g. anthropic/claude-*, openai/gpt-*, google/gemini-*)
+// commonly emitted by client SDKs (LiteLLM, LangChain) that do not represent isolated gateway routing channels.
+func isManufacturerPrefix(prefix string) bool {
 	switch strings.ToLower(strings.TrimSpace(prefix)) {
-	case "workbuddy", "workbuddy-cn", "workbuddy-intl", "codebuddy",
-		"qoder", "qoder-cn", "qoder-intl",
-		"zcode", "zcode-cn", "zcode-zai", "zcode-bigmodel":
+	case "anthropic", "openai", "google", "meta", "deepseek", "mistral", "models":
 		return true
 	default:
 		return false
 	}
+}
+
+// isChannelNamespace reports whether prefix represents an upstream proxy routing channel/realm
+// (e.g. workbuddy-cn, workbuddy, qoder, zcode, minimax, stepfun, etc.) rather than a generic vendor alias.
+func isChannelNamespace(prefix string) bool {
+	p := strings.ToLower(strings.TrimSpace(prefix))
+	return p != "" && !isManufacturerPrefix(p)
 }
 
 // NormalizeModelWhitelist parses and formats raw whitelist input into a canonical JSON array string.
@@ -129,21 +136,21 @@ func IsModelPermitted(requestedModel string, allowedModels []string) bool {
 		// 1. If both pattern and request specify provider prefixes, they must match.
 		if patPrefix != "" && reqPrefix != "" {
 			if patPrefix != reqPrefix {
-				if isIsolatedProviderPrefix(patPrefix) || isIsolatedProviderPrefix(reqPrefix) {
+				if isChannelNamespace(patPrefix) || isChannelNamespace(reqPrefix) {
 					continue
 				}
 			}
 		}
 
-		// 2. If request explicitly targets an isolated provider (e.g. workbuddy-cn/...),
+		// 2. If request explicitly targets a channel namespace (e.g. workbuddy-cn/...),
 		// a bare pattern without that provider prefix CANNOT match it (unless pattern was '*').
-		if isIsolatedProviderPrefix(reqPrefix) && patPrefix != reqPrefix {
+		if isChannelNamespace(reqPrefix) && patPrefix != reqPrefix {
 			continue
 		}
 
-		// 3. If pattern explicitly targets an isolated provider (e.g. workbuddy-cn/...),
+		// 3. If pattern explicitly targets a channel namespace (e.g. workbuddy-cn/...),
 		// a request specifying a different provider prefix CANNOT match it.
-		if isIsolatedProviderPrefix(patPrefix) && reqPrefix != "" && reqPrefix != patPrefix {
+		if isChannelNamespace(patPrefix) && reqPrefix != "" && reqPrefix != patPrefix {
 			continue
 		}
 
@@ -151,8 +158,8 @@ func IsModelPermitted(requestedModel string, allowedModels []string) bool {
 		candidates := []string{patModel, patModelUnmultiplied}
 		targets := []string{reqModel, reqModelUnmultiplied}
 
-		// Also permit full string matching if neither side is an isolated provider
-		if !isIsolatedProviderPrefix(patPrefix) && !isIsolatedProviderPrefix(reqPrefix) {
+		// Also permit full string matching if neither side is an isolated channel
+		if !isChannelNamespace(patPrefix) && !isChannelNamespace(reqPrefix) {
 			if patLower != patModel {
 				candidates = append(candidates, patLower, patUnmultiplied)
 			}

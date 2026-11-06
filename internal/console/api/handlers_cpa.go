@@ -215,9 +215,7 @@ func HandleGetCpaModels(eng *engine.Engine, cpa *CpaClient, providers *ProviderR
 				continue
 			}
 			prov := strings.TrimSpace(info.OwnedBy)
-			if strings.HasPrefix(strings.ToLower(mID), "gemini-") && !strings.Contains(mID, "/") {
-				prov = "antigravity"
-			} else if prov == "" || prov == "claude" || prov == "anthropic" {
+			if prov == "" || prov == "claude" || prov == "anthropic" || prov == "upstream" {
 				inferred := providers.InferProvider(mID, "").Key
 				if inferred != "" && inferred != "general" && inferred != "unknown" {
 					prov = inferred

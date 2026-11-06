@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Architectural Provider Resolution & Channel Namespace Isolation Refactoring (`internal/console/api/`, `internal/console/engine/`, `internal/console/assets/`)**:
+  - Eliminated heuristic string-prefix hardcoding in `HandleGetCpaModels` (`handlers_cpa.go`) and frontend badge resolution; provider attribution now flows strictly from authoritative registration sources and priority-ranked provider patterns.
+  - Enriched `InitialProviderRegistry` (`provider_registry.go`) with Antigravity-native model signatures (`argon`, `gemini-4`, `gemini-3.8`, `gemini-3.5`, `gemini-3.1`, `gemini-3-flash`, `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-opus-5-5-high`, `claude-sonnet-5-5-high`, `gpt-oss-120b`) at Priority 10, properly isolating them from standard Google Gemini (Priority 30) and Anthropic Claude (Priority 80).
+  - Generalised provider isolation in `model_matcher.go`: replaced hardcoded provider switch with `isChannelNamespace` and `isManufacturerPrefix`, ensuring any upstream channel namespace requires explicit whitelist authorization while permitting harmless SDK vendor aliases (`anthropic/`, `openai/`, `google/`).
 - **Antigravity Gemini Attribution & Catalog Pricing Poisoning Remediation (`internal/console/api/`, `internal/console/assets/`)**:
   - Remediated root cause of Gemini models mislabeled as Google Gemini: `HandleGetCpaModels` previously populated SQLite `model_prices` first with generic `gemini` fallback, which shadowed real Antigravity credentials (`antigravity-*.json`) and injected non-existent phantom models (`gemini-1.5-flash`, `gemini-2.5-flash`, etc.).
   - Reordered model catalog aggregation to prioritize authentic upstream credentials (`auth-files`, `openai-compatibility`, and `cpa-registry`), using `model_prices` solely as an empty-state fallback.
