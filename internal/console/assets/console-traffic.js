@@ -87,7 +87,7 @@ function getBrandNodeVisual(type, rawLabel) {
     }
     if (l.includes('step') || l.includes('stepfun')) {
       return {
-        icon: '<path d="M2.5 13.5h3v-3h3v-3h3v-3h2" fill="none" stroke="#8b5cf6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+        icon: '<path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8s3.58 8 8 8 8-3.58 8-8S12.42 0 8 0ZM5.84 13.07H2.92v-2.92h2.92v2.92ZM9.46 13.07H6.54v-2.92h2.92v2.92ZM9.46 9.46H6.54V6.54h2.92v2.92ZM9.46 5.85H6.54V2.93h2.92v2.92ZM13.07 5.85h-2.92V2.93h2.92v2.92Z" fill="#8b5cf6"/>',
         borderColor: 'rgba(139, 92, 246, 0.55)',
         bgColor: 'rgba(139, 92, 246, 0.09)',
         color: '#8b5cf6'
@@ -95,7 +95,7 @@ function getBrandNodeVisual(type, rawLabel) {
     }
     if (l.includes('minimax') || l.includes('abab')) {
       return {
-        icon: '<path d="M2 8v3M5 5v9M8 3v13M11 6v7M14 4v11" stroke="#0891b2" stroke-width="1.8" stroke-linecap="round"/>',
+        icon: '<path d="M2 7v1a1 1 0 0 0 2 0V5.3a1 1 0 0 1 2 0v5.4a1 1 0 0 0 2 0V2.3a1 1 0 0 1 2 0V9M8 9.3v2.4a1 1 0 0 0 2 0V2.3a1 1 0 0 1 2 0v5.4a1 1 0 0 0 2 0v-2.7a1 1 0 0 0-2 0" fill="none" stroke="#0891b2" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>',
         borderColor: 'rgba(8, 145, 178, 0.55)',
         bgColor: 'rgba(8, 145, 178, 0.09)',
         color: '#0891b2'
@@ -161,15 +161,15 @@ function getBrandNodeVisual(type, rawLabel) {
     }
     if (l.includes('stepfun') || l.includes('step')) {
       return {
-        icon: '<path d="M2.5 13.5h3v-3h3v-3h3v-3h2" fill="none" stroke="#8b5cf6" stroke-width="1.8" stroke-linecap="round"/>',
+        icon: '<path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8s3.58 8 8 8 8-3.58 8-8S12.42 0 8 0ZM5.84 13.07H2.92v-2.92h2.92v2.92ZM9.46 13.07H6.54v-2.92h2.92v2.92ZM9.46 9.46H6.54V6.54h2.92v2.92ZM9.46 5.85H6.54V2.93h2.92v2.92ZM13.07 5.85h-2.92V2.93h2.92v2.92Z" fill="#8b5cf6"/>',
         borderColor: 'rgba(139, 92, 246, 0.55)',
         bgColor: 'rgba(139, 92, 246, 0.09)',
         color: '#8b5cf6'
       };
     }
-    if (l.includes('minimax')) {
+    if (l.includes('minimax') || l.includes('abab')) {
       return {
-        icon: '<path d="M2 8v3M5 5v9M8 3v13M11 6v7M14 4v11" stroke="#0891b2" stroke-width="1.8" stroke-linecap="round"/>',
+        icon: '<path d="M2 7v1a1 1 0 0 0 2 0V5.3a1 1 0 0 1 2 0v5.4a1 1 0 0 0 2 0V2.3a1 1 0 0 1 2 0V9M8 9.3v2.4a1 1 0 0 0 2 0V2.3a1 1 0 0 1 2 0v5.4a1 1 0 0 0 2 0v-2.7a1 1 0 0 0-2 0" fill="none" stroke="#0891b2" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>',
         borderColor: 'rgba(8, 145, 178, 0.55)',
         bgColor: 'rgba(8, 145, 178, 0.09)',
         color: '#0891b2'

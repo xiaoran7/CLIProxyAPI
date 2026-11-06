@@ -87,6 +87,36 @@
       await refreshCurrentTab(true);
     }
 
+    // 全局接口并发预热 (SWR 预温) —— 在应用启动与鉴权完成后异步并发预取核心数据，消除切 Tab 等待
+    let isPrewarming = false;
+    async function prewarmAllConsoleAPIs() {
+      if (isPrewarming || !getStoredToken()) return;
+      isPrewarming = true;
+      try {
+        const isMember = isMemberAuth();
+        if (isMember) {
+          await Promise.allSettled([
+            fetchMemberInfo(),
+            fetchEventsData(false)
+          ]);
+        } else {
+          await Promise.allSettled([
+            fetchUpstreamQuotas(false),
+            fetchGateStatus(),
+            fetchTrafficData(false),
+            fetchStatsData(),
+            fetchUpstreamValidations(),
+            fetchUpstreamAuthStats(),
+            ensureKeysLoaded(false)
+          ]);
+        }
+      } catch (err) {
+        console.warn('[Console] prewarmAllConsoleAPIs error:', err && err.message);
+      } finally {
+        isPrewarming = false;
+      }
+    }
+
     function togglePanelFold(bodyId, btn) {
       const el = document.getElementById(bodyId);
       if (!el) return;

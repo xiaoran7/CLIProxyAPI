@@ -106,6 +106,10 @@
     if (!isMemberAuth()) {
       ensureKeysLoaded().catch(() => {});
     }
+    // 异步非阻塞执行全接口并发预热 (SWR 预温，0ms 秒开)
+    if (typeof prewarmAllConsoleAPIs === 'function') {
+      setTimeout(() => { prewarmAllConsoleAPIs(); }, 100);
+    }
     // 立即激活单一权威全局自动轮询与倒计时圆环（热加载就绪）
     resetPolling();
     document.querySelectorAll('.modal-backdrop').forEach(backdrop => {

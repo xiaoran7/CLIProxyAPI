@@ -367,7 +367,8 @@
           shortName: 'StepFun',
           iconClass: 'provider-icon-stepfun',
           pillClass: 'provider-pill-stepfun',
-          iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>`
+          // StepFun 官方 5 级台阶阶梯圆形微标
+          iconSvg: `<svg viewBox="0 0 20 20" fill="#8b5cf6"><path fill-rule="evenodd" d="M10 0C4.48 0 0 4.48 0 10s4.48 10 10 10 10-4.48 10-10S15.52 0 10 0ZM7.3 16.34H3.65v-3.65h3.65v3.65ZM11.82 16.34H8.17v-3.65h3.65v3.65ZM11.82 11.83H8.17v-3.66h3.65v3.66ZM11.82 7.31H8.17V3.66h3.65v3.65ZM16.34 7.31H12.69V3.65h3.65v3.66Z"/></svg>`
         };
       }
       if (p.includes('opencode')) {
@@ -498,7 +499,8 @@
           shortName: 'MiniMax',
           iconClass: 'provider-icon-other',
           pillClass: 'provider-pill-other',
-          iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="#ec4899" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2v20M17 5v14M7 9v6M22 10v4M2 11v2"/></svg>`
+          // MiniMax 官方原版多波段双向声波微标
+          iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="#0891b2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5v1.5a1.5 1.5 0 0 0 3 0v-4a1.5 1.5 0 0 1 3 0v8a1.5 1.5 0 0 0 3 0V3.5a1.5 1.5 0 0 1 3 0V13"/><path d="M12 13.5v3.5a1.5 1.5 0 0 0 3 0V3.5a1.5 1.5 0 0 1 3 0v8a1.5 1.5 0 0 0 3 0v-4a1.5 1.5 0 0 0-3 0"/></svg>`
         };
       }
       if (p.includes('workbuddy') || p.includes('codebuddy')) {
@@ -526,11 +528,12 @@
       if (p.includes('gate')) {
         return {
           id: 'gate',
-          name: t('provider.gateway'),
+          name: t('stats.gatewayMainEntry'),
           shortName: t('provider.gatewayShort'),
           iconClass: 'provider-icon-gate',
           pillClass: 'provider-pill-other',
-          iconSvg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>`
+          // Console 自身官方 Sakura G 品牌微标
+          iconSvg: `<img src="/console/assets/gate-sakura-mark-128.webp" style="width:100%;height:100%;object-fit:contain;display:block;" alt="Console" />`
         };
       }
 

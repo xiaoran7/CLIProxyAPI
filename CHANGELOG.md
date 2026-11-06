@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Official Brand SVG Icons, Gateway Asset Unification & Global API Pre-warming (`internal/console/assets/`)**:
+  - Extracted authentic geometric SVG icons directly from MiniMax (official dual-directional soundwave curve) and StepFun (official 5-tier circular stepped staircase badge) and embedded them into `getProviderBrand` (`console-format.js`) and `getBrandNodeVisual` (`console-traffic.js`).
+  - Unified Gateway Main Entry icon across all status and provider cards by rendering the official Console Sakura G logo (`/console/assets/gate-sakura-mark-128.webp`), reinforcing coherent brand identity.
+  - Implemented asynchronous non-blocking global API pre-warming (`prewarmAllConsoleAPIs`) in `console-refresh.js` and `console-init.js`, orchestrating `Promise.allSettled` to pre-fetch and warm cache for quotas, gate status, traffic topology, stats, validations, and keys on initial boot and auth changes, delivering true 0ms tab switching without loading delays.
 - **Architectural Provider Resolution & Channel Namespace Isolation Refactoring (`internal/console/api/`, `internal/console/engine/`, `internal/console/assets/`)**:
   - Eliminated heuristic string-prefix hardcoding in `HandleGetCpaModels` (`handlers_cpa.go`) and frontend badge resolution; provider attribution now flows strictly from authoritative registration sources and priority-ranked provider patterns.
   - Enriched `InitialProviderRegistry` (`provider_registry.go`) with Antigravity-native model signatures (`argon`, `gemini-4`, `gemini-3.8`, `gemini-3.5`, `gemini-3.1`, `gemini-3-flash`, `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-opus-5-5-high`, `claude-sonnet-5-5-high`, `gpt-oss-120b`) at Priority 10, properly isolating them from standard Google Gemini (Priority 30) and Anthropic Claude (Priority 80).
