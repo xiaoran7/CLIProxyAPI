@@ -407,16 +407,27 @@
         }
         const data = await res.json();
         const rawList = Array.isArray(data.models) ? data.models : (Array.isArray(data.data) ? data.data : []);
-        const modelIds = rawList.map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
-        const uniqueModels = [...new Set(modelIds)].sort();
+        const modelItems = [];
+        const seen = new Set();
+        for (const m of rawList) {
+          const id = typeof m === 'string' ? m : (m.id || m.name);
+          if (id && !seen.has(id.toLowerCase())) {
+            seen.add(id.toLowerCase());
+            modelItems.push({
+              id: id,
+              provider: (typeof m === 'object' && m.provider) ? m.provider : ''
+            });
+          }
+        }
+        modelItems.sort((a, b) => a.id.localeCompare(b.id));
 
-        cachedUpstreamModelsList = uniqueModels;
+        cachedUpstreamModelsList = modelItems;
         if (label) {
-          label.innerText = t('keys.modelPickerPlaceholder', { count: uniqueModels.length });
+          label.innerText = t('keys.modelPickerPlaceholder', { count: modelItems.length });
         }
         renderModelPickerList();
         if (showSuccessToast) {
-          showToast(t('keys.modelSyncSuccess', { count: uniqueModels.length }), 'success');
+          showToast(t('keys.modelSyncSuccess', { count: modelItems.length }), 'success');
         }
       } catch (err) {
         console.warn('Fetch upstream models failed:', err);
@@ -450,20 +461,28 @@
 
       let matched = cachedUpstreamModelsList;
       if (query) {
-        matched = cachedUpstreamModelsList.filter(m => m.toLowerCase().includes(query));
+        matched = cachedUpstreamModelsList.filter(item => {
+          const id = (typeof item === 'string' ? item : item.id).toLowerCase();
+          const prov = (typeof item === 'object' && item.provider ? item.provider : '').toLowerCase();
+          return id.includes(query) || prov.includes(query);
+        });
       }
 
       let html = '';
       if (matched.length === 0) {
         html += `<div class="model-picker-empty">${t('editModal.modelPickerNoMatch')}</div>`;
       } else {
-        matched.forEach(m => {
+        matched.forEach(item => {
+          const m = typeof item === 'string' ? item : item.id;
+          const prov = typeof item === 'object' && item.provider ? item.provider : '';
           const isAdded = currentSelectedModels.includes(m.toLowerCase());
+          const provBadge = prov ? `<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(59,130,246,0.1);color:#2563eb;font-weight:600;margin-left:8px;border:1px solid rgba(59,130,246,0.2);">${escapeHtml(prov)}</span>` : '';
           html += `
             <div class="model-picker-item ${isAdded ? 'is-selected' : ''}" onclick="selectModelFromPicker('${escapeHtml(m)}')">
-              <div class="model-picker-item-left">
+              <div class="model-picker-item-left" style="display:flex;align-items:center;">
                 <span class="perm-dot ${isAdded ? 'limited' : 'all'}"></span>
                 <span class="model-picker-item-name" title="${escapeHtml(m)}">${escapeHtml(m)}</span>
+                ${provBadge}
               </div>
               <div class="model-picker-item-right">
                 ${isAdded ? `<span class="model-picker-badge-added">${t('editModal.modelBadgeInWhitelist')}</span>` : `<span class="model-picker-badge-add">${t('editModal.modelBadgeAdd')}</span>`}
@@ -474,9 +493,14 @@
       }
 
       // 如果用户输入了自定义模型ID，且上游列表中未精确匹配，支持一键添加自定义模型
-      if (query && !cachedUpstreamModelsList.some(m => m.toLowerCase() === query)) {
+      if (query && !cachedUpstreamModelsList.some(item => (typeof item === 'string' ? item : item.id).toLowerCase() === query)) {
         html += `
           <div class="model-picker-custom-add" onclick="selectModelFromPicker('${escapeHtml(query)}')">
+            <svg style="width:13px; height:13px; flex-shrink:0;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>
+            <span>${t('editModal.modelCustomAdd')} <strong>${escapeHtml(query)}</strong></span>
+          </div>
+        `;
+      }
             <svg style="width:13px; height:13px; flex-shrink:0;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>
             <span>${t('editModal.modelCustomAdd')} <strong>${escapeHtml(query)}</strong></span>
           </div>

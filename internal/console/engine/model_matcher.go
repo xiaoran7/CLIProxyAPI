@@ -8,8 +8,20 @@ import (
 )
 
 var (
-	multiplierRegex = regexp.MustCompile(`:\d+(?:\.\d+)?x$`)
+	multiplierRegex          = regexp.MustCompile(`:\d+(?:\.\d+)?x$`)
+	dateOrVersionSuffixRegex = regexp.MustCompile(`^-(20\d{6}|20\d{2}-\d{2}-\d{2}|latest)$|^@`)
 )
+
+func isIsolatedProviderPrefix(prefix string) bool {
+	switch strings.ToLower(strings.TrimSpace(prefix)) {
+	case "workbuddy", "workbuddy-cn", "workbuddy-intl", "codebuddy",
+		"qoder", "qoder-cn", "qoder-intl",
+		"zcode", "zcode-cn", "zcode-zai", "zcode-bigmodel":
+		return true
+	default:
+		return false
+	}
+}
 
 // NormalizeModelWhitelist parses and formats raw whitelist input into a canonical JSON array string.
 func NormalizeModelWhitelist(raw string) string {
@@ -85,40 +97,69 @@ func IsModelPermitted(requestedModel string, allowedModels []string) bool {
 		return false
 	}
 
-	// 1. Check exact match or universal wildcard
-	for _, pattern := range allowedModels {
-		if pattern == "*" || pattern == reqLower {
-			return true
-		}
+	reqSlashIdx := strings.Index(reqLower, "/")
+	var reqPrefix, reqModel string
+	if reqSlashIdx != -1 {
+		reqPrefix = reqLower[:reqSlashIdx]
+		reqModel = reqLower[reqSlashIdx+1:]
+	} else {
+		reqModel = reqLower
 	}
-
-	// 2. Strip namespace / provider prefix
-	slashIdx := strings.LastIndex(reqLower, "/")
-	reqStripped := reqLower
-	if slashIdx != -1 {
-		reqStripped = reqLower[slashIdx+1:]
-	}
-
-	// 3. Strip dynamic multiplier suffix
+	reqModelUnmultiplied := multiplierRegex.ReplaceAllString(reqModel, "")
 	reqUnmultiplied := multiplierRegex.ReplaceAllString(reqLower, "")
-	reqStrippedUnmultiplied := multiplierRegex.ReplaceAllString(reqStripped, "")
 
 	for _, pattern := range allowedModels {
-		if pattern == reqStripped || pattern == reqUnmultiplied || pattern == reqStrippedUnmultiplied {
+		patLower := strings.ToLower(strings.TrimSpace(pattern))
+		if patLower == "*" || patLower == reqLower || patLower == reqUnmultiplied {
 			return true
 		}
 
-		// Normalize pattern as well
-		patSlashIdx := strings.LastIndex(pattern, "/")
-		patStripped := pattern
+		patSlashIdx := strings.Index(patLower, "/")
+		var patPrefix, patModel string
 		if patSlashIdx != -1 {
-			patStripped = pattern[patSlashIdx+1:]
+			patPrefix = patLower[:patSlashIdx]
+			patModel = patLower[patSlashIdx+1:]
+		} else {
+			patModel = patLower
 		}
-		patUnmultiplied := multiplierRegex.ReplaceAllString(pattern, "")
-		patStrippedUnmultiplied := multiplierRegex.ReplaceAllString(patStripped, "")
+		patModelUnmultiplied := multiplierRegex.ReplaceAllString(patModel, "")
+		patUnmultiplied := multiplierRegex.ReplaceAllString(patLower, "")
 
-		candidates := []string{patStripped, patUnmultiplied, patStrippedUnmultiplied}
-		targets := []string{reqLower, reqStripped, reqUnmultiplied, reqStrippedUnmultiplied}
+		// Provider namespace isolation:
+		// 1. If both pattern and request specify provider prefixes, they must match.
+		if patPrefix != "" && reqPrefix != "" {
+			if patPrefix != reqPrefix {
+				if isIsolatedProviderPrefix(patPrefix) || isIsolatedProviderPrefix(reqPrefix) {
+					continue
+				}
+			}
+		}
+
+		// 2. If request explicitly targets an isolated provider (e.g. workbuddy-cn/...),
+		// a bare pattern without that provider prefix CANNOT match it (unless pattern was '*').
+		if isIsolatedProviderPrefix(reqPrefix) && patPrefix != reqPrefix {
+			continue
+		}
+
+		// 3. If pattern explicitly targets an isolated provider (e.g. workbuddy-cn/...),
+		// a request specifying a different provider prefix CANNOT match it.
+		if isIsolatedProviderPrefix(patPrefix) && reqPrefix != "" && reqPrefix != patPrefix {
+			continue
+		}
+
+		// Model base candidates and targets
+		candidates := []string{patModel, patModelUnmultiplied}
+		targets := []string{reqModel, reqModelUnmultiplied}
+
+		// Also permit full string matching if neither side is an isolated provider
+		if !isIsolatedProviderPrefix(patPrefix) && !isIsolatedProviderPrefix(reqPrefix) {
+			if patLower != patModel {
+				candidates = append(candidates, patLower, patUnmultiplied)
+			}
+			if reqLower != reqModel {
+				targets = append(targets, reqLower, reqUnmultiplied)
+			}
+		}
 
 		matchFound := false
 		for _, c := range candidates {
@@ -136,9 +177,8 @@ func IsModelPermitted(requestedModel string, allowedModels []string) bool {
 			return true
 		}
 
-		// 4. Wildcard matching (glob to regex)
-		patWildcards := []string{pattern, patStripped, patUnmultiplied, patStrippedUnmultiplied}
-		for _, pw := range patWildcards {
+		// Wildcard matching (e.g. gpt-4o*, workbuddy-cn/*)
+		for _, pw := range candidates {
 			if strings.Contains(pw, "*") {
 				escaped := regexp.QuoteMeta(pw)
 				regexStr := "^" + strings.ReplaceAll(escaped, "\\*", ".*") + "$"
@@ -152,17 +192,17 @@ func IsModelPermitted(requestedModel string, allowedModels []string) bool {
 			}
 		}
 
-		// 5. Date / version suffix matching (- or @)
-		prefixes := []string{
-			pattern + "-", pattern + "@",
-			patStripped + "-", patStripped + "@",
-			patUnmultiplied + "-", patUnmultiplied + "@",
-			patStrippedUnmultiplied + "-", patStrippedUnmultiplied + "@",
-		}
-		for _, prefix := range prefixes {
+		// Authentic date or version suffix matching (e.g. claude-3-7-sonnet matches claude-3-7-sonnet-20250219 or @version)
+		for _, base := range []string{patModel, patModelUnmultiplied} {
+			if base == "" {
+				continue
+			}
 			for _, t := range targets {
-				if strings.HasPrefix(t, prefix) {
-					return true
+				if strings.HasPrefix(t, base) {
+					suffix := t[len(base):]
+					if dateOrVersionSuffixRegex.MatchString(suffix) {
+						return true
+					}
 				}
 			}
 		}

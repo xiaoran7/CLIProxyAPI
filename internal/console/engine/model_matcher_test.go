@@ -71,6 +71,50 @@ func TestIsModelPermitted(t *testing.T) {
 	}
 }
 
+func TestIsModelPermitted_ProviderIsolationAndPrefixSpecificity(t *testing.T) {
+	// Rule 1: Bare MiniMax-M3 should allow exact MiniMax-M3, but NOT isolated workbuddy/ or workbuddy-cn/
+	minimaxRules := []string{"MiniMax-M3"}
+	if !IsModelPermitted("MiniMax-M3", minimaxRules) {
+		t.Error("expected MiniMax-M3 to be permitted by MiniMax-M3")
+	}
+	if !IsModelPermitted("minimax-m3", minimaxRules) {
+		t.Error("expected minimax-m3 to be permitted by MiniMax-M3")
+	}
+	if IsModelPermitted("workbuddy-cn/minimax-m3", minimaxRules) {
+		t.Error("workbuddy-cn/minimax-m3 must NOT be permitted by bare MiniMax-M3 (leakage into workbuddy-cn)")
+	}
+	if IsModelPermitted("workbuddy/minimax-m3", minimaxRules) {
+		t.Error("workbuddy/minimax-m3 must NOT be permitted by bare MiniMax-M3 (leakage into workbuddy)")
+	}
+	if IsModelPermitted("MiniMax-M3.1-Flash", minimaxRules) {
+		t.Error("MiniMax-M3.1-Flash must NOT be permitted by MiniMax-M3")
+	}
+
+	// Rule 2: Single word 'minimax' must NOT open all minimax-* models without a wildcard
+	singleWordRules := []string{"minimax"}
+	if !IsModelPermitted("minimax", singleWordRules) {
+		t.Error("exact 'minimax' should be permitted by 'minimax'")
+	}
+	if IsModelPermitted("minimax-m3", singleWordRules) {
+		t.Error("'minimax-m3' must NOT be opened by single word 'minimax'")
+	}
+	if IsModelPermitted("workbuddy-cn/minimax-m3", singleWordRules) {
+		t.Error("'workbuddy-cn/minimax-m3' must NOT be opened by single word 'minimax'")
+	}
+
+	// Rule 3: workbuddy-cn/minimax-m3 must NOT permit workbuddy/minimax-m3
+	wbCnRules := []string{"workbuddy-cn/minimax-m3"}
+	if !IsModelPermitted("workbuddy-cn/minimax-m3", wbCnRules) {
+		t.Error("workbuddy-cn/minimax-m3 must be permitted by workbuddy-cn/minimax-m3")
+	}
+	if IsModelPermitted("workbuddy/minimax-m3", wbCnRules) {
+		t.Error("workbuddy/minimax-m3 must NOT be permitted by workbuddy-cn/minimax-m3 (cross-realm leakage)")
+	}
+	if IsModelPermitted("workbuddy-cn/minimax-m2.7", wbCnRules) {
+		t.Error("workbuddy-cn/minimax-m2.7 must NOT be permitted by workbuddy-cn/minimax-m3")
+	}
+}
+
 func TestResolveModelTarget(t *testing.T) {
 	tests := []struct {
 		name           string

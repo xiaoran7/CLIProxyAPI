@@ -229,10 +229,17 @@ func HandleGetCpaModels(eng *engine.Engine, cpa *CpaClient, providers *ProviderR
 				continue
 			}
 			mID := strings.TrimSpace(info.ID)
+			// Skip un-namespaced internal WorkBuddy models so they don't leak into the catalog as bare models.
+			// WorkBuddy models are already properly namespaced (workbuddy/ or workbuddy-cn/) in step 2.
+			if (info.Type == "workbuddy" || strings.EqualFold(info.OwnedBy, "workbuddy") || strings.EqualFold(info.OwnedBy, "workbuddy-cn")) && !strings.Contains(mID, "/") {
+				continue
+			}
 			prov := strings.TrimSpace(info.OwnedBy)
-			if prov == "" {
-				prov = providers.InferProvider(mID, "").Key
-				if prov == "" {
+			if prov == "" || prov == "claude" || prov == "anthropic" {
+				inferred := providers.InferProvider(mID, "").Key
+				if inferred != "" && inferred != "general" && inferred != "unknown" {
+					prov = inferred
+				} else if prov == "" {
 					prov = "upstream"
 				}
 			}

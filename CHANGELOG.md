@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Model Whitelist Provider Isolation & Date Suffix Disambiguation (`internal/console/engine/`, `internal/console/api/`, `internal/console/assets/`)**:
+  - Remediated cross-provider leakage in `IsModelPermitted`: requests specifying isolated routed providers (`workbuddy-cn/`, `workbuddy/`, `qoder/`, `zcode/`) can now only match whitelists with the matching provider namespace or universal wildcard `*`, preventing bare rules (e.g. `MiniMax-M3`) from inadvertently allowing `workbuddy-cn/` models.
+  - Replaced crude hyphen-prefix matching with strict `dateOrVersionSuffixRegex` (`-(20\d{6}|20\d{2}-\d{2}-\d{2}|latest)$|^@`), preventing single-word rules like `minimax` from inadvertently glob-matching all `minimax-*` models across all providers.
+  - Excluded un-namespaced internal WorkBuddy models from `HandleGetCpaModels` (`/console/api/cpa/models`), eliminating duplicate lowercase models (`minimax-m2.5`, `minimax-m3`, etc.) while preserving officially namespaced `workbuddy-cn/...` and official MiniMax models (`MiniMax-M3`, etc.).
+  - Added provider badges (`<span class="model-picker-prov-tag">`) to the Console key editing model picker (`console-keys.js`), allowing users to visually distinguish between official direct channels and aggregated proxy channels.
+  - Added unit regression test `TestIsModelPermitted_ProviderIsolationAndPrefixSpecificity` in `model_matcher_test.go`.
 - **Console Upstream Model Catalog Dynamic Registry Federation (`internal/console/api/`, `internal/util/`)**:
   - Connected `registry.GetGlobalRegistry().GetAvailableModelInfos()` into `HandleGetCpaModels` (`/console/api/cpa/models`), ensuring all dynamically registered and custom-configured upstream models (including `claude-api-key`, `codex`, `gemini`, and custom channels) appear in the Console key creation/editing model picker.
   - Added case-insensitive model identifier matching in `internal/util/provider.go` to prevent casing mismatches (e.g., `MiniMax-M3` vs `minimax-m3`) from dropping provider resolution.
