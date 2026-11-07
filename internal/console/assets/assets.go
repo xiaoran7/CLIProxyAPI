@@ -48,6 +48,7 @@ func init() {
 		"console-stats.js",
 		"console-logs.js",
 		"console-traffic.js",
+		"console-tos-bans.js",
 		"console-cpa.js",
 		"console-cpa.css",
 		"console-overview.js",
@@ -159,6 +160,7 @@ func RegisterUI(r *gin.Engine) {
 		"/console/console-polling.js":           "console-polling.js",
 		"/console/console-member.js":            "console-member.js",
 		"/console/console-refresh.js":           "console-refresh.js",
+		"/console/console-tos-bans.js":          "console-tos-bans.js",
 		"/console/console-init.js":              "console-init.js",
 	}
 
