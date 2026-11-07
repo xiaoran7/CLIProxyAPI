@@ -49,6 +49,9 @@
             case 'errors':
               await fetchErrorsData(force);
               break;
+            case 'tos-bans':
+              await fetchTOSBans(force);
+              break;
             case 'keys':
               await fetchKeysData(force);
               break;

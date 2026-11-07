@@ -294,7 +294,8 @@
       keys: { title: 'nav.keys', eyebrow: 'ACCESS CONTROL', description: 'page.keys.desc' },
       traffic: { title: 'nav.traffic', eyebrow: 'REALTIME TOPOLOGY & CLIENT IP', description: 'page.traffic.desc' },
       logs: { title: 'nav.logs', eyebrow: 'REQUEST ACTIVITY', description: 'page.logs.desc' },
-      errors: { title: 'nav.errors', eyebrow: 'INCIDENTS & CIRCUIT BREAKERS', description: 'page.errors.desc' }
+      errors: { title: 'nav.errors', eyebrow: 'INCIDENTS & CIRCUIT BREAKERS', description: 'page.errors.desc' },
+      'tos-bans': { title: 'nav.tosBans', eyebrow: 'TOS ENFORCEMENT LEDGER', description: 'page.tosBans.desc' }
     };
 
     // pageMeta 条目里的 title/description 若是字典 key，取当前语言文案

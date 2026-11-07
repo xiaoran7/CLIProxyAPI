@@ -114,6 +114,7 @@ func registerConsoleRoutes(
 		rg.GET("/requests", HandleGetRequests(eng, pricing, providers))
 		rg.GET("/traffic", HandleGetTraffic())
 		rg.GET("/errors", HandleGetErrors(eng, providers))
+		rg.GET("/tos-bans", HandleGetTOSBans(eng, cpa))
 		rg.GET("/status-summary", HandleGetStatusSummary(eng, providers))
 
 		// Pricing matrix

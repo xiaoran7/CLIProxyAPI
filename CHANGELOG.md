@@ -5,6 +5,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **TOS 封禁监控 (封禁监控) 工作区上线 (`internal/console/`)**:
+  - Console 左侧边栏在「故障中心」下方新增 **「封禁监控」** 菜单项（`tab-btn-tos-bans`），点击后在 Console 主内容区以标准 Tab 方式渲染，不跳转独立 URL；侧边栏角标显示当前命中 TOS 封禁的账号数。
+  - 新增 `GET /console/api/tos-bans`（`HandleGetTOSBans`），封禁记录**唯一权威来源为应用日志**（`logs/main.log` 及其 `main-*.log` 轮转归档）：`gate.db` 的 `error_events.error_body` 在写入前被截断为 300 字符，`reason=TOS_VIOLATION` 落在截断点之后，因此光查库会 100% 漏掉 TOS 记录（生产实测 `error_events` 内 TOS 命中数为 0）。
+  - 日志解析（`internal/console/api/tos_ban_log.go`）同时兼容两类上游日志形态：`conductor_execution.go` 的 `403 | …ms | upstream execution failed: provider=… model=… auth=… auth_file=… err={…}` 完整诊断行，以及 `antigravity_executor_execute.go` 的裸 debug 行；提取触发时间、账号、模型、HTTP 状态、`PERMISSION_DENIED`、上游 message 全文、`validation_url` 与原始日志行，并对日志截断（`TOS_VIOLATIO...`）显式打标。
+  - `auth_file` → 账号邮箱的换算与 CPA `/auth-files` 的 `auth_index` / 状态关联，使每条封禁记录都可定位到具体上游账号与当前启停状态。
+  - 每条封禁记录展示：精确到秒的触发时间、账号标识、命中模型、403 状态徽标、上游完整错误详情、`validation_url`（如有）、可展开的上游原始日志行；账号卡片额外展示最近一次成功请求时间、近 7 天 / 近 24h / 全量的 200 与 403 对比条，用于区分「刚被封」与「封了已久彻底死亡」。
+  - 顶部汇总卡：当前命中封禁账号数、近 24h 403 总数、近 7 天 403 总数；支持按账号、按模型过滤与胶囊重置；沿用 Console 既有 `CustomDropdown`、`summary-card`、`panel` 与 `ui-design` 圆角/阴影/动效体系，并复用全局 15s 轮询刷新。
+
+
 ### Fixed
 - **Visual Gateway Stream Migration, Table Column Alignment & Modern Slider Integration (`internal/console/`, `internal/console/db/`)**:
   - Decommissioned internal stream table and legacy time range slider from Visual Gateway (`tab-page-traffic`), cleanly preserving only the core 4 metrics cards, 4-stage dynamic SVG topology graph, and bottom IP + Geo + Key 3D association ledger per user specifications.

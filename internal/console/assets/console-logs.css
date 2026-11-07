@@ -369,3 +369,247 @@
 
   
 
+
+/* ============================================================
+   TOS 封禁监控 (封禁监控工作区)
+   ============================================================ */
+.tos-account-card {
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  transition: box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tos-account-card:hover {
+  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+}
+.tos-account-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.tos-account-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tos-account-email {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+.tos-auth-badge,
+.tos-auth-index,
+.tos-count-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tos-auth-badge.tos-auth-disabled {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+.tos-auth-badge.tos-auth-active {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+}
+.tos-auth-index {
+  background: rgba(148, 163, 184, 0.14);
+  color: #475569;
+  font-family: var(--mono, monospace);
+}
+.tos-account-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tos-count-chip {
+  background: rgba(148, 163, 184, 0.12);
+  color: #475569;
+}
+.tos-count-chip.tos-count-danger {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+.tos-account-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.tos-stat-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(226, 232, 240, 0.7);
+}
+.tos-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+.tos-stat-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+.tos-ratio-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 9999px;
+  overflow: hidden;
+  background: rgba(239, 68, 68, 0.22);
+  margin-bottom: 14px;
+}
+.tos-ratio-ok {
+  background: linear-gradient(90deg, #34d399, #059669);
+  border-radius: 9999px;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tos-records {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+  padding-top: 12px;
+}
+.tos-record {
+  border: 1px solid rgba(226, 232, 240, 0.75);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  padding: 12px 14px;
+}
+.tos-record-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.tos-record-time {
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+.tos-record-ago {
+  font-size: 11px;
+  color: #64748b;
+}
+.tos-record-model {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 9999px;
+  background: rgba(59, 130, 246, 0.08);
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 600;
+}
+.tos-status-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.tos-status-forbidden {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+.tos-status-ok {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+}
+.tos-truncated-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 9999px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: help;
+}
+.tos-record-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tos-record-row {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.tos-record-key {
+  flex: 0 0 92px;
+  color: #64748b;
+  font-weight: 600;
+}
+.tos-record-val {
+  color: #334155;
+  word-break: break-word;
+}
+.tos-record-message {
+  color: #0f172a;
+}
+.tos-record-muted {
+  color: #94a3b8;
+  font-size: 12px;
+}
+.tos-validation-link {
+  color: #2563eb;
+  word-break: break-all;
+}
+.tos-record-raw {
+  margin-top: 4px;
+}
+.tos-record-raw summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748b;
+  user-select: none;
+}
+.tos-record-raw pre {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.04);
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  line-height: 1.55;
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 220px;
+  overflow: auto;
+}
