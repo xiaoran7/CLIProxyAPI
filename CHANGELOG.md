@@ -16,6 +16,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - 顶部汇总卡：当前命中封禁账号数、近 24h 403 总数、近 7 天 403 总数；支持按账号、按模型过滤与胶囊重置；沿用 Console 既有 `CustomDropdown`、`summary-card`、`panel` 与 `ui-design` 圆角/阴影/动效体系，并复用全局 15s 轮询刷新。
 
 
+### Fixed
+- **来源地域列竖排与首帧错值修复 (`internal/console/assets/`, `internal/console/`)**:
+  - 地域胶囊此前在窄列内被按「·」折行成竖排（`中国 / ·湖 / 南· / ·株 / 洲`），把整行行高撑到数倍。`traffic-pill-geo` 现固定 `white-space: nowrap` + `max-width: 148px` + `text-overflow: ellipsis`，并在渲染层把后端的三段式 `中国 · 湖南 · 株洲` 收敛为两段：国内省略国家名只留 `湖南 · 株洲`，海外保留 `国家 · 最终城市`（如 `日本 · 千代田`）。完整原始值保留在 `title` 悬浮提示中。
+  - 流水表地域列宽固定 158px、ASN 列固定 140px 并省略超长运营商名（如 `CHINA UNICOM China169 Backbone`），避免 ASN 文本顶宽后把地域挤成竖排；`#tab-page-logs` 下所有单元格统一 `white-space: nowrap`，行高恢复单行高度。
+  - 首帧错值根因是持久化缓存 `gate_cache_logs_v2` 里的事件早于 `client_ip` / `geo` 字段上线，读回后渲染出无地域的错误帧。缓存键升级为 `gate_cache_logs_v3` 让旧缓存自然失效，并保留服务端 SWR 查询缓存用于同会话内的瞬时渲染。
+  - 地域缺失时不再渲染「未知地域」这类会跳变的占位值，改为渲染 `.ui-skeleton-pill` 骨架条等待解析结果；同时把 `fetchEventsData(false)` 加入 Console 全局预热序列，首屏加载完成后流水数据（含 geo）即已就绪。
+  - 顺带修掉 `console-tables.css` 中一段孤立残留声明块（`.table-scroll-container` 闭合后多出的 `overflow-x: auto; }`），浏览器虽会丢弃但属语法脏数据。
+
+### Changed
+- **卡片彩色装饰全面清除 (`internal/console/assets/`)**:
+  - 移除 `console-theme-v2310.css` 中所有卡片容器的彩色装饰：`.summary-card` 的 3px 粉色/蓝色顶条（`#eeb4cb` / `#9ac4ef`）、`.operation-metric` 的樱花粉顶部短条、`.status-card` 的左侧 3px 状态色竖条（含 `:has(.status-dot.err/.warn)` 的红/黄变体）、`.panel-header` 的樱花粉左描边与粉色渐变底（连带的 `sakura-cityline-v3.webp` 背景图一并移除）。
+  - 清除 `console.html` 中全部 6 处内联 `border-top-color` 卡片覆盖、`operation-metric` 的红色淡底（`rgba(239,68,68,0.06)`）、以及上游验证横幅的红→橙渐变底（`linear-gradient(135deg, rgba(239,68,68,0.08), rgba(245,158,11,0.05))`）。
+  - `console-validations.css` 的待验证卡片由红色边框/红色投影改为中性边框（`rgba(226,232,240,0.85)`）与中性投影（`rgba(15,23,42,0.05)`），错误消息块由 3px 红色左竖条改为 1px 淡红描边 + 8px 圆角。
+  - 语义色一律收敛到卡片内部的小面积元素：数值、状态徽标（`.chip` / `.traffic-pill-*`）、状态圆点（`.status-dot`）、Toast 彩色指示条与品牌图标。卡片容器底色统一为 `rgba(255,255,255,0.94)` / 暗色 `rgba(15,23,42,0.85)`，描边统一为 `1px solid rgba(226,232,240,0.85)`。
+  - Google 验证专区三张汇总卡片的警告、账号、对勾图标统一为 `stroke-width: 1.5` 细线单色 SVG（原为 2px）。
+  - 全部资源缓存令牌升级至 `?v=v8.0.60`。
+
 ### Changed
 - **骨架屏标准下放与日志工具条单行化 (`internal/console/assets/`)**:
   - 将 `ui-design` 骨架屏微光（`linear-gradient` 200% 扫光 + `1.6s ease-in-out` 无限循环，暗色主题独立色阶，`prefers-reduced-motion` 下自动关闭动画）从仅服务于可视化网关拓扑页的局部样式提取为 `console-base.css` 全局基础设施 `.ui-skeleton` / `.ui-skeleton-line` / `.ui-skeleton-block` / `.ui-skeleton-pill` / `.ui-skeleton-row`，并在 `console-format.js` 提供 `buildSkeletonRows` / `renderSkeletonTableBody` / `renderSkeletonCards` 三个渲染助手供各工作区复用。

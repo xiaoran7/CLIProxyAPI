@@ -111,6 +111,7 @@
             fetchUpstreamValidations(),
             fetchUpstreamAuthStats(),
             ensureKeysLoaded(false),
+            fetchEventsData(false),
             typeof fetchTOSBans === 'function' ? fetchTOSBans(false) : Promise.resolve()
           ]);
         }

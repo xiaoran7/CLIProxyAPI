@@ -699,13 +699,25 @@
         ipTdHtml = `<span class="traffic-pill traffic-pill-ip" onclick="filterLogsByIP('${escapeHtml(ev.client_ip)}')" title="点击筛选此 IP">${escapeHtml(ev.client_ip)}</span>`;
       }
 
-      let locText = (ev.geo && (ev.geo.formatted || ev.geo.country))
-        ? (ev.geo.formatted || ev.geo.country)
-        : (ev.client_ip === '172.18.0.1' || ev.client_ip?.startsWith('172.18.') ? 'Docker Gateway' : (ev.client_ip?.startsWith('100.') ? 'Tailnet 专网' : (ev.client_ip === '127.0.0.1' ? '本机回环' : (ev.client_ip ? '未知地域' : '—'))));
+      // 地域单元格：紧凑格式 + 首帧骨架
+      //
+      // 后端返回的是「国家 · 省 · 市」（如 中国 · 湖南 · 株洲），三段式在窄列里
+      // 会被 CSS 按「·」折行成竖排，把整行行高撑到数倍。这里在渲染层收敛成
+      // 两段：国内省略国家名只留「省 · 市」，海外保留「国家 · 城市」。
+      // 无 geo 数据时渲染骨架条而不是「未知地域」——先显示一个错值再跳变
+      // 比短暂占位更糟。
       const isProxy = Boolean(ev.geo && (ev.geo.is_proxy || ev.geo.is_vpn || ev.geo.is_tor));
-      let geoTdHtml = locText !== '—'
-        ? `<span class="traffic-pill traffic-pill-geo">${escapeHtml(locText)}</span>${isProxy ? ' <span class="traffic-pill traffic-pill-danger" style="font-size:9px;padding:0 4px;">Proxy</span>' : ''}`
-        : '<span style="color:var(--text-dim); font-size:11.5px;">—</span>';
+      let geoTdHtml;
+      if (ev.geo) {
+        const locText = compactGeoLabel(ev.geo);
+        geoTdHtml = `<span class="traffic-pill traffic-pill-geo" title="${escapeHtml(ev.geo.formatted || locText)}">${escapeHtml(locText)}</span>${isProxy ? ' <span class="traffic-pill traffic-pill-danger" style="font-size:9px;padding:0 4px;">Proxy</span>' : ''}`;
+      } else if (ev.client_ip && ev.client_ip !== '-') {
+        // 内网地址由后端 MatchSpecialIP 直接给出 formatted，走到这里说明
+        // 该 IP 尚未完成解析或本就取不到地域：用骨架占位等待下一次轮询。
+        geoTdHtml = '<span class="ui-skeleton ui-skeleton-pill" style="width:92px;height:20px;" aria-label="地域解析中"></span>';
+      } else {
+        geoTdHtml = '<span style="color:var(--text-dim); font-size:11.5px;">—</span>';
+      }
 
       const asnText = ev.geo && ev.geo.asn ? `AS${ev.geo.asn} ${ev.geo.asn_org || ''}`.trim() : (ev.geo?.asn_org || '—');
       let asnTdHtml = asnText !== '—'
@@ -744,6 +756,34 @@
         <td><div class="live-cell-content">${latencyHtml}</div></td>
         <td><div class="live-cell-content">${flags.join('') || '—'}</div></td>
       </tr>`;
+    }
+
+    // 把后端的三段式地域收敛为两段，供窄列表格单行展示。
+    // 国内（country 为「中国」）省去国家名，海外保留「国家 · 城市」。
+    function compactGeoLabel(geo) {
+      const formatted = (geo && geo.formatted) || '';
+      const country = (geo && geo.country) || '';
+      const region = (geo && geo.region) || '';
+      const city = (geo && geo.city) || '';
+
+      const segs = formatted ? formatted.split('\s*·\s*').filter(Boolean) : [];
+      const isCN = country === '中国' || country === 'China' || country === 'CN';
+      const hasCountryFirst = segs.length > 0 && country && segs[0] === country;
+
+      if (segs.length >= 2) {
+        if (isCN && hasCountryFirst) {
+          // 中国 · 湖南 · 株洲 -> 湖南 · 株洲
+          return segs.slice(1).slice(0, 2).join(' · ');
+        }
+        // 日本 · 东京都 · 千代田 -> 日本 · 千代田（省掉与城市同级的中间层）
+        if (segs.length >= 3) return `${segs[0]} · ${segs[segs.length - 1]}`;
+        return segs.join(' · ');
+      }
+      if (segs.length === 1) return segs[0];
+
+      // formatted 缺失时退回结构化字段
+      if (isCN) return [region, city].filter(Boolean).join(' · ') || '未知地域';
+      return [country, city || region].filter(Boolean).join(' · ') || '未知地域';
     }
 
     function renderEventsTable(events, total, newlyAddedIds = null) {

@@ -650,3 +650,22 @@
   max-height: 220px;
   overflow: auto;
 }
+
+    /* 1. 来源地域 / ASN 列宽与行高
+       地域值收敛为两段后仍需保证单行：列宽给足地域（158px），ASN 列压缩到
+       132px 并省略，避免长运营商名（如 CHINA UNICOM China169 Backbone）
+       顶宽后把地域挤成竖排。两列统一 nowrap + ellipsis。 */
+    #tab-page-logs .table-scroll-container td { white-space: nowrap; }
+    #tab-page-logs .table-scroll-container th:nth-child(3),
+    #tab-page-logs .table-scroll-container td:nth-child(3) { width: 158px; max-width: 158px; }
+    #tab-page-logs .table-scroll-container th:nth-child(4),
+    #tab-page-logs .table-scroll-container td:nth-child(4) { width: 140px; max-width: 140px; }
+    #tab-page-logs .table-scroll-container td:nth-child(4) .live-cell-content,
+    #tab-page-logs .table-scroll-container td:nth-child(4) span {
+      display: inline-block;
+      max-width: 132px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: middle;
+    }

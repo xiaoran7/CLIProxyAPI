@@ -691,6 +691,15 @@ body.dark .traffic-geo-card {
   border: 1px solid rgba(14, 165, 233, 0.22);
   border-radius: 9999px;
   padding: 3px 10px;
+  /* 地域值形如「中国 · 湖南 · 株洲」，列宽收紧时必须单行省略，
+     绝不允许按「·」断行成竖排把整行撑高 */
+  white-space: nowrap;
+  max-width: 148px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 1.5;
 }
 
 .traffic-pill-key {

@@ -69,15 +69,15 @@
     .page-intro-actions { padding-bottom: 0; }
     .operations-strip { position: relative; z-index: 1; grid-template-columns: repeat(2, minmax(0,1fr)); width: calc(100% - 355px); gap: 9px; padding: 0; background: transparent; border: 0; border-radius: 0; overflow: visible; }
     .operation-metric { position: relative; min-height: 92px; padding: 15px 17px 13px; background: #ffffffeb; border: 1px solid #cfdef0 !important; border-radius: 11px 11px 11px 3px; box-shadow: 0 3px 10px #7ca7d010; }
-    .operation-metric::before { content: ''; position: absolute; top: -1px; left: 15px; width: 36px; height: 3px; background: var(--sakura); border-radius: 0 0 4px 4px; }
-    .operation-metric:nth-child(even)::before { background: #76aee7; }
+    .operation-metric::before { content: none; }
     .operation-label { color: #6681a0; font-size: 11px; }
     .operation-value { color: #203f69; font-size: 25px; letter-spacing: -.035em; }
     .quota-workspace { gap: 15px; }
     .panel, .summary-card, .member-info-card { border: 1px solid #cedff1; background: #ffffffef; box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05); border-radius: 18px; transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
     .panel:hover, .summary-card:hover, .member-info-card:hover { transform: translateY(-2px); box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08); }
     .panel { border-radius: 18px; }
-    .panel-header { background-color: #f9fcff; background-image: linear-gradient(90deg, #f9fcff 0%, #f9fcfff2 65%, #f9fcffc9 100%), url('/console/assets/sakura-cityline-v3.webp'); background-position: center, right center; background-size: auto, auto 155px; background-repeat: no-repeat; border-bottom: 1px solid #d9e8f5; border-left: 3px solid var(--sakura-line); padding: 17px 18px; border-top-left-radius: 18px; border-top-right-radius: 18px; }
+    /* 面板头同样中性化：去掉樱花粉色左描边与粉色渐变底，只保留一道中性分隔线 */
+    .panel-header { background-color: #f9fcff; background-image: none; border-bottom: 1px solid #d9e8f5; border-left: none; padding: 17px 20px; border-top-left-radius: 18px; border-top-right-radius: 18px; }
     .panel-title { color: #21466f; font-weight: 740; }
     .panel-title > svg { color: #6998cd !important; }
     .panel-subtitle { color: #738aa4; }
@@ -86,9 +86,8 @@
     .quota-workspace .status-grid > .status-empty { flex: 1 1 100%; }
     .status-card { position: relative; border-color: #d4e3f3; border-radius: 18px; background: #fff; padding: 16px 18px; overflow: hidden; transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
     .status-card:hover { transform: translateY(-2px); }
-    .status-card::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 3px; background: #8dbbea; }
-    .status-card:has(.status-dot.err)::before { background: #e78da9; }
-    .status-card:has(.status-dot.warn)::before { background: #efbd75; }
+    /* 状态卡左侧彩条同样移除：状态语义由卡片内部的 .status-dot 与数值承担 */
+    .status-card::before { content: none; }
     .status-card-name { color: #284a70; }
     .status-req-badge { border-color: #d8e5f4; background: #f3f8ff; color: #6683a2; }
     .status-metric-box { background: #f4f8fe; border-color: #e1ebf7; }
@@ -99,7 +98,6 @@
     .heartbeat-bars i.warn, .heartbeat-bars i.err { box-shadow: none; }
     .status-empty, .upstream-empty-state { color: #6682a2; background: #f9fbff; border: 1px dashed #cbdff3; border-radius: 14px; }
     .status-empty::before, .upstream-empty-state::before { content: none; }
-    #upstream-panel > .panel-header { border-left-color: #b9d6f4; }
     #upstream-panel > .panel-header > div:last-child { border-top-color: #e1edf8; }
     #upstream-panel .compact-account-row { background: #ffffff; border: 1px solid #dceaf8; border-radius: 14px; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
     #upstream-panel .compact-account-row:nth-child(even) { background: #fbfdff; }
@@ -109,8 +107,9 @@
     .btn { font-family: inherit; font-weight: 650; }
     .btn:focus-visible, .nav-tab-btn:focus-visible, .segmented-tabs button:focus-visible, .panel-fold-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     th { background: #f1f7ff; color: #526f91; }
-    .summary-card { border-radius: 18px; border-top: 3px solid #eeb4cb; }
-    .summary-card:nth-child(even) { border-top-color: #9ac4ef; }
+    /* 卡片容器必须中性：不得用彩色顶条/彩条区分卡片。语义色只允许出现在
+       卡片内部的小面积元素（数值、状态徽标、图标）上。 */
+    .summary-card { border-radius: 18px; }
     .auth-required-panel { background: #ffffffed; }
     @media (max-width: 1240px) { .operations-strip { width: 100%; } }
     @media (max-width: 900px) {

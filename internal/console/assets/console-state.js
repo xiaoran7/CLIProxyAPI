@@ -12,7 +12,9 @@
     let activeNavTab = 'quotas'; // quotas | overview | keys | logs
     // 持久化存储与短效多级缓存配置
     const KEY_STORAGE_KEYS = 'gate_cache_keys_v2';
-    const KEY_STORAGE_LOGS = 'gate_cache_logs_v2';
+    // v3: 流水事件新增 client_ip 与 geo 字段。旧 v2 缓存里的事件没有 geo，
+    // 直接渲染会让「来源地域」列先显示一帧占位/错值再跳变，因此换代让旧缓存自然失效。
+    const KEY_STORAGE_LOGS = 'gate_cache_logs_v3';
     const KEY_STORAGE_ERRORS = 'gate_cache_errors_v2';
     const KEY_STORAGE_TODAY_BADGES = 'gate_cache_today_badges_v1';
 
