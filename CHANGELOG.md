@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - **TOS 封禁监控 (封禁监控) 工作区上线 (`internal/console/`)**:
-  - Console 左侧边栏在「故障中心」下方新增 **「封禁监控」** 菜单项（`tab-btn-tos-bans`），点击后在 Console 主内容区以标准 Tab 方式渲染，不跳转独立 URL；侧边栏角标显示当前命中 TOS 封禁的账号数。
+  - Console 左侧边栏在**下半部分监控分组末尾、「故障中心」之后**新增 **「封禁监控」** 菜单项（`tab-btn-tos-bans`；固定在侧边栏下半部分，不上移到「工作区」分组或导航顶部），点击后在 Console 主内容区以标准 Tab 方式渲染，不跳转独立 URL；侧边栏角标显示当前命中 TOS 封禁的账号数。
   - 新增 `GET /console/api/tos-bans`（`HandleGetTOSBans`），封禁记录**唯一权威来源为应用日志**（`logs/main.log` 及其 `main-*.log` 轮转归档）：`gate.db` 的 `error_events.error_body` 在写入前被截断为 300 字符，`reason=TOS_VIOLATION` 落在截断点之后，因此光查库会 100% 漏掉 TOS 记录（生产实测 `error_events` 内 TOS 命中数为 0）。
   - 日志解析（`internal/console/api/tos_ban_log.go`）同时兼容两类上游日志形态：`conductor_execution.go` 的 `403 | …ms | upstream execution failed: provider=… model=… auth=… auth_file=… err={…}` 完整诊断行，以及 `antigravity_executor_execute.go` 的裸 debug 行；提取触发时间、账号、模型、HTTP 状态、`PERMISSION_DENIED`、上游 message 全文、`validation_url` 与原始日志行，并对日志截断（`TOS_VIOLATIO...`）显式打标。
   - 同一事件的执行器裸 debug 行（`antigravity_executor_execute.go`，不含账号身份）与携带 `auth_file` 的 conductor 记录落在同一秒时视为同一次封禁事件，仅保留后者，避免单个被封账号被误算成两个、封禁次数被翻倍；孤立无主的匿名记录仍会保留（本轮自查实测发现并修复）。

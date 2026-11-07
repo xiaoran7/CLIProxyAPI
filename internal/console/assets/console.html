@@ -79,6 +79,7 @@
 <button class="nav-tab-btn" id="tab-btn-errors" onclick="switchNavTab('errors')">
 <svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-linecap="round" stroke-linejoin="round"></path></svg><span data-i18n="nav.errors">故障中心</span><span class="tab-badge" id="nav-badge-errors" style="color:var(--danger);" title="今日故障数" data-i18n-title="nav.badge.todayErrors">0</span>
 </button>
+<!-- 封禁监控固定在侧边栏下半部分（监控/运维分组末尾，紧邻故障中心），不得上移到「工作区」分组或导航顶部 -->
 <button class="nav-tab-btn" id="tab-btn-tos-bans" onclick="switchNavTab('tos-bans')">
 <svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" stroke-linecap="round" stroke-linejoin="round"></path></svg><span id="tab-text-tos-bans" data-i18n="nav.tosBans">封禁监控</span><span class="tab-badge" id="nav-badge-tos-bans" style="color:var(--danger);" title="命中 TOS 封禁的账号数" data-i18n-title="nav.badge.tosBans">0</span>
 </button>
