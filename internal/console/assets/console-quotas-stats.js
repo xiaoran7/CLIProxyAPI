@@ -70,7 +70,7 @@
         // 骨架卡片与真实统计卡同网格，取数完成后原地替换，避免网格重排
         let skeletonCards = '';
         for (let i = 0; i < 6; i++) {
-          skeletonCards += `<div class="ui-skeleton" style="height:96px;border-radius:14px;"></div>`;
+          skeletonCards += `<div class="ui-skeleton-card-pad" style="min-height:96px;padding:16px 18px;"><span class="ui-skeleton ui-skeleton-line" style="width:46%;height:13px;margin-bottom:12px;"></span><span class="ui-skeleton ui-skeleton-line" style="width:72%;height:22px;"></span></div>`;
         }
         container.innerHTML = skeletonCards;
       }

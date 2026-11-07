@@ -16,6 +16,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - 顶部汇总卡：当前命中封禁账号数、近 24h 403 总数、近 7 天 403 总数；支持按账号、按模型过滤与胶囊重置；沿用 Console 既有 `CustomDropdown`、`summary-card`、`panel` 与 `ui-design` 圆角/阴影/动效体系，并复用全局 15s 轮询刷新。
 
 
+### Fixed
+- **step-5-preview 路由降级混跑修复 (`config.yaml` 生产配置)**:
+  - 根因：`internal/registry/model_registry.go:1970` 的 `GetModelProviders` 按凭据数量降序排序（数量相同再按名称字母序），裸名模型解析出多个 provider 后由 `sdk/cliproxy/auth/scheduler.go:516` 的 `pickMixedWithStrategy` 在**同一 priority 桶内**轮转。生产上 `stepfun` 只有 1 个凭据、`workbuddy-cn` 有多个凭据，两者 `priority` 均为默认 0，因此 step-5-preview 的裸名请求被稳定地分给 workbuddy-cn（生产 `request_events` 实测 4708 条历史记录全部为 `workbuddy-cn`）。
+  - 修复：`stepfun` 的 `openai-compatibility` 条目增加 `priority: 100`；`workbuddy-cn` 作为 auth 凭据文件不携带 priority（恒为 0），因此自动成为降级通道。未改动任何 Go 代码。
+  - 验证：新增 `TestSchedulerPick_MixedProvidersPrefersHighestPriority`（`sdk/cliproxy/auth/scheduler_test.go`）锁定「priority 高者独占混合池」语义；生产实测重启后连续 4 次 `step-5-preview` 请求全部落在 `stepfun`，重启前最后 3 次均为 `workbuddy-cn`。
+- **拓扑图渠道节点品牌图标缺失 (`internal/console/assets/console-traffic.js`)**:
+  - `getBrandNodeVisual` 的 `channel` 分支原先只覆盖 `antigravity` / `workbuddy` / `stepfun` / `minimax`，`deepseek` / `gemini` / `claude` / `qoder` / `codex` / `openrouter` / `opencode` 全部落入灰色默认占位图——这就是拓扑图看起来「全是同一个深蓝圆形图标」的原因。
+  - 补齐上述 7 个渠道品牌分支（各用独立配色与几何图标），现 11 个具名渠道各自渲染不同图标，仅真正未知的渠道保留中性占位。
+  - 模型节点分支原本已完整（`claude`/`gemini`/`step`/`minimax`/`deepseek`/`gpt` 使用子串匹配 `String.prototype.includes`，传入的是完整模型 ID 而非截断显示文本，故不存在「显示文本匹配失败」问题）。
+
 ### Removed
 - **上游验证提醒横幅彻底移除 (`internal/console/assets/`)**:
   - 删除 `console.html` 中 `#upstream-validations-banner` 整块节点（含其 `#upstream-validations-container` 列表容器，两者仅服务该横幅），共 22 行。

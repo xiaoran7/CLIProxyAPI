@@ -186,6 +186,67 @@ function getBrandNodeVisual(type, rawLabel) {
         color: '#0891b2'
       };
     }
+    // Channel nodes are labelled by provider/credential name, which does not
+    // always carry the upstream brand (workbuddy-cn serves deepseek models,
+    // "gemini" and "qoder" are providers in their own right). Without these
+    // branches every such node fell through to the neutral placeholder, which
+    // is what made a topology full of distinct brands look duplicated.
+    if (l.includes('deepseek')) {
+      return {
+        icon: '<path d="M3 10.5c3-4 7-5 10.5-4-2 4-5 7-9.5 6-1 0-1-.5-1-2z" fill="#0284c7" stroke="#0369a1" stroke-width="1.2"/>',
+        borderColor: 'rgba(2, 132, 199, 0.55)',
+        bgColor: 'rgba(2, 132, 199, 0.09)',
+        color: '#0284c7'
+      };
+    }
+    if (l.includes('gemini') || l.includes('google') || l.includes('vertex')) {
+      return {
+        icon: '<path d="M8 2c0 3.3-2.7 6-6 6 3.3 0 6 2.7 6 6 0-3.3 2.7-6 6-6-3.3 0-6-2.7-6-6z" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.2"/>',
+        borderColor: 'rgba(37, 99, 235, 0.55)',
+        bgColor: 'rgba(37, 99, 235, 0.09)',
+        color: '#2563eb'
+      };
+    }
+    if (l.includes('claude') || l.includes('anthropic')) {
+      return {
+        icon: '<path d="M8 2l1.6 4.4L14 8l-4.4 1.6L8 14l-1.6-4.4L2 8l4.4-1.6z" fill="#d97706" stroke="#b45309" stroke-width="1.2"/>',
+        borderColor: 'rgba(217, 119, 6, 0.55)',
+        bgColor: 'rgba(217, 119, 6, 0.09)',
+        color: '#d97706'
+      };
+    }
+    if (l.includes('qoder')) {
+      return {
+        icon: '<circle cx="8" cy="8" r="5.5" fill="none" stroke="#ff6a00" stroke-width="1.5"/><path d="M8 5v6M5 8h6" stroke="#ff6a00" stroke-width="1.5" stroke-linecap="round"/>',
+        borderColor: 'rgba(255, 106, 0, 0.55)',
+        bgColor: 'rgba(255, 106, 0, 0.09)',
+        color: '#ff6a00'
+      };
+    }
+    if (l.includes('openrouter')) {
+      return {
+        icon: '<path d="M2 5h3l3 3h6M2 11h3l3-3h6" fill="none" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="13" cy="4.5" r="1.6" fill="#6366f1"/><circle cx="13" cy="11.5" r="1.6" fill="#6366f1"/>',
+        borderColor: 'rgba(99, 102, 241, 0.55)',
+        bgColor: 'rgba(99, 102, 241, 0.09)',
+        color: '#6366f1'
+      };
+    }
+    if (l.includes('opencode')) {
+      return {
+        icon: '<rect x="2" y="3" width="12" height="10" rx="2" fill="none" stroke="#09090b" stroke-width="1.5"/><path d="M5 7l2 2-2 2M8.5 11h3" stroke="#09090b" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
+        borderColor: 'rgba(9, 9, 11, 0.55)',
+        bgColor: 'rgba(9, 9, 11, 0.07)',
+        color: '#09090b'
+      };
+    }
+    if (l.includes('codex') || l.includes('openai') || l.includes('gpt')) {
+      return {
+        icon: '<path d="M8 2a6 6 0 0 1 5.2 3A6 6 0 0 1 14 11a6 6 0 0 1-5.2 3A6 6 0 0 1 2 11a6 6 0 0 1 6-9z" fill="none" stroke="#10b981" stroke-width="1.6"/>',
+        borderColor: 'rgba(16, 185, 129, 0.55)',
+        bgColor: 'rgba(16, 185, 129, 0.09)',
+        color: '#10b981'
+      };
+    }
     return {
       icon: '<rect x="2" y="2.5" width="12" height="4.5" rx="1.5" fill="none" stroke="#64748b" stroke-width="1.3"/><rect x="2" y="9" width="12" height="4.5" rx="1.5" fill="none" stroke="#64748b" stroke-width="1.3"/><circle cx="4.5" cy="4.7" r="0.8" fill="#64748b"/><circle cx="4.5" cy="11.2" r="0.8" fill="#64748b"/>',
       borderColor: 'rgba(100, 116, 139, 0.55)',

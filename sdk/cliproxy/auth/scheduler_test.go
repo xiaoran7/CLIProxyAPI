@@ -3135,3 +3135,39 @@ func (e *callbackSchedulerTestExecutor) Refresh(ctx context.Context, auth *Auth)
 	}
 	return auth, nil
 }
+
+// TestSchedulerPick_MixedProvidersPrefersHighestPriority asserts that a
+// provider configured with a higher auth priority wins the mixed pool even
+// when the competing provider advertises more credentials (and therefore
+// sorts first in the registry list). This is the mechanism that lets a
+// config-level `priority` pin a shared model name to one channel instead of
+// letting it round-robin across every channel that happens to serve it.
+func TestSchedulerPick_MixedProvidersPrefersHighestPriority(t *testing.T) {
+	t.Parallel()
+
+	// workbuddy-cn carries three credentials at the default priority, stepfun a
+	// single credential at priority 1 -- exactly the production shape.
+	scheduler := newSchedulerForTest(
+		&RoundRobinSelector{},
+		&Auth{ID: "wb-1", Provider: "workbuddy-cn"},
+		&Auth{ID: "wb-2", Provider: "workbuddy-cn"},
+		&Auth{ID: "wb-3", Provider: "workbuddy-cn"},
+		&Auth{ID: "stepfun-1", Provider: "stepfun", Attributes: map[string]string{"priority": "1"}},
+	)
+
+	for index := 0; index < 6; index++ {
+		got, provider, errPick := scheduler.pickMixed(context.Background(), []string{"workbuddy-cn", "stepfun"}, "", cliproxyexecutor.Options{}, nil)
+		if errPick != nil {
+			t.Fatalf("pickMixed() #%d error = %v", index, errPick)
+		}
+		if got == nil {
+			t.Fatalf("pickMixed() #%d auth = nil", index)
+		}
+		if provider != "stepfun" {
+			t.Fatalf("pickMixed() #%d provider = %q, want stepfun (priority 1 must outrank the default tier)", index, provider)
+		}
+		if got.ID != "stepfun-1" {
+			t.Fatalf("pickMixed() #%d auth.ID = %q, want stepfun-1", index, got.ID)
+		}
+	}
+}

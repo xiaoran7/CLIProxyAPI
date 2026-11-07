@@ -444,6 +444,30 @@
     .ui-skeleton-row td { padding: 12px 10px; }
     .ui-skeleton-row .ui-skeleton-line { height: 11px; }
 
+    /* 数据就绪：真实内容淡入替换骨架，避免硬切造成的闪烁 */
+    @keyframes ui-content-fade-in {
+      from { opacity: 0; transform: translateY(2px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .ui-content-ready { animation: ui-content-fade-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+    /* 几何锁定：卡片骨架与真实卡片共用同一盒模型，取数前后高度不发生跳变。
+       .ui-skeleton-card-pad 的 min-height 由调用方按目标卡片高度给出。 */
+    .ui-skeleton-card-pad {
+      background: var(--card-bg, rgba(255, 255, 255, 0.94));
+      border: 1px solid var(--card-border, rgba(226, 232, 240, 0.85));
+      border-radius: 18px;
+      padding: 22px 24px;
+    }
+
+    body.theme-beszel .ui-skeleton-card-pad,
+    body.dark .ui-skeleton-card-pad {
+      background: rgba(15, 23, 42, 0.85);
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .ui-skeleton { animation: none !important; }
+      .ui-content-ready { animation: none !important; }
     }

@@ -455,7 +455,7 @@
         // 骨架卡与真实额度卡同网格同尺寸，首次拉取期间不出现大面积空白
         let skeletonCards = '';
         for (let i = 0; i < 6; i++) {
-          skeletonCards += `<div class="ui-skeleton" style="height:132px;border-radius:16px;"></div>`;
+          skeletonCards += `<div class="ui-skeleton-card-pad" style="min-height:132px;"><span class="ui-skeleton ui-skeleton-line" style="width:42%;height:14px;margin-bottom:14px;"></span><span class="ui-skeleton ui-skeleton-line" style="width:88%;margin-bottom:10px;"></span><span class="ui-skeleton ui-skeleton-line" style="width:64%;"></span></div>`;
         }
         setUpstreamPlaceholder(skeletonCards);
       }

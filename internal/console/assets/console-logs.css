@@ -208,19 +208,36 @@
     }
 
     /* Logs Pagination & Modern Filter Controls */
+    /* 筛选 + 分页合并为单行工具区：对端要求整段 ≤48px，且 1080p 首屏必须
+       看到表格首行。原实现是「40px 筛选行 + 12px 间距 + 40px 分页行 + 28px
+       上下内边距」= 120px，现在两者同排，纵向只剩单行高度 + 上下 4px。 */
     .logs-controls {
       position: relative;
       z-index: 10;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      padding: 14px 20px;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 4px 20px;
       background: rgba(248, 250, 252, 0.75);
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
       border-bottom: 1px solid var(--card-border);
-      flex-wrap: wrap;
-      gap: 12px;
+    }
+
+    /* 筛选控件组与分页条同排：控件组占据剩余宽度并可收缩 */
+    .logs-controls > .logs-filter-row {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    /* 分页条并入筛选行：去掉自身的外边距与上边框，不再单独占一行 */
+    .logs-controls > .pagination-bar {
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
     }
     .logs-controls:has(.dropdown.open),
     .logs-controls.has-open-dropdown {
