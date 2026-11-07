@@ -3,16 +3,21 @@
  * 日志分页、过滤控件与实时行插入动效
  */
 
-    /* 0. 现代化时间范围滑动条 (移自可视化网关并深度重构) */
+    /* 0. 时间范围过滤：单行常驻工具条
+       设计约束（ui-design）：整条工具区高度固定 44px、上下留白 8px，
+       时间窗口读数、快捷预设与双滑块轨道同排，从而把可视高度让给下方
+       流水表格——1080p 下首行数据必须落在首屏内。 */
     .logs-time-slider-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: nowrap;
+      min-height: 44px;
+      padding: 8px 20px;
       background: rgba(248, 250, 252, 0.85);
       border-bottom: 1px solid var(--card-border, rgba(226, 232, 240, 0.85));
       border-top-left-radius: 18px;
       border-top-right-radius: 18px;
-      padding: 16px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
     }
 
     body.theme-beszel .logs-time-slider-wrap,
@@ -21,42 +26,41 @@
       border-color: rgba(255, 255, 255, 0.08);
     }
 
-    .logs-slider-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-
-    .logs-slider-title {
-      font-size: 13.5px;
-      font-weight: 600;
-      color: var(--text-muted, #475569);
+    /* 左：当前生效窗口读数，固定宽度不随内容抖动 */
+    .logs-slider-lead {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      flex: none;
+      min-width: 152px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: var(--mono, monospace);
+      font-variant-numeric: tabular-nums;
+      color: var(--text-main);
     }
 
     .logs-slider-presets {
       display: flex;
       align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
+      gap: 4px;
+      flex: none;
     }
 
-    /* 快捷预设现代胶囊按钮组：rounded-full、height: 32px */
+    /* 快捷预设：28px 胶囊，视觉重量低于主操作按钮 */
     .logs-preset-btn {
-      height: 32px;
-      padding: 0 14px;
-      border-radius: 9999px; /* rounded-full */
-      font-size: 12px;
+      height: 28px;
+      min-width: 44px;
+      padding: 0 10px;
+      border-radius: 9999px;
+      font-size: 11.5px;
       font-weight: 600;
+      line-height: 1;
       border: 1px solid rgba(226, 232, 240, 0.85);
       background: transparent;
       color: var(--text-muted, #475569);
       cursor: pointer;
-      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -72,48 +76,68 @@
       background: rgba(59, 130, 246, 0.08);
       color: #2563eb;
       border-color: rgba(59, 130, 246, 0.35);
-      transform: translateY(-1px);
     }
 
     .logs-preset-btn.active {
       background: #2563eb;
       color: #ffffff;
       border-color: #2563eb;
-      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
     }
 
-    /* 轨道 height: 6px、border-radius: 9999px、底色 rgba(148,163,184,0.25) */
+    /* 右：双滑块轨道，吃掉剩余宽度 */
     .logs-slider-track-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1 1 auto;
+      min-width: 160px;
+    }
+
+    .logs-slider-canvas {
       position: relative;
-      height: 24px;
+      flex: 1 1 auto;
+      height: 22px;
       display: flex;
       align-items: center;
     }
 
+    .logs-slider-edge {
+      flex: none;
+      font-size: 10.5px;
+      font-family: var(--mono, monospace);
+      font-variant-numeric: tabular-nums;
+      color: var(--text-dim, #64748b);
+      white-space: nowrap;
+      max-width: 76px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* 轨道 4px、低饱和底色，不使用高对比渐变以免抢走表格注意力 */
     .logs-slider-track {
       position: absolute;
       width: 100%;
-      height: 6px;
+      height: 4px;
       border-radius: 9999px;
-      background: rgba(148, 163, 184, 0.25);
+      background: rgba(148, 163, 184, 0.2);
       overflow: hidden;
     }
 
     .logs-slider-progress {
       position: absolute;
       height: 100%;
-      background: linear-gradient(90deg, #3b82f6, #6366f1);
+      background: rgba(59, 130, 246, 0.65);
       border-radius: 9999px;
       left: 0%;
       right: 0%;
       transition: left 0.05s ease, right 0.05s ease;
     }
 
-    /* 滑块 width: 20px; height: 20px; border-radius: 50%; box-shadow: 0 2px 8px rgba(59,130,246,0.35) */
+    /* 滑块 14px 白色实心 + 蓝色描边，与 4px 轨道比例协调 */
     .logs-range-thumb {
       position: absolute;
       width: 100%;
-      height: 24px;
+      height: 22px;
       -webkit-appearance: none;
       appearance: none;
       background: none;
@@ -125,49 +149,62 @@
     .logs-range-thumb::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
-      width: 20px;
-      height: 20px;
+      width: 14px;
+      height: 14px;
       border-radius: 50%;
       background: #ffffff;
       border: 2px solid #3b82f6;
-      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+      box-shadow: 0 1px 4px rgba(59, 130, 246, 0.3);
       cursor: pointer;
       pointer-events: auto;
       transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.15s ease;
     }
 
     .logs-range-thumb::-webkit-slider-thumb:hover {
-      transform: scale(1.15);
-      box-shadow: 0 0 0 5px rgba(59, 130, 246, 0.2);
+      transform: scale(1.1);
+      box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.16);
     }
 
     .logs-range-thumb::-webkit-slider-thumb:active {
-      transform: scale(1.2);
+      transform: scale(1.16);
     }
 
     .logs-range-thumb::-moz-range-thumb {
-      width: 20px;
-      height: 20px;
+      width: 14px;
+      height: 14px;
       border-radius: 50%;
       background: #ffffff;
       border: 2px solid #3b82f6;
-      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+      box-shadow: 0 1px 4px rgba(59, 130, 246, 0.3);
       cursor: pointer;
       pointer-events: auto;
       transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .logs-range-thumb::-moz-range-thumb:hover {
-      transform: scale(1.15);
+      transform: scale(1.1);
     }
 
-    .logs-slider-labels {
-      display: flex;
-      justify-content: space-between;
-      font-size: 11.5px;
-      font-family: var(--mono, monospace);
-      font-variant-numeric: tabular-nums;
-      color: var(--text-dim, #64748b);
+    /* 窄屏：预设组压缩为横向滚动，绝不换行把表格顶下去 */
+    @media (max-width: 1180px) {
+      .logs-time-slider-wrap {
+        gap: 8px;
+        padding: 8px 14px;
+      }
+      .logs-slider-lead {
+        min-width: 104px;
+        font-size: 11px;
+      }
+      .logs-slider-edge {
+        display: none;
+      }
+      .logs-slider-presets {
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      .logs-slider-presets::-webkit-scrollbar {
+        display: none;
+      }
     }
 
     /* Logs Pagination & Modern Filter Controls */

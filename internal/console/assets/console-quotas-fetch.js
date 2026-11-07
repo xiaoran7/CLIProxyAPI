@@ -488,7 +488,12 @@
 
     async function refreshUpstreamQuotas(force = false) {
       if (!upstreamLoaded || !cachedUpstream || !Array.isArray(cachedUpstream.accounts) || cachedUpstream.accounts.length === 0) {
-        setUpstreamPlaceholder(`<div class="upstream-empty-state">${t('quotas.loadingUpstreamData')}</div>`);
+        // 骨架卡与真实额度卡同网格同尺寸，首次拉取期间不出现大面积空白
+        let skeletonCards = '';
+        for (let i = 0; i < 6; i++) {
+          skeletonCards += `<div class="ui-skeleton" style="height:132px;border-radius:16px;"></div>`;
+        }
+        setUpstreamPlaceholder(skeletonCards);
       }
       const refreshBtn = document.getElementById('btn-refresh-upstream-quotas');
       const refreshIcon = refreshBtn ? refreshBtn.querySelector('.refresh-icon') : null;

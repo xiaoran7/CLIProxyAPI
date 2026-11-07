@@ -6,34 +6,34 @@
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>Console — LLM Gateway</title>
 <link href="/console/assets/gate-sakura-mark-128.png" rel="icon" type="image/png"/>
-<link rel="stylesheet" href="/console/console-base.css?v=v8.0.58"/>
-<link rel="stylesheet" href="/console/console-panels.css?v=v8.0.58"/>
-<link rel="stylesheet" href="/console/console-members.css?v=v8.0.58"/>
-<link rel="stylesheet" href="/console/console-tables.css?v=v8.0.58"/>
-<link rel="stylesheet" href="/console/console-modals.css?v=v8.0.58"/>
-<link rel="stylesheet" href="/console/console-feedback.css?v=v8.0.58"/>
-<link rel="stylesheet" href="/console/console-logs.css?v=v8.0.58"/>
-<link rel="stylesheet" href="/console/console-theme-beszel.css?v=v8.0.58"/>
-<link rel="stylesheet" href="/console/console-theme-v239.css?v=v8.0.58"/>
-<link rel="stylesheet" href="/console/console-theme-v2310.css?v=v8.0.58"/>
-<link rel="stylesheet" href="/console/console-validations.css?v=v8.0.58"/>
-<link rel="stylesheet" href="/console/console-upstream-stats.css?v=v8.0.58"/>
-<link rel="stylesheet" href="/console/console-traffic.css?v=v8.0.58"/>
-  <script src="/console/console-i18n.js?v=v8.0.58"></script>
-  <script src="/console/console-format.js?v=v8.0.58"></script>
-  <script src="/console/console-quotas-priority.js?v=v8.0.58"></script>
-  <script src="/console/console-quotas-validation.js?v=v8.0.58"></script>
-  <script src="/console/console-quotas-fetch.js?v=v8.0.58"></script>
-  <script src="/console/console-quotas-render.js?v=v8.0.58"></script>
-  <script src="/console/console-quotas-workbuddy.js?v=v8.0.58"></script>
-  <script src="/console/console-quotas-stats.js?v=v8.0.58"></script>
-  <script src="/console/console-keys.js?v=v8.0.58"></script>
-  <script src="/console/console-stats.js?v=v8.0.58"></script>
-  <script src="/console/console-logs.js?v=v8.0.58"></script>
-  <script src="/console/console-traffic.js?v=v8.0.58"></script>
-  <script src="/console/console-tos-bans.js?v=v8.0.58"></script>
-<link rel="stylesheet" href="/console/console-cpa.css?v=v8.0.58"/>
-<link rel="stylesheet" href="/console/console-overview.css?v=v8.0.58"/>
+<link rel="stylesheet" href="/console/console-base.css?v=v8.0.59"/>
+<link rel="stylesheet" href="/console/console-panels.css?v=v8.0.59"/>
+<link rel="stylesheet" href="/console/console-members.css?v=v8.0.59"/>
+<link rel="stylesheet" href="/console/console-tables.css?v=v8.0.59"/>
+<link rel="stylesheet" href="/console/console-modals.css?v=v8.0.59"/>
+<link rel="stylesheet" href="/console/console-feedback.css?v=v8.0.59"/>
+<link rel="stylesheet" href="/console/console-logs.css?v=v8.0.59"/>
+<link rel="stylesheet" href="/console/console-theme-beszel.css?v=v8.0.59"/>
+<link rel="stylesheet" href="/console/console-theme-v239.css?v=v8.0.59"/>
+<link rel="stylesheet" href="/console/console-theme-v2310.css?v=v8.0.59"/>
+<link rel="stylesheet" href="/console/console-validations.css?v=v8.0.59"/>
+<link rel="stylesheet" href="/console/console-upstream-stats.css?v=v8.0.59"/>
+<link rel="stylesheet" href="/console/console-traffic.css?v=v8.0.59"/>
+  <script src="/console/console-i18n.js?v=v8.0.59"></script>
+  <script src="/console/console-format.js?v=v8.0.59"></script>
+  <script src="/console/console-quotas-priority.js?v=v8.0.59"></script>
+  <script src="/console/console-quotas-validation.js?v=v8.0.59"></script>
+  <script src="/console/console-quotas-fetch.js?v=v8.0.59"></script>
+  <script src="/console/console-quotas-render.js?v=v8.0.59"></script>
+  <script src="/console/console-quotas-workbuddy.js?v=v8.0.59"></script>
+  <script src="/console/console-quotas-stats.js?v=v8.0.59"></script>
+  <script src="/console/console-keys.js?v=v8.0.59"></script>
+  <script src="/console/console-stats.js?v=v8.0.59"></script>
+  <script src="/console/console-logs.js?v=v8.0.59"></script>
+  <script src="/console/console-traffic.js?v=v8.0.59"></script>
+  <script src="/console/console-tos-bans.js?v=v8.0.59"></script>
+<link rel="stylesheet" href="/console/console-cpa.css?v=v8.0.59"/>
+<link rel="stylesheet" href="/console/console-overview.css?v=v8.0.59"/>
 </head>
 <body>
 <div class="container app-shell">
@@ -686,34 +686,30 @@
 </div>
 </div>
 
-<!-- Modern Time Range Slider Box per ui-design (移自可视化网关并现代化升级) -->
+<!-- 时间范围过滤：单行常驻工具条（44px），不再挤压下方流水表格首行可见高度 -->
 <div class="logs-time-slider-wrap">
-  <div class="logs-slider-header">
-    <div class="logs-slider-title">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:#0284c7;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      <span>时间范围过滤</span>
-      <span id="logs-time-label-current" style="font-weight:700;color:var(--text-main);margin-left:8px;font-family:var(--mono, monospace);">全量跨度</span>
-    </div>
-    <div class="logs-slider-presets">
-      <button type="button" class="logs-preset-btn active" id="btn-logs-preset-all" onclick="setLogsTimePreset('all')">全量跨度</button>
-      <button type="button" class="logs-preset-btn" id="btn-logs-preset-24h" onclick="setLogsTimePreset('24h')">近 24 小时</button>
-      <button type="button" class="logs-preset-btn" id="btn-logs-preset-6h" onclick="setLogsTimePreset('6h')">近 6 小时</button>
-      <button type="button" class="logs-preset-btn" id="btn-logs-preset-1h" onclick="setLogsTimePreset('1h')">近 1 小时</button>
-      <button type="button" class="logs-preset-btn" id="btn-logs-preset-15m" onclick="setLogsTimePreset('15m')">近 15 分钟</button>
-      <button type="button" class="logs-preset-btn" id="btn-logs-preset-5m" onclick="setLogsTimePreset('5m')">近 5 分钟</button>
-    </div>
+  <div class="logs-slider-lead" title="当前生效的时间窗口">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#0284c7;flex:none;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    <span id="logs-time-label-current">全量跨度</span>
+  </div>
+  <div class="logs-slider-presets">
+    <button type="button" class="logs-preset-btn active" id="btn-logs-preset-all" onclick="setLogsTimePreset('all')">全量</button>
+    <button type="button" class="logs-preset-btn" id="btn-logs-preset-24h" onclick="setLogsTimePreset('24h')">24h</button>
+    <button type="button" class="logs-preset-btn" id="btn-logs-preset-6h" onclick="setLogsTimePreset('6h')">6h</button>
+    <button type="button" class="logs-preset-btn" id="btn-logs-preset-1h" onclick="setLogsTimePreset('1h')">1h</button>
+    <button type="button" class="logs-preset-btn" id="btn-logs-preset-15m" onclick="setLogsTimePreset('15m')">15m</button>
+    <button type="button" class="logs-preset-btn" id="btn-logs-preset-5m" onclick="setLogsTimePreset('5m')">5m</button>
   </div>
   <div class="logs-slider-track-wrap">
-    <div class="logs-slider-track">
-      <div class="logs-slider-progress" id="logs-slider-progress" style="left:0%;right:0%;"></div>
+    <span class="logs-slider-edge" id="logs-time-label-start">最早记录</span>
+    <div class="logs-slider-canvas">
+      <div class="logs-slider-track">
+        <div class="logs-slider-progress" id="logs-slider-progress" style="left:0%;right:0%;"></div>
+      </div>
+      <input type="range" id="logs-time-min" min="0" max="100" value="0" step="1" class="logs-range-thumb" oninput="onLogsTimeSliderInput()" />
+      <input type="range" id="logs-time-max" min="0" max="100" value="100" step="1" class="logs-range-thumb" oninput="onLogsTimeSliderInput()" />
     </div>
-    <input type="range" id="logs-time-min" min="0" max="100" value="0" step="1" class="logs-range-thumb" oninput="onLogsTimeSliderInput()" />
-    <input type="range" id="logs-time-max" min="0" max="100" value="100" step="1" class="logs-range-thumb" oninput="onLogsTimeSliderInput()" />
-  </div>
-  <div class="logs-slider-labels">
-    <span id="logs-time-label-start">最早记录</span>
-    <span style="font-size:11px;opacity:0.75;">拖拽滑块自由截取时间窗口</span>
-    <span id="logs-time-label-end">最新记录</span>
+    <span class="logs-slider-edge" id="logs-time-label-end">最新记录</span>
   </div>
 </div>
 
@@ -778,7 +774,12 @@
 </tr>
 </thead>
 <tbody id="events-tbody">
-<tr><td colspan="15" style="text-align: center; color: var(--text-dim); padding: 32px;" data-i18n="logs.loading">正在加载实时请求日志...</td></tr>
+<tr class="ui-skeleton-row"><td colspan="15"><span class="ui-skeleton ui-skeleton-line" style="width:28%;height:12px;display:inline-block;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:92%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:68%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:80%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:54%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:74%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:60%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:86%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:46%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:58%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:78%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:50%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:66%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:88%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:44%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:74%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:88%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:62%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:76%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:56%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:82%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:48%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:64%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:90%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:52%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:84%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:46%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:78%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:60%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:86%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:66%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:78%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:52%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:72%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:58%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:84%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:44%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:68%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:56%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:76%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:48%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:64%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:82%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:42%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:84%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:58%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:74%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:90%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:54%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:68%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:82%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:46%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:76%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:60%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:88%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:50%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:72%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:66%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:82%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:60%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:74%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:86%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:50%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:56%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:78%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:62%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:84%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:44%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:66%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:80%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:52%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:68%;"></span></td></tr>
 </tbody>
 </table>
 </div>
@@ -835,7 +836,11 @@
 </tr>
 </thead>
 <tbody id="errors-tbody">
-<tr><td colspan="8" style="text-align: center; color: var(--text-dim); padding: 32px;" data-i18n="errors.loading">正在加载错误与熔断事件...</td></tr>
+<tr class="ui-skeleton-row"><td colspan="8"><span class="ui-skeleton ui-skeleton-line" style="width:24%;height:12px;display:inline-block;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:86%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:64%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:78%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:52%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:88%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:58%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:46%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:72%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:82%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:56%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:74%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:62%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:84%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:48%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:66%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:90%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:58%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:72%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:86%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:50%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:68%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:80%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:54%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:76%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:88%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:60%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:84%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:54%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:66%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:78%;"></span></td></tr>
 </tbody>
 </table>
 </div>
@@ -892,7 +897,17 @@
 </div>
 </div>
 <div id="tos-accounts-list">
-<div style="text-align:center; color: var(--text-dim); padding: 40px;" data-i18n="tos.loading">正在解析应用日志中的 TOS 封禁记录…</div>
+<div class="ui-skeleton-card-pad" style="display:flex;flex-direction:column;gap:10px;padding:18px;">
+<span class="ui-skeleton ui-skeleton-line" style="width:34%;height:14px;"></span>
+<span class="ui-skeleton ui-skeleton-line" style="width:88%;"></span>
+<span class="ui-skeleton ui-skeleton-line" style="width:72%;"></span>
+<span class="ui-skeleton ui-skeleton-line" style="width:56%;"></span>
+</div>
+<div class="ui-skeleton-card-pad" style="display:flex;flex-direction:column;gap:10px;padding:18px;">
+<span class="ui-skeleton ui-skeleton-line" style="width:41%;height:14px;"></span>
+<span class="ui-skeleton ui-skeleton-line" style="width:80%;"></span>
+<span class="ui-skeleton ui-skeleton-line" style="width:64%;"></span>
+</div>
 </div>
 </div>
 </div>
@@ -1445,14 +1460,14 @@
 </div>
 
 <div id="toast-box"></div>
-  <script src="/console/console-state.js?v=v8.0.58"></script>
-  <script src="/console/console-nav.js?v=v8.0.58"></script>
-  <script src="/console/console-auth.js?v=v8.0.58"></script>
-  <script src="/console/console-polling.js?v=v8.0.58"></script>
-  <script src="/console/console-member.js?v=v8.0.58"></script>
-  <script src="/console/console-refresh.js?v=v8.0.58"></script>
-  <script src="/console/console-init.js?v=v8.0.58"></script>
-  <script src="/console/console-cpa.js?v=v8.0.58"></script>
-  <script src="/console/console-overview.js?v=v8.0.58"></script>
+  <script src="/console/console-state.js?v=v8.0.59"></script>
+  <script src="/console/console-nav.js?v=v8.0.59"></script>
+  <script src="/console/console-auth.js?v=v8.0.59"></script>
+  <script src="/console/console-polling.js?v=v8.0.59"></script>
+  <script src="/console/console-member.js?v=v8.0.59"></script>
+  <script src="/console/console-refresh.js?v=v8.0.59"></script>
+  <script src="/console/console-init.js?v=v8.0.59"></script>
+  <script src="/console/console-cpa.js?v=v8.0.59"></script>
+  <script src="/console/console-overview.js?v=v8.0.59"></script>
 </body>
 </html>

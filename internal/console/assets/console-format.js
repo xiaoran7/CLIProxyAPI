@@ -242,6 +242,56 @@
         }
       });
     }
+    // ---- 骨架屏占位渲染（ui-design 标准） ----
+    // 异步面板首次取数期间用骨架块替代"正在加载"文本：占位块与最终内容
+    // 尺寸一致，取数完成后原地替换，页面不会发生布局跳动。
+    function buildSkeletonRows(rowCount, cellCount, options = {}) {
+      const rows = Math.max(1, Number(rowCount) || 1);
+      const cells = Math.max(1, Number(cellCount) || 1);
+      const widths = [92, 68, 80, 54, 74, 60, 86, 46, 70, 58, 78, 50, 66, 88, 44];
+      let html = '';
+      for (let r = 0; r < rows; r++) {
+        html += '<tr class="ui-skeleton-row">';
+        for (let c = 0; c < cells; c++) {
+          // Vary the width per column so the placeholder reads as tabular data
+          // rather than a solid bar, and offset by row so the pattern does not
+          // repeat visibly down the body.
+          const width = widths[(c + r) % widths.length];
+          html += `<td><span class="ui-skeleton ui-skeleton-line" style="width:${width}%;"></span></td>`;
+        }
+        html += '</tr>';
+      }
+      if (options.colSpan) return html;
+      return html;
+    }
+
+    function renderSkeletonTableBody(tbody, rowCount, cellCount) {
+      if (!tbody) return;
+      tbody.innerHTML = buildSkeletonRows(rowCount, cellCount);
+    }
+
+    function renderSkeletonCards(container, cardCount, options = {}) {
+      if (!container) return;
+      const count = Math.max(1, Number(cardCount) || 1);
+      const linesPerCard = Math.max(1, Number(options.lines) || 3);
+      const height = options.height || 0;
+      let html = '';
+      for (let i = 0; i < count; i++) {
+        html += `<div class="ui-skeleton-card-pad" style="${height ? `min-height:${height}px;` : ''}display:flex;flex-direction:column;gap:10px;">`;
+        html += '<span class="ui-skeleton ui-skeleton-line" style="width:38%;height:13px;"></span>';
+        for (let l = 1; l < linesPerCard; l++) {
+          const width = l % 2 === 0 ? 72 : 90;
+          html += `<span class="ui-skeleton ui-skeleton-line" style="width:${width}%;"></span>`;
+        }
+        html += '</div>';
+      }
+      container.innerHTML = html;
+    }
+
+    window.buildSkeletonRows = buildSkeletonRows;
+    window.renderSkeletonTableBody = renderSkeletonTableBody;
+    window.renderSkeletonCards = renderSkeletonCards;
+
     function escapeHtml(str) {
       if (!str) return '';
       return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);

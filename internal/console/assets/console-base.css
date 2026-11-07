@@ -403,3 +403,47 @@
     .token-segment-cached { background: #38bdf8; }
     .token-segment-completion { background: #34d399; }
 
+
+    /* ============================================================
+       ui-design 骨架屏微光标准 (shared skeleton shimmer)
+       任何异步面板在首次取数期间渲染 .ui-skeleton-* 占位块，
+       避免"文本正在加载"式的布局跳动。动效与色值统一在此定义，
+       页面样式只需选择骨架的尺寸与排布。
+       ============================================================ */
+    @keyframes ui-skeleton-shift {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    .ui-skeleton {
+      display: block;
+      background: linear-gradient(90deg, rgba(160, 168, 185, 0.14) 25%, rgba(160, 168, 185, 0.35) 50%, rgba(160, 168, 185, 0.14) 75%);
+      background-size: 200% 100%;
+      animation: ui-skeleton-shift 1.6s ease-in-out infinite;
+      border-radius: 8px;
+    }
+
+    body.theme-beszel .ui-skeleton,
+    body.dark .ui-skeleton {
+      background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(255, 255, 255, 0.12) 50%, rgba(255, 255, 255, 0.04) 75%);
+      background-size: 200% 100%;
+    }
+
+    /* 行内骨架：与正文行高一致，用于表格单元与列表项内 */
+    .ui-skeleton-line { height: 12px; border-radius: 6px; }
+    .ui-skeleton-line.is-short { width: 48%; }
+    .ui-skeleton-line.is-medium { width: 72%; }
+
+    /* 块级骨架：卡片、图表与图片位 */
+    .ui-skeleton-block { border-radius: 12px; }
+
+    /* 圆角胶囊骨架：徽章、状态格 */
+    .ui-skeleton-pill { height: 20px; width: 64px; border-radius: 9999px; }
+
+    /* 表格骨架行：保持与真实行一致的高度，避免首屏抖动 */
+    .ui-skeleton-row td { padding: 12px 10px; }
+    .ui-skeleton-row .ui-skeleton-line { height: 11px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .ui-skeleton { animation: none !important; }
+    }

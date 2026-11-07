@@ -67,7 +67,12 @@
 
       const container = document.getElementById('upstream-stats-cards-container');
       if (container) {
-        container.innerHTML = `<div style="grid-column: 1 / -1; text-align:center; padding:36px 16px; color:var(--text-dim);">${t('quotas.loadingUsageStats')}</div>`;
+        // 骨架卡片与真实统计卡同网格，取数完成后原地替换，避免网格重排
+        let skeletonCards = '';
+        for (let i = 0; i < 6; i++) {
+          skeletonCards += `<div class="ui-skeleton" style="height:96px;border-radius:14px;"></div>`;
+        }
+        container.innerHTML = skeletonCards;
       }
       const archiveContainer = document.getElementById('upstream-stats-archive-container');
       if (archiveContainer) {
@@ -75,8 +80,8 @@
         archiveContainer.innerHTML = '';
       }
       const tbody = document.getElementById('upstream-stats-table-body');
-      if (tbody) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-dim);">${t('quotas.loadingUsageStats')}</td></tr>`;
+      if (tbody && typeof window.renderSkeletonTableBody === 'function') {
+        window.renderSkeletonTableBody(tbody, 5, 8);
       }
 
       fetchUpstreamAuthStats();

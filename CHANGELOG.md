@@ -16,6 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - 顶部汇总卡：当前命中封禁账号数、近 24h 403 总数、近 7 天 403 总数；支持按账号、按模型过滤与胶囊重置；沿用 Console 既有 `CustomDropdown`、`summary-card`、`panel` 与 `ui-design` 圆角/阴影/动效体系，并复用全局 15s 轮询刷新。
 
 
+### Changed
+- **骨架屏标准下放与日志工具条单行化 (`internal/console/assets/`)**:
+  - 将 `ui-design` 骨架屏微光（`linear-gradient` 200% 扫光 + `1.6s ease-in-out` 无限循环，暗色主题独立色阶，`prefers-reduced-motion` 下自动关闭动画）从仅服务于可视化网关拓扑页的局部样式提取为 `console-base.css` 全局基础设施 `.ui-skeleton` / `.ui-skeleton-line` / `.ui-skeleton-block` / `.ui-skeleton-pill` / `.ui-skeleton-row`，并在 `console-format.js` 提供 `buildSkeletonRows` / `renderSkeletonTableBody` / `renderSkeletonCards` 三个渲染助手供各工作区复用。
+  - 请求流水表、错误与熔断中心表在首次取数（且当前无真实数据行）时渲染与真实行同高的骨架行，取数完成后原地替换，消除"正在加载…"文本造成的首屏高度跳变与表格闪动；周期轮询不重绘骨架，避免打断正在阅读的运维人员。
+  - 封禁监控账号卡片、上游用量统计卡与用量明细表、OpenRouter 账号列表、上游额度卡片同样接入骨架占位，占位块与最终卡片同网格同尺寸。
+  - 日志时间范围过滤条由三行堆叠（标题行 + 轨道 + 标签行，约 126px）压缩为单行常驻工具条（`min-height: 44px`，上下 `8px` 留白）：当前窗口读数、6 个快捷预设、双滑块轨道同排，轨道由 `6px` 高对比渐变改为 `4px` 低饱和底色（`rgba(148,163,184,0.2)`）配 `rgba(59,130,246,0.65)` 进度，滑块由 20px 改为 14px 白底蓝描边；窄屏下预设组横向滚动而非换行，保证 1080p 首屏即可看到流水表格首行数据。
+  - 快捷预设文案精简为 `全量 / 24h / 6h / 1h / 15m / 5m`（`28px` 胶囊），删除"拖拽滑块自由截取时间窗口"冗余说明；全部资源缓存令牌统一升级至 `?v=v8.0.59`。
+
 ### Fixed
 - **Visual Gateway Stream Migration, Table Column Alignment & Modern Slider Integration (`internal/console/`, `internal/console/db/`)**:
   - Decommissioned internal stream table and legacy time range slider from Visual Gateway (`tab-page-traffic`), cleanly preserving only the core 4 metrics cards, 4-stage dynamic SVG topology graph, and bottom IP + Geo + Key 3D association ledger per user specifications.

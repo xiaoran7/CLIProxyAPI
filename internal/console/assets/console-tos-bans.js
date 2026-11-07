@@ -209,6 +209,26 @@
   }
 
   // ---- 主列表 ----
+  // 骨架占位：卡片结构与真实账号卡一致（标题行 + 元数据行 + 记录行），
+  // 取数完成后原地替换，列表区域不会发生高度跳变。
+  function renderTOSAccountSkeletons(count = 2) {
+    const container = document.getElementById('tos-accounts-list');
+    if (!container) return;
+    let html = '';
+    for (let i = 0; i < Math.max(1, count); i++) {
+      html += `
+        <div class="tos-account-card" style="pointer-events:none;">
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <span class="ui-skeleton ui-skeleton-line" style="width:${i === 0 ? 34 : 41}%;height:14px;"></span>
+            <span class="ui-skeleton ui-skeleton-line" style="width:88%;"></span>
+            <span class="ui-skeleton ui-skeleton-line" style="width:72%;"></span>
+            <span class="ui-skeleton ui-skeleton-line" style="width:56%;"></span>
+          </div>
+        </div>`;
+    }
+    container.innerHTML = html;
+  }
+
   function renderTOSAccounts() {
     const container = document.getElementById('tos-accounts-list');
     if (!container) return;
@@ -232,6 +252,9 @@
   // ---- 数据拉取 ----
   async function fetchTOSBans(force = false) {
     if (typeof getAdminSecret === 'function' && !getAdminSecret()) return;
+    // Only the first load shows skeletons: a periodic poll must not blank out
+    // records the operator is currently reading.
+    if (!tosData) renderTOSAccountSkeletons();
     try {
       const url = force ? '/console/api/tos-bans?refresh=1' : '/console/api/tos-bans';
       const res = await fetch(url, { headers: getAuthHeaders() });

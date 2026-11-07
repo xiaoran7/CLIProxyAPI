@@ -14,7 +14,11 @@
     async function loadOpenRouterAccountList() {
       const tbody = document.getElementById('openrouter-accounts-tbody');
       if (!tbody) return;
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-dim); padding:20px;">${t('quotas.loadingAccountList')}</td></tr>`;
+      if (typeof window.renderSkeletonTableBody === 'function') {
+        window.renderSkeletonTableBody(tbody, 4, 6);
+      } else {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-dim); padding:20px;">${t('quotas.loadingAccountList')}</td></tr>`;
+      }
       try {
         const res = await fetch('/console/api/openrouter/accounts', {
           headers: getAuthHeaders()

@@ -157,6 +157,11 @@
 
     // 4. 获取并渲染最近请求 (服务端真分页与检索，支持前端 SWR 缓存与非阻塞并发)
     async function fetchEventsData(force = false) {
+      // 首次取数（尚无用例行）时先铺骨架行，取数完成后原地替换，避免布局跳动。
+      const eventsTbody = document.getElementById('events-tbody');
+      if (eventsTbody && !eventsTbody.querySelector('tr[data-id]') && typeof window.renderSkeletonTableBody === 'function') {
+        window.renderSkeletonTableBody(eventsTbody, logsPageSize, 15);
+      }
       const isMember = isMemberAuth();
       // 后台静默预加载 Key 列表，不阻塞当前流水请求发起
       if (!isMember && cachedKeys.length === 0) {
@@ -829,6 +834,11 @@
     async function fetchErrorsData(force = false) {
       const secret = getAdminSecret();
       if (!secret) return;
+      const errorsTbody = document.getElementById('errors-tbody');
+      const errorsHaveRealRows = errorsTbody ? errorsTbody.querySelector('tr:not(.ui-skeleton-row)') !== null : false;
+      if (errorsTbody && !errorsHaveRealRows && typeof window.renderSkeletonTableBody === 'function') {
+        window.renderSkeletonTableBody(errorsTbody, errorsPageSize, 8);
+      }
       const params = new URLSearchParams({
         page: String(errorsPage),
         page_size: String(errorsPageSize)
