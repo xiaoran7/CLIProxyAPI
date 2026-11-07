@@ -11,13 +11,13 @@ import (
 // InsertUsageOutbox inserts a raw request event synchronously into usage_outbox.
 func (d *DB) InsertUsageOutbox(ctx context.Context, r *RequestEventRow) (int64, error) {
 	query := `
-INSERT INTO usage_outbox (ts, key_id, model, status, prompt_tokens, completion_tokens, cached_tokens, total_tokens, latency_ms, ttft_ms, stream, estimated, error_type, auth_index, reasoning_effort, tokens_per_sec)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO usage_outbox (ts, key_id, model, status, prompt_tokens, completion_tokens, cached_tokens, total_tokens, latency_ms, ttft_ms, stream, estimated, error_type, auth_index, reasoning_effort, tokens_per_sec, client_ip)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 	res, err := d.ExecContext(ctx, query,
 		r.TS, r.KeyID, r.Model, r.Status, r.PromptTokens, r.CompletionTokens,
 		r.CachedTokens, r.TotalTokens, r.LatencyMs, r.TtftMs, r.Stream, r.Estimated,
-		r.ErrorType, r.AuthIndex, r.ReasoningEffort, r.TokensPerSec,
+		r.ErrorType, r.AuthIndex, r.ReasoningEffort, r.TokensPerSec, r.ClientIP,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert usage outbox failed: %w", err)
@@ -28,7 +28,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 // SelectAllOutbox retrieves all un-flushed items from usage_outbox in order.
 func (d *DB) SelectAllOutbox(ctx context.Context) ([]RequestEventRow, error) {
 	query := `
-SELECT id, ts, key_id, model, status, prompt_tokens, completion_tokens, cached_tokens, total_tokens, latency_ms, ttft_ms, stream, estimated, error_type, auth_index, reasoning_effort, tokens_per_sec
+SELECT id, ts, key_id, model, status, prompt_tokens, completion_tokens, cached_tokens, total_tokens, latency_ms, ttft_ms, stream, estimated, error_type, auth_index, reasoning_effort, tokens_per_sec, client_ip
 FROM usage_outbox ORDER BY id ASC
 `
 	rows, err := d.QueryContext(ctx, query)
@@ -43,10 +43,11 @@ FROM usage_outbox ORDER BY id ASC
 		var keyID sql.NullInt64
 		var ttft sql.NullInt64
 		var errType sql.NullString
+		var clientIP sql.NullString
 		if err := rows.Scan(
 			&r.ID, &r.TS, &keyID, &r.Model, &r.Status, &r.PromptTokens, &r.CompletionTokens,
 			&r.CachedTokens, &r.TotalTokens, &r.LatencyMs, &ttft, &r.Stream, &r.Estimated,
-			&errType, &r.AuthIndex, &r.ReasoningEffort, &r.TokensPerSec,
+			&errType, &r.AuthIndex, &r.ReasoningEffort, &r.TokensPerSec, &clientIP,
 		); err != nil {
 			return nil, fmt.Errorf("scan outbox row failed: %w", err)
 		}
@@ -61,6 +62,9 @@ FROM usage_outbox ORDER BY id ASC
 		if errType.Valid {
 			v := errType.String
 			r.ErrorType = &v
+		}
+		if clientIP.Valid {
+			r.ClientIP = clientIP.String
 		}
 		list = append(list, r)
 	}
@@ -104,13 +108,13 @@ func (d *DB) CountOutbox(ctx context.Context) (int64, error) {
 // InsertRequestEventTx inserts a permanent record into request_events inside a transaction.
 func (d *DB) InsertRequestEventTx(ctx context.Context, tx *sql.Tx, r *RequestEventRow) (int64, error) {
 	query := `
-INSERT INTO request_events (ts, key_id, model, status, prompt_tokens, completion_tokens, cached_tokens, total_tokens, latency_ms, ttft_ms, stream, estimated, error_type, auth_index, reasoning_effort, tokens_per_sec)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO request_events (ts, key_id, model, status, prompt_tokens, completion_tokens, cached_tokens, total_tokens, latency_ms, ttft_ms, stream, estimated, error_type, auth_index, reasoning_effort, tokens_per_sec, client_ip)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 	res, err := tx.ExecContext(ctx, query,
 		r.TS, r.KeyID, r.Model, r.Status, r.PromptTokens, r.CompletionTokens,
 		r.CachedTokens, r.TotalTokens, r.LatencyMs, r.TtftMs, r.Stream, r.Estimated,
-		r.ErrorType, r.AuthIndex, r.ReasoningEffort, r.TokensPerSec,
+		r.ErrorType, r.AuthIndex, r.ReasoningEffort, r.TokensPerSec, r.ClientIP,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert request event tx failed: %w", err)
@@ -121,13 +125,13 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 // InsertRequestEvent inserts a record into request_events directly.
 func (d *DB) InsertRequestEvent(ctx context.Context, r *RequestEventRow) (int64, error) {
 	query := `
-INSERT INTO request_events (ts, key_id, model, status, prompt_tokens, completion_tokens, cached_tokens, total_tokens, latency_ms, ttft_ms, stream, estimated, error_type, auth_index, reasoning_effort, tokens_per_sec)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO request_events (ts, key_id, model, status, prompt_tokens, completion_tokens, cached_tokens, total_tokens, latency_ms, ttft_ms, stream, estimated, error_type, auth_index, reasoning_effort, tokens_per_sec, client_ip)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 	res, err := d.ExecContext(ctx, query,
 		r.TS, r.KeyID, r.Model, r.Status, r.PromptTokens, r.CompletionTokens,
 		r.CachedTokens, r.TotalTokens, r.LatencyMs, r.TtftMs, r.Stream, r.Estimated,
-		r.ErrorType, r.AuthIndex, r.ReasoningEffort, r.TokensPerSec,
+		r.ErrorType, r.AuthIndex, r.ReasoningEffort, r.TokensPerSec, r.ClientIP,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert request event failed: %w", err)
@@ -141,7 +145,7 @@ func (d *DB) SelectRecentEvents(ctx context.Context, limit int) ([]RequestEventR
 		limit = 100
 	}
 	query := `
-SELECT id, ts, key_id, model, status, prompt_tokens, completion_tokens, cached_tokens, total_tokens, latency_ms, ttft_ms, stream, estimated, error_type, auth_index, reasoning_effort, tokens_per_sec
+SELECT id, ts, key_id, model, status, prompt_tokens, completion_tokens, cached_tokens, total_tokens, latency_ms, ttft_ms, stream, estimated, error_type, auth_index, reasoning_effort, tokens_per_sec, client_ip
 FROM request_events ORDER BY id DESC LIMIT ?
 `
 	rows, err := d.QueryContext(ctx, query, limit)
@@ -156,10 +160,11 @@ FROM request_events ORDER BY id DESC LIMIT ?
 		var keyID sql.NullInt64
 		var ttft sql.NullInt64
 		var errType sql.NullString
+		var clientIP sql.NullString
 		if err := rows.Scan(
 			&r.ID, &r.TS, &keyID, &r.Model, &r.Status, &r.PromptTokens, &r.CompletionTokens,
 			&r.CachedTokens, &r.TotalTokens, &r.LatencyMs, &ttft, &r.Stream, &r.Estimated,
-			&errType, &r.AuthIndex, &r.ReasoningEffort, &r.TokensPerSec,
+			&errType, &r.AuthIndex, &r.ReasoningEffort, &r.TokensPerSec, &clientIP,
 		); err != nil {
 			return nil, fmt.Errorf("scan request event failed: %w", err)
 		}
@@ -175,6 +180,9 @@ FROM request_events ORDER BY id DESC LIMIT ?
 			v := errType.String
 			r.ErrorType = &v
 		}
+		if clientIP.Valid {
+			r.ClientIP = clientIP.String
+		}
 		list = append(list, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -189,7 +197,7 @@ func (d *DB) SelectRecentEventsByKey(ctx context.Context, keyID int64, limit int
 		limit = 100
 	}
 	query := `
-SELECT id, ts, key_id, model, status, prompt_tokens, completion_tokens, cached_tokens, total_tokens, latency_ms, ttft_ms, stream, estimated, error_type, auth_index, reasoning_effort, tokens_per_sec
+SELECT id, ts, key_id, model, status, prompt_tokens, completion_tokens, cached_tokens, total_tokens, latency_ms, ttft_ms, stream, estimated, error_type, auth_index, reasoning_effort, tokens_per_sec, client_ip
 FROM request_events WHERE key_id = ? ORDER BY id DESC LIMIT ?
 `
 	rows, err := d.QueryContext(ctx, query, keyID, limit)
@@ -204,10 +212,11 @@ FROM request_events WHERE key_id = ? ORDER BY id DESC LIMIT ?
 		var kid sql.NullInt64
 		var ttft sql.NullInt64
 		var errType sql.NullString
+		var clientIP sql.NullString
 		if err := rows.Scan(
 			&r.ID, &r.TS, &kid, &r.Model, &r.Status, &r.PromptTokens, &r.CompletionTokens,
 			&r.CachedTokens, &r.TotalTokens, &r.LatencyMs, &ttft, &r.Stream, &r.Estimated,
-			&errType, &r.AuthIndex, &r.ReasoningEffort, &r.TokensPerSec,
+			&errType, &r.AuthIndex, &r.ReasoningEffort, &r.TokensPerSec, &clientIP,
 		); err != nil {
 			return nil, fmt.Errorf("scan request event failed: %w", err)
 		}
@@ -222,6 +231,9 @@ FROM request_events WHERE key_id = ? ORDER BY id DESC LIMIT ?
 		if errType.Valid {
 			v := errType.String
 			r.ErrorType = &v
+		}
+		if clientIP.Valid {
+			r.ClientIP = clientIP.String
 		}
 		list = append(list, r)
 	}
@@ -613,8 +625,13 @@ func buildEventFilterWhere(params EventFilterParams) (string, []interface{}) {
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		pattern := "%" + term + "%"
-		where = append(where, "(model LIKE ? OR error_type LIKE ? OR auth_index LIKE ? OR reasoning_effort LIKE ? OR CAST(key_id AS TEXT) LIKE ? OR EXISTS (SELECT 1 FROM keys WHERE keys.id = request_events.key_id AND (keys.alias LIKE ? OR keys.api_key LIKE ?)) OR EXISTS (SELECT 1 FROM upstream_auth_baselines WHERE upstream_auth_baselines.auth_index = request_events.auth_index AND upstream_auth_baselines.name LIKE ?))")
-		args = append(args, pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+		where = append(where, "(model LIKE ? OR error_type LIKE ? OR auth_index LIKE ? OR reasoning_effort LIKE ? OR client_ip LIKE ? OR CAST(key_id AS TEXT) LIKE ? OR EXISTS (SELECT 1 FROM keys WHERE keys.id = request_events.key_id AND (keys.alias LIKE ? OR keys.api_key LIKE ?)) OR EXISTS (SELECT 1 FROM upstream_auth_baselines WHERE upstream_auth_baselines.auth_index = request_events.auth_index AND upstream_auth_baselines.name LIKE ?))")
+		args = append(args, pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+	}
+
+	if params.ClientIP != "" {
+		where = append(where, "client_ip = ?")
+		args = append(args, params.ClientIP)
 	}
 
 	// Time filters
@@ -685,7 +702,7 @@ func (d *DB) SelectEventsFilteredPaged(ctx context.Context, params EventFilterPa
 	whereClause, args := buildEventFilterWhere(params)
 
 	query := fmt.Sprintf(`
-SELECT r.id, r.ts, r.key_id, r.model, r.status, r.prompt_tokens, r.completion_tokens, r.cached_tokens, r.total_tokens, r.latency_ms, r.ttft_ms, r.stream, r.estimated, r.error_type, r.auth_index, r.reasoning_effort, r.tokens_per_sec
+SELECT r.id, r.ts, r.key_id, r.model, r.status, r.prompt_tokens, r.completion_tokens, r.cached_tokens, r.total_tokens, r.latency_ms, r.ttft_ms, r.stream, r.estimated, r.error_type, r.auth_index, r.reasoning_effort, r.tokens_per_sec, r.client_ip
 FROM request_events r
 JOIN (
     SELECT id FROM request_events %s
@@ -708,10 +725,11 @@ ORDER BY r.id DESC
 		var kid sql.NullInt64
 		var ttft sql.NullInt64
 		var errType sql.NullString
+		var clientIP sql.NullString
 		if err := rows.Scan(
 			&r.ID, &r.TS, &kid, &r.Model, &r.Status, &r.PromptTokens, &r.CompletionTokens,
 			&r.CachedTokens, &r.TotalTokens, &r.LatencyMs, &ttft, &r.Stream, &r.Estimated,
-			&errType, &r.AuthIndex, &r.ReasoningEffort, &r.TokensPerSec,
+			&errType, &r.AuthIndex, &r.ReasoningEffort, &r.TokensPerSec, &clientIP,
 		); err != nil {
 			return nil, fmt.Errorf("scan request event row failed: %w", err)
 		}
@@ -726,6 +744,9 @@ ORDER BY r.id DESC
 		if errType.Valid {
 			v := errType.String
 			r.ErrorType = &v
+		}
+		if clientIP.Valid {
+			r.ClientIP = clientIP.String
 		}
 		list = append(list, r)
 	}

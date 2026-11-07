@@ -320,15 +320,10 @@ function renderTrafficUI(data, animate = false) {
   if (elSucc) elSucc.innerHTML = `${((summary.success_rate || 0) * 100).toFixed(1)}<small>%</small>`;
   if (elTotal) elTotal.textContent = `环形缓冲累计: ${summary.total_recorded || 0} 条`;
 
-  // 计算时间缓冲区跨度
-  updateTrafficTimeSliderLimits(data.records || data.recent_requests || []);
-
-  // 增量 Diff 渲染拓扑 (根治一闪一闪)
+  // 增量 Diff 渲染拓扑 (零销毁、零闪烁)
   renderTrafficTopology(data, animate);
-  renderTrafficTable(data.records || data.recent_requests || []);
   renderTrafficIPLedger(data.ip_stats || []);
   renderTrafficGeoDistribution(data.geo_stats || []);
-  updateTrafficFilterDropdowns(data.records || data.recent_requests || []);
 }
 
 // 6. 增量 DOM Diff 渲染拓扑图 (零销毁、零闪烁、平滑位移)
@@ -717,7 +712,10 @@ function renderTrafficIPLedger(ipStats) {
             <span style="font-family:var(--mono, monospace);font-weight:700;font-size:13px;color:${isSelected ? '#0891b2' : 'var(--text-main)'};">${escapeHtml(s.ip)}</span>
             ${netBadge}
           </div>
-          <span style="font-size:11px;color:var(--text-muted);">${timeStr}</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:11px;color:var(--text-muted);">${timeStr}</span>
+            <span style="font-size:11px;color:#2563eb;cursor:pointer;font-weight:600;" onclick="event.stopPropagation(); jumpToLogsWithIP('${escapeHtml(s.ip)}')" title="在请求流水中查看此 IP 的所有调用明细">查看流水 ↗</span>
+          </div>
         </div>
         ${locLine}
         ${keysLine}
@@ -997,12 +995,9 @@ function updateTrafficFilterDropdowns(records) {
   modelSelect.innerHTML = `<option value="">全部请求模型</option>` + models.map(m => `<option value="${escapeHtml(m)}" ${m === currentModel ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('');
 }
 
-// 13. 交互过滤操作 (支持 IP 筛选与 Key 反查)
 function filterTrafficByIP(ip) {
   trafficSelectedIP = (trafficSelectedIP === ip) ? '' : ip;
   trafficHighlightedNode = trafficSelectedIP ? `ip:${trafficSelectedIP}` : null;
-  const ipSelect = document.getElementById('traffic-select-ip');
-  if (ipSelect) ipSelect.value = trafficSelectedIP;
   if (cachedTrafficData) renderTrafficUI(cachedTrafficData, false);
 }
 
@@ -1010,6 +1005,15 @@ function filterTrafficByKey(keyName) {
   trafficSelectedKey = (trafficSelectedKey === keyName) ? '' : keyName;
   if (cachedTrafficData) renderTrafficUI(cachedTrafficData, false);
 }
+
+window.jumpToLogsWithIP = function(ip) {
+  if (typeof switchNavTab === 'function') {
+    switchNavTab('logs');
+  }
+  if (typeof filterLogsByIP === 'function') {
+    filterLogsByIP(ip);
+  }
+};
 
 function onTrafficIPChange(val) {
   trafficSelectedIP = val;

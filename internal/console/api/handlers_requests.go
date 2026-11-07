@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/db"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/engine"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/geoip"
 )
 
 // HandleGetRequests returns filtered and paginated request events with full metadata.
@@ -56,6 +57,7 @@ func HandleGetRequests(eng *engine.Engine, pricing *PricingEngine, providers *Pr
 
 		filter := strings.TrimSpace(c.Query("filter"))
 		authIndex := strings.TrimSpace(c.Query("auth_index"))
+		clientIPQuery := strings.TrimSpace(c.Query("client_ip"))
 		search := strings.TrimSpace(c.Query("search"))
 		timeRange := strings.TrimSpace(c.Query("time_range"))
 		sinceParam := strings.TrimSpace(c.Query("since"))
@@ -88,6 +90,7 @@ func HandleGetRequests(eng *engine.Engine, pricing *PricingEngine, providers *Pr
 			AuthPatterns:  authPatterns,
 			Filter:        filter,
 			Search:        search,
+			ClientIP:      clientIPQuery,
 			Since:         sincePtr,
 			Until:         untilPtr,
 			BeforeID:      beforeIDVal,
@@ -116,33 +119,35 @@ func HandleGetRequests(eng *engine.Engine, pricing *PricingEngine, providers *Pr
 		}
 
 		type EventItemResponse struct {
-			ID               int64   `json:"id"`
-			TS               int64   `json:"ts"`
-			FormattedTime    string  `json:"formatted_time"`
-			KeyID            *int64  `json:"key_id"`
-			KeyAlias         string  `json:"key_alias"`
-			DisplayKey       string  `json:"display_key"`
-			Model            string  `json:"model"`
-			RequestModel     string  `json:"request_model,omitempty"`
-			Provider         string  `json:"provider"`
-			ProviderLabel    string  `json:"provider_label"`
-			Status           int     `json:"status"`
-			PromptTokens     int64   `json:"prompt_tokens"`
-			CompletionTokens int64   `json:"completion_tokens"`
-			CachedTokens     int64   `json:"cached_tokens"`
-			TotalTokens      int64   `json:"total_tokens"`
-			CacheHitRate     float64 `json:"cache_hit_rate"`
-			CostUSD          float64 `json:"cost_usd"`
-			SavingsUSD       float64 `json:"savings_usd"`
-			LatencyMs        int64   `json:"latency_ms"`
-			TtftMs           *int64  `json:"ttft_ms"`
-			Stream           bool    `json:"stream"`
-			Estimated        bool    `json:"estimated"`
-			ErrorType        *string `json:"error_type"`
-			AuthIndex        string  `json:"auth_index"`
-			AuthName         string  `json:"auth_name"`
-			ReasoningEffort  string  `json:"reasoning_effort"`
-			TokensPerSec     float64 `json:"tokens_per_sec"`
+			ID               int64           `json:"id"`
+			TS               int64           `json:"ts"`
+			FormattedTime    string          `json:"formatted_time"`
+			KeyID            *int64          `json:"key_id"`
+			KeyAlias         string          `json:"key_alias"`
+			DisplayKey       string          `json:"display_key"`
+			Model            string          `json:"model"`
+			RequestModel     string          `json:"request_model,omitempty"`
+			Provider         string          `json:"provider"`
+			ProviderLabel    string          `json:"provider_label"`
+			Status           int             `json:"status"`
+			PromptTokens     int64           `json:"prompt_tokens"`
+			CompletionTokens int64           `json:"completion_tokens"`
+			CachedTokens     int64           `json:"cached_tokens"`
+			TotalTokens      int64           `json:"total_tokens"`
+			CacheHitRate     float64         `json:"cache_hit_rate"`
+			CostUSD          float64         `json:"cost_usd"`
+			SavingsUSD       float64         `json:"savings_usd"`
+			LatencyMs        int64           `json:"latency_ms"`
+			TtftMs           *int64          `json:"ttft_ms"`
+			Stream           bool            `json:"stream"`
+			Estimated        bool            `json:"estimated"`
+			ErrorType        *string         `json:"error_type"`
+			AuthIndex        string          `json:"auth_index"`
+			AuthName         string          `json:"auth_name"`
+			ReasoningEffort  string          `json:"reasoning_effort"`
+			TokensPerSec     float64         `json:"tokens_per_sec"`
+			ClientIP         string          `json:"client_ip,omitempty"`
+			Geo              *geoip.Location `json:"geo,omitempty"`
 		}
 
 		var items []EventItemResponse
@@ -204,6 +209,11 @@ func HandleGetRequests(eng *engine.Engine, pricing *PricingEngine, providers *Pr
 
 			t := time.Unix(e.TS, 0).In(cstZone)
 
+			var geoInfo *geoip.Location
+			if e.ClientIP != "" {
+				geoInfo = geoip.Default().Lookup(e.ClientIP)
+			}
+
 			items = append(items, EventItemResponse{
 				ID:               e.ID,
 				TS:               e.TS * 1000,
@@ -232,6 +242,8 @@ func HandleGetRequests(eng *engine.Engine, pricing *PricingEngine, providers *Pr
 				AuthName:         authName,
 				ReasoningEffort:  resolveReasoningEffort(e.ReasoningEffort, e.Model),
 				TokensPerSec:     tps,
+				ClientIP:         e.ClientIP,
+				Geo:              geoInfo,
 			})
 		}
 

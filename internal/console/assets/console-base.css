@@ -161,17 +161,17 @@
       display: inline-flex;
       align-items: center;
       justify-content: space-between;
-      gap: 7px;
-      background: rgba(255, 255, 255, 0.9);
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius-sm);
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid rgba(226, 232, 240, 0.85);
+      border-radius: 12px; /* rounded-xl */
       color: var(--text-main);
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 500;
-      padding: 0 10px;
+      padding: 0 14px;
       cursor: pointer;
-      height: 32px;
-      min-height: 32px;
+      height: 40px;
+      min-height: 40px;
       box-sizing: border-box;
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
       transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
@@ -179,19 +179,20 @@
       font-family: inherit;
     }
     .dropdown-trigger:hover {
-      border-color: var(--card-border-hover);
+      border-color: rgba(59, 130, 246, 0.4);
       background: #ffffff;
       color: var(--text-main);
-      box-shadow: 0 2px 4px rgba(20, 125, 197, 0.08);
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+      transform: translateY(-1px);
     }
     .dropdown.open .dropdown-trigger {
       border-color: var(--accent);
       background: #ffffff;
-      box-shadow: 0 0 0 3px rgba(20, 125, 197, 0.14);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
     }
     .dropdown-trigger svg {
-      width: 11px;
-      height: 11px;
+      width: 12px;
+      height: 12px;
       color: var(--text-dim);
       transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       flex-shrink: 0;
@@ -202,30 +203,30 @@
     }
     .dropdown-menu {
       position: absolute;
-      top: calc(100% + 5px);
+      top: calc(100% + 6px);
       left: 0;
       min-width: 100%;
       background: #ffffff;
-      border: 1px solid var(--card-border-hover);
-      border-radius: var(--radius-md);
-      box-shadow: 0 16px 36px -4px rgba(100, 140, 190, 0.15), 0 4px 12px rgba(100, 140, 190, 0.1);
-      padding: 5px;
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      border-radius: 12px; /* rounded-xl */
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.12), 0 2px 8px rgba(15, 23, 42, 0.06);
+      padding: 6px;
       z-index: 1000;
       display: none;
-      max-height: 260px;
+      max-height: 280px;
       overflow-y: auto;
       scrollbar-width: thin;
-      scrollbar-color: rgba(255,255,255,0.18) transparent;
+      scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
     }
     .dropdown-menu::-webkit-scrollbar { width: 4px; }
-    .dropdown-menu::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.22); border-radius: 4px; }
+    .dropdown-menu::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.4); border-radius: 4px; }
     .dropdown.open .dropdown-menu {
       display: block;
       animation: dropdownPop 0.14s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .dropdown.dropup .dropdown-menu {
       top: auto;
-      bottom: calc(100% + 5px);
+      bottom: calc(100% + 6px);
     }
     .dropdown-menu.menu-right {
       left: auto;
@@ -240,26 +241,28 @@
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      padding: 6px 10px;
-      border-radius: var(--radius-sm);
+      height: 36px;
+      padding: 0 12px;
+      border-radius: 8px;
       color: var(--text-muted);
-      font-size: 12px;
+      font-size: 12.5px;
       cursor: pointer;
       transition: all 0.12s ease;
       white-space: nowrap;
     }
     .dropdown-item:hover {
-      background: rgba(56, 189, 248, 0.1);
+      background: rgba(59, 130, 246, 0.08);
       color: var(--text-main);
     }
     .dropdown-item.selected {
-      background: rgba(56, 189, 248, 0.15);
+      background: rgba(59, 130, 246, 0.12);
       color: var(--accent);
-      font-weight: 500;
+      font-weight: 600;
+      border-left: 2px solid var(--accent);
     }
     .dropdown-item .check-icon {
-      width: 12px;
-      height: 12px;
+      width: 13px;
+      height: 13px;
       opacity: 0;
       color: var(--accent);
       flex-shrink: 0;

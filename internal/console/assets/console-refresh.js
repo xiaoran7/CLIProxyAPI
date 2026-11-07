@@ -222,6 +222,26 @@
         });
       }
 
+      // 3.6 流水客户端 IP 筛选
+      if (document.getElementById('logs-ip-dropdown')) {
+        dropdownInstances['logs-ip-dropdown'] = new CustomDropdown({
+          containerId: 'logs-ip-dropdown',
+          options: [{ value: '', label: '全部客户端 IP' }],
+          value: logsSelectedIP || '',
+          onChange: val => changeLogsIPFilter(val)
+        });
+      }
+
+      // 3.7 流水请求模型筛选
+      if (document.getElementById('logs-model-dropdown')) {
+        dropdownInstances['logs-model-dropdown'] = new CustomDropdown({
+          containerId: 'logs-model-dropdown',
+          options: [{ value: '', label: '全部请求模型' }],
+          value: logsSelectedModel || '',
+          onChange: val => changeLogsModelFilter(val)
+        });
+      }
+
       // 4. 流水时间跨度筛选
       if (document.getElementById('logs-time-dropdown')) {
         dropdownInstances['logs-time-dropdown'] = new CustomDropdown({

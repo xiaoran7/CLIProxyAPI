@@ -401,6 +401,9 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 		ttftPtr = &ttft
 	}
 
+	// Record to in-memory TrafficHub for real-time visual gateway topology
+	clientIP := traffichub.GetClientIP(c)
+
 	info := &engine.RequestInfo{
 		KeyID:            keyIDPtr,
 		Model:            effectiveModel,
@@ -417,12 +420,10 @@ func (w *accountingWriter) Finalize(c *gin.Context, eng *engine.Engine) {
 		ReasoningEffort:  reasoningEffort,
 		AuthIndex:        authIndex,
 		ErrorType:        errorType,
+		ClientIP:         clientIP,
 	}
 
 	_ = eng.RecordRequest(context.Background(), info)
-
-	// Record to in-memory TrafficHub for real-time visual gateway topology
-	clientIP := traffichub.GetClientIP(c)
 	keyLabel := "-"
 	if keyIDPtr != nil && eng != nil {
 		if km := eng.GetKeyMeta(*keyIDPtr); km != nil {

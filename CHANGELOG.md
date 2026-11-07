@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Visual Gateway Stream Migration, Table Column Alignment & Modern Slider Integration (`internal/console/`, `internal/console/db/`)**:
+  - Decommissioned internal stream table and legacy time range slider from Visual Gateway (`tab-page-traffic`), cleanly preserving only the core 4 metrics cards, 4-stage dynamic SVG topology graph, and bottom IP + Geo + Key 3D association ledger per user specifications.
+  - Fully integrated real-time request telemetry into the standalone Request Logs workspace (`tab-page-logs`), adding dedicated `client_ip` persistence to SQLite `request_events` and `usage_outbox` schema with automatic GeoIP (`geoip.Default().Lookup`) enrichment.
+  - Resolved table column misalignment bug by strictly synchronizing all 15 table header (`<th>`) definitions with data row (`<td>`) cells:
+    - Order: 时间, 客户端真实 IP, 来源地域, ASN 组织, 客户端 Key, 上游账号, 模型, 思考强度, 状态, 速率 (tok/s), Tokens 构成, 缓存明细, 预估花费, 延迟 (总/TTFT), 标签.
+    - Added one-click IP filtering (`filterLogsByIP`) directly from client IP badges and 3D association cards (`查看流水 ↗`).
+  - Completely retired dated form controls in favor of modern `ui-design` components:
+    - Time slider: 6px track (`rounded-full`), `linear-gradient(90deg, #3b82f6, #6366f1)` progress bar, 20px circular thumbs with responsive scale (`1.15x` hover, `1.2x` drag), and 32px pill preset buttons (`全量跨度`, `近 24 小时`, `近 6 小时`, `近 1 小时`, `近 15 分钟`, `近 5 分钟`).
+    - Filter controls: upgraded to 40px `rounded-xl` custom dropdowns with fine-line chevrons, soft ambient shadows, and pill reset action.
+  - Appended version cache-busting tokens (`?v=v8.0.57`) across all 15 stylesheets and script imports in `console.html`, preventing browser caching desynchronization.
 - **Full-Spectrum Console CSS Modernization Across All 15 Workspaces (`internal/console/assets/`)**:
   - Overhauled all 15 Console CSS stylesheets (`console-base.css`, `console-panels.css`, `console-overview.css`, `console-tables.css`, `console-cpa.css`, `console-feedback.css`, `console-logs.css`, `console-members.css`, `console-modals.css`, `console-theme-beszel.css`, `console-theme-v2310.css`, `console-theme-v239.css`, `console-traffic.css`, `console-upstream-stats.css`, `console-validations.css`) strictly adhering to the `ui-design` 8 principles:
     - Replaced dated sharp borders and low-elevation boxes with `rounded-2xl` (18px) cards, `rounded-xl` (12px) inputs/controls, and `rounded-full` (9999px) badge pills across the entire application surface.

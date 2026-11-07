@@ -3,6 +3,158 @@
  * 包含请求流水真实分页、服务商反查与推断、错误与熔断中心审计
  */
 
+    // 0. 时间范围滑动条与多维过滤状态
+    let logsTimeMinPercent = 0;
+    let logsTimeMaxPercent = 100;
+    let logsTimeBufferMinTs = 0;
+    let logsTimeBufferMaxTs = 0;
+    let logsActiveTimePreset = 'all';
+    let logsSelectedIP = '';
+    let logsSelectedModel = '';
+
+    function updateLogsSliderProgressUI() {
+      const progress = document.getElementById('logs-slider-progress');
+      const currentLabel = document.getElementById('logs-time-label-current');
+      if (!progress) return;
+
+      progress.style.left = `${logsTimeMinPercent}%`;
+      progress.style.right = `${100 - logsTimeMaxPercent}%`;
+
+      if (currentLabel) {
+        if (logsTimeMinPercent === 0 && logsTimeMaxPercent === 100) {
+          currentLabel.textContent = '全量跨度';
+        } else if (logsTimeBufferMinTs > 0 && logsTimeBufferMaxTs > 0) {
+          const span = logsTimeBufferMaxTs - logsTimeBufferMinTs;
+          const startT = Math.round(logsTimeBufferMinTs + span * (logsTimeMinPercent / 100));
+          const endT = Math.round(logsTimeBufferMinTs + span * (logsTimeMaxPercent / 100));
+          currentLabel.textContent = `${new Date(startT * 1000).toLocaleTimeString()} ➔ ${new Date(endT * 1000).toLocaleTimeString()}`;
+        }
+      }
+    }
+
+    function onLogsTimeSliderInput() {
+      const minInput = document.getElementById('logs-time-min');
+      const maxInput = document.getElementById('logs-time-max');
+      if (!minInput || !maxInput) return;
+
+      let minVal = parseInt(minInput.value, 10);
+      let maxVal = parseInt(maxInput.value, 10);
+
+      if (minVal > maxVal) {
+        const tmp = minVal;
+        minVal = maxVal;
+        maxVal = tmp;
+      }
+
+      logsTimeMinPercent = minVal;
+      logsTimeMaxPercent = maxVal;
+      updateLogsSliderProgressUI();
+
+      document.querySelectorAll('.logs-preset-btn').forEach(b => b.classList.remove('active'));
+      logsPage = 1;
+      fetchEventsData();
+    }
+
+    function setLogsTimePreset(preset) {
+      logsActiveTimePreset = preset;
+      document.querySelectorAll('.logs-preset-btn').forEach(b => {
+        b.classList.toggle('active', b.id === `btn-logs-preset-${preset}`);
+      });
+
+      const minInput = document.getElementById('logs-time-min');
+      const maxInput = document.getElementById('logs-time-max');
+      if (!minInput || !maxInput) return;
+
+      if (preset === 'all' || logsTimeBufferMaxTs <= logsTimeBufferMinTs) {
+        logsTimeMinPercent = 0;
+        logsTimeMaxPercent = 100;
+      } else {
+        const span = Math.max(1, logsTimeBufferMaxTs - logsTimeBufferMinTs);
+        let durationSec = 3600;
+        if (preset === '24h') durationSec = 86400;
+        else if (preset === '6h') durationSec = 21600;
+        else if (preset === '1h') durationSec = 3600;
+        else if (preset === '15m') durationSec = 900;
+        else if (preset === '5m') durationSec = 300;
+
+        const targetStartTs = Math.max(logsTimeBufferMinTs, logsTimeBufferMaxTs - durationSec);
+        logsTimeMinPercent = Math.max(0, Math.min(100, Math.round(((targetStartTs - logsTimeBufferMinTs) / span) * 100)));
+        logsTimeMaxPercent = 100;
+      }
+
+      minInput.value = String(logsTimeMinPercent);
+      maxInput.value = String(logsTimeMaxPercent);
+
+      updateLogsSliderProgressUI();
+      logsPage = 1;
+      fetchEventsData();
+    }
+
+    function changeLogsIPFilter(val) {
+      logsSelectedIP = val || '';
+      logsPage = 1;
+      fetchEventsData();
+    }
+
+    function changeLogsModelFilter(val) {
+      logsSelectedModel = val || '';
+      logsPage = 1;
+      fetchEventsData();
+    }
+
+    window.filterLogsByIP = function(ip) {
+      if (!ip || ip === '-') return;
+      logsSelectedIP = ip;
+      logsPage = 1;
+      if (dropdownInstances['logs-ip-dropdown']) {
+        dropdownInstances['logs-ip-dropdown'].setValue(ip, false);
+      }
+      fetchEventsData();
+      if (typeof showToast === 'function') {
+        showToast(`已仅筛选客户端 IP: ${ip}`, 'success');
+      }
+    };
+
+    function resetLogsFilters() {
+      logsSelectedIP = '';
+      logsSelectedModel = '';
+      logsKeyFilter = 'all';
+      logsProviderFilter = 'all';
+      logsTimeRange = 'all';
+      logsAuthFilter = 'all';
+      logsSearchQuery = '';
+      eventFilter = 'all';
+      logsTimeMinPercent = 0;
+      logsTimeMaxPercent = 100;
+      logsPage = 1;
+
+      const searchInput = document.getElementById('logs-search');
+      if (searchInput) searchInput.value = '';
+      const minInput = document.getElementById('logs-time-min');
+      const maxInput = document.getElementById('logs-time-max');
+      if (minInput) minInput.value = '0';
+      if (maxInput) maxInput.value = '100';
+      document.querySelectorAll('.logs-preset-btn').forEach(b => {
+        b.classList.toggle('active', b.id === 'btn-logs-preset-all');
+      });
+      updateLogsSliderProgressUI();
+
+      if (dropdownInstances['logs-ip-dropdown']) dropdownInstances['logs-ip-dropdown'].setValue('', false);
+      if (dropdownInstances['logs-key-dropdown']) dropdownInstances['logs-key-dropdown'].setValue('all', false);
+      if (dropdownInstances['logs-model-dropdown']) dropdownInstances['logs-model-dropdown'].setValue('', false);
+      if (dropdownInstances['logs-provider-dropdown']) dropdownInstances['logs-provider-dropdown'].setValue('all', false);
+      if (dropdownInstances['logs-time-dropdown']) dropdownInstances['logs-time-dropdown'].setValue('all', false);
+
+      const tabs = document.getElementById('events-filter-tabs')?.querySelectorAll('button');
+      tabs?.forEach(btn => btn.classList.toggle('active', btn.getAttribute('onclick')?.includes("'all'")));
+
+      updateAuthFilterNotice();
+      fetchEventsData(true);
+      if (typeof showToast === 'function') {
+        showToast('已重置所有流水筛选', 'info');
+      }
+    }
+
     // 4. 获取并渲染最近请求 (服务端真分页与检索，支持前端 SWR 缓存与非阻塞并发)
     async function fetchEventsData(force = false) {
       const isMember = isMemberAuth();
@@ -19,7 +171,19 @@
       if (logsProviderFilter && logsProviderFilter !== 'all') params.set('provider', logsProviderFilter);
       if (logsTimeRange && logsTimeRange !== 'all') params.set('time_range', logsTimeRange);
       if (!isMember && logsAuthFilter && logsAuthFilter !== 'all') params.set('auth_index', logsAuthFilter);
-      if (logsSearchQuery) params.set('search', logsSearchQuery);
+      if (logsSelectedIP) params.set('client_ip', logsSelectedIP);
+      if (logsSelectedModel) {
+        params.set('search', logsSelectedModel);
+      } else if (logsSearchQuery) {
+        params.set('search', logsSearchQuery);
+      }
+      if (logsTimeBufferMinTs > 0 && logsTimeBufferMaxTs > 0 && (logsTimeMinPercent > 0 || logsTimeMaxPercent < 100)) {
+        const span = logsTimeBufferMaxTs - logsTimeBufferMinTs;
+        const sinceTs = Math.round(logsTimeBufferMinTs + span * (logsTimeMinPercent / 100));
+        const untilTs = Math.round(logsTimeBufferMinTs + span * (logsTimeMaxPercent / 100));
+        params.set('since', String(sinceTs));
+        params.set('until', String(untilTs));
+      }
 
       const cacheKey = `${isMember ? 'member' : 'admin'}:${params.toString()}`;
       const cached = getLogsQueryCache(cacheKey);
@@ -67,7 +231,25 @@
         if (Number.isFinite(data?.today_total) && typeof updateNavBadgeLogs === 'function') {
           updateNavBadgeLogs(data.today_total);
         }
-        if (logsPage === 1 && (!eventFilter || eventFilter === 'all') && (!logsKeyFilter || logsKeyFilter === 'all') && (!logsProviderFilter || logsProviderFilter === 'all') && (!logsTimeRange || logsTimeRange === 'all') && (!logsAuthFilter || logsAuthFilter === 'all') && !logsSearchQuery) {
+
+        // 维护滑动条两端极值时间戳
+        if (incomingEvents.length > 0) {
+          const timestamps = incomingEvents.map(e => e.ts > 1e11 ? Math.floor(e.ts / 1000) : e.ts).filter(t => t > 0);
+          if (timestamps.length > 0) {
+            const minTs = Math.min(...timestamps);
+            const maxTs = Math.max(...timestamps);
+            if (logsTimeBufferMinTs === 0 || minTs < logsTimeBufferMinTs) logsTimeBufferMinTs = minTs;
+            if (logsTimeBufferMaxTs === 0 || maxTs > logsTimeBufferMaxTs) logsTimeBufferMaxTs = maxTs;
+
+            const labelStart = document.getElementById('logs-time-label-start');
+            const labelEnd = document.getElementById('logs-time-label-end');
+            if (labelStart) labelStart.textContent = new Date(logsTimeBufferMinTs * 1000).toLocaleTimeString();
+            if (labelEnd) labelEnd.textContent = new Date(logsTimeBufferMaxTs * 1000).toLocaleTimeString();
+            updateLogsSliderProgressUI();
+          }
+        }
+
+        if (logsPage === 1 && (!eventFilter || eventFilter === 'all') && (!logsKeyFilter || logsKeyFilter === 'all') && (!logsProviderFilter || logsProviderFilter === 'all') && (!logsTimeRange || logsTimeRange === 'all') && (!logsAuthFilter || logsAuthFilter === 'all') && !logsSearchQuery && !logsSelectedIP && !logsSelectedModel) {
           try {
             localStorage.setItem(KEY_STORAGE_LOGS, JSON.stringify({ events: cachedEvents.slice(0, 50), total: cachedEventsTotal, ts: Date.now() }));
           } catch {}
@@ -76,6 +258,8 @@
           updateLogsKeySelect(cachedEvents);
         }
         updateLogsProviderSelect(cachedEvents);
+        updateLogsIPSelect(cachedEvents);
+        updateLogsModelSelect(cachedEvents);
 
         // 热加载：若数据一模一样，静默更新分页器文字，绝不销毁重建 DOM，杜绝抖动与选区丢失
         if (isExactSame && !force) {
@@ -213,6 +397,35 @@
         options.push({ value: val, label });
       }
       dropdownInstances['logs-provider-dropdown'].updateOptions(options, logsProviderFilter);
+    }
+
+    function updateLogsIPSelect(events = []) {
+      if (!dropdownInstances['logs-ip-dropdown']) return;
+      const ipSet = new Set();
+      for (const ev of events) {
+        if (ev.client_ip && ev.client_ip !== '-' && ev.client_ip !== '') {
+          ipSet.add(ev.client_ip);
+        }
+      }
+      const options = [{ value: '', label: '全部客户端 IP' }];
+      for (const ip of Array.from(ipSet).sort()) {
+        options.push({ value: ip, label: ip });
+      }
+      dropdownInstances['logs-ip-dropdown'].updateOptions(options, logsSelectedIP);
+    }
+
+    function updateLogsModelSelect(events = []) {
+      if (!dropdownInstances['logs-model-dropdown']) return;
+      const modelSet = new Set();
+      for (const ev of events) {
+        if (ev.model) modelSet.add(ev.model);
+        if (ev.request_model) modelSet.add(ev.request_model);
+      }
+      const options = [{ value: '', label: '全部请求模型' }];
+      for (const m of Array.from(modelSet).sort()) {
+        options.push({ value: m, label: m });
+      }
+      dropdownInstances['logs-model-dropdown'].updateOptions(options, logsSelectedModel);
     }
 
     function changeLogsTimeRange(val) {
@@ -475,10 +688,32 @@
         tpsHtml = `<span class="speed-badge" style="color:${speedColor}; font-weight:600; font-size:11.5px;" title="${tpsTitle}">${tpsPrefix}${tpsNum} <span style="font-size:10px; font-weight:400; opacity:0.8;">tok/s</span></span>`;
       }
 
+      // 客户端 IP、来源地域与 ASN 组织
+      let ipTdHtml = '<span style="color:var(--text-dim); font-size:11.5px;">—</span>';
+      if (ev.client_ip && ev.client_ip !== '-') {
+        ipTdHtml = `<span class="traffic-pill traffic-pill-ip" onclick="filterLogsByIP('${escapeHtml(ev.client_ip)}')" title="点击筛选此 IP">${escapeHtml(ev.client_ip)}</span>`;
+      }
+
+      let locText = (ev.geo && (ev.geo.formatted || ev.geo.country))
+        ? (ev.geo.formatted || ev.geo.country)
+        : (ev.client_ip === '172.18.0.1' || ev.client_ip?.startsWith('172.18.') ? 'Docker Gateway' : (ev.client_ip?.startsWith('100.') ? 'Tailnet 专网' : (ev.client_ip === '127.0.0.1' ? '本机回环' : (ev.client_ip ? '未知地域' : '—'))));
+      const isProxy = Boolean(ev.geo && (ev.geo.is_proxy || ev.geo.is_vpn || ev.geo.is_tor));
+      let geoTdHtml = locText !== '—'
+        ? `<span class="traffic-pill traffic-pill-geo">${escapeHtml(locText)}</span>${isProxy ? ' <span class="traffic-pill traffic-pill-danger" style="font-size:9px;padding:0 4px;">Proxy</span>' : ''}`
+        : '<span style="color:var(--text-dim); font-size:11.5px;">—</span>';
+
+      const asnText = ev.geo && ev.geo.asn ? `AS${ev.geo.asn} ${ev.geo.asn_org || ''}`.trim() : (ev.geo?.asn_org || '—');
+      let asnTdHtml = asnText !== '—'
+        ? `<span style="color:var(--text-muted);font-size:11px;font-family:var(--mono, monospace);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;" title="${escapeHtml(asnText)}">${escapeHtml(asnText)}</span>`
+        : '<span style="color:var(--text-dim); font-size:11.5px;">—</span>';
+
       return `<tr${rowClassAttr} data-id="${escapeHtml(String(ev.id || ''))}">
         <td class="num" style="color:var(--text-dim); font-size:11.5px;" title="${escapeHtml(fullIso ? `${fullIso} (UTC) · CST (UTC+8)` : '')}">
           <div class="live-cell-content"><span style="color:var(--text-muted); margin-right:3px;">${dateStr}</span>${timeStr}</div>
         </td>
+        <td><div class="live-cell-content">${ipTdHtml}</div></td>
+        <td><div class="live-cell-content">${geoTdHtml}</div></td>
+        <td><div class="live-cell-content">${asnTdHtml}</div></td>
         <td>
           <div class="live-cell-content">
             <div class="key-badge" style="--key-bg:${ks.bg}; --key-border:${ks.border}; --key-color:${ks.color};"
@@ -522,7 +757,7 @@
       const tbody = document.getElementById('events-tbody');
       if (!tbody) return;
       if (totalFiltered === 0 || pageEvents.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align: center; color: var(--text-dim); padding: 32px;">${t('logs.emptyFiltered')}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="15" style="text-align: center; color: var(--text-dim); padding: 32px;">${t('logs.emptyFiltered')}</td></tr>`;
         return;
       }
 

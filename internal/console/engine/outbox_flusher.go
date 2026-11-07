@@ -207,6 +207,7 @@ func NormalizeRequestEvent(info *RequestInfo) *db.RequestEventRow {
 		AuthIndex:        authIndex,
 		ReasoningEffort:  reasoningEffort,
 		TokensPerSec:     tps,
+		ClientIP:         strings.TrimSpace(info.ClientIP),
 	}
 }
 

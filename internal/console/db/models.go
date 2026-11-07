@@ -59,6 +59,7 @@ type RequestEventRow struct {
 	AuthIndex        string  `json:"auth_index"`
 	ReasoningEffort  string  `json:"reasoning_effort"`
 	TokensPerSec     float64 `json:"tokens_per_sec"`
+	ClientIP         string  `json:"client_ip,omitempty"`
 }
 
 // ErrorEventRow represents a row in the error_events table.
@@ -228,6 +229,7 @@ type EventFilterParams struct {
 	AuthPatterns  []string
 	Filter        string
 	Search        string
+	ClientIP      string
 	TimeRange     string
 	Since         *int64
 	Until         *int64

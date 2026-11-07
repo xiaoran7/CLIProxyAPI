@@ -122,3 +122,57 @@ func TestHandleGetRequests_TokenRateCalculation(t *testing.T) {
 		t.Errorf("gpt-4o event not found in response")
 	}
 }
+
+func TestHandleGetRequests_ClientIPAndGeo(t *testing.T) {
+	r, eng, _, _, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	keyID := int64(1)
+
+	err := eng.RecordRequest(ctx, &engine.RequestInfo{
+		KeyID:            &keyID,
+		Model:            "gemini-3.8-flash-high",
+		Status:           200,
+		PromptTokens:     100,
+		CompletionTokens: 50,
+		LatencyMs:        500,
+		ClientIP:         "127.0.0.1",
+	})
+	if err != nil {
+		t.Fatalf("failed to record request: %v", err)
+	}
+
+	_ = eng.Flusher().FlushUsage(ctx)
+
+	req := httptest.NewRequest(http.MethodGet, "/console/api/requests", nil)
+	req.Header.Set("Authorization", "Bearer test-secret-12345")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Events []struct {
+			ClientIP string `json:"client_ip"`
+			Geo      *struct {
+				Country string `json:"country"`
+			} `json:"geo"`
+		} `json:"events"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response JSON: %v", err)
+	}
+
+	if len(resp.Events) == 0 {
+		t.Fatalf("expected at least 1 event")
+	}
+	if resp.Events[0].ClientIP != "127.0.0.1" {
+		t.Errorf("expected client_ip 127.0.0.1, got %s", resp.Events[0].ClientIP)
+	}
+	if resp.Events[0].Geo == nil || resp.Events[0].Geo.Country == "" {
+		t.Errorf("expected non-nil Geo with Country, got %+v", resp.Events[0].Geo)
+	}
+}

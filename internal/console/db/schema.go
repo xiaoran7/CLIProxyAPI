@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS request_events (
   error_type TEXT,
   auth_index TEXT DEFAULT '',
   reasoning_effort TEXT DEFAULT '',
-  tokens_per_sec REAL NOT NULL DEFAULT 0
+  tokens_per_sec REAL NOT NULL DEFAULT 0,
+  client_ip TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS usage_outbox (
@@ -84,7 +85,8 @@ CREATE TABLE IF NOT EXISTS usage_outbox (
   error_type TEXT,
   auth_index TEXT DEFAULT '',
   reasoning_effort TEXT DEFAULT '',
-  tokens_per_sec REAL NOT NULL DEFAULT 0
+  tokens_per_sec REAL NOT NULL DEFAULT 0,
+  client_ip TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS meta (
@@ -223,6 +225,8 @@ var alterStatements = []string{
 	"ALTER TABLE request_events ADD COLUMN tokens_per_sec REAL NOT NULL DEFAULT 0;",
 	"ALTER TABLE usage_outbox ADD COLUMN reasoning_effort TEXT DEFAULT '';",
 	"ALTER TABLE usage_outbox ADD COLUMN tokens_per_sec REAL NOT NULL DEFAULT 0;",
+	"ALTER TABLE request_events ADD COLUMN client_ip TEXT DEFAULT '';",
+	"ALTER TABLE usage_outbox ADD COLUMN client_ip TEXT DEFAULT '';",
 	"ALTER TABLE provider_registry ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 100;",
 }
 

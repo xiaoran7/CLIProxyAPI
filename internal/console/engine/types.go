@@ -50,6 +50,7 @@ type RequestInfo struct {
 	AuthIndex        string  `json:"auth_index"`
 	ReasoningEffort  string  `json:"reasoning_effort"`
 	TokensPerSec     float64 `json:"tokens_per_sec"`
+	ClientIP         string  `json:"client_ip,omitempty"`
 }
 
 // CheckResult represents the verdict of a quota, RPM, or model authorization check.
