@@ -16,6 +16,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - 顶部汇总卡：当前命中封禁账号数、近 24h 403 总数、近 7 天 403 总数；支持按账号、按模型过滤与胶囊重置；沿用 Console 既有 `CustomDropdown`、`summary-card`、`panel` 与 `ui-design` 圆角/阴影/动效体系，并复用全局 15s 轮询刷新。
 
 
+### Removed
+- **上游验证提醒横幅彻底移除 (`internal/console/assets/`)**:
+  - 删除 `console.html` 中 `#upstream-validations-banner` 整块节点（含其 `#upstream-validations-container` 列表容器，两者仅服务该横幅），共 22 行。
+  - `console-quotas-fetch.js` 中 `renderValidationsBanner()` 收敛为 `renderValidationsIndicators()`：只保留侧边栏「Google 验证」角标与运营指标盒的更新逻辑，删除全部横幅元素的查找、`style.display` 切换、逐条账号记录注入与「打开官方验证页」跳转按钮的渲染。
+  - 清理随之失效的 `console-i18n.js` 键 `validations.bannerTitle` 与 `validations.bannerSubtitle`。
+  - 侧边栏「封禁监控」菜单项、`console-tos-bans.js` 与 Google 验证工作区页面均不受影响（验证页仍使用 `quotas.validation.pendingGoogle` 等键）。
+
 ### Fixed
 - **来源地域列竖排与首帧错值修复 (`internal/console/assets/`, `internal/console/`)**:
   - 地域胶囊此前在窄列内被按「·」折行成竖排（`中国 / ·湖 / 南· / ·株 / 洲`），把整行行高撑到数倍。`traffic-pill-geo` 现固定 `white-space: nowrap` + `max-width: 148px` + `text-overflow: ellipsis`，并在渲染层把后端的三段式 `中国 · 湖南 · 株洲` 收敛为两段：国内省略国家名只留 `湖南 · 株洲`，海外保留 `国家 · 最终城市`（如 `日本 · 千代田`）。完整原始值保留在 `title` 悬浮提示中。

@@ -996,8 +996,6 @@
     'validations.actionRequiredSubtitle': { zh: '', en: '' },
     'validations.auditSubtitle': { zh: '', en: '' },
     'validations.auditTitle': { zh: '验证记录与审计历史 (Audit History)', en: 'Validation records and audit history (Audit History)' },
-    'validations.bannerSubtitle': { zh: '上游返回 403 VALIDATION_REQUIRED · 需在浏览器中完成 Google 验证后账号方可恢复正常调用', en: 'Upstream returned 403 VALIDATION_REQUIRED · complete the Google verification in a browser before the account can be used normally again' },
-    'validations.bannerTitle': { zh: 'Google Antigravity 账号安全验证提醒 (Account Verification Required)', en: 'Google Antigravity account security validation notice (Account Verification Required)' },
     'validations.handledCount': { zh: '已成功解除限制的记录次数', en: 'Number of records whose restrictions were successfully lifted' },
     'validations.handledHistory': { zh: '历史已处理验证', en: 'Historically handled validations' },
     'validations.loadingAccounts': { zh: '加载账号中...', en: 'Loading accounts...' },

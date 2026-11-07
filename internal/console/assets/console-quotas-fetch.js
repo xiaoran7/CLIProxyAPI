@@ -20,7 +20,7 @@
           data = text ? JSON.parse(text) : { validations: [] };
         } catch (_) {}
         cachedUpstreamValidations = (data && Array.isArray(data.validations)) ? data.validations : [];
-        renderValidationsBanner();
+        renderValidationsIndicators();
         renderValidationsPage();
         if (showTip) showToast(t('quotas.validation.listUpdatedToast'), 'success');
       } catch (err) {
@@ -29,9 +29,10 @@
       }
     }
 
-    function renderValidationsBanner() {
-      const banner = document.getElementById('upstream-validations-banner');
-      const container = document.getElementById('upstream-validations-container');
+    // Keeps the validation indicators that live outside the retired notice
+    // panel: the sidebar badge and the operations metric. The panel itself is
+    // no longer part of the markup.
+    function renderValidationsIndicators() {
       const opsBox = document.getElementById('ops-validations-box');
       const opsCount = document.getElementById('ops-validations-count');
       const navBadge = document.getElementById('nav-badge-validations');
@@ -59,43 +60,6 @@
           opsBox.style.display = 'none';
         }
       }
-
-      if (!banner || !container) return;
-
-      if (pendings.length === 0) {
-        banner.style.display = 'none';
-        container.innerHTML = '';
-        return;
-      }
-
-      banner.style.display = 'block';
-      container.innerHTML = pendings.map(v => {
-        const timeStr = typeof formatCstTime === 'function' ? formatCstTime(v.updated_at) : new Date(v.updated_at).toLocaleTimeString(LOCALE, { hour12: false, timeZone: 'Asia/Shanghai' });
-        const nameDisp = escapeHtml(v.account_name || v.auth_index || t('quotas.unknownAccount'));
-        const urlSafe = escapeHtml(v.validation_url);
-        return `
-          <div style="background:var(--bg-card); border:1px solid rgba(239,68,68,0.25); border-radius:6px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-            <div style="display:flex; flex-direction:column; gap:2px; min-width:0; max-width:70%;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span class="chip chip-red" style="font-size:10.5px; font-weight:700;">${t('quotas.validation.pendingGoogle')}</span>
-                <strong style="color:var(--text-main); font-size:13px;">${nameDisp}</strong>
-                <span style="font-family:var(--mono); font-size:11px; color:var(--text-dim);">ID: ${escapeHtml(String(v.auth_index).slice(0, 8))} · ${timeStr}</span>
-              </div>
-              <div style="font-size:11px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                ${escapeHtml(v.error_message || 'Verify your account to continue.')}
-              </div>
-            </div>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <a href="${urlSafe}" target="_blank" rel="noopener noreferrer" class="btn btn-sm" style="background:#ef4444; color:#fff; text-decoration:none; display:inline-flex; align-items:center; gap:4px; padding:4px 12px; font-weight:600;" title="${t('quotas.validation.openOfficialPage')}">
-                ${t('quotas.validation.openLinkBtn')}
-              </a>
-              <button class="btn btn-secondary btn-sm" onclick="resolveValidation(${v.id})" title="${t('quotas.validation.resolveHint')}">
-                ${t('quotas.validation.doneActionTitle')}
-              </button>
-            </div>
-          </div>
-        `;
-      }).join('');
     }
 
     // 渲染 "Google 验证" 专属工作区页面
