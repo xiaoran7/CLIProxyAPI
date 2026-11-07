@@ -217,7 +217,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       gap: 12px;
       padding: 4px 20px;
       background: rgba(248, 250, 252, 0.75);
@@ -226,11 +226,23 @@
       border-bottom: 1px solid var(--card-border);
     }
 
-    /* 筛选控件组与分页条同排：控件组占据剩余宽度并可收缩 */
+    /* 筛选控件组与分页条同排：控件组占据剩余宽度并可收缩。
+       搜索框与各筛选下拉都必须允许压缩，否则控件组会撑满整行，
+       分页条被迫换到第二行，工具区又回到 100px。 */
     .logs-controls > .logs-filter-row {
-      flex: 1 1 auto;
+      flex: 1 1 0;
       min-width: 0;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
     }
+    .logs-controls > .logs-filter-row::-webkit-scrollbar { display: none; }
+    .logs-controls .logs-search-input {
+      flex: 0 1 260px;
+      min-width: 120px;
+    }
+    .logs-controls .filter-control-item { flex: 0 1 auto; min-width: 0; }
+    .logs-controls .pagination-bar { flex: 0 0 auto; white-space: nowrap; }
 
     /* 分页条并入筛选行：去掉自身的外边距与上边框，不再单独占一行 */
     .logs-controls > .pagination-bar {
