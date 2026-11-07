@@ -7,18 +7,19 @@
     .val-pending-card {
       background: #ffffff;
       border: 1px solid rgba(239, 68, 68, 0.35);
-      border-radius: var(--radius-md);
-      padding: 16px 18px;
-      box-shadow: 0 4px 16px rgba(239, 68, 68, 0.08);
+      border-radius: 18px; /* rounded-2xl: modern validation card */
+      padding: 20px 22px;
+      box-shadow: 0 4px 20px -2px rgba(239, 68, 68, 0.08);
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
       position: relative;
-      transition: all 0.2s ease;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .val-pending-card:hover {
-      box-shadow: 0 6px 20px rgba(239, 68, 68, 0.14);
+      box-shadow: 0 12px 28px -4px rgba(239, 68, 68, 0.16);
       border-color: rgba(239, 68, 68, 0.6);
+      transform: translateY(-2px);
     }
     .val-pending-header {
       display: flex;
@@ -57,27 +58,28 @@
       background: linear-gradient(135deg, #ef4444, #dc2626);
       color: #ffffff !important;
       font-weight: 700;
-      padding: 7px 16px;
-      border-radius: var(--radius-sm);
+      padding: 0 18px;
+      height: 40px;
+      border-radius: 12px; /* rounded-xl */
       text-decoration: none;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      font-size: 12.5px;
+      gap: 8px;
+      font-size: 13px;
       box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
-      transition: all 0.15s ease;
+      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .val-btn-go:hover {
       background: linear-gradient(135deg, #dc2626, #b91c1c);
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(239, 68, 68, 0.35);
     }
     .val-empty-box {
-      padding: 36px 20px;
+      padding: 40px 24px;
       text-align: center;
       background: #f8fafc;
       border: 1px dashed #cbd5e1;
-      border-radius: var(--radius-md);
+      border-radius: 18px; /* rounded-2xl */
       display: flex;
       flex-direction: column;
       align-items: center;

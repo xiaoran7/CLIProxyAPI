@@ -22,8 +22,8 @@
       --warning: #a96608;
       --danger: #c33551;
       --radius-sm: 8px;
-      --radius-md: 11px;
-      --radius-lg: 15px;
+      --radius-md: 12px;
+      --radius-lg: 18px;
     }
     body {
       background: linear-gradient(180deg, #eaf5ff 0, #f3f8fe 520px, #f3f8fe 100%);
@@ -103,20 +103,22 @@
     .nav-tab-btn.active::after { bottom: -2px; height: 3px; box-shadow: none; }
     .panel, .summary-card, .member-info-card {
       border-color: var(--card-border);
-      box-shadow: 0 2px 12px rgba(43, 97, 151, .045);
+      border-radius: 18px;
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .panel, .summary-card, .member-info-card { background: rgba(255,255,255,.96); }
     .panel-header { padding: 18px 20px; }
     .panel-title { font-size: 16px; font-weight: 650; letter-spacing: -.015em; }
     .panel-subtitle { color: var(--text-muted); line-height: 1.5; margin-top: 4px; }
-    .summary-card { padding: 18px; }
-    .summary-card:hover { box-shadow: 0 3px 14px rgba(43, 97, 151, .08); transform: none; }
-    .summary-value { font-size: clamp(23px, 2vw, 30px); }
+    .summary-card { padding: 22px 24px; border-radius: 18px; }
+    .summary-card:hover { box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08); transform: translateY(-2px); }
+    .summary-value { font-size: clamp(23px, 2vw, 30px); font-variant-numeric: tabular-nums; }
     .summary-footer { color: var(--text-muted); }
-    .status-card, .account-card, .compact-account-row { border-color: var(--card-border); box-shadow: none; }
+    .status-card, .account-card, .compact-account-row { border-color: var(--card-border); border-radius: 18px; box-shadow: none; transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease; }
     .status-grid { grid-template-columns: repeat(auto-fill, minmax(285px, 1fr)); }
     .upstream-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
-    .status-card:hover, .account-card:hover, .compact-account-row:hover { border-color: var(--card-border-hover); }
+    .status-card:hover, .account-card:hover, .compact-account-row:hover { border-color: var(--card-border-hover); transform: translateY(-2px); }
     .dropdown-item { min-height: 32px; }
     .dropdown-menu { box-shadow: 0 14px 32px rgba(46, 87, 128, .15); scrollbar-color: #b9cadb transparent; }
     .dropdown-menu::-webkit-scrollbar-thumb { background: #b9cadb; }

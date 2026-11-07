@@ -9,13 +9,13 @@
       --mono: "SF Mono", Monaco, Menlo, Consolas, "JetBrains Mono", "Liberation Mono", "Courier New", monospace;
       --bg: #f0f4f9;
       --bg-subtle: #e6eef6;
-      --card-bg: #ffffff;
+      --card-bg: rgba(255, 255, 255, 0.94);
       --card-bg-hover: #f8fbfe;
-      --card-border: rgba(186, 215, 242, 0.6);
-      --card-border-subtle: rgba(186, 215, 242, 0.35);
+      --card-border: rgba(226, 232, 240, 0.85);
+      --card-border-subtle: rgba(226, 232, 240, 0.5);
       --card-border-hover: rgba(59, 130, 246, 0.4);
-      --text-main: #1e293b;
-      --text-muted: #64748b;
+      --text-main: #0f172a;
+      --text-muted: #475569;
       --text-dim: #94a3b8;
       --accent: #2563eb;
       --accent-muted: rgba(37, 99, 235, 0.1);
@@ -31,7 +31,7 @@
       --success-border: rgba(5, 150, 105, 0.25);
       --radius-sm: 8px;
       --radius-md: 12px;
-      --radius-lg: 16px;
+      --radius-lg: 18px;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -293,53 +293,56 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
+      gap: 8px;
       background: var(--accent);
       color: #ffffff;
       border: none;
-      padding: 6px 13px;
-      border-radius: var(--radius-md);
-      font-size: 13px;
-      font-weight: 500;
+      padding: 0 16px;
+      height: 40px;
+      min-height: 40px;
+      border-radius: var(--radius-md, 12px);
+      font-size: 13.5px;
+      font-weight: 600;
       cursor: pointer;
-      transition: background 0.15s, transform 0.1s;
+      transition: background 0.15s, transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.15s ease;
       outline: none;
       white-space: nowrap;
     }
-    .btn:hover { background: var(--accent-hover); }
+    .btn:hover { background: var(--accent-hover); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
     .btn:active { transform: scale(0.98); }
     .btn-secondary {
       background: var(--card-bg);
       color: var(--text-main);
       border: 1px solid var(--card-border);
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
     }
-    .btn-secondary:hover { background: var(--card-bg-hover); border-color: var(--card-border-hover); }
+    .btn-secondary:hover { background: var(--card-bg-hover); border-color: var(--card-border-hover); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06); }
     .btn-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger-border); }
-    .btn-danger:hover { background: rgba(244, 63, 94, 0.18); }
-    .btn-sm { padding: 4px 9px; font-size: 11.5px; border-radius: var(--radius-sm); }
+    .btn-danger:hover { background: rgba(244, 63, 94, 0.18); transform: translateY(-2px); }
+    .btn-sm { padding: 0 12px; height: 32px; min-height: 32px; font-size: 12px; border-radius: var(--radius-sm, 8px); }
 
     /* 5-Column Summary Grid */
     .summary-grid {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
-      gap: 14px;
-      margin-bottom: 22px;
+      gap: 16px;
+      margin-bottom: 24px;
     }
     .summary-card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
-      border-radius: var(--radius-lg);
-      padding: 20px 22px;
+      border-radius: 18px; /* rounded-2xl: modern card radius */
+      padding: 22px 24px;
       position: relative;
       overflow: hidden;
-      box-shadow: 0 4px 20px -2px rgba(241, 245, 249, 0.8);
-      transition: border-color 0.2s, background 0.2s, transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+      transition: border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s ease, transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .summary-card:hover {
       border-color: var(--card-border-hover);
       background: var(--card-bg-hover);
-      box-shadow: 0 8px 26px -4px rgba(100, 140, 190, 0.08);
-      transform: translateY(-1px);
+      box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08);
+      transform: translateY(-2px);
     }
     .summary-header {
       display: flex;

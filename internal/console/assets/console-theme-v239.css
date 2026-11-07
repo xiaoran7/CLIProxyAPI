@@ -15,7 +15,8 @@
     .app-sidebar .version-tag { font-size: 9px; padding: 2px 5px; }
     .sidebar-section-label { color: #8ba0b5; font-size: 10px; letter-spacing: .13em; font-weight: 800; margin: 24px 13px 10px; }
     .app-sidebar .nav-tabs-bar { display: flex; flex-direction: column; align-items: stretch; gap: 5px; overflow: visible; border: 0; padding: 0; margin: 0; }
-    .app-sidebar .nav-tab-btn { width: 100%; min-height: 43px; border-radius: 10px; padding: 10px 11px; text-align: left; font-size: 12.5px; font-weight: 600; color: #58708a; }
+    .app-sidebar .nav-tab-btn { width: 100%; min-height: 42px; border-radius: 12px; padding: 10px 14px; text-align: left; font-size: 13px; font-weight: 600; color: #58708a; transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1); }
+    .app-sidebar .nav-tab-btn:hover { transform: translateY(-2px); }
     .app-sidebar .nav-tab-btn svg { width: 17px; height: 17px; flex: 0 0 auto; }
     .app-sidebar .nav-tab-btn span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; }
     .app-sidebar .nav-tab-btn .tab-badge { margin-left: auto; background: #eaf1f8; color: #6f8298; }
@@ -35,7 +36,7 @@
     .workspace-topbar #btn-create-key { background: #e9f4fe; color: #1a6da8; border-color: #c9e5f7; }
     .workspace-topbar #btn-create-key:hover { background: #dceffc; }
     .workspace-topbar .polling-capsule { border: 0; background: transparent; padding: 2px 4px; }
-    .scene-banner { min-height: 136px; margin-bottom: 20px; padding: 22px 29px; border-radius: 16px; background-size: auto, auto 405px; background-position: center, right 34%; box-shadow: 0 3px 16px rgba(50,115,171,.06); }
+    .scene-banner { min-height: 136px; margin-bottom: 20px; padding: 22px 29px; border-radius: 18px; background-size: auto, auto 405px; background-position: center, right 34%; box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05); }
     .scene-banner h2 { margin-top: 11px; font-size: clamp(23px, 2.2vw, 31px); }
     .scene-banner p { font-size: 12px; }
     body[data-active-tab="keys"] .scene-banner, body[data-active-tab="logs"] .scene-banner, body[data-active-tab="errors"] .scene-banner { min-height: 136px; padding: 22px 29px; background-size: auto, auto 405px; }
@@ -51,7 +52,7 @@
     .page-intro-actions { display: flex; gap: 8px; flex: 0 0 auto; }
     .page-intro-actions .btn { min-height: 34px; padding: 6px 11px; }
     body:not([data-active-tab="quotas"]) .page-intro-actions, body.member-mode .page-intro-actions, body.needs-auth .page-intro-actions { display: none; }
-    .operations-strip { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); margin-bottom: 16px; border: 1px solid #d9e8f5; border-radius: 14px; background: #fff; overflow: hidden; }
+    .operations-strip { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); margin-bottom: 18px; border: 1px solid #d9e8f5; border-radius: 18px; background: #fff; overflow: hidden; box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05); }
     .operation-metric { min-width: 0; padding: 14px 18px; border-right: 1px solid #e6eef6; }
     .operation-metric:last-child { border-right: 0; }
     .operation-label { display: block; color: #6e8399; font-size: 11px; font-weight: 650; }

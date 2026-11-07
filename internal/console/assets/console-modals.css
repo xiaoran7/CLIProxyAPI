@@ -18,11 +18,11 @@
     .modal {
       background: #ffffff;
       border: 1px solid var(--card-border);
-      border-radius: var(--radius-lg);
+      border-radius: 18px; /* rounded-2xl: modern modal radius */
       width: 100%;
       max-width: 480px;
-      padding: 24px;
-      box-shadow: 0 20px 40px rgba(100, 140, 190, 0.18);
+      padding: 28px;
+      box-shadow: 0 20px 48px -8px rgba(15, 23, 42, 0.18), 0 8px 16px -4px rgba(15, 23, 42, 0.08);
       position: relative;
     }
     .modal.modal-wide { max-width: 680px; }
@@ -33,37 +33,39 @@
       margin-bottom: 20px;
     }
     .modal-title {
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 600;
-      color: var(--text-main);
+      color: var(--text-main, #0f172a);
     }
     .close-btn {
       background: transparent;
       border: none;
       color: var(--text-dim);
       cursor: pointer;
-      padding: 4px;
-      border-radius: 4px;
+      padding: 6px;
+      border-radius: 8px;
+      transition: all 0.15s ease;
     }
-    .close-btn:hover { color: var(--text-main); background: rgba(186, 215, 242, 0.35); }
+    .close-btn:hover { color: var(--text-main); background: rgba(186, 215, 242, 0.35); transform: translateY(-2px); }
     .close-btn svg { width: 18px; height: 18px; }
 
     .form-group { margin-bottom: 16px; }
     .form-group label {
       display: block;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text-muted);
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-muted, #475569);
       margin-bottom: 6px;
     }
     .form-control {
       width: 100%;
       background: #f8fbfe;
       border: 1px solid var(--card-border);
-      border-radius: var(--radius-md);
-      padding: 9px 13px;
-      color: var(--text-main);
-      font-size: 13px;
+      border-radius: 12px; /* rounded-xl */
+      padding: 10px 14px;
+      min-height: 42px;
+      color: var(--text-main, #0f172a);
+      font-size: 13.5px;
       outline: none;
       transition: all 0.15s ease;
       box-shadow: inset 0 1px 2px rgba(100, 140, 190, 0.05);
@@ -71,6 +73,7 @@
     .form-control:hover {
       border-color: var(--card-border-hover);
       background: #ffffff;
+      transform: translateY(-2px);
     }
     .form-control:focus {
       border-color: var(--accent);

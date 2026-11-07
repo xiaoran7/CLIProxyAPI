@@ -43,11 +43,21 @@
     .charts-grid {
       display: grid;
       grid-template-columns: 1.55fr 1fr;
-      gap: 14px;
-      margin-bottom: 22px;
+      gap: 16px;
+      margin-bottom: 24px;
     }
-    .chart-panel { padding: 0; }
-    .chart-content { padding: 20px 22px; }
+    .chart-panel {
+      padding: 0;
+      border-radius: 18px; /* rounded-2xl: modern card radius */
+      overflow: hidden;
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .chart-panel:hover {
+      box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08);
+      transform: translateY(-2px);
+    }
+    .chart-content { padding: 22px 24px; }
     .trend-chart svg { width: 100%; height: 290px; display: block; overflow: visible; }
     .trend-empty, .models-empty {
       height: 290px;
@@ -90,14 +100,17 @@
       border-radius: 9999px;
       background: linear-gradient(90deg, #60a5fa, #38bdf8);
     }
-    .model-tokens { text-align: right; color: var(--text-muted); font-size: 12px; }
-    .model-cost { text-align: right; color: #34d399; font-size: 12px; font-weight: 500; }
+    .model-tokens { text-align: right; color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .model-cost { text-align: right; color: #34d399; font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
 
     /* Tables */
     .table-scroll-container {
       position: relative;
       z-index: 1;
       width: 100%;
+      overflow-x: auto;
+      border-radius: 18px; /* rounded-2xl */
+    }
       overflow-x: auto;
     }
     table {
@@ -162,12 +175,13 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 2.5px 8px;
-      border-radius: 5px;
+      padding: 3px 10px;
+      border-radius: 9999px; /* rounded-full */
       font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
       font-size: 11.5px;
       font-weight: 500;
-      border: 1px solid var(--key-border, rgba(255,255,255,0.1));
+      border: 1px solid var(--key-border, rgba(226, 232, 240, 0.8));
       background: var(--key-bg, rgba(255,255,255,0.03));
       color: var(--key-color, var(--text-main));
       cursor: pointer;
@@ -178,9 +192,10 @@
       text-overflow: ellipsis;
     }
     .key-badge:hover {
-      filter: brightness(1.25);
+      filter: brightness(1.1);
       border-color: var(--key-color, var(--accent));
-      transform: translateY(-1px);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
     }
     .key-badge-hash {
       font-size: 10.5px;

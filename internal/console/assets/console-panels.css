@@ -7,12 +7,17 @@
     .panel {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
-      border-radius: var(--radius-lg);
-      margin-bottom: 18px;
+      border-radius: 18px; /* rounded-2xl: modern panel radius */
+      margin-bottom: 24px;
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+      transition: box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease;
+    }
+    .panel:hover {
+      box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08);
     }
     .panel-header:first-child {
-      border-top-left-radius: var(--radius-lg);
-      border-top-right-radius: var(--radius-lg);
+      border-top-left-radius: 18px;
+      border-top-right-radius: 18px;
     }
 
     /* ---- 上游凭证配额 (CPAMC 对齐卡片系统) ---- */
@@ -30,17 +35,20 @@
     }
     .account-card {
       background: #ffffff;
-      border: 1px solid rgba(186, 215, 242, 0.5);
-      border-radius: var(--radius-md);
-      padding: 14px 16px;
-      transition: all 0.2s ease;
+      border: 1px solid rgba(226, 232, 240, 0.85);
+      border-radius: 18px; /* rounded-2xl */
+      padding: 18px 20px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       display: flex;
       flex-direction: column;
       gap: 12px;
+      box-shadow: 0 2px 10px rgba(15, 23, 42, 0.03);
     }
     .account-card:hover {
-      border-color: rgba(59, 130, 246, 0.35);
+      border-color: rgba(59, 130, 246, 0.4);
       background: #f8fbfe;
+      transform: translateY(-2px);
+      box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08);
     }
     .account-card-header {
       display: flex;
@@ -790,17 +798,20 @@
     }
     .status-card {
       background: #ffffff;
-      border: 1px solid rgba(186, 215, 242, 0.5);
-      border-radius: var(--radius-md);
-      padding: 14px 16px;
+      border: 1px solid rgba(226, 232, 240, 0.85);
+      border-radius: 18px; /* rounded-2xl: modern card radius */
+      padding: 18px 20px;
       display: flex;
       flex-direction: column;
       gap: 12px;
-      transition: border-color 0.2s ease, background 0.2s ease;
+      box-shadow: 0 2px 10px rgba(15, 23, 42, 0.03);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .status-card:hover {
-      border-color: rgba(59, 130, 246, 0.35);
+      border-color: rgba(59, 130, 246, 0.4);
       background: #f8fbfe;
+      transform: translateY(-2px);
+      box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08);
     }
     .status-card-header {
       display: flex;

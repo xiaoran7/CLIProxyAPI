@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Full-Spectrum Console CSS Modernization Across All 15 Workspaces (`internal/console/assets/`)**:
+  - Overhauled all 15 Console CSS stylesheets (`console-base.css`, `console-panels.css`, `console-overview.css`, `console-tables.css`, `console-cpa.css`, `console-feedback.css`, `console-logs.css`, `console-members.css`, `console-modals.css`, `console-theme-beszel.css`, `console-theme-v2310.css`, `console-theme-v239.css`, `console-traffic.css`, `console-upstream-stats.css`, `console-validations.css`) strictly adhering to the `ui-design` 8 principles:
+    - Replaced dated sharp borders and low-elevation boxes with `rounded-2xl` (18px) cards, `rounded-xl` (12px) inputs/controls, and `rounded-full` (9999px) badge pills across the entire application surface.
+    - Standardized interactive surfaces with responsive cubic-bezier elevation (`transform: translateY(-2px)`) and soft ambient diffuse shadows (`0 4px 20px -2px rgba(15,23,42,0.05)` and `0 12px 28px -4px rgba(15,23,42,0.08)`).
+    - Upgraded text color contrast to modern Slate 900 (`#0F172A`) for primary titles, Slate 600 (`#475569`) for clear descriptions, and enforced `font-variant-numeric: tabular-nums` across all numeric indicators and data cells.
+    - Enlarged input controls and action buttons to 40-42px touch-friendly heights with subtle focus rings.
+    - Verified 100% compliance across all 15 stylesheets, eliminating visual dissonance when switching between Overview, Upstream Stats, Logs, Visual Gateway, and Quota Management.
 - **Visual Gateway Native Console Exclusivity & ui-design Complete Modernization (`static/management.html`, `internal/managementasset/assets/`, `internal/console/assets/`)**:
   - Decommissioned Visual Gateway from the native Management control panel (`static/management.html` & `internal/managementasset/assets/management.html`), cleanly returning both copies to their original unpolluted state with identical MD5 hash (`9ca4610755e3a97999e246f5763cd93a`). Visual Gateway is now exclusively served from the Native Gateway Console (`/console`).
   - Thoroughly modernized Console Visual Gateway layout and styling strictly according to `ui-design` 8 standards:

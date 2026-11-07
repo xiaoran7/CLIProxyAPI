@@ -20,26 +20,36 @@
     .member-info-card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
-      border-radius: var(--radius-md);
-      padding: 18px 20px;
-      margin-bottom: 20px;
+      border-radius: 18px; /* rounded-2xl: modern card */
+      padding: 24px;
+      margin-bottom: 24px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 16px;
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .member-info-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08);
     }
     .member-stats-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-      gap: 12px;
+      gap: 14px;
     }
     .member-stat-box {
-      background: #f1f5f9;
+      background: #f8fafc;
       border: 1px solid var(--card-border);
-      border-radius: var(--radius-sm);
-      padding: 12px 14px;
+      border-radius: 14px;
+      padding: 16px 18px;
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 6px;
+      transition: transform 0.15s ease;
+    }
+    .member-stat-box:hover {
+      transform: translateY(-2px);
     }
     .member-stat-label {
       font-size: 11px;
@@ -50,14 +60,19 @@
       font-weight: 700;
       color: var(--text-main);
       font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
     }
     .member-progress-wrap {
       background: #f8fbfe;
       border: 1px solid rgba(56, 189, 248, 0.25);
-      border-radius: var(--radius-md);
-      padding: 18px 20px;
-      box-shadow: 0 4px 16px rgba(100, 140, 190, 0.08), inset 0 1px 0 rgba(186, 215, 242, 0.25);
+      border-radius: 18px; /* rounded-2xl */
+      padding: 22px 24px;
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
       position: relative;
+      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .member-progress-wrap:hover {
+      transform: translateY(-2px);
     }
     .member-progress-header {
       display: flex;
