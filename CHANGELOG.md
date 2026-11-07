@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Visual Gateway Native Console Exclusivity & ui-design Complete Modernization (`static/management.html`, `internal/managementasset/assets/`, `internal/console/assets/`)**:
+  - Decommissioned Visual Gateway from the native Management control panel (`static/management.html` & `internal/managementasset/assets/management.html`), cleanly returning both copies to their original unpolluted state with identical MD5 hash (`9ca4610755e3a97999e246f5763cd93a`). Visual Gateway is now exclusively served from the Native Gateway Console (`/console`).
+  - Thoroughly modernized Console Visual Gateway layout and styling strictly according to `ui-design` 8 standards:
+    - Replaced dated card shadows and small fonts with modern `rounded-2xl` (18px) cards, `rounded-xl` (12px) inputs/controls, and `rounded-full` pills.
+    - Upgraded control dimensions to 42px touch-friendly heights with subtle focus rings (`box-shadow: 0 0 0 3px rgba(59,130,246,0.16)`).
+    - Elevated typography contrast using high-contrast Slate 900 (`#0F172A`) for primary headings, Slate 600 (`#475569`) for readable descriptions, and 34px bold metric values with `font-variant-numeric: tabular-nums`.
+    - Applied large-radius soft diffuse shadows (`0 4px 20px -2px rgba(15,23,42,0.05)`), smooth `:hover` elevation (`translateY(-2px)`), and elastic `:active` feedback (`scale(0.985)`).
 - **Official Brand SVG Icons, Gateway Asset Unification & Global API Pre-warming (`internal/console/assets/`)**:
   - Extracted authentic geometric SVG icons directly from MiniMax (official dual-directional soundwave curve) and StepFun (official 5-tier circular stepped staircase badge) and embedded them into `getProviderBrand` (`console-format.js`) and `getBrandNodeVisual` (`console-traffic.js`).
   - Unified Gateway Main Entry icon across all status and provider cards by rendering the official Console Sakura G logo (`/console/assets/gate-sakura-mark-128.webp`), reinforcing coherent brand identity.

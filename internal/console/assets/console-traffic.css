@@ -1,41 +1,54 @@
 /**
- * Gate Admin Console - Visual Gateway (Magpie Architecture)
- * 现代轻量无依赖流向感知拓扑面板样式
+ * Gate Admin Console - Visual Gateway (ui-design Modern Architecture)
+ * 依据 ui-design 8 大设计准则全面重构：淘汰包浆老旧组件，采用 Slate 墨炭高对比、
+ * 大圆角 (rounded-2xl / rounded-xl / rounded-full)、大字号与 40px+ 触控热区、
+ * 柔和漫反射环境阴影、纯矢量 Lucide SVG 图标及弹性微动效。
  */
 
 /* 1. 顶层容器与全局排版 */
 .traffic-workspace-container {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding-bottom: 32px;
+  gap: 28px; /* gap-7: 呼吸感间距 */
+  padding-bottom: 40px;
 }
 
-/* 2. 核心指标卡片 */
+/* 2. 核心指标卡片 (Core Metrics) */
 .traffic-metrics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
 }
 
 .traffic-metric-card {
   position: relative;
-  background: var(--card-bg, #ffffff);
-  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
-  border-radius: 16px;
-  padding: 18px 20px;
-  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04);
+  background: var(--card-bg, rgba(255, 255, 255, 0.94));
+  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.85));
+  border-radius: 18px; /* rounded-2xl: 沉稳现代大圆角 */
+  padding: 24px;       /* p-6: 充裕呼吸内边距 */
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05); /* 大半径低透明漫反射软阴影 */
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+  gap: 10px;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease;
   overflow: hidden;
+}
+
+body.theme-beszel .traffic-metric-card,
+body.dark .traffic-metric-card {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
 }
 
 .traffic-metric-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08);
   border-color: rgba(59, 130, 246, 0.35);
+}
+
+.traffic-metric-card:active {
+  transform: scale(0.985);
 }
 
 .traffic-metric-header {
@@ -45,55 +58,70 @@
 }
 
 .traffic-metric-label {
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text-muted, #64748b);
+  letter-spacing: 0.01em;
+  color: var(--text-muted, #475569); /* Slate 600: 清晰易读不发虚 */
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+}
+
+body.theme-beszel .traffic-metric-label,
+body.dark .traffic-metric-label {
+  color: #94a3b8;
 }
 
 .traffic-metric-icon-wrap {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(59, 130, 246, 0.08);
-  color: #3b82f6;
 }
 
 .traffic-metric-val {
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-variant-numeric: tabular-nums;
-  font-size: 28px;
+  font-size: 34px; /* 提升至 34px 强化核心数据冲击力 */
   font-weight: 700;
-  line-height: 1.15;
-  color: var(--text-main, #0f172a);
+  line-height: 1.1;
+  color: var(--text-main, #0f172a); /* Slate 900 */
+}
+
+body.theme-beszel .traffic-metric-val,
+body.dark .traffic-metric-val {
+  color: #f8fafc;
 }
 
 .traffic-metric-val small {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--text-muted, #64748b);
   margin-left: 6px;
 }
 
 .traffic-metric-desc {
-  font-size: 11.5px;
-  line-height: 1.4;
-  color: var(--text-muted, #94a3b8);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted, #64748b);
 }
 
 /* 3. 动态流向拓扑面板 */
 .traffic-topology-panel {
-  background: var(--card-bg, #ffffff);
-  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04);
+  background: var(--card-bg, rgba(255, 255, 255, 0.94));
+  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.85));
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+}
+
+body.theme-beszel .traffic-topology-panel,
+body.dark .traffic-topology-panel {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
 }
 
 .traffic-topology-head {
@@ -101,39 +129,49 @@
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding-bottom: 14px;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
   border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
 }
 
+body.theme-beszel .traffic-topology-head,
+body.dark .traffic-topology-head {
+  border-bottom-color: rgba(255, 255, 255, 0.07);
+}
+
 .traffic-topology-title {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--text-main, #0f172a);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+}
+
+body.theme-beszel .traffic-topology-title,
+body.dark .traffic-topology-title {
+  color: #f8fafc;
 }
 
 .traffic-topology-canvas-wrap {
   width: 100%;
   overflow-x: auto;
-  border-radius: 12px;
+  border-radius: 14px;
   background: rgba(248, 250, 252, 0.7);
   border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.05));
-  padding: 16px 8px;
+  padding: 20px 10px;
   position: relative;
-  min-height: 220px;
+  min-height: 240px;
 }
 
 body.theme-beszel .traffic-topology-canvas-wrap,
 body.dark .traffic-topology-canvas-wrap {
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(15, 23, 42, 0.5);
   border-color: rgba(255, 255, 255, 0.06);
 }
 
-/* SVG 拓扑动效与高亮 */
+/* SVG 拓扑动效与平滑高亮 */
 @keyframes traffic-flow {
   from {
     stroke-dashoffset: 24;
@@ -144,7 +182,7 @@ body.dark .traffic-topology-canvas-wrap {
 }
 
 .traffic-link-path {
-  transition: stroke 0.2s ease, stroke-width 0.2s ease, opacity 0.2s ease;
+  transition: stroke 0.25s ease, stroke-width 0.25s ease, opacity 0.25s ease;
 }
 
 .traffic-link-path.is-active {
@@ -171,27 +209,26 @@ body.dark .traffic-topology-canvas-wrap {
 }
 
 .traffic-node-group.is-selected rect.node-box {
-  stroke-width: 2px !important;
+  stroke-width: 2.2px !important;
   stroke: #06b6d4 !important;
 }
 
-/* Time Range Slider (Dual-Thumb Smooth Audio/Video Track Style) */
+/* 4. 时间范围滑动条 (Dual-Thumb Slider) */
 .traffic-time-slider-wrap {
-  background: var(--card-bg, #ffffff);
-  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
-  border-radius: 12px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
+  background: rgba(248, 250, 252, 0.8);
+  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.85));
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.02);
+  gap: 12px;
 }
 
 body.theme-beszel .traffic-time-slider-wrap,
 body.dark .traffic-time-slider-wrap {
-  background: rgba(15, 23, 42, 0.5);
-  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(15, 23, 42, 0.55);
+  border-color: rgba(255, 255, 255, 0.07);
 }
 
 .traffic-slider-header {
@@ -199,34 +236,40 @@ body.dark .traffic-time-slider-wrap {
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
 
 .traffic-slider-title {
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
-  color: var(--text-muted, #64748b);
+  color: var(--text-muted, #475569);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+}
+
+body.theme-beszel .traffic-slider-title,
+body.dark .traffic-slider-title {
+  color: #94a3b8;
 }
 
 .traffic-slider-presets {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .traffic-preset-btn {
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 11px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
   font-weight: 500;
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.1));
   background: var(--input-bg, #ffffff);
-  color: var(--text-muted, #64748b);
+  color: var(--text-muted, #475569);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 body.theme-beszel .traffic-preset-btn,
@@ -239,7 +282,8 @@ body.dark .traffic-preset-btn {
 .traffic-preset-btn:hover {
   background: rgba(59, 130, 246, 0.08);
   color: #2563eb;
-  border-color: rgba(59, 130, 246, 0.3);
+  border-color: rgba(59, 130, 246, 0.35);
+  transform: translateY(-1px);
 }
 
 .traffic-preset-btn.active {
@@ -250,7 +294,7 @@ body.dark .traffic-preset-btn {
 
 .traffic-slider-track-wrap {
   position: relative;
-  height: 22px;
+  height: 24px;
   display: flex;
   align-items: center;
 }
@@ -258,8 +302,8 @@ body.dark .traffic-preset-btn {
 .traffic-slider-track {
   position: absolute;
   width: 100%;
-  height: 6px;
-  border-radius: 3px;
+  height: 8px;
+  border-radius: 4px;
   background: rgba(148, 163, 184, 0.25);
   overflow: hidden;
 }
@@ -268,16 +312,16 @@ body.dark .traffic-preset-btn {
   position: absolute;
   height: 100%;
   background: linear-gradient(90deg, #06b6d4, #3b82f6);
-  border-radius: 3px;
+  border-radius: 4px;
   left: 0%;
   right: 0%;
-  transition: left 0.08s ease, right 0.08s ease;
+  transition: left 0.06s ease, right 0.06s ease;
 }
 
 .traffic-range-thumb {
   position: absolute;
   width: 100%;
-  height: 22px;
+  height: 24px;
   -webkit-appearance: none;
   appearance: none;
   background: none;
@@ -289,12 +333,12 @@ body.dark .traffic-preset-btn {
 .traffic-range-thumb::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: #ffffff;
   border: 2.5px solid #2563eb;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   cursor: pointer;
   pointer-events: auto;
   transition: transform 0.12s ease, box-shadow 0.12s ease;
@@ -302,16 +346,16 @@ body.dark .traffic-preset-btn {
 
 .traffic-range-thumb::-webkit-slider-thumb:hover {
   transform: scale(1.2);
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.22);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25);
 }
 
 .traffic-range-thumb::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: #ffffff;
   border: 2.5px solid #2563eb;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   cursor: pointer;
   pointer-events: auto;
 }
@@ -319,78 +363,205 @@ body.dark .traffic-preset-btn {
 .traffic-slider-labels {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: 11.5px;
   font-family: var(--mono, monospace);
   font-variant-numeric: tabular-nums;
   color: var(--text-muted, #94a3b8);
 }
 
-.traffic-pill-key {
-  background: rgba(99, 102, 241, 0.1);
-  color: #6366f1;
-  border: 1px solid rgba(99, 102, 241, 0.25);
+/* 5. 实时调用流水明细表 (Stream Table) */
+.traffic-table-panel {
+  background: var(--card-bg, rgba(255, 255, 255, 0.94));
+  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.85));
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+}
+
+body.theme-beszel .traffic-table-panel,
+body.dark .traffic-table-panel {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+}
+
+.traffic-filter-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.traffic-filter-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* 提升至 40px~44px 现代化触控高度与 rounded-xl 圆角 */
+.traffic-input {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 12px; /* rounded-xl */
+  font-size: 13.5px;
+  border: 1px solid var(--card-border, #cbd5e1);
+  background: var(--input-bg, #ffffff);
+  color: var(--text-main, #0f172a);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+body.theme-beszel .traffic-input,
+body.dark .traffic-input {
+  background: rgba(15, 23, 42, 0.6);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+}
+
+.traffic-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+}
+
+.traffic-select {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 12px; /* rounded-xl */
+  font-size: 13.5px;
+  border: 1px solid var(--card-border, #cbd5e1);
+  background: var(--input-bg, #ffffff);
+  color: var(--text-main, #0f172a);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
-.traffic-pill-key:hover {
-  background: rgba(99, 102, 241, 0.22);
-  border-color: #6366f1;
+body.theme-beszel .traffic-select,
+body.dark .traffic-select {
+  background: rgba(15, 23, 42, 0.6);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
 }
 
-.traffic-pill-key.is-active {
-  background: #6366f1;
+.traffic-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.traffic-btn {
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 12px; /* rounded-xl */
+  font-size: 13.5px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.traffic-btn:active {
+  transform: scale(0.98);
+}
+
+.traffic-btn-secondary {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-main, #334155);
+  border-color: var(--card-border, #cbd5e1);
+}
+
+body.theme-beszel .traffic-btn-secondary,
+body.dark .traffic-btn-secondary {
+  background: rgba(30, 41, 59, 0.6);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+
+.traffic-btn-secondary:hover {
+  background: rgba(148, 163, 184, 0.2);
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+.traffic-btn-primary {
+  background: #3b82f6;
   color: #ffffff;
 }
 
-/* 4. 活跃 IP 台账 Grid */
+.traffic-btn-primary:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+/* 6. 多用户关联视图卡片 (3D Association) */
 .traffic-ip-ledger-panel {
-  background: var(--card-bg, #ffffff);
-  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
-  border-radius: 16px;
-  padding: 18px 20px;
-  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04);
+  background: var(--card-bg, rgba(255, 255, 255, 0.94));
+  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.85));
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+}
+
+body.theme-beszel .traffic-ip-ledger-panel,
+body.dark .traffic-ip-ledger-panel {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
 }
 
 .traffic-ip-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
-  margin-top: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
 }
 
 .traffic-ip-card {
-  padding: 12px 14px;
-  border-radius: 10px;
+  padding: 16px 18px;
+  border-radius: 14px;
   background: var(--card-bg, #ffffff);
   border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
   cursor: pointer;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+}
+
+body.theme-beszel .traffic-ip-card,
+body.dark .traffic-ip-card {
+  background: rgba(30, 41, 59, 0.5);
+  border-color: rgba(255, 255, 255, 0.07);
 }
 
 .traffic-ip-card:hover {
-  border-color: rgba(6, 182, 212, 0.5);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.08);
+  border-color: rgba(6, 182, 212, 0.55);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(6, 182, 212, 0.1);
+}
+
+.traffic-ip-card:active {
+  transform: scale(0.985);
 }
 
 .traffic-ip-card.is-active {
   border-color: #06b6d4;
-  background: rgba(6, 182, 212, 0.07);
-  box-shadow: 0 0 0 1px #06b6d4;
+  background: rgba(6, 182, 212, 0.08);
+  box-shadow: 0 0 0 1.5px #06b6d4;
 }
 
 .traffic-pulse-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: #10b981;
   display: inline-block;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.22);
   animation: traffic-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
@@ -401,114 +572,73 @@ body.dark .traffic-preset-btn {
   }
   50% {
     opacity: 0.6;
-    transform: scale(0.92);
+    transform: scale(0.9);
   }
 }
 
-/* 5. 实时调用流水明细表 */
-.traffic-table-panel {
+/* 7. 地域分布聚合卡片 (Geo Stats) */
+.traffic-geo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.traffic-geo-card {
+  padding: 14px 16px;
+  border-radius: 14px;
   background: var(--card-bg, #ffffff);
   border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04);
-}
-
-.traffic-filter-bar {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 16px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.traffic-filter-controls {
+body.theme-beszel .traffic-geo-card,
+body.dark .traffic-geo-card {
+  background: rgba(30, 41, 59, 0.5);
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+.traffic-geo-card:hover {
+  border-color: rgba(14, 165, 233, 0.45);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(14, 165, 233, 0.08);
+}
+
+.traffic-geo-rank {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--mono, monospace);
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-muted, #64748b);
 }
 
-.traffic-input {
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  border: 1px solid var(--card-border, #cbd5e1);
-  background: var(--input-bg, #ffffff);
-  color: var(--text-main, #0f172a);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+.traffic-geo-rank.is-top {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
 }
 
-.traffic-input:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
-}
-
-.traffic-select {
-  height: 36px;
-  padding: 0 10px;
-  border-radius: 8px;
-  font-size: 12px;
-  border: 1px solid var(--card-border, #cbd5e1);
-  background: var(--input-bg, #ffffff);
-  color: var(--text-main, #0f172a);
-  cursor: pointer;
-  transition: border-color 0.15s ease;
-}
-
-.traffic-select:focus {
-  outline: none;
-  border-color: #3b82f6;
-}
-
-.traffic-btn {
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.traffic-btn-secondary {
-  background: rgba(148, 163, 184, 0.1);
-  color: var(--text-main, #334155);
-  border-color: var(--card-border, #cbd5e1);
-}
-
-.traffic-btn-secondary:hover {
-  background: rgba(148, 163, 184, 0.18);
-  border-color: #94a3b8;
-}
-
-.traffic-btn-primary {
-  background: #3b82f6;
-  color: #ffffff;
-}
-
-.traffic-btn-primary:hover {
-  background: #2563eb;
-}
-
-/* Status & Tag Pills */
+/* 8. 胶囊徽章系统 (rounded-full) */
 .traffic-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border-radius: 6px;
-  font-size: 11px;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 9999px; /* rounded-full */
+  font-size: 11.5px;
   font-weight: 600;
   font-family: var(--mono, monospace);
   font-variant-numeric: tabular-nums;
+  line-height: 1.4;
 }
 
 .traffic-pill-success {
@@ -532,13 +662,13 @@ body.dark .traffic-preset-btn {
 .traffic-pill-channel {
   background: rgba(245, 158, 11, 0.1);
   color: #d97706;
-  border: 1px solid rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.22);
 }
 
 .traffic-pill-model {
   background: rgba(139, 92, 246, 0.1);
   color: #7c3aed;
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  border: 1px solid rgba(139, 92, 246, 0.22);
 }
 
 .traffic-pill-ip {
@@ -546,11 +676,13 @@ body.dark .traffic-preset-btn {
   color: #0891b2;
   border: 1px solid rgba(6, 182, 212, 0.25);
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .traffic-pill-ip:hover {
   background: rgba(6, 182, 212, 0.2);
   color: #0e7490;
+  transform: translateY(-1px);
 }
 
 .traffic-pill-geo {
@@ -558,55 +690,29 @@ body.dark .traffic-preset-btn {
   color: #0284c7;
   border: 1px solid rgba(14, 165, 233, 0.22);
   border-radius: 9999px;
-  padding: 1.5px 8px;
-  font-size: 11px;
+  padding: 3px 10px;
 }
 
-/* Geo Aggregation View */
-.traffic-geo-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.traffic-geo-card {
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--card-bg, #ffffff);
-  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+.traffic-pill-key {
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.traffic-geo-card:hover {
-  border-color: rgba(14, 165, 233, 0.4);
+.traffic-pill-key:hover {
+  background: rgba(99, 102, 241, 0.22);
+  border-color: #6366f1;
   transform: translateY(-1px);
 }
 
-.traffic-geo-rank {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10.5px;
-  font-weight: 700;
-  font-family: var(--mono, monospace);
-  background: rgba(15, 23, 42, 0.06);
-  color: var(--text-muted, #64748b);
+.traffic-pill-key.is-active {
+  background: #6366f1;
+  color: #ffffff;
 }
 
-.traffic-geo-rank.is-top {
-  background: rgba(59, 130, 246, 0.12);
-  color: #2563eb;
-}
-
-/* 6. ui-design 骨架屏微光标准 (Skeleton Shimmer) 与淡入动效 */
+/* 9. ui-design 骨架屏微光标准 (Skeleton Shimmer) */
 @keyframes skeleton-shift {
   0% {
     background-position: 200% 0;
@@ -620,7 +726,7 @@ body.dark .traffic-preset-btn {
   background: linear-gradient(90deg, rgba(160, 168, 185, 0.14) 25%, rgba(160, 168, 185, 0.35) 50%, rgba(160, 168, 185, 0.14) 75%);
   background-size: 200% 100%;
   animation: skeleton-shift 1.6s ease-in-out infinite;
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 body.theme-beszel .traffic-skeleton-shimmer,
@@ -632,7 +738,7 @@ body.dark .traffic-skeleton-shimmer {
 @keyframes traffic-fade-in {
   from {
     opacity: 0;
-    transform: translateY(3px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -649,24 +755,37 @@ body.dark .traffic-skeleton-shimmer {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 24px;
-  padding: 20px 12px;
+  padding: 24px 16px;
 }
 
 .traffic-skeleton-col {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .traffic-skeleton-head {
-  height: 14px;
+  height: 16px;
   width: 60%;
-  border-radius: 4px;
+  border-radius: 6px;
   margin-bottom: 8px;
 }
 
 .traffic-skeleton-card {
-  height: 32px;
-  border-radius: 8px;
+  height: 38px;
+  border-radius: 10px;
   width: 100%;
+}
+
+/* 无障碍偏好：减少运动 */
+@media (prefers-reduced-motion: reduce) {
+  .traffic-metric-card,
+  .traffic-ip-card,
+  .traffic-geo-card,
+  .traffic-btn,
+  .traffic-node-group,
+  .traffic-link-path {
+    transition: none !important;
+    animation: none !important;
+  }
 }
