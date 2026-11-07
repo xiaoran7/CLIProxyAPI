@@ -132,6 +132,29 @@ func TestHubGetSnapshot(t *testing.T) {
 	if snapshot.IPStats[0].IP != "1.1.1.1" || snapshot.IPStats[0].RequestCount != 2 {
 		t.Fatalf("expected top IP to be 1.1.1.1 with 2 reqs, got %+v", snapshot.IPStats[0])
 	}
+	if len(snapshot.IPStats[0].Keys) == 0 || snapshot.IPStats[0].Keys[0].Key != "sk-team-a" {
+		t.Fatalf("expected key 'sk-team-a' for IP 1.1.1.1, got %+v", snapshot.IPStats[0].Keys)
+	}
+	if snapshot.IPStats[0].SuccessRate != 1.0 {
+		t.Fatalf("expected 100%% success rate for 1.1.1.1, got %f", snapshot.IPStats[0].SuccessRate)
+	}
+
+	// Key stats check
+	if len(snapshot.KeyStats) == 0 {
+		t.Fatal("expected non-empty KeyStats in snapshot")
+	}
+	foundTeamA := false
+	for _, ks := range snapshot.KeyStats {
+		if ks.Key == "sk-team-a" {
+			foundTeamA = true
+			if ks.RequestCount != 2 || ks.IPCount != 1 || ks.IPs[0] != "1.1.1.1" {
+				t.Fatalf("unexpected KeyStat for sk-team-a: %+v", ks)
+			}
+		}
+	}
+	if !foundTeamA {
+		t.Fatal("expected KeyStat for sk-team-a")
+	}
 
 	// Verify idle period (when all requests are older than 5 minutes)
 	h.nowFunc = func() time.Time { return baseTime.Add(10 * time.Minute) }

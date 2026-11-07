@@ -158,7 +158,7 @@ body.dark .traffic-topology-canvas-wrap {
 
 .traffic-node-group {
   cursor: pointer;
-  transition: transform 0.15s ease, filter 0.15s ease, opacity 0.2s ease;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), filter 0.15s ease, opacity 0.25s ease;
 }
 
 .traffic-node-group:hover rect.node-box {
@@ -167,12 +167,180 @@ body.dark .traffic-topology-canvas-wrap {
 }
 
 .traffic-node-group.is-dimmed {
-  opacity: 0.22 !important;
+  opacity: 0.18 !important;
 }
 
 .traffic-node-group.is-selected rect.node-box {
   stroke-width: 2px !important;
   stroke: #06b6d4 !important;
+}
+
+/* Time Range Slider (Dual-Thumb Smooth Audio/Video Track Style) */
+.traffic-time-slider-wrap {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.02);
+}
+
+body.theme-beszel .traffic-time-slider-wrap,
+body.dark .traffic-time-slider-wrap {
+  background: rgba(15, 23, 42, 0.5);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.traffic-slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.traffic-slider-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.traffic-slider-presets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.traffic-preset-btn {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  background: var(--input-bg, #ffffff);
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+body.theme-beszel .traffic-preset-btn,
+body.dark .traffic-preset-btn {
+  background: rgba(30, 41, 59, 0.6);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+}
+
+.traffic-preset-btn:hover {
+  background: rgba(59, 130, 246, 0.08);
+  color: #2563eb;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.traffic-preset-btn.active {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+.traffic-slider-track-wrap {
+  position: relative;
+  height: 22px;
+  display: flex;
+  align-items: center;
+}
+
+.traffic-slider-track {
+  position: absolute;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.25);
+  overflow: hidden;
+}
+
+.traffic-slider-progress {
+  position: absolute;
+  height: 100%;
+  background: linear-gradient(90deg, #06b6d4, #3b82f6);
+  border-radius: 3px;
+  left: 0%;
+  right: 0%;
+  transition: left 0.08s ease, right 0.08s ease;
+}
+
+.traffic-range-thumb {
+  position: absolute;
+  width: 100%;
+  height: 22px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: none;
+  pointer-events: none;
+  margin: 0;
+  z-index: 2;
+}
+
+.traffic-range-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2.5px solid #2563eb;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.traffic-range-thumb::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.22);
+}
+
+.traffic-range-thumb::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2.5px solid #2563eb;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.traffic-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-family: var(--mono, monospace);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted, #94a3b8);
+}
+
+.traffic-pill-key {
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.traffic-pill-key:hover {
+  background: rgba(99, 102, 241, 0.22);
+  border-color: #6366f1;
+}
+
+.traffic-pill-key.is-active {
+  background: #6366f1;
+  color: #ffffff;
 }
 
 /* 4. 活跃 IP 台账 Grid */
@@ -383,6 +551,59 @@ body.dark .traffic-topology-canvas-wrap {
 .traffic-pill-ip:hover {
   background: rgba(6, 182, 212, 0.2);
   color: #0e7490;
+}
+
+.traffic-pill-geo {
+  background: rgba(14, 165, 233, 0.08);
+  color: #0284c7;
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  border-radius: 9999px;
+  padding: 1.5px 8px;
+  font-size: 11px;
+}
+
+/* Geo Aggregation View */
+.traffic-geo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.traffic-geo-card {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--card-border, rgba(226, 232, 240, 0.8));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  transition: all 0.15s ease;
+}
+
+.traffic-geo-card:hover {
+  border-color: rgba(14, 165, 233, 0.4);
+  transform: translateY(-1px);
+}
+
+.traffic-geo-rank {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: var(--mono, monospace);
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-muted, #64748b);
+}
+
+.traffic-geo-rank.is-top {
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
 }
 
 /* 6. ui-design 骨架屏微光标准 (Skeleton Shimmer) 与淡入动效 */

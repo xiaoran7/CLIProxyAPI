@@ -627,23 +627,45 @@
       </div>
     </div>
 
-    <!-- 3. Active IP Ledger Card -->
-    <div class="traffic-ip-ledger-panel">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div style="font-size:14px;font-weight:700;color:var(--text-main);">多用户 Client IP 统计台账</div>
-        <span style="font-size:11px;color:var(--text-muted);">点击任一 IP 卡片可高亮链路并联动下方明细流水</span>
-      </div>
-      <div class="traffic-ip-grid" id="traffic-ip-ledger-grid">
-        <!-- Rendered by console-traffic.js -->
-      </div>
-    </div>
-
-    <!-- 4. Real-time Stream Detail Table -->
+    <!-- 3. Real-time Stream Detail Table (with Top Dual-range Time Slider) -->
     <div class="traffic-table-panel">
+      <!-- Time Range Slider Box -->
+      <div class="traffic-time-slider-wrap">
+        <div class="traffic-slider-header">
+          <div class="traffic-slider-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:#0284c7;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>时间范围过滤 (Time Range Slider)</span>
+            <span id="traffic-time-label-current" style="font-weight:700;color:var(--text-main);margin-left:6px;font-family:var(--mono, monospace);">全量缓冲区</span>
+          </div>
+          <div class="traffic-slider-presets">
+            <button type="button" class="traffic-preset-btn active" id="btn-preset-all" onclick="setTrafficTimePreset('all')">全量跨度</button>
+            <button type="button" class="traffic-preset-btn" id="btn-preset-1h" onclick="setTrafficTimePreset('1h')">近 1 小时</button>
+            <button type="button" class="traffic-preset-btn" id="btn-preset-15m" onclick="setTrafficTimePreset('15m')">近 15 分钟</button>
+            <button type="button" class="traffic-preset-btn" id="btn-preset-5m" onclick="setTrafficTimePreset('5m')">近 5 分钟</button>
+          </div>
+        </div>
+        <div class="traffic-slider-track-wrap">
+          <div class="traffic-slider-track">
+            <div class="traffic-slider-progress" id="traffic-slider-progress" style="left:0%;right:0%;"></div>
+          </div>
+          <input type="range" id="traffic-time-min" min="0" max="100" value="0" step="1" class="traffic-range-thumb" oninput="onTrafficTimeSliderInput()" />
+          <input type="range" id="traffic-time-max" min="0" max="100" value="100" step="1" class="traffic-range-thumb" oninput="onTrafficTimeSliderInput()" />
+        </div>
+        <div class="traffic-slider-labels">
+          <span id="traffic-time-label-start">最早记录</span>
+          <span style="font-size:10px;opacity:0.7;">拖拽滑块自由截取时间窗口</span>
+          <span id="traffic-time-label-end">最新记录</span>
+        </div>
+      </div>
+
+      <!-- Filter Bar -->
       <div class="traffic-filter-bar">
-        <div style="font-size:14px;font-weight:700;color:var(--text-main);">实时请求流水明细</div>
+        <div style="font-size:14px;font-weight:700;color:var(--text-main);display:flex;align-items:center;gap:6px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:#0891b2;"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          <span>实时调用流水明细</span>
+        </div>
         <div class="traffic-filter-controls">
-          <input type="text" class="traffic-input" id="traffic-search-input" oninput="onTrafficSearchChange(this.value)" placeholder="搜索 IP / 模型 / Key / 渠道..." style="min-width:180px;" />
+          <input type="text" class="traffic-input" id="traffic-search-input" oninput="onTrafficSearchChange(this.value)" placeholder="搜索 IP / 模型 / Key / 渠道 / 地域..." style="min-width:180px;" />
           <select class="traffic-select" id="traffic-select-ip" onchange="onTrafficIPChange(this.value)">
             <option value="">全部客户端 IP</option>
           </select>
@@ -660,12 +682,16 @@
           <span id="traffic-records-count" style="font-size:11.5px;color:var(--text-muted);font-family:var(--mono, monospace);font-variant-numeric:tabular-nums;margin-left:4px;">展示 0 / 0 条</span>
         </div>
       </div>
+
+      <!-- Stream Table -->
       <div style="overflow-x:auto;">
         <table class="table" style="width:100%;font-size:12px;margin:0;">
           <thead>
             <tr style="text-align:left;border-bottom:1px solid var(--border-subtle, rgba(0,0,0,0.06));color:var(--text-muted);font-size:11.5px;">
               <th style="padding:10px 12px;">时间</th>
               <th style="padding:10px 12px;">客户端真实 IP</th>
+              <th style="padding:10px 12px;">来源地域</th>
+              <th style="padding:10px 12px;">ASN 组织</th>
               <th style="padding:10px 12px;">Key 标识</th>
               <th style="padding:10px 12px;">请求模型</th>
               <th style="padding:10px 12px;">映射渠道</th>
@@ -675,9 +701,40 @@
             </tr>
           </thead>
           <tbody id="traffic-tbody">
-            <tr><td colspan="8" style="text-align:center;padding:36px;color:var(--text-muted);">正在拉取网关实时流量拓扑...</td></tr>
+            <tr><td colspan="10" style="text-align:center;padding:36px;color:var(--text-muted);">正在拉取网关实时流量拓扑...</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- 4. Multi-user 3D Association View (IP + Geo + Key) & Regional Distribution -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(360px, 1fr));gap:16px;">
+      <!-- A. IP + Geo + Key 3D Association Cards -->
+      <div class="traffic-ip-ledger-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-size:14px;font-weight:700;color:var(--text-main);display:flex;align-items:center;gap:6px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:#0891b2;"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+            <span>多用户关联视图 (IP · 属地 · Key)</span>
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);">点击 IP 卡片或 Key 胶囊反查联动</span>
+        </div>
+        <div class="traffic-ip-grid" id="traffic-ip-ledger-grid">
+          <!-- Rendered by console-traffic.js -->
+        </div>
+      </div>
+
+      <!-- B. Regional Distribution -->
+      <div class="traffic-ip-ledger-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-size:14px;font-weight:700;color:var(--text-main);display:flex;align-items:center;gap:6px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:#0284c7;"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span>地域分布 Top 来源 (Geo Distribution)</span>
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);">Merged-IP 实时解析</span>
+        </div>
+        <div class="traffic-geo-grid" id="traffic-geo-distribution-grid">
+          <!-- Rendered by console-traffic.js -->
+        </div>
       </div>
     </div>
   </div>

@@ -1,16 +1,25 @@
 /**
  * Gate Admin Console - Visual Gateway (Magpie Architecture)
- * 纯轻量交互式 SVG 拓扑流向图、品牌矢量微标、SWR 极速缓存与多用户 Client IP 全链路追踪
+ * 纯轻量交互式 SVG 拓扑流向图、品牌矢量微标、SWR 极速缓存、IP/属地/Key 三维关联与时间滑动条流水
  */
 
 let cachedTrafficData = null;
 let trafficSelectedIP = '';
+let trafficSelectedKey = '';
 let trafficSelectedModel = '';
 let trafficSelectedStatus = 'all';
 let trafficSearchQuery = '';
 let trafficTimer = null;
 let trafficPollingInterval = 3;
 let trafficHighlightedNode = null;
+
+// 时间范围滑动条状态
+let trafficTimeMinPercent = 0;
+let trafficTimeMaxPercent = 100;
+let trafficBufferMinTs = 0;
+let trafficBufferMaxTs = 0;
+let trafficActiveTimePreset = 'all';
+
 const TRAFFIC_SWR_CACHE_KEY = 'cpa_traffic_snapshot_cache';
 
 // 1. 矢量微标库 (严格 Lucide 规范，1.8px 细线条，零原生 Emoji)
@@ -22,6 +31,8 @@ const TRAFFIC_ICONS = {
   refresh: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>',
   layers: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
   search: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+  mapPin: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>',
+  server: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>',
   arrowRight: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>'
 };
 
@@ -167,7 +178,7 @@ function getBrandNodeVisual(type, rawLabel) {
         color: '#8b5cf6'
       };
     }
-    if (l.includes('minimax') || l.includes('abab')) {
+    if (l.includes('minimax')) {
       return {
         icon: '<path d="M2 7v1a1 1 0 0 0 2 0V5.3a1 1 0 0 1 2 0v5.4a1 1 0 0 0 2 0V2.3a1 1 0 0 1 2 0V9M8 9.3v2.4a1 1 0 0 0 2 0V2.3a1 1 0 0 1 2 0v5.4a1 1 0 0 0 2 0v-2.7a1 1 0 0 0-2 0" fill="none" stroke="#0891b2" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>',
         borderColor: 'rgba(8, 145, 178, 0.55)',
@@ -219,7 +230,6 @@ function getBrandNodeVisual(type, rawLabel) {
 
 // 3. SWR 数据拉取调度
 async function fetchTrafficData(force = false) {
-  // 如果初次进入且尚未挂载数据，先从 sessionStorage 极速尝试直出 (0ms 零白屏)
   if (!cachedTrafficData && !force) {
     try {
       const cachedRaw = sessionStorage.getItem(TRAFFIC_SWR_CACHE_KEY);
@@ -246,12 +256,10 @@ async function fetchTrafficData(force = false) {
     const data = await res.json();
     cachedTrafficData = data;
 
-    // 更新 sessionStorage 缓存
     try {
       sessionStorage.setItem(TRAFFIC_SWR_CACHE_KEY, JSON.stringify(data));
     } catch (e) {}
 
-    // 更新侧边栏导航徽章 (活跃客户端 IP 数)
     const badge = document.getElementById('nav-badge-traffic');
     if (badge && data.summary) {
       const count = Number(data.summary.active_ips || 0);
@@ -259,7 +267,7 @@ async function fetchTrafficData(force = false) {
       badge.style.display = count > 0 ? 'inline-flex' : 'none';
     }
 
-    renderTrafficUI(data, true);
+    renderTrafficUI(data, false);
   } catch (err) {
     console.error('Failed to fetch visual gateway traffic data:', err);
   }
@@ -300,7 +308,6 @@ function renderTrafficUI(data, animate = false) {
   if (!data) return;
   const summary = data.summary || { active_ips: 0, requests_5m: 0, avg_latency_ms: 0, success_rate: 0, total_recorded: 0 };
 
-  // 更新指标卡
   const elIps = document.getElementById('traffic-val-ips');
   const elReqs = document.getElementById('traffic-val-reqs');
   const elLat = document.getElementById('traffic-val-latency');
@@ -313,14 +320,18 @@ function renderTrafficUI(data, animate = false) {
   if (elSucc) elSucc.innerHTML = `${((summary.success_rate || 0) * 100).toFixed(1)}<small>%</small>`;
   if (elTotal) elTotal.textContent = `环形缓冲累计: ${summary.total_recorded || 0} 条`;
 
-  // 渲染拓扑、IP台账与流水明细
+  // 计算时间缓冲区跨度
+  updateTrafficTimeSliderLimits(data.records || data.recent_requests || []);
+
+  // 增量 Diff 渲染拓扑 (根治一闪一闪)
   renderTrafficTopology(data, animate);
-  renderTrafficIPLedger(data.ip_stats || []);
   renderTrafficTable(data.records || data.recent_requests || []);
+  renderTrafficIPLedger(data.ip_stats || []);
+  renderTrafficGeoDistribution(data.geo_stats || []);
   updateTrafficFilterDropdowns(data.records || data.recent_requests || []);
 }
 
-// 6. 动态渲染 Magpie 级 4 阶段交互式 SVG 拓扑图
+// 6. 增量 DOM Diff 渲染拓扑图 (零销毁、零闪烁、平滑位移)
 function renderTrafficTopology(data, animate = false) {
   const container = document.getElementById('traffic-topology-canvas-container');
   if (!container) return;
@@ -346,9 +357,9 @@ function renderTrafficTopology(data, animate = false) {
   const colStatuses = (topology.nodes || []).filter(n => n.type === 'status').slice(0, 8);
 
   const maxNodes = Math.max(colIPs.length, colModels.length, colChannels.length, colStatuses.length, 1);
-  const svgHeight = Math.max(260, maxNodes * 50 + 48);
-  const nodeW = 156;
-  const nodeH = 32;
+  const svgHeight = Math.max(260, maxNodes * 52 + 48);
+  const nodeW = 168;
+  const nodeH = 34;
   const nodePositions = {};
 
   const calcPositions = (items, x) => {
@@ -362,11 +373,40 @@ function renderTrafficTopology(data, animate = false) {
   };
 
   calcPositions(colIPs, 24);
-  calcPositions(colModels, 274);
-  calcPositions(colChannels, 524);
-  calcPositions(colStatuses, 774);
+  calcPositions(colModels, 280);
+  calcPositions(colChannels, 536);
+  calcPositions(colStatuses, 792);
 
-  // 判定是否激活链路高亮 (严格依阶段有向追踪，杜绝共享 Status:2xx 汇聚节点横向泄露)
+  // 1. 初始化持久化外层 SVG (仅在初次或被清空时创建)
+  let svgEl = document.getElementById('traffic-topology-svg');
+  if (!svgEl || !container.contains(svgEl)) {
+    container.innerHTML = `
+      <svg id="traffic-topology-svg" viewBox="0 0 984 ${svgHeight}" style="width:100%;min-width:940px;height:${svgHeight}px;display:block;">
+        <defs>
+          <linearGradient id="grad-active-link" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#06b6d4" />
+            <stop offset="100%" stop-color="#3b82f6" />
+          </linearGradient>
+        </defs>
+        <text x="24" y="20" fill="#0891b2" font-size="11" font-weight="700" letter-spacing="0.04em">STAGE 1 · CLIENT IP</text>
+        <text x="280" y="20" fill="#7c3aed" font-size="11" font-weight="700" letter-spacing="0.04em">STAGE 2 · REQUEST MODEL</text>
+        <text x="536" y="20" fill="#d97706" font-size="11" font-weight="700" letter-spacing="0.04em">STAGE 3 · ROUTED CHANNEL</text>
+        <text x="792" y="20" fill="#059669" font-size="11" font-weight="700" letter-spacing="0.04em">STAGE 4 · OUTCOME STATUS</text>
+        <g id="traffic-links-layer"></g>
+        <g id="traffic-nodes-layer"></g>
+      </svg>
+    `;
+    svgEl = document.getElementById('traffic-topology-svg');
+  } else {
+    svgEl.setAttribute('viewBox', `0 0 984 ${svgHeight}`);
+    svgEl.style.height = `${svgHeight}px`;
+  }
+
+  const linksLayer = document.getElementById('traffic-links-layer');
+  const nodesLayer = document.getElementById('traffic-nodes-layer');
+  if (!linksLayer || !nodesLayer) return;
+
+  // 2. 有向 DAG 高亮拓扑计算
   const isFiltered = Boolean(trafficHighlightedNode);
   const activeLinks = new Set();
   const activeNodes = new Set();
@@ -462,14 +502,16 @@ function renderTrafficTopology(data, animate = false) {
     }
   }
 
-  // 构建 Links SVG (Smooth Bezier Curves)
-  let linksSvg = '';
+  // 3. 增量 Diff 更新 Links (平滑过渡 d 属性与透明度，绝不销毁 DOM)
+  const seenLinkKeys = new Set();
   for (const link of (topology.links || [])) {
     const p1 = nodePositions[link.source];
     const p2 = nodePositions[link.target];
     if (!p1 || !p2) continue;
 
     const linkKey = `${link.source}|${link.target}`;
+    seenLinkKeys.add(linkKey);
+
     const isLinkActive = !isFiltered || activeLinks.has(linkKey);
     const x1 = p1.x + nodeW;
     const y1 = p1.y + nodeH / 2;
@@ -487,54 +529,101 @@ function renderTrafficTopology(data, animate = false) {
       strokeW = Math.max(2.5, strokeW + 1.2);
     }
 
-    const pathClass = `traffic-link-path ${isLinkActive ? 'is-active' : 'is-dimmed'}`;
-    linksSvg += `<path d="${d}" fill="none" stroke="${strokeColor}" stroke-width="${strokeW}" class="${pathClass}" />`;
+    let pathEl = linksLayer.querySelector(`path[data-link-key="${CSS.escape(linkKey)}"]`);
+    if (!pathEl) {
+      pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      pathEl.setAttribute('data-link-key', linkKey);
+      pathEl.setAttribute('fill', 'none');
+      linksLayer.appendChild(pathEl);
+    }
+
+    pathEl.setAttribute('d', d);
+    pathEl.setAttribute('stroke', strokeColor);
+    pathEl.setAttribute('stroke-width', String(strokeW));
+    pathEl.setAttribute('class', `traffic-link-path ${isLinkActive ? 'is-active' : 'is-dimmed'}`);
   }
 
-  // 构建 Nodes SVG (内嵌品牌几何矢量微标)
-  let nodesSvg = '';
+  // 移除过期 Links
+  linksLayer.querySelectorAll('path[data-link-key]').forEach(el => {
+    if (!seenLinkKeys.has(el.getAttribute('data-link-key'))) {
+      el.remove();
+    }
+  });
+
+  // 4. 增量 Diff 更新 Nodes (平滑插值 transform 坐标，更新计数，绝不销毁 DOM)
+  const seenNodeIds = new Set();
   for (const [id, pos] of Object.entries(nodePositions)) {
     const item = pos.item;
+    seenNodeIds.add(id);
+
     const isNodeActive = !isFiltered || activeNodes.has(id);
     const isNodeSelected = trafficHighlightedNode === id;
     const visual = getBrandNodeVisual(item.type, item.label);
 
     let shortLabel = item.label;
-    if (shortLabel.length > 13) {
-      shortLabel = shortLabel.slice(0, 12) + '…';
+    if (shortLabel.length > 14) {
+      shortLabel = shortLabel.slice(0, 13) + '…';
     }
 
-    const groupClass = `traffic-node-group ${isNodeActive ? '' : 'is-dimmed'} ${isNodeSelected ? 'is-selected' : ''}`;
+    let subLocation = '';
+    if (item.type === 'client_ip') {
+      if (item.geo && (item.geo.formatted || item.geo.country)) {
+        subLocation = item.geo.formatted || item.geo.country;
+      } else if (item.label.startsWith('172.18.') || item.label.startsWith('172.17.')) {
+        subLocation = 'Docker Gateway';
+      } else if (item.label.startsWith('100.')) {
+        subLocation = 'Tailnet Mesh';
+      } else if (item.label === '127.0.0.1') {
+        subLocation = '本机回环';
+      }
+      if (subLocation.length > 14) {
+        subLocation = subLocation.slice(0, 13) + '…';
+      }
+    }
 
-    nodesSvg += `
-      <g transform="translate(${pos.x}, ${pos.y})" class="${groupClass}" onclick="toggleHighlightTrafficNode('${escapeHtml(id)}')">
+    let nodeGroup = nodesLayer.querySelector(`g[data-node-id="${CSS.escape(id)}"]`);
+    if (!nodeGroup) {
+      nodeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      nodeGroup.setAttribute('data-node-id', id);
+      nodeGroup.setAttribute('onclick', `toggleHighlightTrafficNode('${escapeHtml(id)}')`);
+
+      const textSvg = subLocation
+        ? `<text class="node-title" x="30" y="16.5" fill="var(--text-main, #0f172a)" font-size="10.5" font-weight="700" font-family="var(--mono, monospace)">${escapeHtml(shortLabel)}</text>
+           <text class="node-sub" x="30" y="27" fill="var(--text-muted, #64748b)" font-size="8.5" font-weight="500">${escapeHtml(subLocation)}</text>`
+        : `<text class="node-title" x="30" y="21" fill="var(--text-main, #0f172a)" font-size="11" font-weight="600" font-family="var(--mono, monospace)">${escapeHtml(shortLabel)}</text>`;
+
+      nodeGroup.innerHTML = `
         <rect class="node-box" width="${nodeW}" height="${nodeH}" rx="8" fill="${visual.bgColor}" stroke="${visual.borderColor}" stroke-width="1.2" />
-        <g transform="translate(8, 8)">
+        <g transform="translate(8, 9)">
           <svg width="16" height="16" viewBox="0 0 16 16">
             ${visual.icon}
           </svg>
         </g>
-        <text x="30" y="20.5" fill="var(--text-main, #0f172a)" font-size="11" font-weight="600" font-family="var(--mono, monospace)">${escapeHtml(shortLabel)}</text>
-        <rect x="${nodeW - 32}" y="7" width="24" height="18" rx="9" fill="rgba(15, 23, 42, 0.08)" />
-        <text x="${nodeW - 20}" y="20" fill="var(--text-main, #0f172a)" font-size="9.5" font-weight="700" text-anchor="middle" font-family="var(--mono, monospace)">${item.count}</text>
-      </g>
-    `;
+        ${textSvg}
+        <rect x="${nodeW - 32}" y="8" width="24" height="18" rx="9" fill="rgba(15, 23, 42, 0.08)" />
+        <text class="node-count-text" x="${nodeW - 20}" y="21" fill="var(--text-main, #0f172a)" font-size="9.5" font-weight="700" text-anchor="middle" font-family="var(--mono, monospace)">${item.count}</text>
+      `;
+      nodesLayer.appendChild(nodeGroup);
+    } else {
+      // 节点已存在：更新位置坐标与计数
+      const countEl = nodeGroup.querySelector('.node-count-text');
+      if (countEl) countEl.textContent = String(item.count);
+
+      const subEl = nodeGroup.querySelector('.node-sub');
+      if (subEl && subLocation) subEl.textContent = subLocation;
+    }
+
+    // 采用 CSS transform 平滑位移
+    nodeGroup.setAttribute('transform', `translate(${pos.x}, ${pos.y})`);
+    nodeGroup.setAttribute('class', `traffic-node-group ${isNodeActive ? '' : 'is-dimmed'} ${isNodeSelected ? 'is-selected' : ''}`);
   }
 
-  const containerClass = animate ? 'traffic-fade-in' : '';
-  container.innerHTML = `
-    <div class="${containerClass}">
-      <svg viewBox="0 0 954 ${svgHeight}" style="width:100%;min-width:910px;height:${svgHeight}px;display:block;">
-        <!-- Column Stage Headers -->
-        <text x="24" y="20" fill="#0891b2" font-size="11" font-weight="700" letter-spacing="0.04em">STAGE 1 · CLIENT IP</text>
-        <text x="274" y="20" fill="#7c3aed" font-size="11" font-weight="700" letter-spacing="0.04em">STAGE 2 · REQUEST MODEL</text>
-        <text x="524" y="20" fill="#d97706" font-size="11" font-weight="700" letter-spacing="0.04em">STAGE 3 · ROUTED CHANNEL</text>
-        <text x="774" y="20" fill="#059669" font-size="11" font-weight="700" letter-spacing="0.04em">STAGE 4 · OUTCOME STATUS</text>
-        <g>${linksSvg}</g>
-        <g>${nodesSvg}</g>
-      </svg>
-    </div>
-  `;
+  // 移除过期 Nodes
+  nodesLayer.querySelectorAll('g[data-node-id]').forEach(el => {
+    if (!seenNodeIds.has(el.getAttribute('data-node-id'))) {
+      el.remove();
+    }
+  });
 }
 
 // 7. 拓扑节点交互高亮追踪
@@ -560,7 +649,7 @@ function toggleHighlightTrafficNode(nodeId) {
   }
 }
 
-// 8. 渲染多用户 IP 统计台账 (带活跃呼吸微点与网络类型徽章)
+// 8. 渲染多用户关联视图 (IP · 属地 · Key 三维关联台账)
 function renderTrafficIPLedger(ipStats) {
   const container = document.getElementById('traffic-ip-ledger-grid');
   if (!container) return;
@@ -582,6 +671,44 @@ function renderTrafficIPLedger(ipStats) {
       netBadge = '<span style="font-size:10px;padding:1px 5px;border-radius:4px;background:rgba(139,92,246,0.12);color:#8b5cf6;font-weight:600;">Tailnet</span>';
     }
 
+    // 属地与 ASN
+    let locLine = '';
+    if (s.geo && (s.geo.formatted || s.geo.country)) {
+      const loc = s.geo.formatted || s.geo.country;
+      const asn = s.geo.asn ? `AS${s.geo.asn} ${s.geo.asn_org || ''}`.trim() : (s.geo.asn_org || '');
+      locLine = `
+        <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);margin:2px 0 4px 0;flex-wrap:wrap;">
+          <span style="display:inline-flex;color:#0284c7;">${TRAFFIC_ICONS.mapPin}</span>
+          <span style="font-weight:600;color:var(--text-main);">${escapeHtml(loc)}</span>
+          ${asn ? `<span style="opacity:0.65;font-size:10px;">(${escapeHtml(asn)})</span>` : ''}
+          ${s.geo.is_proxy ? '<span class="traffic-pill traffic-pill-danger" style="font-size:9px;padding:0 4px;">VPN/Proxy</span>' : ''}
+        </div>
+      `;
+    }
+
+    // 该 IP 名下所有使用过的 Keys 胶囊 (支持点击反查)
+    let keysLine = '';
+    if (Array.isArray(s.keys) && s.keys.length > 0) {
+      const keyPills = s.keys.map(k => {
+        const isKeyActive = trafficSelectedKey === k.key;
+        return `
+          <span class="traffic-pill traffic-pill-key ${isKeyActive ? 'is-active' : ''}" onclick="event.stopPropagation(); filterTrafficByKey('${escapeHtml(k.key)}')" title="点击反查使用此 Key 的所有关联 IP">
+            Key: ${escapeHtml(k.key)} (${k.request_count}次 · ${(k.tokens || 0).toLocaleString()}tok)
+          </span>
+        `;
+      }).join(' ');
+
+      keysLine = `
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin:4px 0;">
+          ${keyPills}
+        </div>
+      `;
+    }
+
+    // 成功率与平均时延
+    const succPct = ((s.success_rate || 0) * 100).toFixed(1);
+    const avgLat = Math.round(s.avg_latency_ms || 0);
+
     return `
       <div class="traffic-ip-card ${isSelected ? 'is-active' : ''}" onclick="filterTrafficByIP('${escapeHtml(s.ip)}')">
         <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -592,9 +719,13 @@ function renderTrafficIPLedger(ipStats) {
           </div>
           <span style="font-size:11px;color:var(--text-muted);">${timeStr}</span>
         </div>
-        <div style="display:flex;gap:14px;font-size:11.5px;margin:4px 0;color:var(--text-muted);">
+        ${locLine}
+        ${keysLine}
+        <div style="display:flex;gap:14px;font-size:11.5px;margin:4px 0;color:var(--text-muted);flex-wrap:wrap;">
           <span>请求: <strong style="color:var(--text-main);font-family:var(--mono, monospace);">${s.request_count}</strong></span>
           <span>Tokens: <strong style="color:#7c3aed;font-family:var(--mono, monospace);">${(s.tokens || 0).toLocaleString()}</strong></span>
+          <span>成功率: <strong style="color:#059669;font-family:var(--mono, monospace);">${succPct}%</strong></span>
+          <span>延迟: <strong style="color:var(--text-main);font-family:var(--mono, monospace);">${avgLat}ms</strong></span>
         </div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px;">${modelsBadge}</div>
       </div>
@@ -602,14 +733,169 @@ function renderTrafficIPLedger(ipStats) {
   }).join('');
 }
 
-// 9. 渲染实时调用流水明细表格
+// 8.5 渲染地域分布 Top 来源排行
+function renderTrafficGeoDistribution(geoStats) {
+  const container = document.getElementById('traffic-geo-distribution-grid');
+  if (!container) return;
+
+  if (!geoStats || geoStats.length === 0) {
+    container.innerHTML = `<div style="color:var(--text-muted);font-size:12px;padding:12px 0;">暂无地域解析数据</div>`;
+    return;
+  }
+
+  container.innerHTML = geoStats.slice(0, 6).map((g, idx) => {
+    return `
+      <div class="traffic-geo-card">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="traffic-geo-rank ${idx < 3 ? 'is-top' : ''}">${idx + 1}</span>
+          <div style="display:flex;flex-direction:column;gap:1px;">
+            <div style="display:flex;align-items:center;gap:5px;">
+              <span style="color:#0284c7;display:inline-flex;">${TRAFFIC_ICONS.mapPin}</span>
+              <span style="font-size:12px;font-weight:600;color:var(--text-main);">${escapeHtml(g.location)}</span>
+            </div>
+            <span style="font-size:10.5px;color:var(--text-muted);">${(g.tokens || 0).toLocaleString()} tokens</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          ${g.is_proxy ? '<span class="traffic-pill traffic-pill-warning" style="font-size:9px;padding:1px 4px;">Proxy</span>' : ''}
+          <span style="font-family:var(--mono, monospace);font-weight:700;font-size:12px;color:#0284c7;">${g.request_count} 次</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// 9. 更新时间范围滑动条极值
+function updateTrafficTimeSliderLimits(records) {
+  if (!records || records.length === 0) {
+    trafficBufferMinTs = 0;
+    trafficBufferMaxTs = 0;
+    return;
+  }
+
+  let minTs = records[0].timestamp;
+  let maxTs = records[0].timestamp;
+  for (const r of records) {
+    if (r.timestamp < minTs) minTs = r.timestamp;
+    if (r.timestamp > maxTs) maxTs = r.timestamp;
+  }
+
+  trafficBufferMinTs = minTs;
+  trafficBufferMaxTs = maxTs;
+
+  const startLabel = document.getElementById('traffic-time-label-start');
+  const endLabel = document.getElementById('traffic-time-label-end');
+  if (startLabel) startLabel.textContent = minTs ? new Date(minTs * 1000).toLocaleTimeString() : '-';
+  if (endLabel) endLabel.textContent = maxTs ? new Date(maxTs * 1000).toLocaleTimeString() : '-';
+
+  updateTrafficSliderProgressUI();
+}
+
+// 10. 时间滑动条输入与快捷预设处理
+function onTrafficTimeSliderInput() {
+  trafficActiveTimePreset = 'custom';
+  document.querySelectorAll('.traffic-preset-btn').forEach(b => b.classList.remove('active'));
+
+  const minInput = document.getElementById('traffic-time-min');
+  const maxInput = document.getElementById('traffic-time-max');
+  if (!minInput || !maxInput) return;
+
+  let minVal = Number(minInput.value);
+  let maxVal = Number(maxInput.value);
+
+  if (minVal > maxVal) {
+    const tmp = minVal;
+    minVal = maxVal;
+    maxVal = tmp;
+  }
+
+  trafficTimeMinPercent = minVal;
+  trafficTimeMaxPercent = maxVal;
+
+  updateTrafficSliderProgressUI();
+  if (cachedTrafficData) {
+    renderTrafficTable(cachedTrafficData.records || cachedTrafficData.recent_requests || []);
+  }
+}
+
+function updateTrafficSliderProgressUI() {
+  const progress = document.getElementById('traffic-slider-progress');
+  const currentLabel = document.getElementById('traffic-time-label-current');
+  if (!progress) return;
+
+  progress.style.left = `${trafficTimeMinPercent}%`;
+  progress.style.right = `${100 - trafficTimeMaxPercent}%`;
+
+  if (currentLabel) {
+    if (trafficTimeMinPercent === 0 && trafficTimeMaxPercent === 100) {
+      currentLabel.textContent = '全量跨度';
+    } else if (trafficBufferMinTs > 0 && trafficBufferMaxTs > 0) {
+      const span = trafficBufferMaxTs - trafficBufferMinTs;
+      const startT = Math.round(trafficBufferMinTs + span * (trafficTimeMinPercent / 100));
+      const endT = Math.round(trafficBufferMinTs + span * (trafficTimeMaxPercent / 100));
+      currentLabel.textContent = `${new Date(startT * 1000).toLocaleTimeString()} ➔ ${new Date(endT * 1000).toLocaleTimeString()}`;
+    }
+  }
+}
+
+function setTrafficTimePreset(preset) {
+  trafficActiveTimePreset = preset;
+  document.querySelectorAll('.traffic-preset-btn').forEach(b => {
+    b.classList.toggle('active', b.id === `btn-preset-${preset}`);
+  });
+
+  const minInput = document.getElementById('traffic-time-min');
+  const maxInput = document.getElementById('traffic-time-max');
+  if (!minInput || !maxInput) return;
+
+  if (preset === 'all' || trafficBufferMaxTs <= trafficBufferMinTs) {
+    trafficTimeMinPercent = 0;
+    trafficTimeMaxPercent = 100;
+  } else {
+    const nowTs = Math.floor(Date.now() / 1000);
+    const span = Math.max(1, trafficBufferMaxTs - trafficBufferMinTs);
+    let durationSec = 300; // 5m default
+    if (preset === '1h') durationSec = 3600;
+    else if (preset === '15m') durationSec = 900;
+    else if (preset === '5m') durationSec = 300;
+
+    const targetStartTs = Math.max(trafficBufferMinTs, trafficBufferMaxTs - durationSec);
+    trafficTimeMinPercent = Math.max(0, Math.min(100, Math.round(((targetStartTs - trafficBufferMinTs) / span) * 100)));
+    trafficTimeMaxPercent = 100;
+  }
+
+  minInput.value = String(trafficTimeMinPercent);
+  maxInput.value = String(trafficTimeMaxPercent);
+
+  updateTrafficSliderProgressUI();
+  if (cachedTrafficData) {
+    renderTrafficTable(cachedTrafficData.records || cachedTrafficData.recent_requests || []);
+  }
+}
+
+// 11. 渲染实时调用流水明细表格 (10 列规范对齐)
 function renderTrafficTable(records) {
   const tbody = document.getElementById('traffic-tbody');
   const countEl = document.getElementById('traffic-records-count');
   if (!tbody) return;
 
+  // 计算滑动条时间窗口
+  let filterStartTs = 0;
+  let filterEndTs = 0;
+  if (trafficBufferMinTs > 0 && trafficBufferMaxTs > 0) {
+    const span = trafficBufferMaxTs - trafficBufferMinTs;
+    filterStartTs = trafficBufferMinTs + span * (trafficTimeMinPercent / 100);
+    filterEndTs = trafficBufferMinTs + span * (trafficTimeMaxPercent / 100);
+  }
+
   const filtered = records.filter(r => {
+    // 时间范围滑动条过滤
+    if (filterStartTs > 0 && filterEndTs > 0) {
+      if (r.timestamp < filterStartTs || r.timestamp > filterEndTs) return false;
+    }
+
     if (trafficSelectedIP && r.client_ip !== trafficSelectedIP) return false;
+    if (trafficSelectedKey && r.key_label !== trafficSelectedKey) return false;
     if (trafficSelectedModel && r.model !== trafficSelectedModel && r.request_model !== trafficSelectedModel) return false;
     if (trafficSelectedStatus !== 'all') {
       if (trafficSelectedStatus === '2xx' && (r.status < 200 || r.status >= 300)) return false;
@@ -624,7 +910,8 @@ function renderTrafficTable(records) {
       const mKey = r.key_label && r.key_label.toLowerCase().includes(q);
       const mChan = r.channel && r.channel.toLowerCase().includes(q);
       const mPath = r.path && r.path.toLowerCase().includes(q);
-      if (!mIP && !mModel && !mReqModel && !mKey && !mChan && !mPath) return false;
+      const mGeo = r.geo && ((r.geo.formatted && r.geo.formatted.toLowerCase().includes(q)) || (r.geo.country && r.geo.country.toLowerCase().includes(q)) || (r.geo.region && r.geo.region.toLowerCase().includes(q)) || (r.geo.city && r.geo.city.toLowerCase().includes(q)) || (r.geo.asn_org && r.geo.asn_org.toLowerCase().includes(q)));
+      if (!mIP && !mModel && !mReqModel && !mKey && !mChan && !mPath && !mGeo) return false;
     }
     return true;
   });
@@ -634,7 +921,7 @@ function renderTrafficTable(records) {
   }
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:36px;color:var(--text-muted);font-size:12.5px;">无匹配的调用记录</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:36px;color:var(--text-muted);font-size:12.5px;">无匹配的调用记录</td></tr>`;
     return;
   }
 
@@ -643,6 +930,13 @@ function renderTrafficTable(records) {
     const is4xx = r.status >= 400 && r.status < 500;
     const statusClass = isSuccess ? 'traffic-pill-success' : is4xx ? 'traffic-pill-warning' : 'traffic-pill-danger';
     const timeStr = r.timestamp ? new Date(r.timestamp * 1000).toLocaleTimeString() : '-';
+
+    // 属地与 ASN
+    let locText = (r.geo && (r.geo.formatted || r.geo.country))
+      ? (r.geo.formatted || r.geo.country)
+      : (r.client_ip === '172.18.0.1' || r.client_ip.startsWith('172.18.') ? 'Docker Gateway' : (r.client_ip.startsWith('100.') ? 'Tailnet 专网' : (r.client_ip === '127.0.0.1' ? '本机回环' : '未知地域')));
+    const isProxy = Boolean(r.geo && (r.geo.is_proxy || r.geo.is_vpn || r.geo.is_tor));
+    const asnText = r.geo && r.geo.asn ? `AS${r.geo.asn} ${r.geo.asn_org || ''}`.trim() : (r.geo?.asn_org || '-');
 
     // 如果客户端请求模型与实际路由执行模型不同，展示真实透传流向
     let modelHtml = '';
@@ -661,7 +955,14 @@ function renderTrafficTable(records) {
         <td style="padding:10px 12px;">
           <span class="traffic-pill traffic-pill-ip" onclick="filterTrafficByIP('${escapeHtml(r.client_ip)}')" title="点击筛选此 IP">${escapeHtml(r.client_ip || '-')}</span>
         </td>
-        <td style="padding:10px 12px;color:var(--text-muted);font-size:11.5px;">${escapeHtml(r.key_label || '-')}</td>
+        <td style="padding:10px 12px;">
+          <span class="traffic-pill traffic-pill-geo">${escapeHtml(locText)}</span>
+          ${isProxy ? ' <span class="traffic-pill traffic-pill-danger" style="font-size:9px;padding:0 4px;">Proxy</span>' : ''}
+        </td>
+        <td style="padding:10px 12px;color:var(--text-muted);font-size:11px;font-family:var(--mono, monospace);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(asnText)}">${escapeHtml(asnText)}</td>
+        <td style="padding:10px 12px;">
+          <span class="traffic-pill traffic-pill-key ${trafficSelectedKey === r.key_label ? 'is-active' : ''}" onclick="filterTrafficByKey('${escapeHtml(r.key_label)}')" title="点击反查使用此 Key 的所有 IP">${escapeHtml(r.key_label || '-')}</span>
+        </td>
         <td style="padding:10px 12px;"><span class="traffic-pill traffic-pill-model">${modelHtml}</span></td>
         <td style="padding:10px 12px;"><span class="traffic-pill traffic-pill-channel">${escapeHtml(r.channel || '-')}</span></td>
         <td style="padding:10px 12px;"><span class="traffic-pill ${statusClass}">${r.status || 200}</span></td>
@@ -672,7 +973,7 @@ function renderTrafficTable(records) {
   }).join('');
 }
 
-// 10. 更新下拉筛选菜单
+// 12. 更新下拉筛选菜单
 function updateTrafficFilterDropdowns(records) {
   const ipSelect = document.getElementById('traffic-select-ip');
   const modelSelect = document.getElementById('traffic-select-model');
@@ -696,12 +997,17 @@ function updateTrafficFilterDropdowns(records) {
   modelSelect.innerHTML = `<option value="">全部请求模型</option>` + models.map(m => `<option value="${escapeHtml(m)}" ${m === currentModel ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('');
 }
 
-// 11. 交互过滤操作
+// 13. 交互过滤操作 (支持 IP 筛选与 Key 反查)
 function filterTrafficByIP(ip) {
   trafficSelectedIP = (trafficSelectedIP === ip) ? '' : ip;
   trafficHighlightedNode = trafficSelectedIP ? `ip:${trafficSelectedIP}` : null;
   const ipSelect = document.getElementById('traffic-select-ip');
   if (ipSelect) ipSelect.value = trafficSelectedIP;
+  if (cachedTrafficData) renderTrafficUI(cachedTrafficData, false);
+}
+
+function filterTrafficByKey(keyName) {
+  trafficSelectedKey = (trafficSelectedKey === keyName) ? '' : keyName;
   if (cachedTrafficData) renderTrafficUI(cachedTrafficData, false);
 }
 
@@ -729,10 +1035,12 @@ function onTrafficSearchChange(val) {
 
 function resetTrafficFilters() {
   trafficSelectedIP = '';
+  trafficSelectedKey = '';
   trafficSelectedModel = '';
   trafficSelectedStatus = 'all';
   trafficSearchQuery = '';
   trafficHighlightedNode = null;
+  setTrafficTimePreset('all');
 
   const ipSel = document.getElementById('traffic-select-ip');
   const mSel = document.getElementById('traffic-select-model');
@@ -765,7 +1073,6 @@ function setTrafficPollingRate(rate) {
 // 页面加载与 SWR 初次直出
 document.addEventListener('DOMContentLoaded', () => {
   setTrafficPollingRate(3);
-  // 初次尝试 SWR 缓存极速回显
   try {
     const cachedRaw = sessionStorage.getItem(TRAFFIC_SWR_CACHE_KEY);
     if (cachedRaw) {

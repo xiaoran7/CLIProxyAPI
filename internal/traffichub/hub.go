@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/geoip"
 )
 
 const (
@@ -68,6 +70,9 @@ func (h *Hub) Record(rec TrafficRecord) {
 	}
 	if rec.ClientIP == "" {
 		rec.ClientIP = "127.0.0.1"
+	}
+	if rec.Geo == nil {
+		rec.Geo = geoip.Default().Lookup(rec.ClientIP)
 	}
 	if rec.Model == "" || strings.EqualFold(rec.Model, "unknown") {
 		if rec.Path != "" && rec.Path != "/" {
@@ -150,6 +155,7 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 			RecentRequests: []TrafficRecord{},
 			Topology:       Topology{Nodes: []TopologyNode{}, Links: []TopologyLink{}},
 			IPStats:        []IPStat{},
+			GeoStats:       []GeoSummaryStat{},
 		}
 	}
 
@@ -168,21 +174,52 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 		overallLatSum int64
 	)
 
+	type ipKeyAccum struct {
+		key    string
+		count  int64
+		tokens int64
+	}
+
 	type ipAccum struct {
-		ip        string
-		count     int64
-		tokens    int64
-		lastSeen  int64
-		modelHits map[string]int64
+		ip           string
+		count        int64
+		tokens       int64
+		lastSeen     int64
+		latencySum   int64
+		successCount int64
+		modelHits    map[string]int64
+		keyHits      map[string]*ipKeyAccum
+		geo          *geoip.Location
 	}
 	ipMap := make(map[string]*ipAccum)
+
+	type keyAccum struct {
+		key          string
+		ips          map[string]struct{}
+		requestCount int64
+		tokens       int64
+		lastSeen     int64
+	}
+	keyMap := make(map[string]*keyAccum)
+
+	type geoAccum struct {
+		location     string
+		countryCode  string
+		requestCount int64
+		tokens       int64
+		isProxy      bool
+	}
+	geoMap := make(map[string]*geoAccum)
 
 	// Topology link counters: "source|target" -> count
 	linkCounts := make(map[string]int64)
 	nodeMap := make(map[string]*TopologyNode)
 
-	ensureNode := func(id, nodeType, label string) *TopologyNode {
+	ensureNode := func(id, nodeType, label string, geo *geoip.Location) *TopologyNode {
 		if n, ok := nodeMap[id]; ok {
+			if n.Geo == nil && geo != nil {
+				n.Geo = geo
+			}
 			return n
 		}
 		n := &TopologyNode{
@@ -190,6 +227,7 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 			Type:  nodeType,
 			Label: label,
 			Count: 0,
+			Geo:   geo,
 		}
 		nodeMap[id] = n
 		return n
@@ -220,16 +258,76 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 			acc = &ipAccum{
 				ip:        r.ClientIP,
 				modelHits: make(map[string]int64),
+				keyHits:   make(map[string]*ipKeyAccum),
+				geo:       r.Geo,
 			}
 			ipMap[r.ClientIP] = acc
 		}
+		if acc.geo == nil && r.Geo != nil {
+			acc.geo = r.Geo
+		}
 		acc.count++
 		acc.tokens += r.Tokens
+		acc.latencySum += r.LatencyMs
+		if isSuccess {
+			acc.successCount++
+		}
 		if r.Timestamp > acc.lastSeen {
 			acc.lastSeen = r.Timestamp
 		}
 		if r.Model != "" {
 			acc.modelHits[r.Model]++
+		}
+		keyName := r.KeyLabel
+		if keyName == "" {
+			keyName = "-"
+		}
+		kh, okKey := acc.keyHits[keyName]
+		if !okKey {
+			kh = &ipKeyAccum{key: keyName}
+			acc.keyHits[keyName] = kh
+		}
+		kh.count++
+		kh.tokens += r.Tokens
+
+		// Key summary aggregation
+		ka, okKa := keyMap[keyName]
+		if !okKa {
+			ka = &keyAccum{
+				key: keyName,
+				ips: make(map[string]struct{}),
+			}
+			keyMap[keyName] = ka
+		}
+		ka.ips[r.ClientIP] = struct{}{}
+		ka.requestCount++
+		ka.tokens += r.Tokens
+		if r.Timestamp > ka.lastSeen {
+			ka.lastSeen = r.Timestamp
+		}
+
+		// Geo regional stats aggregation
+		locStr := "未知地域"
+		cCode := "UN"
+		isProxy := false
+		if r.Geo != nil {
+			locStr = r.Geo.Format()
+			cCode = r.Geo.CountryCode
+			isProxy = r.Geo.IsProxy || r.Geo.IsVPN || r.Geo.IsTor
+		}
+		ga, okGeo := geoMap[locStr]
+		if !okGeo {
+			ga = &geoAccum{
+				location:    locStr,
+				countryCode: cCode,
+				isProxy:     isProxy,
+			}
+			geoMap[locStr] = ga
+		}
+		ga.requestCount++
+		ga.tokens += r.Tokens
+		if isProxy {
+			ga.isProxy = true
 		}
 
 		// Topology node & link generation
@@ -239,13 +337,13 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 		channelNodeID := "channel:" + r.Channel
 		statusNodeID := "status:" + statusGroup
 
-		nIP := ensureNode(ipNodeID, "client_ip", r.ClientIP)
+		nIP := ensureNode(ipNodeID, "client_ip", r.ClientIP, r.Geo)
 		nIP.Count++
-		nModel := ensureNode(modelNodeID, "model", r.Model)
+		nModel := ensureNode(modelNodeID, "model", r.Model, nil)
 		nModel.Count++
-		nChan := ensureNode(channelNodeID, "channel", r.Channel)
+		nChan := ensureNode(channelNodeID, "channel", r.Channel, nil)
 		nChan.Count++
-		nStatus := ensureNode(statusNodeID, "status", statusGroup)
+		nStatus := ensureNode(statusNodeID, "status", statusGroup, nil)
 		nStatus.Count++
 
 		linkCounts[ipNodeID+"|"+modelNodeID]++
@@ -324,12 +422,39 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 		for i := 0; i < len(mList) && i < 3; i++ {
 			topModels = append(topModels, mList[i].model)
 		}
+
+		keysList := make([]IPKeyStat, 0, len(acc.keyHits))
+		for _, kh := range acc.keyHits {
+			keysList = append(keysList, IPKeyStat{
+				Key:          kh.key,
+				RequestCount: kh.count,
+				Tokens:       kh.tokens,
+			})
+		}
+		sort.Slice(keysList, func(i, j int) bool {
+			if keysList[i].RequestCount != keysList[j].RequestCount {
+				return keysList[i].RequestCount > keysList[j].RequestCount
+			}
+			return keysList[i].Key < keysList[j].Key
+		})
+
+		var ipSuccRate float64
+		var ipAvgLat float64
+		if acc.count > 0 {
+			ipSuccRate = float64(acc.successCount) / float64(acc.count)
+			ipAvgLat = float64(acc.latencySum) / float64(acc.count)
+		}
+
 		ipStats = append(ipStats, IPStat{
 			IP:           acc.ip,
 			RequestCount: acc.count,
 			Tokens:       acc.tokens,
 			LastSeen:     acc.lastSeen,
+			SuccessRate:  ipSuccRate,
+			AvgLatencyMs: ipAvgLat,
 			TopModels:    topModels,
+			Keys:         keysList,
+			Geo:          acc.geo,
 		})
 	}
 	sort.Slice(ipStats, func(i, j int) bool {
@@ -337,6 +462,48 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 			return ipStats[i].RequestCount > ipStats[j].RequestCount
 		}
 		return ipStats[i].IP < ipStats[j].IP
+	})
+
+	// Build KeyStats reverse-lookup aggregation slice
+	keyStats := make([]KeySummaryStat, 0, len(keyMap))
+	for _, ka := range keyMap {
+		ipList := make([]string, 0, len(ka.ips))
+		for ip := range ka.ips {
+			ipList = append(ipList, ip)
+		}
+		sort.Strings(ipList)
+		keyStats = append(keyStats, KeySummaryStat{
+			Key:          ka.key,
+			IPCount:      len(ipList),
+			IPs:          ipList,
+			RequestCount: ka.requestCount,
+			Tokens:       ka.tokens,
+			LastSeen:     ka.lastSeen,
+		})
+	}
+	sort.Slice(keyStats, func(i, j int) bool {
+		if keyStats[i].RequestCount != keyStats[j].RequestCount {
+			return keyStats[i].RequestCount > keyStats[j].RequestCount
+		}
+		return keyStats[i].Key < keyStats[j].Key
+	})
+
+	// Build GeoStats regional aggregation slice
+	geoStats := make([]GeoSummaryStat, 0, len(geoMap))
+	for _, ga := range geoMap {
+		geoStats = append(geoStats, GeoSummaryStat{
+			Location:     ga.location,
+			CountryCode:  ga.countryCode,
+			RequestCount: ga.requestCount,
+			Tokens:       ga.tokens,
+			IsProxy:      ga.isProxy,
+		})
+	}
+	sort.Slice(geoStats, func(i, j int) bool {
+		if geoStats[i].RequestCount != geoStats[j].RequestCount {
+			return geoStats[i].RequestCount > geoStats[j].RequestCount
+		}
+		return geoStats[i].Location < geoStats[j].Location
 	})
 
 	return TrafficResponse{
@@ -353,7 +520,9 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 			Nodes: nodes,
 			Links: links,
 		},
-		IPStats: ipStats,
+		IPStats:  ipStats,
+		KeyStats: keyStats,
+		GeoStats: geoStats,
 	}
 }
 
