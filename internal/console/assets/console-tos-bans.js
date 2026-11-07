@@ -233,7 +233,8 @@
   async function fetchTOSBans(force = false) {
     if (typeof getAdminSecret === 'function' && !getAdminSecret()) return;
     try {
-      const res = await fetch('/console/api/tos-bans', { headers: getAuthHeaders() });
+      const url = force ? '/console/api/tos-bans?refresh=1' : '/console/api/tos-bans';
+      const res = await fetch(url, { headers: getAuthHeaders() });
       if (!res.ok) {
         if (typeof showToast === 'function') showToast(`封禁监控拉取失败: HTTP ${res.status}`, 'error');
         return;

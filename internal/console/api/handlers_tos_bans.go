@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,6 +14,37 @@ import (
 
 // tosScanTimeout bounds how long the console may spend scanning rotated logs.
 const tosScanTimeout = 20 * time.Second
+
+// tosScanCacheTTL keeps the 15s console poll from re-reading every rotated log
+// on each tick. The underlying enforcement records change on the order of
+// hours, so a short cache loses nothing and protects the serving path.
+const tosScanCacheTTL = 45 * time.Second
+
+var (
+	tosScanCacheMu  sync.Mutex
+	tosScanCachedAt time.Time
+	tosScanCached   TOSLogScanResult
+)
+
+// scanTOSBanLogsCached returns a recently scanned result when one exists.
+func scanTOSBanLogsCached() TOSLogScanResult {
+	tosScanCacheMu.Lock()
+	defer tosScanCacheMu.Unlock()
+	if !tosScanCachedAt.IsZero() && time.Since(tosScanCachedAt) < tosScanCacheTTL {
+		return tosScanCached
+	}
+	result := ScanTOSBanLogs("")
+	tosScanCachedAt = time.Now()
+	tosScanCached = result
+	return result
+}
+
+// invalidateTOSScanCache forces the next request to re-read the logs.
+func invalidateTOSScanCache() {
+	tosScanCacheMu.Lock()
+	defer tosScanCacheMu.Unlock()
+	tosScanCachedAt = time.Time{}
+}
 
 // TOSAccountStats summarises how an account behaved around its enforcement so an
 // operator can tell a freshly banned credential from one that died days ago.
@@ -91,7 +123,12 @@ func HandleGetTOSBans(eng *engine.Engine, cpa *CpaClient) gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), tosScanTimeout)
 		defer cancel()
 
-		scan := ScanTOSBanLogs("")
+		// A forced refresh (?refresh=1) bypasses the cache so an operator can
+		// re-read the logs on demand.
+		if strings.TrimSpace(c.Query("refresh")) != "" {
+			invalidateTOSScanCache()
+		}
+		scan := scanTOSBanLogsCached()
 
 		// The log only carries the auth file name, so resolve it against CPA's
 		// auth-file listing to recover the index and the console-facing status.
