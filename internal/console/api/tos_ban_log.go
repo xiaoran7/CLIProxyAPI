@@ -23,6 +23,8 @@ const (
 	// tosLogMaxScanBytes bounds how much of a single log file is inspected so a
 	// multi-hundred-megabyte file cannot stall the console.
 	tosLogMaxScanBytes = 64 << 20
+	// unknownTOSAccount labels a record whose log line carried no identity.
+	unknownTOSAccount = "(未知账号)"
 	// tosLogMaxLineBytes is well above the largest observed upstream diagnostic
 	// (553 bytes) but still guards against pathological single-line files.
 	tosLogMaxLineBytes = 1 << 20
@@ -164,6 +166,7 @@ func ScanTOSBanLogs(dir string) TOSLogScanResult {
 			result.Records = append(result.Records, rec)
 		}
 	}
+	result.Records = coalesceTOSEchoes(result.Records)
 	sort.SliceStable(result.Records, func(i, j int) bool {
 		if result.Records[i].TS == result.Records[j].TS {
 			return result.Records[i].Account < result.Records[j].Account
@@ -273,7 +276,7 @@ func ParseTOSBanLogLine(line string) (TOSBanRecord, bool) {
 	rec.Truncated = strings.HasSuffix(rec.Message, "...") || strings.HasSuffix(trimmed, "...")
 
 	if strings.TrimSpace(rec.Account) == "" {
-		rec.Account = "(未知账号)"
+		rec.Account = unknownTOSAccount
 	}
 	if rec.Provider == "" && strings.Contains(strings.ToLower(rec.AuthFile), "antigravity") {
 		rec.Provider = "antigravity"
@@ -312,4 +315,55 @@ func unquoteJSONFragment(value string) string {
 		return value
 	}
 	return decoded
+}
+
+// coalesceTOSEchoes merges the anonymous executor debug lines into the named
+// conductor record for the same enforcement event. The executor logs the same
+// upstream 403 a moment earlier without any account identity; left separate it
+// would inflate the account count with a phantom entry.
+func coalesceTOSEchoes(records []TOSBanRecord) []TOSBanRecord {
+	// Index the records that do name an account, by second.
+	namedByTS := make(map[int64][]int, len(records))
+	for i, rec := range records {
+		if isNamedTOSRecord(rec) {
+			namedByTS[rec.TS] = append(namedByTS[rec.TS], i)
+		}
+	}
+
+	merged := make([]TOSBanRecord, 0, len(records))
+	for _, rec := range records {
+		if !isNamedTOSRecord(rec) {
+			if idxs, ok := namedByTS[rec.TS]; ok && len(idxs) > 0 {
+				// Attribute the echo to the named record rather than dropping it:
+				// the detail is real, only the identity was missing.
+				src := records[idxs[0]]
+				rec.Account = src.Account
+				rec.AuthFile = src.AuthFile
+				rec.Provider = src.Provider
+				if rec.Model == "" {
+					rec.Model = src.Model
+				}
+			}
+		}
+		// Collapse a duplicate that now resolves to the same event as an
+		// already-kept record.
+		duplicate := false
+		for i := range merged {
+			if merged[i].TS == rec.TS && merged[i].Account == rec.Account && merged[i].Message == rec.Message {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
+		merged = append(merged, rec)
+	}
+	return merged
+}
+
+// isNamedTOSRecord reports whether a record carries a real account identity.
+func isNamedTOSRecord(rec TOSBanRecord) bool {
+	account := strings.TrimSpace(rec.Account)
+	return account != "" && account != unknownTOSAccount
 }

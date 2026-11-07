@@ -240,3 +240,51 @@ func TestUnquoteJSONFragment(t *testing.T) {
 func writeFile(path, body string) error {
 	return os.WriteFile(path, []byte(body), 0o644)
 }
+
+func TestCoalesceTOSEchoesMergesAnonymousEcho(t *testing.T) {
+	// The executor logs the anonymous debug line a moment before the named
+	// conductor record for the same enforcement event.
+	records := []TOSBanRecord{
+		{TS: 1794013244, Account: unknownTOSAccount, Message: "This service has been disabled in this account for violation of Terms of Service.", Status: 403},
+		{TS: 1794013244, Account: "adryanlin381@gmail.com", AuthFile: "antigravity-adryanlin381@gmail.com.json", Provider: "antigravity", Model: "gemini-3.8-flash-high", Message: "This service has been disabled in this account for violation of Terms of Service.", Status: 403},
+		{TS: 1794023260, Account: "adryanlin381@gmail.com", Model: "gemini-3.8-flash-high", Message: "other", Status: 403},
+	}
+
+	merged := coalesceTOSEchoes(records)
+	if len(merged) != 2 {
+		t.Fatalf("merged = %d records, want 2 (echo folded into its named sibling)", len(merged))
+	}
+	for _, rec := range merged {
+		if rec.Account == unknownTOSAccount {
+			t.Fatalf("phantom unknown account survived coalescing: %+v", rec)
+		}
+	}
+	// The surviving record for that second must carry the real identity.
+	found := false
+	for _, rec := range merged {
+		if rec.TS == 1794013244 {
+			found = true
+			if rec.AuthFile == "" || rec.Provider != "antigravity" {
+				t.Errorf("echo identity not backfilled: %+v", rec)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected a record at ts 1794013244")
+	}
+}
+
+func TestCoalesceTOSEchoesKeepsOrphanAnonymous(t *testing.T) {
+	// No named sibling exists, so the anonymous record must be preserved rather
+	// than silently dropped.
+	records := []TOSBanRecord{
+		{TS: 100, Account: unknownTOSAccount, Message: "violation of Terms of Service", Status: 403},
+	}
+	merged := coalesceTOSEchoes(records)
+	if len(merged) != 1 {
+		t.Fatalf("merged = %d, want 1 orphan preserved", len(merged))
+	}
+	if merged[0].Account != unknownTOSAccount {
+		t.Errorf("account = %q, want the placeholder preserved", merged[0].Account)
+	}
+}
