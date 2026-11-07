@@ -26,16 +26,24 @@ var (
 	tosScanCached   TOSLogScanResult
 )
 
-// scanTOSBanLogsCached returns a recently scanned result when one exists.
+// scanTOSBanLogsCached returns a recently scanned result when one exists. The
+// scan itself runs outside the lock so a slow first caller cannot serialise
+// every other console request behind it.
 func scanTOSBanLogsCached() TOSLogScanResult {
 	tosScanCacheMu.Lock()
-	defer tosScanCacheMu.Unlock()
 	if !tosScanCachedAt.IsZero() && time.Since(tosScanCachedAt) < tosScanCacheTTL {
-		return tosScanCached
+		cached := tosScanCached
+		tosScanCacheMu.Unlock()
+		return cached
 	}
+	tosScanCacheMu.Unlock()
+
 	result := ScanTOSBanLogs("")
+
+	tosScanCacheMu.Lock()
 	tosScanCachedAt = time.Now()
 	tosScanCached = result
+	tosScanCacheMu.Unlock()
 	return result
 }
 
