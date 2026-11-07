@@ -43,8 +43,8 @@
     const el24 = document.getElementById('tos-stat-24h');
     const el7 = document.getElementById('tos-stat-7d');
     if (accountsEl) accountsEl.textContent = String(summary?.banned_accounts || 0);
-    if (el24) el24.textContent = String(summary?.forbidden_24h || 0);
-    if (el7) el7.textContent = String(summary?.forbidden_7d || 0);
+    if (el24) el24.textContent = String(summary?.bans_24h || 0);
+    if (el7) el7.textContent = String(summary?.bans_7d || 0);
 
     const badge = document.getElementById('nav-badge-tos-bans');
     if (badge) {

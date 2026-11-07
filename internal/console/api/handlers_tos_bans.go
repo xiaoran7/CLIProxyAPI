@@ -39,7 +39,13 @@ type TOSAccountStats struct {
 
 // TOSBanSummary is the page-level roll-up.
 type TOSBanSummary struct {
-	BannedAccounts int    `json:"banned_accounts"`
+	BannedAccounts int `json:"banned_accounts"`
+	// Bans24h/Bans7d count the enforcement records recovered from the log. They
+	// are the authoritative figure: gate.db routinely reports zero 403s for a
+	// banned account because the conductor retries onto another credential, so
+	// the client-facing status never becomes 403.
+	Bans24h        int    `json:"bans_24h"`
+	Bans7d         int    `json:"bans_7d"`
 	Forbidden24h   int64  `json:"forbidden_24h"`
 	Forbidden7d    int64  `json:"forbidden_7d"`
 	ForbiddenTotal int64  `json:"forbidden_total"`
@@ -185,6 +191,7 @@ func buildTOSSummary(accounts []TOSAccountStats, scan TOSLogScanResult) TOSBanSu
 	if scan.Err != nil {
 		summary.ScanError = scan.Err.Error()
 	}
+	now := summary.ScannedAt
 	for _, acct := range accounts {
 		summary.Forbidden24h += acct.Forbidden24h
 		summary.Forbidden7d += acct.Forbidden7d
@@ -192,6 +199,12 @@ func buildTOSSummary(accounts []TOSAccountStats, scan TOSLogScanResult) TOSBanSu
 		for _, rec := range acct.Records {
 			if rec.Truncated {
 				summary.TruncatedCount++
+			}
+			if now-rec.TS <= 24*3600 {
+				summary.Bans24h++
+			}
+			if now-rec.TS <= 7*86400 {
+				summary.Bans7d++
 			}
 		}
 	}
