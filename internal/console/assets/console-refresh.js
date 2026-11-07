@@ -110,7 +110,8 @@
             fetchStatsData(),
             fetchUpstreamValidations(),
             fetchUpstreamAuthStats(),
-            ensureKeysLoaded(false)
+            ensureKeysLoaded(false),
+            typeof fetchTOSBans === 'function' ? fetchTOSBans(false) : Promise.resolve()
           ]);
         }
       } catch (err) {
