@@ -252,25 +252,26 @@ func TestCoalesceTOSEchoesMergesAnonymousEcho(t *testing.T) {
 
 	merged := coalesceTOSEchoes(records)
 	if len(merged) != 2 {
-		t.Fatalf("merged = %d records, want 2 (echo folded into its named sibling)", len(merged))
+		t.Fatalf("merged = %d records, want 2 (the anonymous echo dropped, the two distinct events kept)", len(merged))
 	}
 	for _, rec := range merged {
 		if rec.Account == unknownTOSAccount {
 			t.Fatalf("phantom unknown account survived coalescing: %+v", rec)
 		}
 	}
-	// The surviving record for that second must carry the real identity.
-	found := false
+	// The surviving record for that second must be the named one, and it must
+	// appear exactly once so the ban tally is not doubled.
+	hits := 0
 	for _, rec := range merged {
 		if rec.TS == 1794013244 {
-			found = true
+			hits++
 			if rec.AuthFile == "" || rec.Provider != "antigravity" {
-				t.Errorf("echo identity not backfilled: %+v", rec)
+				t.Errorf("surviving record lost its identity: %+v", rec)
 			}
 		}
 	}
-	if !found {
-		t.Errorf("expected a record at ts 1794013244")
+	if hits != 1 {
+		t.Errorf("records at ts 1794013244 = %d, want exactly 1", hits)
 	}
 }
 

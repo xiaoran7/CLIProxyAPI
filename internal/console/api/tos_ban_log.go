@@ -317,45 +317,30 @@ func unquoteJSONFragment(value string) string {
 	return decoded
 }
 
-// coalesceTOSEchoes merges the anonymous executor debug lines into the named
+// coalesceTOSEchoes folds the anonymous executor debug lines into the named
 // conductor record for the same enforcement event. The executor logs the same
-// upstream 403 a moment earlier without any account identity; left separate it
-// would inflate the account count with a phantom entry.
+// upstream 403 without any account identity; counting it separately would both
+// inflate the account count with a phantom entry and double the ban tally.
 func coalesceTOSEchoes(records []TOSBanRecord) []TOSBanRecord {
 	// Index the records that do name an account, by second.
-	namedByTS := make(map[int64][]int, len(records))
-	for i, rec := range records {
+	namedByTS := make(map[int64]struct{}, len(records))
+	for _, rec := range records {
 		if isNamedTOSRecord(rec) {
-			namedByTS[rec.TS] = append(namedByTS[rec.TS], i)
+			namedByTS[rec.TS] = struct{}{}
 		}
 	}
 
 	merged := make([]TOSBanRecord, 0, len(records))
 	for _, rec := range records {
 		if !isNamedTOSRecord(rec) {
-			if idxs, ok := namedByTS[rec.TS]; ok && len(idxs) > 0 {
-				// Attribute the echo to the named record rather than dropping it:
-				// the detail is real, only the identity was missing.
-				src := records[idxs[0]]
-				rec.Account = src.Account
-				rec.AuthFile = src.AuthFile
-				rec.Provider = src.Provider
-				if rec.Model == "" {
-					rec.Model = src.Model
-				}
+			// An anonymous record sharing a second with a named one is the same
+			// enforcement event logged by the executor a moment earlier. Drop it:
+			// the named record carries a superset of the detail (model, auth file,
+			// reason). An anonymous record with no named sibling is kept, because
+			// dropping it would hide a real ban whose identity the log omitted.
+			if _, hasSibling := namedByTS[rec.TS]; hasSibling {
+				continue
 			}
-		}
-		// Collapse a duplicate that now resolves to the same event as an
-		// already-kept record.
-		duplicate := false
-		for i := range merged {
-			if merged[i].TS == rec.TS && merged[i].Account == rec.Account && merged[i].Message == rec.Message {
-				duplicate = true
-				break
-			}
-		}
-		if duplicate {
-			continue
 		}
 		merged = append(merged, rec)
 	}
