@@ -766,7 +766,7 @@
       const region = (geo && geo.region) || '';
       const city = (geo && geo.city) || '';
 
-      const segs = formatted ? formatted.split('\s*·\s*').filter(Boolean) : [];
+      const segs = formatted ? formatted.split(/\s*·\s*/).filter(Boolean) : [];
       const isCN = country === '中国' || country === 'China' || country === 'CN';
       const hasCountryFirst = segs.length > 0 && country && segs[0] === country;
 

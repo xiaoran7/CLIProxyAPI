@@ -932,15 +932,9 @@ upstream:
 #     # balances within the highest priority tier -- so an entry with a higher
 #     # priority than its competitors wins that model outright, and lower-priority
 #     # channels serve only as fallback. Credentials in auths/ carry no priority
-#     # (treated as 0), so setting priority: 100 on a config entry outranks them.
-#     # Example: two channels both serve "step-5-preview"; keep this one ahead.
-#     - name: stepfun
-#       base-url: "https://api.stepfun.com/step_plan/v1"
-#       priority: 100
-#       api-key-entries:
-#         - api-key: "sk-..."
-#       models:
-#         - name: "step-5-preview"
+#     # (treated as 0), so setting `priority: 100` on a config entry outranks them.
+#     # Each openai-compatibility entry therefore accepts the same `priority` key
+#     # shown on the gemini examples above.
 #
 #     # WorkBuddy / CodeBuddy provider (Zero-config models, device fingerprinting & WAF cloaking)
 #     # Place credential JSON in auths/ (e.g. auths/workbuddy.json):

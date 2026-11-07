@@ -26,6 +26,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - 补齐上述 7 个渠道品牌分支（各用独立配色与几何图标），现 11 个具名渠道各自渲染不同图标，仅真正未知的渠道保留中性占位。
   - 模型节点分支原本已完整（`claude`/`gemini`/`step`/`minimax`/`deepseek`/`gpt` 使用子串匹配 `String.prototype.includes`，传入的是完整模型 ID 而非截断显示文本，故不存在「显示文本匹配失败」问题）。
 
+### Fixed
+- **地域紧凑格式未生效（正则字面量缺陷）(`internal/console/assets/console-logs.js`)**:
+  - `compactGeoLabel` 里写成 `formatted.split('\s*·\s*')`——`\s` 放在普通字符串里不是转义序列，`split` 因此根本不会按「·」切分，函数原样返回三段式 `中国 · 湖南 · 株洲`，两段收敛逻辑形同虚设。改为正则字面量 `/\s*·\s*/`。
+  - 新增 `TestConsoleJSRegexLiterals`（`internal/console/assets/assets_test.go`）：扫描全部 console JS，若引号字符串体内出现 `\s` / `\d` / `\w` / `\b` 即报错并给出文件与行号。已实测该测试在还原旧写法时会失败、修复后通过。
+- **筛选工具区仍占两行 (`internal/console/assets/`)**:
+  - 筛选控件组带内联 `flex-wrap: wrap`，覆盖了样式表里的 `nowrap`，分页条被迫换行，工具区维持在 100px 左右。移除内联换行并允许控件组收缩后，筛选与分页同排。
+  - 1920×1080 实测：时间滑动条 45px + 筛选/分页 49px（4px + 40px + 4px + 1px 分隔线），表头 y=241、首行数据 y=280，**无需滚动即可见**。
+
 ### Removed
 - **上游验证提醒横幅彻底移除 (`internal/console/assets/`)**:
   - 删除 `console.html` 中 `#upstream-validations-banner` 整块节点（含其 `#upstream-validations-container` 列表容器，两者仅服务该横幅），共 22 行。

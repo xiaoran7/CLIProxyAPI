@@ -3,6 +3,7 @@ package assets
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -207,5 +208,41 @@ func TestStaticRoutesServing(t *testing.T) {
 	}
 	if wImgHead.Body.Len() != 0 {
 		t.Fatalf("expected empty body for HEAD image, got %d bytes", wImgHead.Body.Len())
+	}
+}
+
+// TestConsoleJSRegexLiterals guards a class of bug that a syntax check cannot
+// catch: escape sequences written inside a plain string instead of a regex
+// literal. `str.split('\s*·\s*')` parses fine, type-checks as a string, and
+// silently never splits, so the call returns the input unchanged. The geo
+// label formatter shipped with exactly that defect and kept rendering the
+// three-part "中国 · 湖南 · 株洲" until the literal was corrected.
+func TestConsoleJSRegexLiterals(t *testing.T) {
+	files := []string{
+		"console-logs.js",
+		"console-traffic.js",
+		"console-format.js",
+		"console-tos-bans.js",
+		"console-quotas-fetch.js",
+		"console-quotas-stats.js",
+		"console-quotas-validation.js",
+	}
+	// A quoted string whose body contains \s, \d, \w or \b is almost certainly
+	// a regex that was meant to be a literal. Go string escaping doubles the
+	// backslash, so the raw source has a single backslash at runtime.
+	badEscapes := []string{`'\s`, `"\s`, `'\d`, `"\d`, `'\w`, `"\w`, `'\b`, `"\b`}
+
+	for _, name := range files {
+		data, errRead := embeddedAssets.ReadFile(name)
+		if errRead != nil {
+			t.Fatalf("read %s: %v", name, errRead)
+		}
+		src := string(data)
+		for _, pattern := range badEscapes {
+			if idx := strings.Index(src, pattern); idx >= 0 {
+				line := 1 + strings.Count(src[:idx], "\n")
+				t.Errorf("%s:%d contains a regex escape inside a string literal (%q); use a /.../ literal", name, line, pattern)
+			}
+		}
 	}
 }
