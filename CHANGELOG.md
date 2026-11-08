@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.63] - 2026-11-08
+
+### Fixed
+- **Console 顶部 cpa-watch 健康告警条残留 (`docs/20261108-cpa-watch-banner-removal.md`)**:
+  - 根因：该横幅**不是** Console 前端渲染的，而是由生产机 openresty 通过 `sub_filter` 在 HTTP 响应体层注入，与 CPA 二进制和前端代码完全解耦。注入链路为 `conf.d/91-cpa-badge-map.conf`（定义 `$cpa_badge_html` 常量）→ `www/sites/cpa.tannerlab.xyz/proxy/console-inject.conf`（对 `location = /console` 与 `/console/` 执行 `sub_filter '</body>' '$cpa_badge_html</body>'`）→ `www/cpa-watch/badge.html`（由 `cpa-silent-death-watch.py` 每 15 分钟生成）。
+  - 因此改前端代码、清浏览器缓存、重新编译二进制、重新部署容器**均无法**移除该横幅，只有改 nginx 配置并 reload 才有效。
+  - 处置：备份至 `/root/backup-cpa-watch-removal-20261108/` 后，停用 `console-inject.conf` / `cpa-watch-domain.conf` / `90.cpa-watch.conf` / `91-cpa-badge-map.conf`，`systemctl disable --now cpa-silent-death-watch.timer`，nginx `-t` 通过后 reload，未重启任何容器。
+  - 验证：本机 `curl http://127.0.0.1:8316/console/` 与经 Cloudflare 的 `https://cpa.tannerlab.cn/console/` 对 `cpa-watch-badge` 均 0 命中，响应字节数 109788 与源站一致。
+  - 教训：生产环境「看起来是前端问题」的显示异常，可能是反向代理层注入的，排查应先用 `curl | grep` 核对响应体原文，再怀疑前端代码。
+- **可视化网关拓扑图部分渠道图标退化为灰色占位 (`internal/console/assets/console-traffic.js`)**:
+  - 根因：后端 `internal/traffichub/hub.go:562` 的 `InferChannel` 可输出 15 种渠道标签，前端 `getBrandNodeVisual` 此前只覆盖 11 个；`zcode`、`kimi`、`xai`、`gateway` 四个标签全部落入灰色占位分支，表现为「图标没改」。
+  - 修复：补齐四个品牌分支（`zcode` #7c3aed、`kimi` #0ea5e9、`xai` #1f2937、`gateway` #f59e0b）。
+  - 新增 `TestInferChannelOutputsAreAllBranded`（`internal/traffichub/brand_verify_test.go`），锁定「`InferChannel` 的每个输出都有对应前端品牌分支」这一契约，防止后续新增渠道再次漏配。
+
 ## [Unreleased]
 
 ### Added
