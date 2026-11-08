@@ -239,12 +239,36 @@ function getBrandNodeVisual(type, rawLabel) {
         color: '#09090b'
       };
     }
-    if (l.includes('codex') || l.includes('openai') || l.includes('gpt')) {
+    if (l.includes('zcode') || l.includes('glm') || l.includes('bigmodel')) {
       return {
-        icon: '<path d="M8 2a6 6 0 0 1 5.2 3A6 6 0 0 1 14 11a6 6 0 0 1-5.2 3A6 6 0 0 1 2 11a6 6 0 0 1 6-9z" fill="none" stroke="#10b981" stroke-width="1.6"/>',
-        borderColor: 'rgba(16, 185, 129, 0.55)',
-        bgColor: 'rgba(16, 185, 129, 0.09)',
-        color: '#10b981'
+        icon: '<path d="M8 2l5 3v6l-5 3-5-3V5z" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-linejoin="round"/><circle cx="8" cy="8" r="2" fill="none" stroke="#7c3aed" stroke-width="1.4"/>',
+        borderColor: 'rgba(124, 58, 237, 0.55)',
+        bgColor: 'rgba(124, 58, 237, 0.09)',
+        color: '#7c3aed'
+      };
+    }
+    if (l.includes('kimi') || l.includes('moonshot')) {
+      return {
+        icon: '<circle cx="8" cy="8" r="5.5" fill="none" stroke="#0ea5e9" stroke-width="1.5"/><path d="M10.5 5.5a3.5 3.5 0 0 0 0 5" fill="none" stroke="#0ea5e9" stroke-width="1.4" stroke-linecap="round"/>',
+        borderColor: 'rgba(14, 165, 233, 0.55)',
+        bgColor: 'rgba(14, 165, 233, 0.09)',
+        color: '#0ea5e9'
+      };
+    }
+    if (l.includes('xai') || l.includes('grok')) {
+      return {
+        icon: '<path d="M3 3l10 10M13 3L3 13" stroke="#1f2937" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="8" r="6.2" fill="none" stroke="#1f2937" stroke-width="1.2"/>',
+        borderColor: 'rgba(31, 41, 55, 0.55)',
+        bgColor: 'rgba(31, 41, 55, 0.07)',
+        color: '#1f2937'
+      };
+    }
+    if (l.includes('gateway') || l.includes('probe') || l.includes('unspecified')) {
+      return {
+        icon: '<path d="M2 8h3l2-3 2 6 2-3h5" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+        borderColor: 'rgba(245, 158, 11, 0.55)',
+        bgColor: 'rgba(245, 158, 11, 0.09)',
+        color: '#f59e0b'
       };
     }
     return {
