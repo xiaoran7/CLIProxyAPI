@@ -679,7 +679,7 @@
     <button type="button" class="logs-preset-btn" id="btn-logs-preset-15m" onclick="setLogsTimePreset('15m')">15m</button>
     <button type="button" class="logs-preset-btn" id="btn-logs-preset-5m" onclick="setLogsTimePreset('5m')">5m</button>
   </div>
-  <div class="logs-slider-track-wrap">
+  <div class="logs-slider-track-wrap" style="display:none;">
     <span class="logs-slider-edge" id="logs-time-label-start">最早记录</span>
     <div class="logs-slider-canvas">
       <div class="logs-slider-track">
@@ -697,19 +697,19 @@
 <div class="logs-filter-row">
 <input class="logs-search-input" id="logs-search" oninput="onLogsSearch(this.value)" placeholder="搜索 IP / 模型 / 密钥 / 地域 / 上游账号..." data-i18n-placeholder="logs.searchPlaceholder" type="text"/>
 <div class="filter-control-item" id="logs-ip-filter-container">
-<span class="filter-label">客户端 IP:</span>
+<span class="filter-label" style="display:none;">客户端 IP:</span>
 <div aria-label="客户端 IP 筛选" class="dropdown" id="logs-ip-dropdown" style="min-width:140px; max-width:190px;"></div>
 </div>
 <div class="filter-control-item" id="logs-key-filter-container">
-<span class="filter-label" data-i18n="logs.filterKey">筛选密钥:</span>
+<span class="filter-label" style="display:none;" data-i18n="logs.filterKey">筛选密钥:</span>
 <div aria-label="请求密钥筛选" data-i18n-aria-label="logs.filterKeyAria" class="dropdown" id="logs-key-dropdown" style="max-width:200px;"></div>
 </div>
 <div class="filter-control-item" id="logs-model-filter-container">
-<span class="filter-label">请求模型:</span>
+<span class="filter-label" style="display:none;">请求模型:</span>
 <div aria-label="请求模型筛选" class="dropdown" id="logs-model-dropdown" style="min-width:150px; max-width:210px;"></div>
 </div>
 <div class="filter-control-item" id="logs-provider-filter-container">
-<span class="filter-label" data-i18n="logs.filterProvider">服务商:</span>
+<span class="filter-label" style="display:none;" data-i18n="logs.filterProvider">服务商:</span>
 <div aria-label="请求服务商筛选" data-i18n-aria-label="logs.filterProviderAria" class="dropdown" id="logs-provider-dropdown" style="min-width:140px; max-width:180px;"></div>
 </div>
 <button type="button" class="btn btn-secondary btn-sm" onclick="resetLogsFilters()" style="border-radius:9999px; padding:0 14px; height:36px; font-weight:600;">重置筛选</button>

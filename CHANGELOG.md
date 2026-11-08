@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.69] - 2026-11-08
+
+### Fixed
+- **拓扑图 DeepSeek 模型、WorkBuddy 渠道真实品牌图标与高对比 Antigravity 矢量重构 (`internal/console/assets/console-traffic.js`)**:
+  - `STAGE 2` 请求模型节点：此前 `type === model` 节点仍走老几何分支，`deepseek-v4.1` 呈现为扁平椭圆。现统一映射到 `BRAND_ICON_PATHS`（含 deepseek 真实鲸鱼图标、claude、gemini 等），确保请求模型节点准确渲染官方品牌资产。
+  - `STAGE 3` 渠道节点：新增 `workbuddy` 真实品牌矢量 SVG（来源于 `magpie/internal/gui/assets/icons/codebuddy-color.svg`，绿径向渐变底 + 白色内联图形），杜绝回落为终端提示符 (`▶ _`)。
+  - `antigravity` 矢量高对比化：剥离会导致小尺寸下颜色严重发虚发淡的 11 道高斯模糊滤镜，改用鲜明饱和的高对比彩虹渐变矢量路径（`#3b82f6` -> `#10b981` -> `#f59e0b` -> `#ef4444`）与高亮内层，在 22px 节点框内清晰明亮。
+- **流水页筛选下拉菜单点击展开被截断修复 (`internal/console/assets/console-logs.css`)**:
+  - 根因：`.logs-controls > .logs-filter-row` 设置了 `overflow-x: auto`，触发浏览器规范中 X 轴滚动隐式将 Y 轴强制计算为 `hidden/auto`，导致 `.dropdown-menu`（高度 ~200px）向下展开时被 36px 的工具行垂直裁剪，用户点击触发器翻转箭头但看不到菜单。
+  - 修复：去除 `overflow-x: auto`，设为 `overflow: visible`，给 `.logs-controls.has-open-dropdown` 注入更高 z-index，使下拉浮层正常覆盖下方表格。
+- **消除筛选控件挤压截断与多余外部标签 (`console-logs.css`, `console.html`)**:
+  - 隐藏工具条内冗余的外部 `<span class="filter-label">`（节省 ~240px 水平空间），完全依赖下拉框内置的自解释文案（`全部客户端 IP`、`全部密钥 (不限)`、`全部请求模型`、`全部服务商 (不限)`），彻底根除小视口下标签被挤压为 `P:`、`选密钥:` 的视觉瑕疵。
+- **消除下拉按钮 focus-visible 浮动外圈双环 (`console-theme-beszel.css`)**:
+  - 去除 `.dropdown-trigger:focus-visible` 继承的全局 `outline: 2px solid var(--accent); outline-offset: 2px;` 规则，统一收敛为平滑的 3px halo 阴影，避免在点击后出现怪异的浮动双重外圈。
+- **隐藏无意义的双滑块时间拖拽条 (`console-logs.css`, `console.html`)**:
+  - 隐藏 `.logs-slider-track-wrap`，仅保留清晰直观的快捷时间范围胶囊（`全量`、`24h`、`6h`、`1h`、`15m`、`5m`），界面更加紧凑清爽。
+
 ## [v8.0.68] - 2026-11-08
 
 ### Changed

@@ -84,9 +84,9 @@
       border-color: #2563eb;
     }
 
-    /* 右：双滑块轨道，吃掉剩余宽度 */
+    /* 右：双滑块轨道（隐藏：无意义进度条，保留快捷时间预设胶囊） */
     .logs-slider-track-wrap {
-      display: flex;
+      display: none !important;
       align-items: center;
       gap: 8px;
       flex: 1 1 auto;
@@ -214,6 +214,7 @@
     .logs-controls {
       position: relative;
       z-index: 10;
+      overflow: visible;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -225,10 +226,12 @@
       -webkit-backdrop-filter: blur(8px);
       border-bottom: 1px solid var(--card-border);
     }
+    .logs-controls.has-open-dropdown {
+      z-index: 100;
+    }
 
-    /* 筛选控件组与分页条同排：控件组占据剩余宽度并可收缩。
-       搜索框与各筛选下拉都必须允许压缩，否则控件组会撑满整行，
-       分页条被迫换到第二行，工具区又回到 100px。 */
+    /* 筛选控件组与分页条同排：允许下拉悬浮层自由弹出（overflow: visible），
+       彻底解决 overflow-x:auto 强制隐式裁剪 Y 轴导致下拉菜单不可见问题。 */
     .logs-controls > .logs-filter-row {
       flex: 1 1 0;
       min-width: 0;
@@ -236,35 +239,28 @@
       align-items: center;
       gap: 8px;
       flex-wrap: nowrap;
-      overflow-x: auto;
-      overscroll-behavior-x: contain;
-      scrollbar-width: none;
+      overflow: visible;
     }
     .logs-controls > .logs-filter-row::-webkit-scrollbar { display: none; }
-    /* 控件一律保持固有宽度，绝不允许被容器压扁。
-       历史问题：用 flex:0 1 auto + min-width:0 + overflow:hidden 时，容器宽度不足
-       会把每个筛选框压缩成窄条（截图可见四个下拉全部变窄、文字被裁），
-       而不是整行横向滚动。min-width:max-content 让 flex 项守住内容宽度，
-       放不下就由上面的 overflow-x:auto 承接为滚动。 */
     .logs-controls > .logs-filter-row > * {
       flex: 0 0 auto;
       min-width: max-content;
     }
     .logs-controls .logs-search-input {
       flex: 0 0 auto;
-      width: 260px;
-      min-width: 200px;
+      width: 220px;
+      min-width: 160px;
     }
     .logs-controls .filter-control-item {
       flex: 0 0 auto;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 0;
       white-space: nowrap;
     }
+    /* 隐藏冗余外部标签，依赖下拉框内置的自解释文案，消除挤压截断 */
     .logs-controls .filter-control-item .filter-label {
-      flex: 0 0 auto;
-      white-space: nowrap;
+      display: none !important;
     }
     .logs-controls .filter-control-item .dropdown {
       flex: 0 0 auto;
