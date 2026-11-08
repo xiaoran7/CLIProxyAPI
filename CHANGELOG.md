@@ -3,20 +3,6 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [v8.0.63] - 2026-11-08
-
-### Fixed
-- **Console 顶部 cpa-watch 健康告警条残留 (`docs/20261108-cpa-watch-banner-removal.md`)**:
-  - 根因：该横幅**不是** Console 前端渲染的，而是由生产机 openresty 通过 `sub_filter` 在 HTTP 响应体层注入，与 CPA 二进制和前端代码完全解耦。注入链路为 `conf.d/91-cpa-badge-map.conf`（定义 `$cpa_badge_html` 常量）→ `www/sites/cpa.tannerlab.xyz/proxy/console-inject.conf`（对 `location = /console` 与 `/console/` 执行 `sub_filter '</body>' '$cpa_badge_html</body>'`）→ `www/cpa-watch/badge.html`（由 `cpa-silent-death-watch.py` 每 15 分钟生成）。
-  - 因此改前端代码、清浏览器缓存、重新编译二进制、重新部署容器**均无法**移除该横幅，只有改 nginx 配置并 reload 才有效。
-  - 处置：备份至 `/root/backup-cpa-watch-removal-20261108/` 后，停用 `console-inject.conf` / `cpa-watch-domain.conf` / `90.cpa-watch.conf` / `91-cpa-badge-map.conf`，`systemctl disable --now cpa-silent-death-watch.timer`，nginx `-t` 通过后 reload，未重启任何容器。
-  - 验证：本机 `curl http://127.0.0.1:8316/console/` 与经 Cloudflare 的 `https://cpa.tannerlab.cn/console/` 对 `cpa-watch-badge` 均 0 命中，响应字节数 109788 与源站一致。
-  - 教训：生产环境「看起来是前端问题」的显示异常，可能是反向代理层注入的，排查应先用 `curl | grep` 核对响应体原文，再怀疑前端代码。
-- **可视化网关拓扑图部分渠道图标退化为灰色占位 (`internal/console/assets/console-traffic.js`)**:
-  - 根因：后端 `internal/traffichub/hub.go:562` 的 `InferChannel` 可输出 15 种渠道标签，前端 `getBrandNodeVisual` 此前只覆盖 11 个；`zcode`、`kimi`、`xai`、`gateway` 四个标签全部落入灰色占位分支，表现为「图标没改」。
-  - 修复：补齐四个品牌分支（`zcode` #7c3aed、`kimi` #0ea5e9、`xai` #1f2937、`gateway` #f59e0b）。
-  - 新增 `TestInferChannelOutputsAreAllBranded`（`internal/traffichub/brand_verify_test.go`），锁定「`InferChannel` 的每个输出都有对应前端品牌分支」这一契约，防止后续新增渠道再次漏配。
-
 ## [v8.0.64] - 2026-11-08
 
 ### Fixed
@@ -30,6 +16,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - 修复：删除该内联样式，交还 CSS 控制；CSS 侧补 `display:flex; align-items:center; gap:8px; overscroll-behavior-x:contain`，并为直接子元素加 `flex:0 0 auto; min-width:0; max-width:100%`，`.filter-control-item` 与其内 `.dropdown` 加 `overflow:hidden`。
   - 验证：浏览器实测容器宽 1180/1000/900/800/700/600px 六档，元素重叠对数**均为 0**；窄档（800px 以下）正确转为横向滚动（rowWidth 138 < scrollWidth 408）。
 
+## [v8.0.63] - 2026-11-08
+
+### Fixed
+- **Console 顶部 cpa-watch 健康告警条残留 (`docs/20261108-cpa-watch-banner-removal.md`)**:
+  - 现象：用户多次反馈 Console 顶部仍显示「● 1 个账号曾被停服，已禁用处理 查看详情 →」，但在 `internal/console/` 前端代码内反复搜索无任何命中。
+  - 根因：该横幅**不是** Console 前端渲染的，而是由生产机 openresty 通过 `sub_filter` 在 HTTP 响应体层注入，与 CPA 二进制和前端代码完全解耦。注入链路为 `conf.d/91-cpa-badge-map.conf`（定义 `$cpa_badge_html` 常量）→ `www/sites/cpa.tannerlab.xyz/proxy/console-inject.conf`（对 `location = /console` 与 `/console/` 执行 `sub_filter '</body>' '$cpa_badge_html</body>'`）→ `www/cpa-watch/badge.html`（由 `cpa-silent-death-watch.py` 每 15 分钟生成）。
+  - 因此改前端代码、清浏览器缓存、重新编译二进制、重新部署容器**均无法**移除该横幅，只有改 nginx 配置并 reload 才有效。
+  - 处置：备份至 `/root/backup-cpa-watch-removal-20261108/` 后，停用 `console-inject.conf` / `cpa-watch-domain.conf` / `90.cpa-watch.conf` / `91-cpa-badge-map.conf`，`systemctl disable --now cpa-silent-death-watch.timer`，nginx `-t` 通过后 reload，未重启任何容器。
+  - 验证：本机 `curl http://127.0.0.1:8316/console/` 与经 Cloudflare 的 `https://cpa.tannerlab.cn/console/` 对 `cpa-watch-badge` 均 0 命中，响应字节数 109788 与源站一致。
+  - 教训：生产环境「看起来是前端问题」的显示异常，可能是反向代理层注入的，排查应先用 `curl | grep` 核对响应体原文，再怀疑前端代码。
+- **可视化网关拓扑图部分渠道图标退化为灰色占位 (`internal/console/assets/console-traffic.js`)**:
+  - 根因：后端 `internal/traffichub/hub.go:562` 的 `InferChannel` 可输出 15 种渠道标签，前端 `getBrandNodeVisual` 此前只覆盖 11 个；`zcode`、`kimi`、`xai`、`gateway` 四个标签全部落入灰色占位分支，表现为「图标没改」。
+  - 修复：补齐四个品牌分支（`zcode` #7c3aed、`kimi` #0ea5e9、`xai` #1f2937、`gateway` #f59e0b）。
+  - 新增 `TestInferChannelOutputsAreAllBranded`（`internal/traffichub/brand_verify_test.go`），锁定「`InferChannel` 的每个输出都有对应前端品牌分支」这一契约，防止后续新增渠道再次漏配。
+
 ## [Unreleased]
 
 ### Added
@@ -41,16 +42,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `auth_file` → 账号邮箱的换算与 CPA `/auth-files` 的 `auth_index` / 状态关联，使每条封禁记录都可定位到具体上游账号与当前启停状态。
   - 每条封禁记录展示：精确到秒的触发时间、账号标识、命中模型、403 状态徽标、上游完整错误详情、`validation_url`（如有）、可展开的上游原始日志行；账号卡片额外展示最近一次成功请求时间、近 7 天 / 近 24h / 全量的 200 与 403 对比条，用于区分「刚被封」与「封了已久彻底死亡」。
   - 顶部汇总卡：当前命中封禁账号数、近 24h 403 总数、近 7 天 403 总数；支持按账号、按模型过滤与胶囊重置；沿用 Console 既有 `CustomDropdown`、`summary-card`、`panel` 与 `ui-design` 圆角/阴影/动效体系，并复用全局 15s 轮询刷新。
-
-
-### Fixed
-- **Console 顶部 cpa-watch 健康告警条残留 (`docs/20261108-cpa-watch-banner-removal.md`)**:
-  - 现象：用户多次反馈 Console 顶部仍显示「● 1 个账号曾被停服，已禁用处理 查看详情 →」，但在 `internal/console/` 前端代码内反复搜索无任何命中。
-  - 根因：该横幅**不是** Console 前端渲染的，而是由生产机 openresty 通过 `sub_filter` 在 HTTP 响应体层注入，与 CPA 二进制和前端代码完全解耦。注入链路为 `conf.d/91-cpa-badge-map.conf`（定义 `$cpa_badge_html` 常量）→ `www/sites/cpa.tannerlab.xyz/proxy/console-inject.conf`（对 `location = /console` 与 `/console/` 执行 `sub_filter '</body>' '$cpa_badge_html</body>'`）→ `www/cpa-watch/badge.html`（由 `cpa-silent-death-watch.py` 每 15 分钟生成）。
-  - 因此改前端代码、清浏览器缓存、重新编译二进制、重新部署容器**均无法**移除该横幅，只有改 nginx 配置并 reload 才有效。这是前几轮把排查力气全花在 grep JS 文件上却始终无效的原因。
-  - 处置：备份至 `/root/backup-cpa-watch-removal-20261108/` 后，停用 `console-inject.conf` / `cpa-watch-domain.conf` / `90.cpa-watch.conf` / `91-cpa-badge-map.conf`，`systemctl disable --now cpa-silent-death-watch.timer`，nginx `-t` 通过后 reload。
-  - 验证：本机 `curl http://127.0.0.1:8316/console/` 与经 Cloudflare 的 `https://cpa.tannerlab.cn/console/` 对 `cpa-watch-badge` 均 0 命中，响应字节数 109788 与源站一致，说明只移除了注入、未破坏 Console 本体。
-  - 教训：生产环境「看起来是前端问题」的显示异常，可能是反向代理层注入的，排查应先用 `curl | grep` 核对响应体原文，再怀疑前端代码。
 
 ### Fixed
 - **step-5-preview 路由降级混跑修复 (`config.yaml` 生产配置)**:
