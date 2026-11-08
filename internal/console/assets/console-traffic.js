@@ -19,6 +19,7 @@ let trafficTimeMaxPercent = 100;
 let trafficBufferMinTs = 0;
 let trafficBufferMaxTs = 0;
 let trafficActiveTimePreset = 'all';
+let trafficActiveRange = '5m';
 
 const TRAFFIC_SWR_CACHE_KEY = 'cpa_traffic_snapshot_cache';
 
@@ -332,10 +333,48 @@ function getBrandNodeVisual(type, rawLabel) {
 }
 
 // 3. SWR 数据拉取调度
+
+// 时间尺度切换 (5m / today / 7d / 30d / all)
+function switchTrafficRange(range) {
+  if (!range) range = '5m';
+  if (trafficActiveRange === range) return;
+  trafficActiveRange = range;
+
+  // 1. 更新分段按钮高亮
+  const tabs = document.querySelectorAll('#traffic-range-tabs button');
+  tabs.forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-range') === range);
+  });
+
+  // 2. 在历史区间模式下，默认关闭高频 3s 轮询，改为主席点击刷新，避免频繁打 SQLite
+  const pollingSelect = document.getElementById('traffic-polling-select');
+  if (range !== '5m') {
+    if (pollingSelect && pollingSelect.value !== '0') {
+      pollingSelect.value = '0';
+      setTrafficPollingRate(0);
+    }
+  } else {
+    if (pollingSelect && pollingSelect.value === '0') {
+      pollingSelect.value = '3';
+      setTrafficPollingRate(3);
+    }
+  }
+
+  // 3. 清理节点高亮选态
+  trafficHighlightedNode = null;
+
+  // 4. 立即请求对应尺度数据
+  fetchTrafficData(true);
+}
+
 async function fetchTrafficData(force = false) {
+  const currentRange = trafficActiveRange || '5m';
+  const url = currentRange === '5m' ? '/console/api/traffic' : `/console/api/traffic?range=${encodeURIComponent(currentRange)}`;
+  const cacheKey = `${TRAFFIC_SWR_CACHE_KEY}_${currentRange}`;
+
   if (!cachedTrafficData && !force) {
     try {
-      const cachedRaw = sessionStorage.getItem(TRAFFIC_SWR_CACHE_KEY);
+      const cachedRaw = sessionStorage.getItem(cacheKey);
       if (cachedRaw) {
         const cached = JSON.parse(cachedRaw);
         if (cached && cached.summary) {
@@ -351,7 +390,7 @@ async function fetchTrafficData(force = false) {
   }
 
   try {
-    const res = await fetch('/console/api/traffic', {
+    const res = await fetch(url, {
       headers: getAuthHeaders(),
       cache: 'no-store'
     });
@@ -360,7 +399,7 @@ async function fetchTrafficData(force = false) {
     cachedTrafficData = data;
 
     try {
-      sessionStorage.setItem(TRAFFIC_SWR_CACHE_KEY, JSON.stringify(data));
+      sessionStorage.setItem(cacheKey, JSON.stringify(data));
     } catch (e) {}
 
     const badge = document.getElementById('nav-badge-traffic');
@@ -410,6 +449,63 @@ function renderTrafficSkeleton() {
 function renderTrafficUI(data, animate = false) {
   if (!data) return;
   const summary = data.summary || { active_ips: 0, requests_5m: 0, avg_latency_ms: 0, success_rate: 0, total_recorded: 0 };
+  const currentRange = data.range || trafficActiveRange || '5m';
+
+  const rangeMeta = {
+    '5m': {
+      titleText: '实时调用流向拓扑 (Traffic Topology)',
+      reqsLabel: '近 5 分钟请求量 (Requests)',
+      unit: '次 / 5m',
+      descIps: '近 5 分钟请求发起唯一真实 IP 地址',
+      descTotal: '环形缓冲累计记录',
+      descLat: '近 5 分钟调用平均往返时延',
+      descSucc: 'HTTP 2xx 成功调用比例'
+    },
+    'today': {
+      titleText: '今日调用流向拓扑 (Traffic Topology)',
+      reqsLabel: '今日请求量 (Requests)',
+      unit: '次 / 今日',
+      descIps: '今日请求发起唯一真实 IP 地址',
+      descTotal: '今日已归档请求',
+      descLat: '今日调用平均往返时延',
+      descSucc: '今日 HTTP 2xx 成功调用比例'
+    },
+    '7d': {
+      titleText: '近 7 天调用流向拓扑 (Traffic Topology)',
+      reqsLabel: '近 7 天请求量 (Requests)',
+      unit: '次 / 7天',
+      descIps: '近 7 天请求发起唯一真实 IP 地址',
+      descTotal: '近 7 天已归档请求',
+      descLat: '近 7 天调用平均往返时延',
+      descSucc: '近 7 天 HTTP 2xx 成功调用比例'
+    },
+    '30d': {
+      titleText: '近 30 天调用流向拓扑 (Traffic Topology)',
+      reqsLabel: '近 30 天请求量 (Requests)',
+      unit: '次 / 30天',
+      descIps: '近 30 天请求发起唯一真实 IP 地址',
+      descTotal: '近 30 天已归档请求',
+      descLat: '近 30 天调用平均往返时延',
+      descSucc: '近 30 天 HTTP 2xx 成功调用比例'
+    },
+    'all': {
+      titleText: '全时期调用流向拓扑 (Traffic Topology)',
+      reqsLabel: '全时期请求量 (Requests)',
+      unit: '次 / 全部',
+      descIps: '全时期请求发起唯一真实 IP 地址',
+      descTotal: '全时期已归档请求',
+      descLat: '全时期调用平均往返时延',
+      descSucc: '全时期 HTTP 2xx 成功调用比例'
+    }
+  };
+  const meta = rangeMeta[currentRange] || rangeMeta['5m'];
+
+  // 同步拓扑卡片标题与请求量指标名
+  const titleEl = document.getElementById('traffic-topology-title-text');
+  if (titleEl) titleEl.textContent = meta.titleText;
+
+  const reqsLabelEl = document.getElementById('traffic-metric-reqs-label');
+  if (reqsLabelEl) reqsLabelEl.textContent = meta.reqsLabel;
 
   const elIps = document.getElementById('traffic-val-ips');
   const elReqs = document.getElementById('traffic-val-reqs');
@@ -418,10 +514,18 @@ function renderTrafficUI(data, animate = false) {
   const elTotal = document.getElementById('traffic-val-total');
 
   if (elIps) elIps.innerHTML = `${summary.active_ips || 0}<small>个活跃 IP</small>`;
-  if (elReqs) elReqs.innerHTML = `${summary.requests_5m || 0}<small>次 / 5m</small>`;
+  if (elReqs) elReqs.innerHTML = `${summary.requests_5m || summary.total_recorded || 0}<small>${meta.unit}</small>`;
   if (elLat) elLat.innerHTML = `${Math.round(summary.avg_latency_ms || 0)}<small>ms</small>`;
   if (elSucc) elSucc.innerHTML = `${((summary.success_rate || 0) * 100).toFixed(1)}<small>%</small>`;
-  if (elTotal) elTotal.textContent = `环形缓冲累计: ${summary.total_recorded || 0} 条`;
+  if (elTotal) elTotal.textContent = `${meta.descTotal}: ${summary.total_recorded || 0} 条`;
+
+  // 动态更新卡片副文本
+  const cardDescs = document.querySelectorAll('.traffic-metrics-grid .traffic-metric-card .traffic-metric-desc');
+  if (cardDescs.length >= 4) {
+    cardDescs[0].textContent = meta.descIps;
+    cardDescs[2].textContent = meta.descLat;
+    cardDescs[3].textContent = meta.descSucc;
+  }
 
   // 增量 Diff 渲染拓扑 (零销毁、零闪烁)
   renderTrafficTopology(data, animate);
@@ -435,24 +539,27 @@ function renderTrafficTopology(data, animate = false) {
   if (!container) return;
 
   const records = data.records || data.recent_requests || [];
-  if (records.length === 0) {
+  const topology = data.topology || { nodes: [], links: [] };
+  const hasNodes = Array.isArray(topology.nodes) && topology.nodes.length > 0;
+
+  if (records.length === 0 && !hasNodes) {
+    const emptyMsg = (data.range && data.range !== '5m') ? '所选时间区间内暂无流量记录' : '暂无实时流量记录';
     container.innerHTML = `
       <div style="padding:48px 16px;text-align:center;color:var(--text-muted);">
         <div style="display:inline-flex;padding:12px;border-radius:12px;background:rgba(59,130,246,0.06);color:#3b82f6;margin-bottom:12px;">
           ${TRAFFIC_ICONS.layers}
         </div>
-        <div style="font-size:14px;font-weight:600;color:var(--text-main);margin-bottom:4px;">暂无实时流量记录</div>
-        <div style="font-size:12px;color:var(--text-muted);max-width:420px;margin:0 auto;">网关正在实时侦听多用户调用，产生真实请求后全链路流向图将在此实时呈现。</div>
+        <div style="font-size:14px;font-weight:600;color:var(--text-main);margin-bottom:4px;">${emptyMsg}</div>
+        <div style="font-size:12px;color:var(--text-muted);max-width:420px;margin:0 auto;">网关正在侦听多用户调用，产生真实请求后全链路流向图将在此呈现。</div>
       </div>
     `;
     return;
   }
 
-  const topology = data.topology || { nodes: [], links: [] };
-  const colIPs = (topology.nodes || []).filter(n => n.type === 'client_ip').slice(0, 8);
-  const colModels = (topology.nodes || []).filter(n => n.type === 'model').slice(0, 8);
-  const colChannels = (topology.nodes || []).filter(n => n.type === 'channel').slice(0, 8);
-  const colStatuses = (topology.nodes || []).filter(n => n.type === 'status').slice(0, 8);
+  const colIPs = (topology.nodes || []).filter(n => n.type === 'client_ip').slice(0, 10);
+  const colModels = (topology.nodes || []).filter(n => n.type === 'model').slice(0, 10);
+  const colChannels = (topology.nodes || []).filter(n => n.type === 'channel').slice(0, 10);
+  const colStatuses = (topology.nodes || []).filter(n => n.type === 'status').slice(0, 10);
 
   const maxNodes = Math.max(colIPs.length, colModels.length, colChannels.length, colStatuses.length, 1);
   const svgHeight = Math.max(260, maxNodes * 56 + 48);
@@ -806,7 +913,15 @@ function renderTrafficIPLedger(ipStats) {
 
   container.innerHTML = ipStats.map(s => {
     const isSelected = trafficSelectedIP === s.ip;
-    const timeStr = s.last_seen ? new Date(s.last_seen * 1000).toLocaleTimeString() : '-';
+    let timeStr = '-';
+    if (s.last_seen) {
+      const d = new Date(s.last_seen * 1000);
+      if (trafficActiveRange === '5m' || trafficActiveRange === 'today') {
+        timeStr = d.toLocaleTimeString();
+      } else {
+        timeStr = `${d.getMonth() + 1}/${d.getDate()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      }
+    }
     const modelsBadge = (s.top_models || []).map(m => `<span class="traffic-pill traffic-pill-model">${escapeHtml(m)}</span>`).join(' ');
 
     let netBadge = '';

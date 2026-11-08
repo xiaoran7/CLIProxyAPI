@@ -89,8 +89,22 @@ type GeoSummaryStat struct {
 	IsProxy      bool   `json:"is_proxy,omitempty"`
 }
 
+// HistoricalAggregateInput represents grouped request metrics across client IPs, models, channels, and statuses.
+type HistoricalAggregateInput struct {
+	ClientIP     string
+	Model        string
+	AuthIndex    string
+	Status       int
+	KeyLabel     string
+	ReqCount     int64
+	TotalLatency int64
+	TotalTokens  int64
+	LastSeen     int64
+}
+
 // TrafficResponse is the payload returned by GET /v0/management/traffic.
 type TrafficResponse struct {
+	Range          string           `json:"range,omitempty"`
 	Summary        TrafficSummary   `json:"summary"`
 	Records        []TrafficRecord  `json:"records"`
 	RecentRequests []TrafficRecord  `json:"recent_requests"`

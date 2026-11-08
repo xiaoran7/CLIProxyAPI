@@ -248,3 +248,29 @@ type ErrorFilterParams struct {
 	Page      int
 	PageSize  int
 }
+
+// TrafficAggregateRow represents an aggregated slice of request_events for visual topology.
+type TrafficAggregateRow struct {
+	ClientIP     string `json:"client_ip"`
+	Model        string `json:"model"`
+	AuthIndex    string `json:"auth_index"`
+	Status       int    `json:"status"`
+	KeyLabel     string `json:"key_label"`
+	ReqCount     int64  `json:"req_count"`
+	TotalLatency int64  `json:"total_latency"`
+	TotalTokens  int64  `json:"total_tokens"`
+	LastSeen     int64  `json:"last_seen"`
+}
+
+// TrafficRecentRow represents an individual recent request event for stream inspection.
+type TrafficRecentRow struct {
+	ID          int64  `json:"id"`
+	TS          int64  `json:"ts"`
+	ClientIP    string `json:"client_ip"`
+	KeyLabel    string `json:"key_label"`
+	Model       string `json:"model"`
+	Status      int    `json:"status"`
+	LatencyMs   int64  `json:"latency_ms"`
+	TotalTokens int64  `json:"total_tokens"`
+	AuthIndex   string `json:"auth_index"`
+}

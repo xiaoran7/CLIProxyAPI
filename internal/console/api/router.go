@@ -112,7 +112,7 @@ func registerConsoleRoutes(
 		// Usage stats and request logs
 		rg.GET("/stats", HandleGetStats(eng, pricing, providers))
 		rg.GET("/requests", HandleGetRequests(eng, pricing, providers))
-		rg.GET("/traffic", HandleGetTraffic())
+		rg.GET("/traffic", HandleGetTraffic(eng))
 		rg.GET("/errors", HandleGetErrors(eng, providers))
 		rg.GET("/tos-bans", HandleGetTOSBans(eng, cpa))
 		rg.GET("/status-summary", HandleGetStatusSummary(eng, providers))

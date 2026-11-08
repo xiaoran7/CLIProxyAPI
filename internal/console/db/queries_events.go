@@ -1105,3 +1105,106 @@ WHERE (key_id IS NULL OR key_id <= 0)
 
 	return res.RowsAffected()
 }
+
+// SelectTrafficAggregates returns grouped request metrics across client IPs, models, channels, and statuses.
+func (d *DB) SelectTrafficAggregates(ctx context.Context, sinceTS int64) ([]TrafficAggregateRow, error) {
+	whereClause := ""
+	var args []interface{}
+	if sinceTS > 0 {
+		whereClause = "WHERE r.ts >= ?"
+		args = append(args, sinceTS)
+	}
+
+	query := fmt.Sprintf(`
+SELECT
+    COALESCE(NULLIF(r.client_ip, ''), '127.0.0.1') AS client_ip,
+    COALESCE(NULLIF(r.model, ''), 'unknown') AS model,
+    COALESCE(r.auth_index, '') AS auth_index,
+    r.status,
+    COALESCE(NULLIF(k.alias, ''), NULLIF(k.api_key, ''), '-') AS key_label,
+    COUNT(*) AS req_count,
+    SUM(r.latency_ms) AS total_latency,
+    SUM(r.total_tokens) AS total_tokens,
+    MAX(r.ts) AS last_seen
+FROM request_events r
+LEFT JOIN keys k ON r.key_id = k.id
+%s
+GROUP BY client_ip, model, auth_index, r.status, key_label
+`, whereClause)
+
+	rows, err := d.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("select traffic aggregates failed: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var list []TrafficAggregateRow
+	for rows.Next() {
+		var r TrafficAggregateRow
+		if err := rows.Scan(
+			&r.ClientIP, &r.Model, &r.AuthIndex, &r.Status, &r.KeyLabel,
+			&r.ReqCount, &r.TotalLatency, &r.TotalTokens, &r.LastSeen,
+		); err != nil {
+			return nil, fmt.Errorf("scan traffic aggregate row failed: %w", err)
+		}
+		list = append(list, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration failed: %w", err)
+	}
+	return list, nil
+}
+
+// SelectTrafficRecent returns the most recent requests up to limit within the specified time cutoff.
+func (d *DB) SelectTrafficRecent(ctx context.Context, sinceTS int64, limit int) ([]TrafficRecentRow, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	whereClause := ""
+	var args []interface{}
+	if sinceTS > 0 {
+		whereClause = "WHERE r.ts >= ?"
+		args = append(args, sinceTS)
+	}
+
+	query := fmt.Sprintf(`
+SELECT
+    r.id,
+    r.ts,
+    COALESCE(NULLIF(r.client_ip, ''), '127.0.0.1') AS client_ip,
+    COALESCE(NULLIF(k.alias, ''), NULLIF(k.api_key, ''), '-') AS key_label,
+    COALESCE(NULLIF(r.model, ''), 'unknown') AS model,
+    r.status,
+    r.latency_ms,
+    r.total_tokens,
+    COALESCE(r.auth_index, '') AS auth_index
+FROM request_events r
+LEFT JOIN keys k ON r.key_id = k.id
+%s
+ORDER BY r.ts DESC, r.id DESC
+LIMIT ?
+`, whereClause)
+	args = append(args, limit)
+
+	rows, err := d.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("select traffic recent failed: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var list []TrafficRecentRow
+	for rows.Next() {
+		var r TrafficRecentRow
+		if err := rows.Scan(
+			&r.ID, &r.TS, &r.ClientIP, &r.KeyLabel, &r.Model,
+			&r.Status, &r.LatencyMs, &r.TotalTokens, &r.AuthIndex,
+		); err != nil {
+			return nil, fmt.Errorf("scan traffic recent row failed: %w", err)
+		}
+		list = append(list, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration failed: %w", err)
+	}
+	return list, nil
+}

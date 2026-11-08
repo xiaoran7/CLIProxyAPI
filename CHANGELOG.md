@@ -3,6 +3,16 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.70] - 2026-11-08
+
+### Added
+- **可视化网关多时间尺度聚合与分段切换 (`internal/console/assets/console.html`, `console-traffic.js`, `api/handlers_traffic.go`, `db/queries_events.go`, `traffichub/historical.go`)**:
+  - 拓扑控制头新增分段切换器（`.segmented-tabs`），支持 `实时 (5m)`、`今日`、`7天`、`30天`、`全部` 五档尺度。
+  - 混合存储引擎架构设计：`5m` 沿用 in-memory 环形缓冲区秒级流转；历史区间（`today` / `7d` / `30d` / `all`）通过 SQLite `request_events` 按 `client_ip, model, auth_index, status, key_label` 进行高效 Grouped 聚合，26万条历史记录聚合仅产生数十至数百条统计组（耗时 28ms~189ms），兼顾极低 CPU/内存开销与全时段洞察。
+  - 拓扑卡片与指标动态自适应：请求量指标卡自适应展示 `次 / 5m`、`次 / 今日`、`次 / 7天` 等单位与对应时间范围描述；拓扑图空状态文案与 IP 账本时间格式根据时间跨度智能展示为时分秒或日期。
+  - 智能轮询自适应降频：切换至历史时间跨度时自动停止 3s 快速轮询（避免不必要的数据库重复统计），切换回实时 5m 时自动恢复 3s 轮询。
+  - 资源引用全链路缓存击穿升级：37 处静态资源版本号全量自增刷新至 `?v=v8.0.70`。
+
 ## [v8.0.69] - 2026-11-08
 
 ### Fixed

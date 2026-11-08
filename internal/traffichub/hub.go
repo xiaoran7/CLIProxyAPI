@@ -507,6 +507,7 @@ func (h *Hub) GetSnapshot() TrafficResponse {
 	})
 
 	return TrafficResponse{
+		Range: "5m",
 		Summary: TrafficSummary{
 			ActiveIPs:     activeIPCount,
 			Requests5m:    reqs5m,
