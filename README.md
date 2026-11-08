@@ -61,3 +61,8 @@ gofmt -w . && go build -o cli-proxy-api ./cmd/server
 ## Acknowledgements & License
 
 Built on [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) with inspiration from [Magpie](https://github.com/magpie-project) and [WorkBuddy2API-Hub](https://github.com/ardeyouxipianyi/workbuddy2api-hub). Released under the [MIT License](LICENSE).
+
+### Upstream attribution
+
+- **Base gateway**: [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) — protocol translation, credential scheduling, streaming.
+- **Console topology brand icons**: the channel-node artwork in `internal/console/assets/console-traffic.js` (`BRAND_ICON_PATHS`) is inlined from the **Magpie public icon set** (`site/public/icons/`, viewBox `0 0 24 24`) — 13 channels: claude, gemini, deepseek, openai, xai, kimi, minimax, qwen, zhipu, antigravity, opencode, openrouter, mistral. The three channels Magpie ships no icon for (stepfun, workbuddy, qoder) keep this project's own drawn glyphs. Report icon issues upstream first, per the project's upstream-first rule.

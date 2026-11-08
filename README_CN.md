@@ -60,3 +60,8 @@ gofmt -w . && go build -o cli-proxy-api ./cmd/server
 ## 鸣谢与许可证
 
 基于 [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 构建，会话亲和与零知识脱敏启发自 [Magpie](https://github.com/magpie-project)，腾讯 WorkBuddy 双域协议逆向参考自 [WorkBuddy2API-Hub](https://github.com/ardeyouxipianyi/workbuddy2api-hub)。基于 [MIT License](LICENSE) 开源发布。
+
+### 上游溯源
+
+- **网关本体**：[router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) —— 协议互转、凭据调度、流式防断流。
+- **控制台拓扑图品牌图标**：`internal/console/assets/console-traffic.js` 中 `BRAND_ICON_PATHS` 的渠道节点图标，直接内联自 **Magpie 公开图标库**（`site/public/icons/`，统一 `viewBox="0 0 24 24"`），共 13 个渠道：claude、gemini、deepseek、openai、xai、kimi、minimax、qwen、zhipu、antigravity、opencode、openrouter、mistral。Magpie 未提供图标的 3 个渠道（stepfun、workbuddy、qoder）沿用本项目自绘图形。按上游优先铁律，图标相关问题请先向上游反馈。
