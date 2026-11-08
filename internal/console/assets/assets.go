@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,36 @@ var embeddedAssets embed.FS
 
 // FileETags caches MD5 hashes for static assets.
 var fileETags = make(map[string]string)
+
+// BuildVersion is injected at link time via
+// -ldflags "-X '.../assets.BuildVersion=vX.Y.Z'".
+// It drives the cache-busting query string on every Console asset URL. Without
+// this the version was hardcoded in console.html across ~37 references and a
+// release that forgot to bump it left browsers serving stale CSS/JS from cache.
+var BuildVersion = "dev"
+
+// assetVersionPattern matches the cache-busting query on asset references,
+// e.g. "?v=v8.0.63". The version inside is rewritten at serve time.
+var assetVersionPattern = regexp.MustCompile(`\?v=[A-Za-z0-9._-]+`)
+
+// assetCacheVersion returns the version used for asset cache busting.
+func assetCacheVersion() string {
+	v := strings.TrimSpace(BuildVersion)
+	if v == "" || v == "dev" {
+		return "dev"
+	}
+	return v
+}
+
+// rewriteAssetVersions replaces every "?v=..." occurrence with the build
+// version so that each release produces distinct asset URLs.
+func rewriteAssetVersions(data []byte) []byte {
+	v := assetCacheVersion()
+	if v == "dev" {
+		return data
+	}
+	return assetVersionPattern.ReplaceAll(data, []byte("?v="+v))
+}
 
 func init() {
 	// Precalculate ETag hashes for embedded files
@@ -289,24 +320,32 @@ func RegisterUI(r *gin.Engine) {
 }
 
 func serveEmbeddedFile(c *gin.Context, assetName, contentType, cacheControl string) {
-	etag := fileETags[assetName]
-	if etag != "" {
-		if match := c.GetHeader("If-None-Match"); match != "" && (match == etag || match == "W/"+etag || match == "*") {
-			c.Status(http.StatusNotModified)
-			return
-		}
-	}
-
 	data, err := embeddedAssets.ReadFile(assetName)
 	if err != nil {
 		c.String(http.StatusNotFound, fmt.Sprintf("Asset %s not found: %v", assetName, err))
 		return
 	}
 
-	if etag == "" {
+	// The index HTML references every asset with a "?v=" cache-busting query.
+	// Rewrite it to the build version so a redeploy always yields fresh URLs.
+	// This must happen before the ETag is derived, so the ETag describes the
+	// bytes actually sent rather than the embedded original.
+	if assetName == "console.html" {
+		data = rewriteAssetVersions(data)
+	}
+
+	etag := fileETags[assetName]
+	if etag == "" || assetName == "console.html" {
 		h := md5.Sum(data)
 		etag = `"` + hex.EncodeToString(h[:8]) + `"`
-		fileETags[assetName] = etag
+		if assetName != "console.html" {
+			fileETags[assetName] = etag
+		}
+	}
+
+	if match := c.GetHeader("If-None-Match"); match != "" && (match == etag || match == "W/"+etag || match == "*") {
+		c.Status(http.StatusNotModified)
+		return
 	}
 
 	c.Header("ETag", etag)
