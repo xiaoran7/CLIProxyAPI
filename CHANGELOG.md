@@ -3,6 +3,28 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.66] - 2026-11-08
+
+### Fixed
+- **发版后用户侧"部署了但界面没变"（index HTML 被浏览器磁盘缓存）(`internal/console/assets/assets.go`, 新增 `internal/console/assets/console-cache-contract_test.go`)**:
+  - 现象：2026-11-08 连续发 v8.0.63 / v8.0.64 / v8.0.65 三版，用户三次反馈"还是没有变"。
+  - 排查：服务端每一跳均验证正确——源站 `nodeH = 38`、HTML 内 37 处资源引用全部为 `?v=v8.0.65`、无残留旧版本号；nginx 侧 `/console` 无独立 location（落入 `location /`，其中已有 `proxy_cache off`），未开 `proxy_cache`；`.cn` 前置中转（`8.148.11.79`，非东京机）ETag 与源站逐字节一致且正确实现 304 条件回源；页面无 Service Worker。链路无任何一层缓存作祟。
+  - 根因：`console.html` 由无版本号 URL（`/console`、`/console/`、`/console/index.html`、`/console/console.html` 四个路由全指向同一 handler）提供，浏览器把旧 HTML 存进磁盘缓存后，其中的 `?v=v8.0.63` 旧资源 URL 继续命中本地缓存。原 `Cache-Control: no-cache, must-revalidate` 在 Chrome 上**仍允许**同 URL 直接复用磁盘副本，只有 `no-store` 才是硬禁止。
+  - 修复：HTML 的 `Cache-Control` 改为 `no-store, no-cache, must-revalidate, max-age=0`。
+  - 静态 JS/CSS 资源保持 `no-cache` 不变——它们的 URL 带 `?v=<构建版本>`，允许本地缓存只在版本变化时回源，改成 `no-store` 会让每次打开控制台都全量重下。
+  - 新增 `TestConsoleHTMLIsNeverDiskCached`（四个路由全查，必须含 `no-store`）与 `TestConsoleAssetsStayRevalidatable`（资源不得含 `no-store`、必须含 `no-cache`）。两条测试均已反向破坏验证：把 HTML 改回 `no-cache`、或把资源改成 `no-store`，测试均 FAIL。
+  - 教训：服务端"我发的是新版"不等于用户看到新版；URL 不带版本号的 HTML 必须显式 `no-store`，否则缓存击穿机制（`?v=`）对 HTML 本身完全无效。
+
+## [v8.0.65] - 2026-11-08
+
+### Fixed
+- **资源缓存击穿版本号硬编码，导致发版后浏览器继续加载旧 JS/CSS (`internal/console/assets/assets.go`, `Dockerfile`, 新增 `internal/console/assets/asset_version_test.go`)**:
+  - 根因：`console.html` 内 37 处资源引用写死 `?v=v8.0.63`。发 v8.0.64 时只更新了二进制内容、漏改 HTML 里的版本字符串，浏览器请求的仍是同一个 URL，直接命中本地缓存——这是用户第二次反馈"没有变"的原因。
+  - 修复：新增 `assets.BuildVersion` 构建期变量，`Dockerfile` 通过 `-ldflags "-X .../internal/console/assets.BuildVersion=${VERSION}"` 注入；`serveEmbeddedFile` 在服务 `console.html` 时用 `rewriteAssetVersions` 把所有 `?v=<任意值>` 重写为构建版本，未注入版本时（本地 `dev`）保持原样不改写。
+  - ETag 顺序缺陷（由新增测试自行抓出）：ETag 原先从未重写前的 body 计算，而响应发送的是重写后的 body，导致带 `If-None-Match` 的复访返回 200 而非 304。已把重写移动到 ETag 推导之前。
+  - 新增 `TestAssetVersionIsRewrittenFromBuildVersion`（锁定"无 v8.0.x 残留 / 必须出现构建版本 / 全部 `?v=` 都被改写 / ETag 与重写后 body 匹配可正确 304"）与 `TestAssetVersionFallsBackToDev`。
+  - 踩坑：测试文件初命名 `asset-version-test.go`（`test` 前带连字符）被 Go 构建系统静默排除，表现为"文件在、测试函数在、却报 no tests to run"。必须命名为 `xxx_test.go`。
+
 ## [v8.0.64] - 2026-11-08
 
 ### Fixed
