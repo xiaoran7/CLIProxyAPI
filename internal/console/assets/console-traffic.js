@@ -442,6 +442,53 @@ function renderTrafficTopology(data, animate = false) {
   const nodeH = 38;
   const nodePositions = {};
 
+  // 各品牌 path 的有效图形尺寸差异极大（gateway 波形线实测仅 14x6，deepseek 10.5x6.6，
+  // stepfun 铺满 16x16）。统一 viewBox 盒子只能让"容器"等大，里面的图形仍然大小不一。
+  // 这里在插入 DOM 前，用一次性离屏 svg 量出原始 bbox，再把每个子元素包一层 transform，
+  // 使有效图形占满画布的 84% 并居中。用离屏测量是为了避开 getBBox 的时序陷阱：
+  // 已带 transform 的子元素再次调用时会返回变换后的结果，导致二次缩放越缩越小。
+  const ICON_NORM_TARGET = 16 * 0.84;
+  const measureIconBBox = (iconMarkup) => {
+    try {
+      const probe = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      probe.setAttribute('viewBox', '0 0 16 16');
+      probe.setAttribute('width', '0');
+      probe.setAttribute('height', '0');
+      probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+      probe.innerHTML = iconMarkup;
+      document.body.appendChild(probe);
+      const b = probe.getBBox();
+      probe.remove();
+      if (!b.width || !b.height) return null;
+      return { x: b.x, y: b.y, width: b.width, height: b.height };
+    } catch (e) { return null; }
+  };
+
+  const normalizeNodeIcon = (iconSvg, rawIconMarkup) => {
+    if (!iconSvg || iconSvg.tagName !== 'svg') return;
+    if (iconSvg.getAttribute('data-icon-normalized') === '1') return;
+    const b = measureIconBBox(rawIconMarkup || '');
+    if (!b) return;
+    // 归一化策略：让图形的短边铺满目标，视觉尺寸就齐平了。
+    // 但不能只按短边算——gateway 波形线是 14x6 的宽图形，按短边（6）放大 2.24 倍后
+    // 宽会变成 31.4，溢出图标盒并顶到旁边的节点文字。所以长边设 1.55 倍目标的上限：
+    // 超限就退回到按长边算，牺牲一点高度换取不入侵文字区。
+    const maxLongEdge = ICON_NORM_TARGET * 1.55;
+    const scaleByShort = ICON_NORM_TARGET / Math.min(b.width, b.height);
+    const scaleByLong = maxLongEdge / Math.max(b.width, b.height);
+    const scale = Math.min(scaleByShort, scaleByLong);
+    const cx = b.x + b.width / 2;
+    const cy = b.y + b.height / 2;
+    const dx = 8 - cx * scale;
+    const dy = 8 - cy * scale;
+    iconSvg.setAttribute('data-icon-normalized', '1');
+    iconSvg.querySelectorAll('path, rect, circle, ellipse, line, polyline, polygon').forEach((el) => {
+      el.setAttribute('transform', `translate(${dx.toFixed(3)}, ${dy.toFixed(3)}) scale(${scale.toFixed(3)})`);
+    });
+  };
+
+
+
   const calcPositions = (items, x) => {
     const count = items.length;
     const step = (svgHeight - 48) / Math.max(1, count);
@@ -674,14 +721,16 @@ function renderTrafficTopology(data, animate = false) {
 
       nodeGroup.innerHTML = `
         <rect class="node-box" width="${nodeW}" height="${nodeH}" rx="8" fill="${visual.bgColor}" stroke="${visual.borderColor}" stroke-width="1.2" />
-        <g transform="translate(7, 8) scale(1.375)">
+        <svg class="node-icon" x="7" y="8" width="22" height="22" viewBox="0 0 16 16" overflow="visible" aria-hidden="true" focusable="false">
           ${visual.icon}
-        </g>
+        </svg>
         ${textSvg}
         <rect x="${nodeW - 32}" y="10" width="24" height="18" rx="9" fill="rgba(15, 23, 42, 0.08)" />
         <text class="node-count-text" x="${nodeW - 20}" y="23" fill="var(--text-main, #0f172a)" font-size="9.5" font-weight="700" text-anchor="middle" font-family="var(--mono, monospace)">${item.count}</text>
       `;
       nodesLayer.appendChild(nodeGroup);
+      const iconSvg = nodeGroup.querySelector(':scope > svg.node-icon');
+      if (iconSvg) normalizeNodeIcon(iconSvg, visual.icon);
     } else {
       // 节点已存在：更新位置坐标与计数
       const countEl = nodeGroup.querySelector('.node-count-text');

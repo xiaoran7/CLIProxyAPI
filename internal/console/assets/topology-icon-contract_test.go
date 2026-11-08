@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -33,28 +34,44 @@ func TestTopologyNodeIconDoesNotOverflow(t *testing.T) {
 		t.Errorf("nodeH = %s, want 38 (34 was too short: icons filled only 35%% of the box)", got)
 	}
 
-	// 3) 图标必须带 scale，且缩放后不超出节点框
-	//    16 逻辑单位 * 1.375 = 22，配 38px 框 => 垂直居中 translate(7, 8)
-	sm := regexp.MustCompile(`translate\(7, 8\) scale\(([0-9.]+)\)`).FindStringSubmatch(src)
-	if sm == nil {
-		t.Fatal("icon scale transform not found; expected translate(7, 8) scale(1.375)")
+	// 3) 图标必须归一化到固定尺寸的 viewBox 盒子，而不是靠一个统一 scale 硬放大。
+	//    各品牌 path 的有效图形尺寸实测从 6x14（gateway 波形线）到 16x16（stepfun）不等，
+	//    同一个 scale 必然有的过大有的过小——gateway 放大后仍是一条细线。
+	//    用 <svg viewBox="0 0 16 16" width height> 把每个图标都塞进同一个 22x22 盒子，
+	//    缩放比例由 SVG 自己按 viewBox 算，与原始图形占多少画布无关。
+	nodeHeight := 38.0
+	box := regexp.MustCompile(`<svg class="node-icon" x="7" y="8" width="(\d+)" height="(\d+)" viewBox="0 0 16 16"`).FindStringSubmatch(src)
+	if box == nil {
+		t.Fatal("icon is not normalised into a fixed viewBox box; " +
+			`expected <svg x="7" y="8" width="22" height="22" viewBox="0 0 16 16"`)
 	}
-	scale, err := strconv.ParseFloat(sm[1], 64)
-	if err != nil {
-		t.Fatalf("parse scale %q: %v", sm[1], err)
+	iconW, _ := strconv.Atoi(box[1])
+	iconH, _ := strconv.Atoi(box[2])
+	if iconW != iconH {
+		t.Errorf("icon box %dx%d is not square; brands will render at different optical sizes", iconW, iconH)
 	}
-	const iconCanvas = 16.0
-	const nodeHeight = 38.0
-	iconSize := iconCanvas * scale
-	if iconSize > nodeHeight-8 {
-		t.Errorf("scaled icon %.1f units leaves less than 8 units of padding in a %.0f-unit box",
-			iconSize, nodeHeight)
+	if iconW < 18 {
+		t.Errorf("icon box is %d units, still too small to read (want >= 18)", iconW)
 	}
-	if iconSize < 18 {
-		t.Errorf("scaled icon %.1f units is still too small to read (want >= 18)", iconSize)
+	if float64(iconW) > nodeHeight-8 {
+		t.Errorf("icon box %d units leaves less than 8 units of padding in a %.0f-unit box",
+			iconW, nodeHeight)
 	}
 
-	// 4) 行距必须大于节点高度，否则节点会互相贴合
+	// 4) 必须带运行时 bbox 归一化：各品牌 path 的有效图形实测从 6x14 到 16x16 不等，
+	//    只统一 viewBox 盒子只能让容器等大，图形仍然大小不一。
+	if !strings.Contains(src, "normalizeNodeIcon") {
+		t.Error("console-traffic.js has no runtime bbox normalisation; " +
+			"brands with small effective canvases (e.g. the gateway waveform) will render as thin lines")
+	}
+
+	// 5) 不得回退到旧的统一 scale 注入方式
+	if regexp.MustCompile(`translate\(7, 8\) scale\(`).MatchString(src) {
+		t.Error("console-traffic.js still scales every brand with one transform; " +
+			"brands have different effective canvas sizes and must be normalised via viewBox")
+	}
+
+	// 6) 行距必须大于节点高度，否则节点会互相贴合
 	pm := regexp.MustCompile(`maxNodes \* (\d+) \+ 48`).FindStringSubmatch(src)
 	if pm == nil {
 		t.Fatal("row pitch not found")
