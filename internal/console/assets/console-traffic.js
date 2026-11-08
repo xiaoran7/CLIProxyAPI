@@ -437,9 +437,9 @@ function renderTrafficTopology(data, animate = false) {
   const colStatuses = (topology.nodes || []).filter(n => n.type === 'status').slice(0, 8);
 
   const maxNodes = Math.max(colIPs.length, colModels.length, colChannels.length, colStatuses.length, 1);
-  const svgHeight = Math.max(260, maxNodes * 52 + 48);
+  const svgHeight = Math.max(260, maxNodes * 56 + 48);
   const nodeW = 168;
-  const nodeH = 34;
+  const nodeH = 38;
   const nodePositions = {};
 
   const calcPositions = (items, x) => {
@@ -668,20 +668,18 @@ function renderTrafficTopology(data, animate = false) {
       nodeGroup.setAttribute('onclick', `toggleHighlightTrafficNode('${escapeHtml(id)}')`);
 
       const textSvg = subLocation
-        ? `<text class="node-title" x="30" y="16.5" fill="var(--text-main, #0f172a)" font-size="10.5" font-weight="700" font-family="var(--mono, monospace)">${escapeHtml(shortLabel)}</text>
-           <text class="node-sub" x="30" y="27" fill="var(--text-muted, #64748b)" font-size="8.5" font-weight="500">${escapeHtml(subLocation)}</text>`
-        : `<text class="node-title" x="30" y="21" fill="var(--text-main, #0f172a)" font-size="11" font-weight="600" font-family="var(--mono, monospace)">${escapeHtml(shortLabel)}</text>`;
+        ? `<text class="node-title" x="36" y="18" fill="var(--text-main, #0f172a)" font-size="10.5" font-weight="700" font-family="var(--mono, monospace)">${escapeHtml(shortLabel)}</text>
+           <text class="node-sub" x="36" y="30" fill="var(--text-muted, #64748b)" font-size="8.5" font-weight="500">${escapeHtml(subLocation)}</text>`
+        : `<text class="node-title" x="36" y="24" fill="var(--text-main, #0f172a)" font-size="11" font-weight="600" font-family="var(--mono, monospace)">${escapeHtml(shortLabel)}</text>`;
 
       nodeGroup.innerHTML = `
         <rect class="node-box" width="${nodeW}" height="${nodeH}" rx="8" fill="${visual.bgColor}" stroke="${visual.borderColor}" stroke-width="1.2" />
-        <g transform="translate(8, 9)">
-          <svg width="16" height="16" viewBox="0 0 16 16">
-            ${visual.icon}
-          </svg>
+        <g transform="translate(7, 8) scale(1.375)">
+          ${visual.icon}
         </g>
         ${textSvg}
-        <rect x="${nodeW - 32}" y="8" width="24" height="18" rx="9" fill="rgba(15, 23, 42, 0.08)" />
-        <text class="node-count-text" x="${nodeW - 20}" y="21" fill="var(--text-main, #0f172a)" font-size="9.5" font-weight="700" text-anchor="middle" font-family="var(--mono, monospace)">${item.count}</text>
+        <rect x="${nodeW - 32}" y="10" width="24" height="18" rx="9" fill="rgba(15, 23, 42, 0.08)" />
+        <text class="node-count-text" x="${nodeW - 20}" y="23" fill="var(--text-main, #0f172a)" font-size="9.5" font-weight="700" text-anchor="middle" font-family="var(--mono, monospace)">${item.count}</text>
       `;
       nodesLayer.appendChild(nodeGroup);
     } else {

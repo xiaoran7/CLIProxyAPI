@@ -232,16 +232,37 @@
     .logs-controls > .logs-filter-row {
       flex: 1 1 0;
       min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
       flex-wrap: nowrap;
       overflow-x: auto;
+      overscroll-behavior-x: contain;
       scrollbar-width: none;
     }
     .logs-controls > .logs-filter-row::-webkit-scrollbar { display: none; }
+    .logs-controls > .logs-filter-row > * {
+      flex: 0 0 auto;
+      min-width: 0;
+      max-width: 100%;
+    }
     .logs-controls .logs-search-input {
       flex: 0 1 260px;
       min-width: 120px;
+      width: 260px;
     }
-    .logs-controls .filter-control-item { flex: 0 1 auto; min-width: 0; }
+    .logs-controls .filter-control-item {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .logs-controls .filter-control-item .dropdown {
+      min-width: 0;
+      overflow: hidden;
+    }
     .logs-controls .pagination-bar { flex: 0 0 auto; white-space: nowrap; }
 
     /* 分页条并入筛选行：去掉自身的外边距与上边框，不再单独占一行 */
