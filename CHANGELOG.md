@@ -17,6 +17,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - 修复：补齐四个品牌分支（`zcode` #7c3aed、`kimi` #0ea5e9、`xai` #1f2937、`gateway` #f59e0b）。
   - 新增 `TestInferChannelOutputsAreAllBranded`（`internal/traffichub/brand_verify_test.go`），锁定「`InferChannel` 的每个输出都有对应前端品牌分支」这一契约，防止后续新增渠道再次漏配。
 
+## [v8.0.64] - 2026-11-08
+
+### Fixed
+- **可视化网关拓扑图节点图标过小、辨识度低 (`internal/console/assets/console-traffic.js`)**:
+  - 现象：用户反馈"图标渲染的还是不对"。实测（浏览器 `getBoundingClientRect`）图标平均仅占节点框高度的 **35%**——16 逻辑单位的图标落在 34px 高的节点框里只剩约 12px 可见区域，地球经纬线、四角星、折线等形状细节糊在一起，多个渠道看起来像同一个圆形。
+  - 修复：节点框 34 → 38 单位；图标经 `translate(7, 8) scale(1.375)` 放大到 22 逻辑单位（占框高约 58%），垂直居中；标题/副标题 x 从 30 → 36，计数徽章 y 从 8 → 10 同步重定位；行距 52 → 56 保持节点间呼吸空间。
+  - 同时移除 `<g transform="translate(8,9)">` 内嵌套的 `<svg width="16" height="16" viewBox="0 0 16 16">`。实测确认该嵌套在 Chrome 下**不会**导致变形（内外 bbox 一致），但它构成第二套坐标系，属隐雷，故一并扁平化——图标 path 直接由外层 `viewBox="0 0 984 H"` 统一缩放。
+  - 新增 `TestTopologyNodeIconDoesNotOverflow`（`internal/console/assets/topology-icon-contract_test.go`）锁定「nodeH=38 / scale=1.375 / 行距 56 / 不嵌套 svg」四项契约；已用反向破坏验证：把 nodeH 改回 34、或把嵌套 svg 加回，测试均 FAIL。
+- **流水页筛选控件互相重叠 (`internal/console/assets/console.html`, `console-logs.css`)**:
+  - 根因：`console.html` 的 `.logs-filter-row` 带内联 `style="display:flex; align-items:center; gap:8px; flex-wrap:nowrap;"`，与 CSS 的 `flex:0 0 auto` 叠加后，搜索框 + 4 个下拉 + 重置按钮 + 同步徽章在窄容器下互相挤压重叠，而非横向滚动。
+  - 修复：删除该内联样式，交还 CSS 控制；CSS 侧补 `display:flex; align-items:center; gap:8px; overscroll-behavior-x:contain`，并为直接子元素加 `flex:0 0 auto; min-width:0; max-width:100%`，`.filter-control-item` 与其内 `.dropdown` 加 `overflow:hidden`。
+  - 验证：浏览器实测容器宽 1180/1000/900/800/700/600px 六档，元素重叠对数**均为 0**；窄档（800px 以下）正确转为横向滚动（rowWidth 138 < scrollWidth 408）。
+
 ## [Unreleased]
 
 ### Added
