@@ -122,7 +122,12 @@ func RegisterUI(r *gin.Engine) {
 
 	// Root / console index handlers
 	consoleIndexHandler := func(c *gin.Context) {
-		serveEmbeddedFile(c, "console.html", "text/html; charset=utf-8", "no-cache, must-revalidate")
+		// The index HTML is served from a version-less URL (/console/), so it must
+		// never reach the browser disk cache: a stale copy would keep pinning the
+		// old "?v=" asset URLs and make a deploy look like it never landed.
+		// "no-store" is the only directive Chrome honours for that;
+		// "no-cache, must-revalidate" still permits reusing a local copy.
+		serveEmbeddedFile(c, "console.html", "text/html; charset=utf-8", "no-store, no-cache, must-revalidate, max-age=0")
 	}
 
 	registerGetHead("/console", consoleIndexHandler)
