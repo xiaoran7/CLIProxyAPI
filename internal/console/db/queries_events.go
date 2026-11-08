@@ -1107,12 +1107,15 @@ WHERE (key_id IS NULL OR key_id <= 0)
 }
 
 // SelectTrafficAggregates returns grouped request metrics across client IPs, models, channels, and statuses.
+// It queries both request_events and usage_outbox via UNION ALL to avoid flush lock contention while reading in-flight events.
 func (d *DB) SelectTrafficAggregates(ctx context.Context, sinceTS int64) ([]TrafficAggregateRow, error) {
-	whereClause := ""
+	whereEvents := ""
+	whereOutbox := ""
 	var args []interface{}
 	if sinceTS > 0 {
-		whereClause = "WHERE r.ts >= ?"
-		args = append(args, sinceTS)
+		whereEvents = "WHERE ts >= ?"
+		whereOutbox = "WHERE ts >= ?"
+		args = append(args, sinceTS, sinceTS)
 	}
 
 	query := fmt.Sprintf(`
@@ -1120,17 +1123,26 @@ SELECT
     COALESCE(NULLIF(r.client_ip, ''), '127.0.0.1') AS client_ip,
     COALESCE(NULLIF(r.model, ''), 'unknown') AS model,
     COALESCE(r.auth_index, '') AS auth_index,
+    COALESCE(NULLIF(b.provider, ''), '') AS channel,
     r.status,
     COALESCE(NULLIF(k.alias, ''), NULLIF(k.api_key, ''), '-') AS key_label,
     COUNT(*) AS req_count,
     SUM(r.latency_ms) AS total_latency,
     SUM(r.total_tokens) AS total_tokens,
     MAX(r.ts) AS last_seen
-FROM request_events r
+FROM (
+    SELECT ts, client_ip, model, auth_index, status, key_id, latency_ms, total_tokens
+    FROM request_events
+    %s
+    UNION ALL
+    SELECT ts, client_ip, model, auth_index, status, key_id, latency_ms, total_tokens
+    FROM usage_outbox
+    %s
+) r
 LEFT JOIN keys k ON r.key_id = k.id
-%s
-GROUP BY client_ip, model, auth_index, r.status, key_label
-`, whereClause)
+LEFT JOIN upstream_auth_baselines b ON r.auth_index = b.auth_index
+GROUP BY client_ip, model, r.auth_index, channel, r.status, key_label
+`, whereEvents, whereOutbox)
 
 	rows, err := d.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -1142,7 +1154,7 @@ GROUP BY client_ip, model, auth_index, r.status, key_label
 	for rows.Next() {
 		var r TrafficAggregateRow
 		if err := rows.Scan(
-			&r.ClientIP, &r.Model, &r.AuthIndex, &r.Status, &r.KeyLabel,
+			&r.ClientIP, &r.Model, &r.AuthIndex, &r.Channel, &r.Status, &r.KeyLabel,
 			&r.ReqCount, &r.TotalLatency, &r.TotalTokens, &r.LastSeen,
 		); err != nil {
 			return nil, fmt.Errorf("scan traffic aggregate row failed: %w", err)
@@ -1160,11 +1172,13 @@ func (d *DB) SelectTrafficRecent(ctx context.Context, sinceTS int64, limit int) 
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	whereClause := ""
+	whereEvents := ""
+	whereOutbox := ""
 	var args []interface{}
 	if sinceTS > 0 {
-		whereClause = "WHERE r.ts >= ?"
-		args = append(args, sinceTS)
+		whereEvents = "WHERE ts >= ?"
+		whereOutbox = "WHERE ts >= ?"
+		args = append(args, sinceTS, sinceTS)
 	}
 
 	query := fmt.Sprintf(`
@@ -1174,16 +1188,25 @@ SELECT
     COALESCE(NULLIF(r.client_ip, ''), '127.0.0.1') AS client_ip,
     COALESCE(NULLIF(k.alias, ''), NULLIF(k.api_key, ''), '-') AS key_label,
     COALESCE(NULLIF(r.model, ''), 'unknown') AS model,
+    COALESCE(NULLIF(b.provider, ''), '') AS channel,
     r.status,
     r.latency_ms,
     r.total_tokens,
     COALESCE(r.auth_index, '') AS auth_index
-FROM request_events r
+FROM (
+    SELECT id, ts, client_ip, model, auth_index, status, key_id, latency_ms, total_tokens
+    FROM request_events
+    %s
+    UNION ALL
+    SELECT id, ts, client_ip, model, auth_index, status, key_id, latency_ms, total_tokens
+    FROM usage_outbox
+    %s
+) r
 LEFT JOIN keys k ON r.key_id = k.id
-%s
+LEFT JOIN upstream_auth_baselines b ON r.auth_index = b.auth_index
 ORDER BY r.ts DESC, r.id DESC
 LIMIT ?
-`, whereClause)
+`, whereEvents, whereOutbox)
 	args = append(args, limit)
 
 	rows, err := d.QueryContext(ctx, query, args...)
@@ -1196,7 +1219,7 @@ LIMIT ?
 	for rows.Next() {
 		var r TrafficRecentRow
 		if err := rows.Scan(
-			&r.ID, &r.TS, &r.ClientIP, &r.KeyLabel, &r.Model,
+			&r.ID, &r.TS, &r.ClientIP, &r.KeyLabel, &r.Model, &r.Channel,
 			&r.Status, &r.LatencyMs, &r.TotalTokens, &r.AuthIndex,
 		); err != nil {
 			return nil, fmt.Errorf("scan traffic recent row failed: %w", err)

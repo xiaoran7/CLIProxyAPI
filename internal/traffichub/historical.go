@@ -183,7 +183,10 @@ func BuildHistoricalSnapshot(rangeName string, groups []HistoricalAggregateInput
 		}
 
 		// Topology node & link generation
-		channel := InferChannel(g.Model, g.AuthIndex)
+		channel := g.Channel
+		if channel == "" {
+			channel = InferChannel(g.Model, g.AuthIndex)
+		}
 		statusGroup := formatStatusGroup(g.Status)
 
 		ipNodeID := "ip:" + g.ClientIP

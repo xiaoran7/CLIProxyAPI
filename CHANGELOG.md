@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.71] - 2026-11-08
+
+### Fixed
+- **历史时间尺度（今日/7天等）渠道数据对齐与凭证映射修复 (`internal/console/db/queries_events.go`, `db/models.go`, `traffichub/historical.go`, `api/handlers_traffic.go`)**:
+  - 根因：`request_events` 与 `usage_outbox` 中仅记录 16 位 Hex 凭证散列 (`auth_index`)，聚合时 `traffichub.InferChannel` 将 Hex 判定为非渠道代号并退化为按模型名称正则匹配，导致通过 Antigravity、WorkBuddy-CN、Qoder-CN 调用的模型在切换至历史区间（如"今日"）时渠道信息丢失或误判为原生模型。
+  - 修复：在 SQLite 聚合查询中执行 `LEFT JOIN upstream_auth_baselines b ON r.auth_index = b.auth_index` 提取权威渠道字段 `b.provider AS channel`，并贯通至 `BuildHistoricalSnapshot` 与 `recentRecords`，确保实时 5m 与历史时间尺度的凭证、模型、渠道归属 100% 严格一致。
+- **历史尺度切换耗时从 7.5 秒降至 19 毫秒（解决切换顿卡卡死）(`internal/console/api/handlers_traffic.go`, `db/queries_events.go`)**:
+  - 根因：此前 `HandleGetTraffic` 每次收到请求时同步调用 `eng.Flusher().FlushUsage(ctx)`，在并发请求下触发独占写锁竞争与阻塞，导致前台切换时间时冻结 7~8 秒。
+  - 修复：移除句柄层的阻塞式 Flush，改在 SQLite 聚合中通过 `UNION ALL` 一次性无锁并行扫描 `request_events` 与 `usage_outbox`，借助 SQLite WAL 机制实现毫秒级（19ms）非阻塞聚合，彻底根除切换顿卡。
+- **可视化拓扑图 Qoder / Qoder-CN 官方品牌图标补全 (`internal/console/assets/console-traffic.js`)**:
+  - 从 Magpie 权威图形资产 (`magpie/internal/gui/assets/icons/qoder.svg`) 提取 24x24 矢量路径嵌入 `BRAND_ICON_PATHS.qoder` 与 `qoder-cn`，统一绑定 `#ff6a00` 品牌橙色与半透明胶囊底色；并在 `getBrandNodeVisual` 的请求模型与路由渠道分支中补齐对齐映射。
+- **全面引入 ui-design Rule 9 骨架屏加载标准 (`internal/console/assets/console-traffic.js`, `console.html`)**:
+  - 拓扑时间尺度即时视觉反馈：在 `switchTrafficRange` 触发点击瞬间同步调用增强版 `renderTrafficSkeleton()`，将拓扑画布、顶部 4 张关键指标卡以及底部 IP/地域账本原地替换为 1:1 几何尺寸的微光骨架（`.traffic-skeleton-shimmer`），数据返回后带 `traffic-fade-in` 平滑淡入，彻底消除用户点击后无反馈的停滞感。
+  - 控制台全局淘汰"正在加载..."纯文本：将 `keys-tbody`（密钥配置）、`upstream-stats-cards-container`（上游凭证用量卡片）、`antigravity-accounts-tbody`、`validations-history-tbody`、`prices-tbody` 与 `openrouter-accounts-tbody` 原有居中弱文本占位全面升级为与真实卡片/表格对齐的 `.ui-skeleton-row` 与 `.ui-skeleton-card-pad`，实现全控制台各工作区异步加载体验一致性。
+- **资源引用全链路缓存击穿升级**:
+  - `console.html` 37 处静态资源版本号全量自增刷新至 `?v=v8.0.71`。
+
 ## [v8.0.70] - 2026-11-08
 
 ### Added

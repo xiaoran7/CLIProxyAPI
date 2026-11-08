@@ -34,9 +34,6 @@ func HandleGetTraffic(eng *engine.Engine) gin.HandlerFunc {
 			return
 		}
 
-		// Flush in-memory usage outbox so latest events are committed to SQLite
-		_ = eng.Flusher().FlushUsage(ctx)
-
 		now := time.Now().In(cstZone)
 		var sinceTS int64
 
@@ -66,13 +63,20 @@ func HandleGetTraffic(eng *engine.Engine) gin.HandlerFunc {
 		recentRows, _ := eng.DB().SelectTrafficRecent(ctx, sinceTS, 50)
 		var recentRecords []traffichub.TrafficRecord
 		for _, r := range recentRows {
+			ch := r.Channel
+			if ch == "" && eng != nil {
+				ch = eng.ResolveProvider(r.Model, r.AuthIndex)
+			}
+			if ch == "" {
+				ch = traffichub.InferChannel(r.Model, r.AuthIndex)
+			}
 			recentRecords = append(recentRecords, traffichub.TrafficRecord{
 				ID:        fmt.Sprintf("tr-%d-%d", r.TS*1000, r.ID),
 				Timestamp: r.TS,
 				ClientIP:  r.ClientIP,
 				KeyLabel:  r.KeyLabel,
 				Model:     r.Model,
-				Channel:   traffichub.InferChannel(r.Model, r.AuthIndex),
+				Channel:   ch,
 				Status:    r.Status,
 				LatencyMs: r.LatencyMs,
 				Tokens:    r.TotalTokens,
@@ -82,10 +86,18 @@ func HandleGetTraffic(eng *engine.Engine) gin.HandlerFunc {
 
 		inputs := make([]traffichub.HistoricalAggregateInput, len(groups))
 		for i, g := range groups {
+			ch := g.Channel
+			if ch == "" && eng != nil {
+				ch = eng.ResolveProvider(g.Model, g.AuthIndex)
+			}
+			if ch == "" {
+				ch = traffichub.InferChannel(g.Model, g.AuthIndex)
+			}
 			inputs[i] = traffichub.HistoricalAggregateInput{
 				ClientIP:     g.ClientIP,
 				Model:        g.Model,
 				AuthIndex:    g.AuthIndex,
+				Channel:      ch,
 				Status:       g.Status,
 				KeyLabel:     g.KeyLabel,
 				ReqCount:     g.ReqCount,

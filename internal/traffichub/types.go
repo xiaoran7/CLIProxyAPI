@@ -94,6 +94,7 @@ type HistoricalAggregateInput struct {
 	ClientIP     string
 	Model        string
 	AuthIndex    string
+	Channel      string
 	Status       int
 	KeyLabel     string
 	ReqCount     int64

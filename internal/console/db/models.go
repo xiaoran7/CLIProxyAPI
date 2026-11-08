@@ -254,6 +254,7 @@ type TrafficAggregateRow struct {
 	ClientIP     string `json:"client_ip"`
 	Model        string `json:"model"`
 	AuthIndex    string `json:"auth_index"`
+	Channel      string `json:"channel"`
 	Status       int    `json:"status"`
 	KeyLabel     string `json:"key_label"`
 	ReqCount     int64  `json:"req_count"`
@@ -269,6 +270,7 @@ type TrafficRecentRow struct {
 	ClientIP    string `json:"client_ip"`
 	KeyLabel    string `json:"key_label"`
 	Model       string `json:"model"`
+	Channel     string `json:"channel"`
 	Status      int    `json:"status"`
 	LatencyMs   int64  `json:"latency_ms"`
 	TotalTokens int64  `json:"total_tokens"`
