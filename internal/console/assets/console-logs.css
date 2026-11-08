@@ -241,27 +241,61 @@
       scrollbar-width: none;
     }
     .logs-controls > .logs-filter-row::-webkit-scrollbar { display: none; }
+    /* 控件一律保持固有宽度，绝不允许被容器压扁。
+       历史问题：用 flex:0 1 auto + min-width:0 + overflow:hidden 时，容器宽度不足
+       会把每个筛选框压缩成窄条（截图可见四个下拉全部变窄、文字被裁），
+       而不是整行横向滚动。min-width:max-content 让 flex 项守住内容宽度，
+       放不下就由上面的 overflow-x:auto 承接为滚动。 */
     .logs-controls > .logs-filter-row > * {
       flex: 0 0 auto;
-      min-width: 0;
-      max-width: 100%;
+      min-width: max-content;
     }
     .logs-controls .logs-search-input {
-      flex: 0 1 260px;
-      min-width: 120px;
+      flex: 0 0 auto;
       width: 260px;
+      min-width: 200px;
     }
     .logs-controls .filter-control-item {
-      flex: 0 1 auto;
-      min-width: 0;
-      overflow: hidden;
+      flex: 0 0 auto;
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      white-space: nowrap;
+    }
+    .logs-controls .filter-control-item .filter-label {
+      flex: 0 0 auto;
+      white-space: nowrap;
     }
     .logs-controls .filter-control-item .dropdown {
-      min-width: 0;
-      overflow: hidden;
+      flex: 0 0 auto;
+    }
+    /* 工具条内的下拉比全局 40px 规格收紧一档：整条工具区设计上限 48px，
+       且四个筛选 + 搜索 + 重置 + 同步徽章的固有宽度要尽量挤进 1080p 首屏。
+       高度 40 -> 32、左右内边距 14 -> 10、字号 13 -> 12.5，单个下拉可省约 10px。 */
+    .logs-controls .filter-control-item .dropdown .dropdown-trigger {
+      height: 32px;
+      min-height: 32px;
+      padding: 0 10px;
+      font-size: 12.5px;
+      border-radius: 9px;
+      gap: 6px;
+    }
+    .logs-controls .filter-control-item .dropdown .dropdown-caret {
+      width: 12px;
+      height: 12px;
+    }
+    .logs-controls .logs-search-input {
+      height: 32px;
+      font-size: 12.5px;
+      padding: 0 10px 0 30px;
+    }
+    .logs-controls .filter-control-item .filter-label {
+      font-size: 11.5px;
+    }
+    .logs-controls > .logs-filter-row .btn {
+      height: 32px;
+      padding: 0 12px;
+      font-size: 12.5px;
     }
     .logs-controls .pagination-bar { flex: 0 0 auto; white-space: nowrap; }
 

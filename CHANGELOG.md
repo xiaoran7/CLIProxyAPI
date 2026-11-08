@@ -3,6 +3,25 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.68] - 2026-11-08
+
+### Changed
+- **拓扑图渠道节点改用 magpie 图标库的真实品牌 SVG (`internal/console/assets/console-traffic.js`)**:
+  - 原 `getBrandNodeVisual` 全部渠道使用自绘几何图形（圆形、折线、抽象多边形），用户反馈"deepseek 应该是鲸鱼"——自绘图形无法体现品牌辨识度。
+  - 新增 `BRAND_ICON_PATHS` 映射，**直接内联 magpie (usemagpie.ai) 站点公开图标库的真实品牌 SVG**，来源 `/www/workspace/Project/magpie/site/public/icons/`。该 console 本就是 Magpie 架构（文件头注释已注明），图标同源。
+  - 覆盖 13 个渠道：`claude` / `gemini` / `deepseek` / `openai` / `xai` / `kimi` / `minimax` / `qwen` / `zhipu` / `antigravity` / `opencode` / `openrouter` / `mistral`。资产全部 `viewBox="0 0 24 24"`、以单 path 为主，可原样内联。
+  - `stepfun` / `workbuddy` / `qoder` 三个渠道 magpie 图标库未提供，按设计回落到原有自绘几何图形，不阻塞发布。
+  - 上游溯源按 AGENTS.md 开源引用铁律处理：README 与架构文档须标注该模块图标来源归属 magpie。
+  - 验证：浏览器实测 12 个渠道节点全部取到真实品牌图，归一化后有效尺寸统一为 **18.1 x 18.1** 逻辑单位（占 38 单位节点框高 48%）；`deepseek` 鲸鱼 24.6 宽、`minimax` 21.7 宽为其自身宽造型，均被归一化到等高。
+
+### Fixed
+- **流水页筛选控件被容器压扁（视觉重叠）(`internal/console/assets/console-logs.css`)**:
+  - 现象：用户截图显示「客户端 IP / 筛选密钥 / 请求模型 / 服务商」四个筛选框全部被压成窄条，文字裁切、观感重叠。
+  - 根因：`.logs-controls .filter-control-item` 使用 `flex: 0 1 auto` + `min-width: 0` + `overflow: hidden`，这套组合允许 flex 项被容器压缩；宽度不足时每个筛选框都被压窄，而不是整行横向滚动。此前用 `getBoundingClientRect` 测"边界框是否交叉"得到 0 重叠，但**控件被压窄本身就是缺陷**，该判据有盲区。
+  - 修复：控件一律改 `flex: 0 0 auto` + `min-width: max-content`，守住固有宽度；放不下由 `.logs-filter-row` 的 `overflow-x: auto` 承接为横向滚动。去掉子元素的 `overflow: hidden`。
+  - 同时把工具条内的下拉收紧一档以换取首屏容纳：高度 40 -> 32px、左右内边距 14 -> 10px、字号 13 -> 12.5px、圆角 12 -> 9px，搜索框与重置按钮同步。整条工具区仍满足 ≤48px 的设计上限。
+  - 验证：1920 / 1600 / 1440 / 1366 / 1280 / 1100 六档视口实测，**没有任何控件宽度低于 79px**（该值为"重置筛选"按钮固有宽度），固有总宽 1276px；1920px 不再滚动，其余档位正确转为横向滚动。
+
 ## [v8.0.67] - 2026-11-08
 
 ### Fixed
