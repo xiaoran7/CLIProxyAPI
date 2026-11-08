@@ -17,6 +17,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ### Fixed
+- **Console 顶部 cpa-watch 健康告警条残留 (`docs/20261108-cpa-watch-banner-removal.md`)**:
+  - 现象：用户多次反馈 Console 顶部仍显示「● 1 个账号曾被停服，已禁用处理 查看详情 →」，但在 `internal/console/` 前端代码内反复搜索无任何命中。
+  - 根因：该横幅**不是** Console 前端渲染的，而是由生产机 openresty 通过 `sub_filter` 在 HTTP 响应体层注入，与 CPA 二进制和前端代码完全解耦。注入链路为 `conf.d/91-cpa-badge-map.conf`（定义 `$cpa_badge_html` 常量）→ `www/sites/cpa.tannerlab.xyz/proxy/console-inject.conf`（对 `location = /console` 与 `/console/` 执行 `sub_filter '</body>' '$cpa_badge_html</body>'`）→ `www/cpa-watch/badge.html`（由 `cpa-silent-death-watch.py` 每 15 分钟生成）。
+  - 因此改前端代码、清浏览器缓存、重新编译二进制、重新部署容器**均无法**移除该横幅，只有改 nginx 配置并 reload 才有效。这是前几轮把排查力气全花在 grep JS 文件上却始终无效的原因。
+  - 处置：备份至 `/root/backup-cpa-watch-removal-20261108/` 后，停用 `console-inject.conf` / `cpa-watch-domain.conf` / `90.cpa-watch.conf` / `91-cpa-badge-map.conf`，`systemctl disable --now cpa-silent-death-watch.timer`，nginx `-t` 通过后 reload。
+  - 验证：本机 `curl http://127.0.0.1:8316/console/` 与经 Cloudflare 的 `https://cpa.tannerlab.cn/console/` 对 `cpa-watch-badge` 均 0 命中，响应字节数 109788 与源站一致，说明只移除了注入、未破坏 Console 本体。
+  - 教训：生产环境「看起来是前端问题」的显示异常，可能是反向代理层注入的，排查应先用 `curl | grep` 核对响应体原文，再怀疑前端代码。
+
+### Fixed
 - **step-5-preview 路由降级混跑修复 (`config.yaml` 生产配置)**:
   - 根因：`internal/registry/model_registry.go:1970` 的 `GetModelProviders` 按凭据数量降序排序（数量相同再按名称字母序），裸名模型解析出多个 provider 后由 `sdk/cliproxy/auth/scheduler.go:516` 的 `pickMixedWithStrategy` 在**同一 priority 桶内**轮转。生产上 `stepfun` 只有 1 个凭据、`workbuddy-cn` 有多个凭据，两者 `priority` 均为默认 0，因此 step-5-preview 的裸名请求被稳定地分给 workbuddy-cn（生产 `request_events` 实测 4708 条历史记录全部为 `workbuddy-cn`）。
   - 修复：`stepfun` 的 `openai-compatibility` 条目增加 `priority: 100`；`workbuddy-cn` 作为 auth 凭据文件不携带 priority（恒为 0），因此自动成为降级通道。未改动任何 Go 代码。
