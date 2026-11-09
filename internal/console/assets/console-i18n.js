@@ -544,6 +544,7 @@
     'quotas.bucket.utcDay': { zh: 'UTC日', en: 'UTC day' },
     'quotas.bucket.weekly': { zh: '周', en: 'week' },
     'quotas.bucket.weeklyLimit': { zh: '周', en: 'Weekly' },
+    'quotas.bucket.monthlyLimit': { zh: '月', en: 'Monthly' },
     'quotas.bucket.weeklyRemaining': { zh: '周剩余:', en: 'Weekly remaining:' },
     'quotas.cacheHitCount': { zh: '命中 {value}', en: 'Hits {value}' },
     'quotas.cachedTokensLabel': { zh: '缓存 Tokens: {value}', en: 'Cached Tokens: {value}' },

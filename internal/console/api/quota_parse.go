@@ -84,7 +84,10 @@ func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) (map[strin
 
 			if grpName == "" || grpName == "<nil>" || grpName == "Quota" {
 				wLower := strings.ToLower(winName)
-				if strings.Contains(wLower, "gemini") {
+				if strings.Contains(wLower, "argon") || strings.Contains(wLower, "gemini 4") ||
+					strings.Contains(wLower, "gemini-4") || strings.Contains(wLower, "gemini4") {
+					grpName = "Gemini 4 Argon"
+				} else if strings.Contains(wLower, "gemini") {
 					grpName = "Gemini Models"
 				} else if strings.Contains(wLower, "claude") || strings.Contains(wLower, "gpt") || strings.Contains(wLower, "3p") {
 					grpName = "Claude Models"
@@ -135,12 +138,16 @@ func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) (map[strin
 
 			wLower := strings.ToLower(win)
 			isWeekly := strings.Contains(wLower, "week")
-			is5h := strings.Contains(wLower, "5h") || strings.Contains(wLower, "five") || strings.Contains(wLower, "hour")
+			isMonthly := strings.Contains(wLower, "month")
+			is5h := strings.Contains(wLower, "5h") || strings.Contains(wLower, "five hour") || strings.Contains(wLower, "5 hour") || strings.Contains(wLower, "five-hour") || strings.Contains(wLower, "5-hour")
 
 			bucketName := win
 			if isWeekly {
 				win = "weekly"
 				bucketName = "Weekly Limit Remaining"
+			} else if isMonthly {
+				win = "monthly"
+				bucketName = "Monthly Limit Remaining"
 			} else if is5h || win == "" {
 				win = "5h"
 				bucketName = "5-Hour Limit"
@@ -594,8 +601,23 @@ func parseCodexQuotaGroups(raw []byte) ([]CpaQuotaGroup, string, string) {
 	if b := parseWindow(primaryMap, "codex-5h", "5h", "5 Hour Limit Remaining"); b != nil {
 		buckets = append(buckets, *b)
 	}
-	if b := parseWindow(secondaryMap, "codex-weekly", "weekly", "Weekly Limit Remaining"); b != nil {
-		buckets = append(buckets, *b)
+	if secondaryMap != nil {
+		secWindowSec, _ := extractFloat(secondaryMap["limit_window_seconds"])
+		if secWindowSec == 0 {
+			secWindowSec, _ = extractFloat(secondaryMap["limitWindowSeconds"])
+		}
+		isMonthly := secWindowSec >= 2419200 // 28 days or longer
+		secID := "codex-weekly"
+		secWin := "weekly"
+		secName := "Weekly Limit Remaining"
+		if isMonthly {
+			secID = "codex-monthly"
+			secWin = "monthly"
+			secName = "Monthly Limit Remaining"
+		}
+		if b := parseWindow(secondaryMap, secID, secWin, secName); b != nil {
+			buckets = append(buckets, *b)
+		}
 	}
 
 	if len(buckets) == 0 {

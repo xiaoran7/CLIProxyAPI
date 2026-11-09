@@ -153,3 +153,90 @@ func keysOf(m map[string]map[string]int) []string {
 	}
 	return out
 }
+
+// TestHydrateKeepsArgonSeparateFromGeminiWithoutDelimiters guards against the bug
+// where raw window names like "gemini-argon-wtu-weekly" had no ":" or " - " delimiter,
+// leaving grpName empty and causing the fallback strings.Contains(wLower, "gemini")
+// to incorrectly fold Argon into models/gemini.
+func TestHydrateKeepsArgonSeparateFromGeminiWithoutDelimiters(t *testing.T) {
+	str := func(s string) *string { return &s }
+	rows := []db.QuotaSnapshotRow{
+		{AuthIndex: "idx", Provider: "antigravity", WindowName: str("gemini-argon-wtu-weekly"), RemainingPercent: 0},
+		{AuthIndex: "idx", Provider: "antigravity", WindowName: str("Gemini Models:weekly"), RemainingPercent: 88},
+	}
+	groups, _ := hydrateQuotaGroupsFromSnapshots(rows)
+	byGroup := map[string]map[string]int{}
+	for _, g := range groups["idx"] {
+		byGroup[g.Name] = map[string]int{}
+		for _, b := range g.Buckets {
+			if b.RemainingPercent != nil {
+				byGroup[g.Name][b.Window] = *b.RemainingPercent
+			}
+		}
+	}
+	if v, ok := byGroup["models/gemini4_argon"]["weekly"]; !ok || v != 0 {
+		t.Errorf("expected models/gemini4_argon weekly=0, got groups: %v", byGroup)
+	}
+	if v, ok := byGroup["models/gemini"]["weekly"]; !ok || v != 88 {
+		t.Errorf("expected models/gemini weekly=88, got groups: %v", byGroup)
+	}
+}
+
+// TestHydrateDoesNotTreatArbitraryHourAs5h verifies that non-5h windows containing
+// "hour" (like "hourly" or "1 hour") do not get collapsed into "5-Hour Limit".
+func TestHydrateDoesNotTreatArbitraryHourAs5h(t *testing.T) {
+	str := func(s string) *string { return &s }
+	rows := []db.QuotaSnapshotRow{
+		{AuthIndex: "idx", Provider: "custom", WindowName: str("custom:hourly"), RemainingPercent: 50},
+		{AuthIndex: "idx", Provider: "custom", WindowName: str("custom:5h"), RemainingPercent: 75},
+	}
+	groups, _ := hydrateQuotaGroupsFromSnapshots(rows)
+	bkts := groups["idx"][0].Buckets
+	if len(bkts) != 2 {
+		t.Fatalf("expected 2 distinct buckets, got %d", len(bkts))
+	}
+	var foundHourly, found5h bool
+	for _, b := range bkts {
+		if b.Window == "hourly" && b.Name == "hourly" {
+			foundHourly = true
+		}
+		if b.Window == "5h" && b.Name == "5-Hour Limit" {
+			found5h = true
+		}
+	}
+	if !foundHourly || !found5h {
+		t.Errorf("expected distinct hourly and 5h buckets, got: %+v", bkts)
+	}
+}
+
+// TestParseCodexQuotaGroupsDetectsMonthlyWindow verifies that secondary windows
+// with limit_window_seconds >= 2419200 (28 days) are identified as monthly limits.
+func TestParseCodexQuotaGroupsDetectsMonthlyWindow(t *testing.T) {
+	raw := []byte(`{
+      "plan_type": "team",
+      "rate_limit": {
+        "allowed": true,
+        "limit_reached": false,
+        "primary_window":   {"used_percent": 10, "limit_window_seconds": 18000, "reset_after_seconds": 12805},
+        "secondary_window": {"used_percent": 5, "limit_window_seconds": 2419200, "reset_after_seconds": 2400000}
+      }
+    }`)
+	groups, planType, _ := parseCodexQuotaGroups(raw)
+	if planType != "team" {
+		t.Errorf("planType = %q, want team", planType)
+	}
+	if len(groups) != 1 || len(groups[0].Buckets) != 2 {
+		t.Fatalf("got %d groups / %d buckets, want 1 / 2", len(groups), len(groups[0].Buckets))
+	}
+	b5h := groups[0].Buckets[0]
+	if b5h.Window != "5h" || b5h.BucketID != "codex-5h" {
+		t.Errorf("primary window = %q (%s), want 5h (codex-5h)", b5h.Window, b5h.BucketID)
+	}
+	bMonth := groups[0].Buckets[1]
+	if bMonth.Window != "monthly" || bMonth.BucketID != "codex-monthly" {
+		t.Errorf("secondary window = %q (%s), want monthly (codex-monthly)", bMonth.Window, bMonth.BucketID)
+	}
+	if bMonth.Name != "Monthly Limit Remaining" {
+		t.Errorf("secondary name = %q, want Monthly Limit Remaining", bMonth.Name)
+	}
+}

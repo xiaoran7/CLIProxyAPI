@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.73] - 2026-11-09
+
+### Fixed
+- **快照回填无分隔符窗口名下 Argon 误折叠进 Gemini 修复 (`internal/console/api/quota_parse.go`, `api/quota_parse_unit_test.go`)**:
+  - 根因：`hydrateQuotaGroupsFromSnapshots` 在快照缺少 `:` 或 ` - ` 分隔符时（如 Google 原生窗口名 `gemini-argon-wtu-weekly`），`grpName` 默认为空，回退分支先执行 `strings.Contains(wLower, "gemini")`，导致 Argon 再次被折叠进 `models/gemini`，引发 0% 额度覆盖。
+  - 修复：回退分组推断中优先判定 `argon` / `gemini 4`，与主规范化逻辑对齐。新增 `TestHydrateKeepsArgonSeparateFromGeminiWithoutDelimiters` 单测保证隔离。
+- **管理层 API `/v0/management/api-call` 缺失非 Claude 3P 模型冷却回退 (`internal/api/handlers/management/api_tools_tokens.go`, `api_tools_test.go`)**:
+  - 根因：`reconcileAntigravityQuotaResponse` 仅将包含 claude/gpt 等关键词的模型归入 3P 冷却，缺少控制台具备的 `else` 回退分支，导致 Antigravity 在 DeepSeek/Llama/Qwen 等 3P 模型触发 429 冷却时，管理页与控制台状态严重脱节（管理页仍显示 100% 可用）。
+  - 修复：补全 `else` 分支将所有非 Gemini 非 Argon 模型的冷却统一注入 3P 配额池。新增 `TestReconcileAntigravityQuotaResponse/ThirdPartyModelCooldown45h_OverridesClaudeGroupToZero` 单测覆盖。
+- **窗口规范化贪婪匹配修正与月度限额支持 (`internal/console/db/queries_upstream.go`, `api/quota_parse.go`, `db/queries_upstream_dedup_test.go`)**:
+  - 根因：`canonicalQuotaWindow` 与 `is5h` 包含宽泛的 `strings.Contains(w, "hour")`，导致任意含有 hour 的窗口（如 `1 hour`、`hourly`）被错误识别为 `5h`（5小时周期）。
+  - 修复：精化为精确匹配 `5h`/`5 hour`/`five hour` 系列词组，补充 `monthly` 规范化映射。更新 `TestNormalizeQuotaWindowKey` 单测。
+- **数据库快照反查去重组名规范化 (`internal/console/db/queries_upstream.go`, `db/queries_upstream_dedup_test.go`)**:
+  - 根因：`normalizeQuotaWindowKey` 仅规范化窗口后缀而保留原始组名，导致历史行 `Gemini Models:5h` 与 `models/gemini:5h` 产生不同去重 key，无法在 SQL 阶段合并。
+  - 修复：新增 `canonicalQuotaGroup` 将旧组名映射至权威标识，实现 SQL 去重键精确合并。
+- **Codex Team/Enterprise 28天/30天月度限额识别与前端适配 (`internal/console/api/quota_parse.go`, `assets/console-quotas-render.js`, `assets/console-i18n.js`, `assets/console.html`, `api/quota_parse_unit_test.go`)**:
+  - 根因：Codex Team 账号中 `secondary_window` 为月度限额（`limit_window_seconds >= 2419200`），后端硬编码为 `codex-weekly`（周限额），导致前端显示"周限额 剩余 100% (28 天 11 小时)"的严重认知歧义。
+  - 修复：后端动态识别月度限额并下发 `codex-monthly` / `monthly` 标识；前端紧凑卡片自适应呈现"月"度标签与月度说明。
+  - 资源引用全链路缓存击穿升级：`console.html` 37 处静态资源版本号全量自增刷新至 `?v=v8.0.73`。
+
 ## [v8.0.72] - 2026-11-09
 
 ### Fixed

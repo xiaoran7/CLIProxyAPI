@@ -1958,4 +1958,32 @@ func TestReconcileAntigravityQuotaResponse(t *testing.T) {
 			t.Errorf("expected unchanged response without cooldowns")
 		}
 	})
+
+	t.Run("ThirdPartyModelCooldown45h_OverridesClaudeGroupToZero", func(t *testing.T) {
+		auth := &coreauth.Auth{
+			ID:       "ag-deepseek-cd@example.com",
+			Provider: "antigravity",
+			ModelStates: map[string]*coreauth.ModelState{
+				"deepseek-chat": {
+					Unavailable:    true,
+					NextRetryAfter: retryAt45h,
+					LastError:      &coreauth.Error{HTTPStatus: 429, Message: "RESOURCE_EXHAUSTED"},
+				},
+			},
+		}
+
+		reconciled := reconcileAntigravityQuotaResponse(auth, []byte(mockRawResp), now)
+		var result map[string]any
+		if err := json.Unmarshal(reconciled, &result); err != nil {
+			t.Fatalf("unmarshal error: %v", err)
+		}
+
+		groups := result["groups"].([]any)
+		claudeGroup := groups[1].(map[string]any)
+		buckets := claudeGroup["buckets"].([]any)
+		claudeWeek := buckets[1].(map[string]any)
+		if frac, _ := claudeWeek["remainingFraction"].(float64); frac != 0.0 {
+			t.Errorf("expected Claude/3P weekly remainingFraction = 0.0 on DeepSeek cooldown, got %v", frac)
+		}
+	})
 }

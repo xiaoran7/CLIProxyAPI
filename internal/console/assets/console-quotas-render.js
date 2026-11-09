@@ -13,6 +13,9 @@
       if (nl.includes('weekly') || nl.includes('week') || nl.includes(t('quotas.bucket.weeklyLimit')) || window === 'weekly') {
         return t('quotas.bucket.weeklyLimit');
       }
+      if (nl.includes('monthly') || nl.includes('month') || window === 'monthly') {
+        return t('quotas.bucket.monthlyLimit');
+      }
       return n;
     }
 
@@ -102,7 +105,9 @@
           const bid = (bkt.bucket_id || '').toLowerCase();
           const bwin = (bkt.window || '').toLowerCase();
           const isWeekly = bwin === 'weekly' || bname.includes('weekly') || bname.includes('week') || bname.includes(t('quotas.bucket.weekly')) || bid.includes('weekly');
-          const is5h = bwin === '5h' || bname.includes('5h') || bname.includes('5 hour') || bname.includes('five') || bid.includes('5h') || !isWeekly;
+          const isMonthly = bwin === 'monthly' || bname.includes('monthly') || bname.includes('month') || bid.includes('monthly');
+          const isLongTerm = isWeekly || isMonthly;
+          const is5h = bwin === '5h' || bname.includes('5h') || bname.includes('5 hour') || bname.includes('five') || bid.includes('5h') || (!isLongTerm && bwin !== 'points');
 
           const isArgon = gname.includes('argon') || gname.includes('gemini 4') || gname.includes('gemini-4') || gname.includes('gemini4') || bname.includes('argon') || bid.includes('argon');
           if (isArgon) {
@@ -114,7 +119,7 @@
             if (isWeekly) claudeWeeklyBucket = bkt;
             else if (!claude5hBucket || is5h) claude5hBucket = bkt;
           } else if (acc.provider === 'codex') {
-            if (isWeekly) codexWeeklyBucket = bkt;
+            if (isLongTerm) codexWeeklyBucket = bkt;
             else if (!codex5hBucket || is5h) codex5hBucket = bkt;
           } else {
             if (isWeekly && !claudeWeeklyBucket) claudeWeeklyBucket = bkt;
@@ -554,18 +559,20 @@
           if (rem2 <= 25) { cls2 = 'meter-low'; col2 = '#ef4444'; }
           else if (rem2 <= 60) { cls2 = 'meter-medium'; col2 = '#f59e0b'; }
 
-          let title2 = t('quotas.bucket.codexWeekly');
+          const isMonthly2 = (b2?.window === 'monthly') || String(b2?.name || '').toLowerCase().includes('month');
+          let title2 = isMonthly2 ? 'Codex 月度限额' : t('quotas.bucket.codexWeekly');
           if (b2?.reset_time || b2?.reset_countdown) {
             title2 += ` (${b2.reset_countdown || formatResetAbs(b2.reset_time)})`;
           }
 
+          const secLabel = isMonthly2 ? t('quotas.bucket.monthlyLimit') : t('quotas.bucket.weeklyLimit');
           const resetBadge2 = buildCompactResetBadge(b2);
           col2Html = `
             <div class="compact-meter-wrap" title="${escapeHtml(title2)}">
               <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
                 <span style="display:inline-flex; align-items:center; gap:4px;">
                   <span class="quota-pool-badge pool-codex">Codex</span>
-                  <span style="color:var(--text-muted); font-size:10px;">${t('quotas.bucket.weeklyLimit')}</span>
+                  <span style="color:var(--text-muted); font-size:10px;">${secLabel}</span>
                 </span>
                 <span style="display:inline-flex; align-items:center; gap:6px;">
                   ${resetBadge2}

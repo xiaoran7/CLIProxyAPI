@@ -584,7 +584,25 @@ func normalizeQuotaWindowKey(windowName string) string {
 	} else if idx := strings.Index(name, " - "); idx >= 0 {
 		group, window = strings.TrimSpace(name[:idx]), strings.TrimSpace(name[idx+3:])
 	}
-	return group + "|" + canonicalQuotaWindow(window)
+	return canonicalQuotaGroup(group) + "|" + canonicalQuotaWindow(window)
+}
+
+// canonicalQuotaGroup maps legacy and modern group spellings onto canonical group identifiers.
+func canonicalQuotaGroup(group string) string {
+	gLower := strings.ToLower(strings.TrimSpace(group))
+	switch {
+	case strings.Contains(gLower, "argon") || strings.Contains(gLower, "gemini 4") ||
+		strings.Contains(gLower, "gemini-4") || strings.Contains(gLower, "gemini4"):
+		return "models/gemini4_argon"
+	case strings.Contains(gLower, "gemini"):
+		return "models/gemini"
+	case strings.Contains(gLower, "claude") || strings.Contains(gLower, "gpt") || strings.Contains(gLower, "3p"):
+		return "models/claude"
+	case strings.Contains(gLower, "codex"):
+		return "codex"
+	default:
+		return strings.TrimSpace(group)
+	}
 }
 
 // canonicalQuotaWindow maps the window spellings both writers used onto one token.
@@ -593,10 +611,13 @@ func canonicalQuotaWindow(window string) string {
 	switch {
 	case w == "":
 		return ""
-	case w == "5h", strings.Contains(w, "five hour"), strings.Contains(w, "5 hour"), strings.Contains(w, "hour"):
+	case w == "5h", strings.Contains(w, "five hour"), strings.Contains(w, "five-hour"),
+		strings.Contains(w, "5 hour"), strings.Contains(w, "5-hour"), strings.Contains(w, "5h"):
 		return "5h"
 	case w == "weekly", strings.Contains(w, "week"):
 		return "weekly"
+	case w == "monthly", strings.Contains(w, "month"):
+		return "monthly"
 	}
 	return w
 }

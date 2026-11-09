@@ -238,6 +238,9 @@ func reconcileAntigravityQuotaResponse(auth *coreauth.Auth, respBody []byte, now
 			} else if strings.Contains(mKey, "gemini") || strings.Contains(mKey, "flash") ||
 				(strings.Contains(mKey, "pro") && !strings.Contains(mKey, "claude")) {
 				geminiCooldowns = append(geminiCooldowns, cd)
+			} else {
+				// All non-Gemini non-Argon models (Claude, GPT, DeepSeek, Llama, Qwen, etc.) share the Antigravity 3P quota pool
+				claudeCooldowns = append(claudeCooldowns, cd)
 			}
 		}
 	}

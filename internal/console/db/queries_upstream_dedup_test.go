@@ -81,6 +81,8 @@ func TestNormalizeQuotaWindowKey(t *testing.T) {
 		{"Gemini Models - Weekly Limit Remaining", "Gemini Models:weekly"},
 		{"Claude and GPT models - Five Hour Limit Remaining", "Claude and GPT models:5h"},
 		{"Claude and GPT models - Weekly Limit Remaining", "Claude and GPT models:weekly"},
+		{"Gemini Models - Five Hour Limit Remaining", "models/gemini:5h"},
+		{"Gemini 4 Argon - Gemini 4 Argon Weekly Limit", "models/gemini4_argon:weekly"},
 	}
 	for _, p := range pairs {
 		if normalizeQuotaWindowKey(p.a) != normalizeQuotaWindowKey(p.b) {
@@ -95,6 +97,12 @@ func TestNormalizeQuotaWindowKey(t *testing.T) {
 	}
 	if normalizeQuotaWindowKey("Gemini Models:5h") == normalizeQuotaWindowKey("Gemini Models:weekly") {
 		t.Error("distinct windows collapsed into one key")
+	}
+	if normalizeQuotaWindowKey("custom:hourly") == normalizeQuotaWindowKey("custom:5h") {
+		t.Error("hourly window must not collapse into 5h")
+	}
+	if got := normalizeQuotaWindowKey("codex:monthly"); got != "codex|monthly" {
+		t.Errorf("normalizeQuotaWindowKey(codex:monthly) = %q, want codex|monthly", got)
 	}
 }
 
