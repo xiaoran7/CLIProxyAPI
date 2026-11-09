@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.72] - 2026-11-09
+
+### Fixed
+- **Console 额度卡周限额误判为 0%（"上游已禁用/周限额耗尽"）而管理页显示 99% (`internal/console/api/quota_parse.go`, `api/quota_parse_unit_test.go`, `api/handlers_quotas_test.go`)**:
+  - 根因：`normalizeUsedPercent` 未信任字段名自带的单位，改按数值大小猜测量纲——`used > 1.0` 才当作 0~100 的百分数，否则当作 0~1 的小数。Codex 上游 `rate_limit.secondary_window.used_percent` 真实返回 `1`（即已用 1%），被猜成 `1.0` 小数 → 100% 已用 → 剩余 0% → `Disabled: true`，于是同一账号在 Console 显示"周 剩余 0%（上游已禁用/周限额耗尽）"，而 management 页显示"周限额 99%"。
+  - 生产实测原始载荷：`primary_window.used_percent: 9`（5h，剩 93%）、`secondary_window.used_percent: 1`（周，剩 99%）；`/v0/management/auth-files` 的 `signals` 亦带 `X-Codex-Secondary-Used-Percent: "1"` 可交叉印证。5 家上游 91 个 `*_used_percent` / `*_remaining_percent` 观测值全为整数百分比。
+  - 修复：字段名即单位。`*_percent` 恒按 0~100 解释并换算剩余量（`100 - used`），`*_fraction` 恒按 0~1 解释并先钳制到 `[0,1]` 再换算，删除按量级猜测的分支。这正是 AGENTS.md「单位由字段名声明」的确定性要求：同一份上游载荷不允许有两种解释。
+  - 新增 `TestNormalizeUsedPercentUnitDoesNotGuess`（`0→100 / 1→99 / 7→93 / 9→91 / 50→50 / 99→1 / 100→0`）、`TestNormalizeUsedFractionStaysFractional`（`0→100 / 0.01→99 / 0.5→50 / 1→0`）与 `TestParseCodexQuotaGroupsUsesRealUpstreamShape`（喂入生产原样载荷 `primary 9` / `secondary 1`，断言 5h=91%、周=99%）。三个用例在旧实现上分别以 `codex-weekly remaining = 0%, want 99%` 失败。
+  - `TestParseCodexQuotaGroups` 既有夹具 `used_percent: 0.35 / 0.8` 同步改为 `35 / 80` 及其期望值 65 / 20，与新语义一致，未放宽断言。
+- **仓库 3 处 Go 源码 CRLF 行尾归一 (`internal/console/api/router.go`, `api/handlers_traffic_test.go`, `traffichub/hub.go`)**:
+  - 按 AGENTS.md「纯 LF」要求将这三处既有 CRLF 转为 LF；内容零改动（`git diff -w` 为空，blob 与工作树逐字节一致）。
+
 ## [v8.0.71] - 2026-11-08
 
 ### Fixed

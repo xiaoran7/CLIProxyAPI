@@ -377,15 +377,17 @@ func TestParseAntigravityQuotaGroups_MissingWindowAndNameDefaultsTo5h(t *testing
 func TestParseCodexQuotaGroups(t *testing.T) {
 	t.Parallel()
 
+	// used_percent carries 0-100, the unit its name states. The codex backend
+	// really reports whole percentages here (observed: 9, 12, 1, 2).
 	rawJSON := []byte(`{
 		"plan_type": "plus",
 		"rate_limit": {
 			"primary_window": {
-				"used_percent": 0.35,
+				"used_percent": 35,
 				"reset_after_seconds": 3600
 			},
 			"secondary_window": {
-				"used_percent": 0.8,
+				"used_percent": 80,
 				"reset_after_seconds": 86400
 			}
 		}
@@ -402,13 +404,13 @@ func TestParseCodexQuotaGroups(t *testing.T) {
 		t.Fatalf("expected 2 buckets, got %d", len(groups[0].Buckets))
 	}
 
-	// Primary window: 1.0 - 0.35 = 65% remaining
+	// Primary window: 100 - 35 = 65% remaining
 	b5h := groups[0].Buckets[0]
 	if b5h.RemainingPercent == nil || *b5h.RemainingPercent != 65 {
 		t.Errorf("5h remainingPercent = %v, want 65", b5h.RemainingPercent)
 	}
 
-	// Secondary window: 1.0 - 0.8 = 20% remaining
+	// Secondary window: 100 - 80 = 20% remaining
 	bWeekly := groups[0].Buckets[1]
 	if bWeekly.RemainingPercent == nil || *bWeekly.RemainingPercent != 20 {
 		t.Errorf("weekly remainingPercent = %v, want 20", bWeekly.RemainingPercent)

@@ -253,17 +253,26 @@ func normalizePercentAndFraction(p float64) (*float64, *int) {
 	return &frac, &pct
 }
 
+// normalizeUsedPercent converts a used percentage (0-100) to the remaining
+// percentage and fraction. The field name states the unit, so no heuristic is
+// applied: a used_percent of 1 means "1% used", leaving 99%. Guessing from the
+// magnitude treated 1 as a fraction (100% used) and reported a fresh weekly
+// quota as fully exhausted.
 func normalizeUsedPercent(used float64) (*float64, *int) {
+	return normalizePercentAndFraction(100.0 - used)
+}
+
+// normalizeUsedFraction converts a used fraction (0-1) to the remaining
+// percentage and fraction. As above, the field name carries the unit.
+func normalizeUsedFraction(used float64) (*float64, *int) {
+	if used < 0 {
+		used = 0
+	}
 	if used > 1.0 {
-		rem := 100.0 - used
-		return normalizePercentAndFraction(rem)
+		used = 1.0
 	}
 	remFrac := 1.0 - used
 	return normalizeFractionAndPercent(remFrac)
-}
-
-func normalizeUsedFraction(used float64) (*float64, *int) {
-	return normalizeUsedPercent(used)
 }
 
 func parseAntigravityQuotaGroups(raw []byte) []CpaQuotaGroup {

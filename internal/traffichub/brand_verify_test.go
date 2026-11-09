@@ -5,21 +5,21 @@ import "testing"
 // 后端 InferChannel 的全部输出，必须都能被前端 getBrandNodeVisual 的品牌分支命中。
 func TestInferChannelOutputsAreAllBranded(t *testing.T) {
 	frontend := map[string][]string{
-		"claude":     {"claude", "anthropic"},
-		"openai":     {"openai", "codex", "gpt"},
+		"claude":      {"claude", "anthropic"},
+		"openai":      {"openai", "codex", "gpt"},
 		"antigravity": {"antigravity"},
-		"gemini":     {"gemini", "google", "vertex"},
-		"deepseek":   {"deepseek"},
-		"qoder":      {"qoder"},
-		"zcode":      {"zcode", "glm", "bigmodel"},
-		"workbuddy":  {"workbuddy"},
-		"kimi":       {"kimi", "moonshot"},
-		"minimax":    {"minimax", "abab"},
-		"stepfun":    {"stepfun", "step"},
-		"gateway":    {"probe", "unspecified"},
-		"xai":        {"xai", "grok"},
-		"openrouter": {"openrouter"},
-		"opencode":   {"opencode"},
+		"gemini":      {"gemini", "google", "vertex"},
+		"deepseek":    {"deepseek"},
+		"qoder":       {"qoder"},
+		"zcode":       {"zcode", "glm", "bigmodel"},
+		"workbuddy":   {"workbuddy"},
+		"kimi":        {"kimi", "moonshot"},
+		"minimax":     {"minimax", "abab"},
+		"stepfun":     {"stepfun", "step"},
+		"gateway":     {"probe", "unspecified"},
+		"xai":         {"xai", "grok"},
+		"openrouter":  {"openrouter"},
+		"opencode":    {"opencode"},
 	}
 
 	cases := []struct{ model, hint, want string }{
