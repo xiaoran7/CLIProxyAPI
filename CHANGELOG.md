@@ -3,6 +3,15 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.74] - 2026-11-09
+
+### Fixed
+- **Console「请求流水」页工具栏控件重叠（重置筛选 / 实时同步徽章压住「25 条/页」与页码）(internal/console/assets/console-logs.css, internal/console/assets/console-base.css)**:
+  - 根因一（主因）：`.logs-controls > .logs-filter-row` 行盒是 `flex: 1 1 0; min-width: 0`，允许被压缩；但其子项被 `.logs-controls > .logs-filter-row > * { min-width: max-content }` 钉死不可收缩，而容器是 `flex-wrap: nowrap`。三者相撞时子项宽度溢出所在行盒，行盒 `overflow: visible` 又不裁剪，溢出的控件直接画在右侧 `.pagination-bar` 之上。实测视口 < ~1543px 必现重叠：1280px 时「重置筛选」与「实时同步 · 全局 15s」正好压住「25 条/页」与「第 1 / 1 页 (共 0 条)」。
+  - 根因二：`.dropdown-trigger` 没有 `max-width`、`.dropdown-label` 没有省略号，触发器按文案 max-content 撑开并横向溢出容器，长模型名 / 长密钥别名会压住相邻控件。同一模式在 `.ovw-routing-dropdown` 早已单独修过，本次推广为全局规则。
+  - 修复：工具条改为可换行（`.logs-controls` 与筛选行均 `flex-wrap: wrap` + `row-gap: 8px`），分页条 `margin-left: auto` 恒定贴右；筛选行改 `flex: 1 1 auto`，使容器换行判定按真实内容宽度生效；搜索框改 `flex: 1 1 200px; min-width: 120px; max-width: 320px` 弹性伸缩，宽屏吸收余量、窄屏先压缩；工具条内下拉放开内联 `min-width`（`min-width: 0 !important`）改为随内容自适应；触发器补 `max-width: 100%`、标签补 `overflow: hidden; text-overflow: ellipsis`。
+  - 验收（镜像生产 Console 静态资源，真实 DOM 几何量测）：1920 / 1440px 工具条单行 45px；1280px 筛选行单行 + 分页条独占一行 93px；1024px 三行 127px；四个宽度下筛选控件与分页条的重叠数均为 0，控件无溢出工具条边界。「错误与熔断中心」「TOS 封禁监控」两页工具条同步受益。
+
 ## [v8.0.73] - 2026-11-09
 
 ### Fixed

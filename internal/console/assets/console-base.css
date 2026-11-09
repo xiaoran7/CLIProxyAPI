@@ -177,6 +177,15 @@
       transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
       white-space: nowrap;
       font-family: inherit;
+      /* 受容器 max-width 约束：超长取值（如长模型名/长密钥别名）不得溢出压住相邻控件 */
+      max-width: 100%;
+    }
+    /* 触发器文案超长时省略号截断，而非横向撑破容器 */
+    .dropdown-trigger .dropdown-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .dropdown-trigger:hover {
       border-color: rgba(59, 130, 246, 0.4);

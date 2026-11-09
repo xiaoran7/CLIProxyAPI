@@ -218,7 +218,8 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      flex-wrap: nowrap;
+      flex-wrap: wrap;
+      row-gap: 8px;
       gap: 12px;
       padding: 4px 20px;
       background: rgba(248, 250, 252, 0.75);
@@ -231,14 +232,22 @@
     }
 
     /* 筛选控件组与分页条同排：允许下拉悬浮层自由弹出（overflow: visible），
-       彻底解决 overflow-x:auto 强制隐式裁剪 Y 轴导致下拉菜单不可见问题。 */
+       彻底解决 overflow-x:auto 强制隐式裁剪 Y 轴导致下拉菜单不可见问题。
+
+       防重叠：行盒 min-width:0 允许被压缩，而子项 min-width:max-content 不允许收缩，
+       二者相撞时子项会溢出行盒并直接压在右侧分页条上（重置筛选 / 同步徽章盖住
+       每页条数与页码）。实测视口 < ~1543px 必现重叠。
+       对策：行内允许换行（空间不足整组控件折行），并让搜索框弹性伸缩，
+       分页条恒定贴右；任何宽度下都不再相互压盖。 */
     .logs-controls > .logs-filter-row {
-      flex: 1 1 0;
+      flex: 1 1 auto;
       min-width: 0;
       display: flex;
       align-items: center;
       gap: 8px;
-      flex-wrap: nowrap;
+      row-gap: 8px;
+      flex-wrap: wrap;
+      align-content: center;
       overflow: visible;
     }
     .logs-controls > .logs-filter-row::-webkit-scrollbar { display: none; }
@@ -246,10 +255,12 @@
       flex: 0 0 auto;
       min-width: max-content;
     }
+    /* 搜索框弹性伸缩：宽屏吸收余量、窄屏先压缩，尽量把整条工具条留在同一行 */
     .logs-controls .logs-search-input {
-      flex: 0 0 auto;
-      width: 220px;
-      min-width: 160px;
+      flex: 1 1 200px;
+      width: auto;
+      min-width: 120px;
+      max-width: 320px;
     }
     .logs-controls .filter-control-item {
       flex: 0 0 auto;
@@ -264,6 +275,12 @@
     }
     .logs-controls .filter-control-item .dropdown {
       flex: 0 0 auto;
+    }
+    /* 工具条内的下拉宽度随内容自适应（不再被内联 min-width 顶到 140/150px），
+       使「搜索 + 4 个筛选 + 重置 + 同步徽章 + 分页条」在 1440+ 常规桌面宽度下
+       仍能挤进同一行；取值超长时由触发器内省略号截断，不会横向溢出压住相邻控件。 */
+    .logs-controls > .logs-filter-row .filter-control-item .dropdown {
+      min-width: 0 !important;
     }
     /* 工具条内的下拉比全局 40px 规格收紧一档：整条工具区设计上限 48px，
        且四个筛选 + 搜索 + 重置 + 同步徽章的固有宽度要尽量挤进 1080p 首屏。
@@ -297,7 +314,7 @@
 
     /* 分页条并入筛选行：去掉自身的外边距与上边框，不再单独占一行 */
     .logs-controls > .pagination-bar {
-      margin: 0;
+      margin: 0 0 0 auto;
       padding: 0;
       border: 0;
       background: transparent;
