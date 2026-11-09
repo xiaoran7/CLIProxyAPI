@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - 修复：字段名即单位。`*_percent` 恒按 0~100 解释并换算剩余量（`100 - used`），`*_fraction` 恒按 0~1 解释并先钳制到 `[0,1]` 再换算，删除按量级猜测的分支。这正是 AGENTS.md「单位由字段名声明」的确定性要求：同一份上游载荷不允许有两种解释。
   - 新增 `TestNormalizeUsedPercentUnitDoesNotGuess`（`0→100 / 1→99 / 7→93 / 9→91 / 50→50 / 99→1 / 100→0`）、`TestNormalizeUsedFractionStaysFractional`（`0→100 / 0.01→99 / 0.5→50 / 1→0`）与 `TestParseCodexQuotaGroupsUsesRealUpstreamShape`（喂入生产原样载荷 `primary 9` / `secondary 1`，断言 5h=91%、周=99%）。三个用例在旧实现上分别以 `codex-weekly remaining = 0%, want 99%` 失败。
   - `TestParseCodexQuotaGroups` 既有夹具 `used_percent: 0.35 / 0.8` 同步改为 `35 / 80` 及其期望值 65 / 20，与新语义一致，未放宽断言。
+- **Antigravity Gemini 4 Argon 额度被误当作 Gemini 组，导致正常 Gemini 额度显示为 0% (`internal/console/api/quota_parse.go`, `api/quota_parse_unit_test.go`)**:
+  - 根因：`hydrateQuotaGroupsFromSnapshots` 用 `strings.Contains(gLower, "gemini")` 判定分组，而 "Gemini 4 Argon" 同样命中该子串，被归一成 `models/gemini`。Argon 与 Gemini 是独立额度池，归一后二者共用 `canonical|window` 去重键，`ORDER BY ts DESC` 下谁先出现谁保留——Argon 周限额耗尽（0%）时，真实的 Gemini 周额度（生产实测 88% / 31%）被顶掉，控制台把 Argon 的 0% 当作 Gemini 池的剩余额度展示。
+  - 修复：在普通 Gemini 判定之前先识别 Argon（`argon` / `gemini 4` / `gemini-4` / `gemini4`），归一到独立组 `models/gemini4_argon` / 显示名 "Gemini 4 Argon"，与前端 `console-quotas-render.js` 既有的 Argon 专属徽章渲染保持一致。
+  - 新增 `TestHydrateKeepsArgonSeparateFromGemini`，以生产快照行（`Gemini Models:weekly=88`、`Gemini 4 Argon:weekly=0`）分别按「Gemini 先行」「Argon 先行」两种顺序各跑一次；在 HEAD 原实现下 `argon_first` 子用例以 `models/gemini weekly = 0, want 88` 失败，正是线上症状。
 - **仓库 3 处 Go 源码 CRLF 行尾归一 (`internal/console/api/router.go`, `api/handlers_traffic_test.go`, `traffichub/hub.go`)**:
   - 按 AGENTS.md「纯 LF」要求将这三处既有 CRLF 转为 LF；内容零改动（`git diff -w` 为空，blob 与工作树逐字节一致）。
 

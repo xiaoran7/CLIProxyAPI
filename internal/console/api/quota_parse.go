@@ -98,7 +98,16 @@ func hydrateQuotaGroupsFromSnapshots(snapshots []db.QuotaSnapshotRow) (map[strin
 			dispName := grpName
 			gLower := strings.ToLower(grpName)
 			canonicalName := grpName
-			if strings.Contains(gLower, "gemini") {
+			// Argon is its own pool and must be canonicalized before the plain
+			// Gemini check: "Gemini 4 Argon" contains "gemini", so collapsing it
+			// into models/gemini made the dedup below keep whichever row came
+			// first and report the exhausted Argon window as the Gemini window's
+			// remaining quota (observed: Argon 0% shown for a Gemini pool at 88%).
+			if strings.Contains(gLower, "argon") || strings.Contains(gLower, "gemini 4") ||
+				strings.Contains(gLower, "gemini-4") || strings.Contains(gLower, "gemini4") {
+				canonicalName = "models/gemini4_argon"
+				dispName = "Gemini 4 Argon"
+			} else if strings.Contains(gLower, "gemini") {
 				canonicalName = "models/gemini"
 				dispName = "Gemini Models"
 			} else if strings.Contains(gLower, "claude") || strings.Contains(gLower, "gpt") || strings.Contains(gLower, "3p") {

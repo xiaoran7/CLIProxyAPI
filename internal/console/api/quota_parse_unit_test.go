@@ -1,6 +1,10 @@
 package api
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/console/db"
+)
 
 // TestNormalizeUsedPercentUnitDoesNotGuess pins the unit of a used_percent
 // value. The old code treated any value <= 1 as a fraction, so an upstream
@@ -81,4 +85,71 @@ func TestParseCodexQuotaGroupsUsesRealUpstreamShape(t *testing.T) {
 			t.Errorf("%s remaining = %d%%, want %d%%", b.BucketID, *b.RemainingPercent, want[b.BucketID])
 		}
 	}
+}
+
+// TestHydrateKeepsArgonSeparateFromGemini reproduces the snapshot rows observed
+// in production for one antigravity credential: the plain Gemini pool has quota
+// left while the Gemini 4 Argon pool is exhausted. Canonicalizing "Gemini 4
+// Argon" into models/gemini collapsed both onto one dedup key, so whichever row
+// the query returned first won: an exhausted Argon row made the surface report
+// 0% for a Gemini pool that still had quota. Both orderings are covered because
+// the collapse only misreported when the Argon row came first.
+func TestHydrateKeepsArgonSeparateFromGemini(t *testing.T) {
+	str := func(s string) *string { return &s }
+	row := func(window string, pct float64) db.QuotaSnapshotRow {
+		return db.QuotaSnapshotRow{AuthIndex: "idx", Provider: "antigravity", WindowName: str(window), RemainingPercent: pct}
+	}
+	geminiRows := []db.QuotaSnapshotRow{
+		row("Gemini Models:5h", 100),
+		row("Gemini Models:weekly", 88),
+	}
+	argonRows := []db.QuotaSnapshotRow{
+		row("Gemini 4 Argon:weekly", 0),
+	}
+	claudeRows := []db.QuotaSnapshotRow{
+		row("Claude and GPT models:weekly", 100),
+		row("Claude and GPT models:5h", 100),
+	}
+
+	cases := map[string][]db.QuotaSnapshotRow{
+		"gemini first": append(append(append([]db.QuotaSnapshotRow{}, geminiRows...), argonRows...), claudeRows...),
+		"argon first":  append(append(append([]db.QuotaSnapshotRow{}, argonRows...), geminiRows...), claudeRows...),
+	}
+
+	for name, rows := range cases {
+		t.Run(name, func(t *testing.T) {
+			groups, _ := hydrateQuotaGroupsFromSnapshots(rows)
+			got, ok := groups["idx"]
+			if !ok || len(got) == 0 {
+				t.Fatalf("hydrate returned no groups for idx")
+			}
+
+			byGroup := map[string]map[string]int{}
+			for _, g := range got {
+				byGroup[g.Name] = map[string]int{}
+				for _, b := range g.Buckets {
+					if b.RemainingPercent != nil {
+						byGroup[g.Name][b.Window] = *b.RemainingPercent
+					}
+				}
+			}
+			if v, ok := byGroup["models/gemini"]["weekly"]; !ok || v != 88 {
+				t.Errorf("models/gemini weekly = %d (present=%v), want 88: the exhausted Argon pool overwrote it", v, ok)
+			}
+			if v, ok := byGroup["models/gemini4_argon"]["weekly"]; !ok || v != 0 {
+				t.Errorf("models/gemini4_argon weekly = %d (present=%v), want 0", v, ok)
+			}
+			if _, ok := byGroup["models/claude"]; !ok {
+				t.Errorf("models/claude group missing, got groups %v", keysOf(byGroup))
+			}
+		})
+	}
+}
+
+func keysOf(m map[string]map[string]int) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
