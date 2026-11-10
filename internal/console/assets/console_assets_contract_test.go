@@ -3,6 +3,7 @@ package assets
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -28,9 +29,18 @@ import (
 // by the shell but not routed is a 404 that breaks the page at runtime.  The
 // tests below turn both classes of drift into build failures.
 
-// partialPrefixes are the file-name prefixes that make an embedded HTML file
-// a console partial rather than the shell itself.
-var partialPrefixes = []string{"console-page-", "console-modal-"}
+// consolePartialGlob is the file-name pattern that makes an embedded HTML
+// file a console partial.  It mirrors the //go:embed glob in assets.go
+// ("console.html console-*.css console-*.js console-*.html images/*"), so
+// every embedded console-*.html is a partial.  Deriving the set from the
+// glob instead of from a hand-written list of prefixes is what makes the
+// contract below bite: a partial that does not match the two historical
+// prefixes (console-page-*, console-modal-*) used to be embedded, never
+// listed and silently absent from the served page with the test still green.
+//
+// console.html does not match "console-*.html" (the shell is "console.html",
+// not "console-*.html"), so it is not swept in.
+var consolePartialGlob = "console-*.html"
 
 // TestConsolePartialsCoverEveryPartialFile 锁定"嵌入的 partial 一定在表里"。
 //
@@ -57,10 +67,8 @@ func TestConsolePartialsCoverEveryPartialFile(t *testing.T) {
 			continue
 		}
 		name := entry.Name()
-		for _, prefix := range partialPrefixes {
-			if strings.HasPrefix(name, prefix) && strings.HasSuffix(name, ".html") {
-				onDisk[name] = true
-			}
+		if matched, err := filepath.Match(consolePartialGlob, name); err == nil && matched {
+			onDisk[name] = true
 		}
 	}
 
@@ -115,7 +123,15 @@ func htmlTagScan(markup string, stack []string) ([]string, string) {
 			if len(stack) == 0 {
 				return stack, "</" + name + ">"
 			}
+			opened := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
+			// Compare the closing tag with the element it closes.  Popping
+			// without the comparison only proves that the COUNTS balance:
+			// a group whose partials were reordered so that one element
+			// closes a differently-named one would still pass.
+			if opened != name {
+				return stack, "</" + name + "> closes <" + opened + ">"
+			}
 			continue
 		}
 		stack = append(stack, name)
@@ -148,8 +164,8 @@ func TestConsolePartialGroupsAreTagBalanced(t *testing.T) {
 			var orphan string
 			stack, orphan = htmlTagScan(string(raw), stack)
 			if orphan != "" {
-				t.Errorf("partial group %s: %s closes a container that a previous partial opened; "+
-					"reordering or dropping a partial would corrupt the DOM", group.marker, orphan)
+				t.Errorf("partial group %s: %s; reordering or dropping a partial would corrupt the DOM",
+					group.marker, orphan)
 				break
 			}
 		}
@@ -207,4 +223,30 @@ func TestEveryReferencedAssetIsRouted(t *testing.T) {
 	}
 	sort.Strings(paths)
 	t.Logf("verified %d referenced asset routes", len(paths))
+}
+
+// TestHTMLTagScanReportsAMismatchedClosingTag 锁定标签扫描器比的是名字，不只是
+// 个数。
+//
+// 旧实现弹出元素栈时不看闭合标签叫什么，于是"个数对得上、名字对不上"的错位
+// （某个 partial 以 </section> 收掉前一个 partial 开的 <div>）照样通过。
+func TestHTMLTagScanReportsAMismatchedClosingTag(t *testing.T) {
+	stack, err := htmlTagScan("<div><section></div>", nil)
+	if err == "" {
+		t.Fatal("expected a mismatch report for </div> closing <section>")
+	}
+	if !strings.Contains(err, "closes") {
+		t.Errorf("mismatch report = %q, want it to name the mismatch", err)
+	}
+	if len(stack) != 1 {
+		t.Errorf("stack after the mismatch = %v, want the still-open <section>", stack)
+	}
+
+	stack, err = htmlTagScan("<div><span></span></div>", nil)
+	if err != "" {
+		t.Errorf("balanced markup reported %q, want no report", err)
+	}
+	if len(stack) != 0 {
+		t.Errorf("stack = %v, want empty", stack)
+	}
 }

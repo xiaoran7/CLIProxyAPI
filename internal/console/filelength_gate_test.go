@@ -267,9 +267,18 @@ func TestGateVerdictThresholdSemantics(t *testing.T) {
 				t.Errorf("%s: gateVerdict message = %q, want it to contain %q",
 					tc.name, msg, tc.wantSubstr)
 			}
-			if strings.Contains(msg, "not registered in pendingSplit") &&
-				strings.Contains(msg, "architectural degradation threshold") {
-				t.Errorf("%s: failure message must not offer the debt table as the way out of the hard limit: %q",
+			// The hard-limit message must not point at the debt table: an
+			// oversized file has to be split, it must not be able to buy
+			// itself a pass by being registered.
+			//
+			// The check is on the hard-limit branch alone.  The previous
+			// form required the message to contain BOTH "not registered
+			// in pendingSplit" and "architectural degradation threshold",
+			// but gateVerdict emits those from mutually exclusive
+			// branches, so the conjunction was never true and the
+			// assertion could never fire.
+			if tc.lines >= fileLengthFailAt && strings.Contains(msg, "pendingSplit") {
+				t.Errorf("%s: the hard-limit message must not offer the debt table as the way out: %q",
 					tc.name, msg)
 			}
 			continue
@@ -350,5 +359,33 @@ func TestConsoleFileLengthGate(t *testing.T) {
 
 	for _, failure := range failures {
 		t.Errorf("file length gate: %s", failure)
+	}
+}
+
+// TestGateHardLimitMessageDoesNotOfferTheDebtTable 锁定超硬上限的失败信息不能把
+// 欠账表当成出路，而且这条断言必须真的能触发。
+//
+// 之前的写法是"信息里同时出现 pendingSplit 和 architectural degradation
+// threshold"，可 gateVerdict 的这两句话来自互斥的两个分支，合取永远为假，断言
+// 从来不会触发 —— 它守着的东西根本没在守。
+func TestGateHardLimitMessageDoesNotOfferTheDebtTable(t *testing.T) {
+	// A registered file at the hard limit must still fail: the debt table
+	// cannot buy a pass.
+	msg := gateVerdict("internal/console/x.go", fileLengthFailAt, 0, true)
+	if msg == "" {
+		t.Fatalf("gateVerdict accepted a %d-line file that is registered in the debt table", fileLengthFailAt)
+	}
+	if !strings.Contains(msg, "must be split") {
+		t.Errorf("hard-limit message = %q, want it to demand a split", msg)
+	}
+	if strings.Contains(msg, "pendingSplit") {
+		t.Errorf("the hard-limit message must not offer the debt table as the way out: %q", msg)
+	}
+
+	// The same check for a file that is NOT registered must still mention the
+	// debt table, so the two branches stay distinguishable.
+	msg = gateVerdict("internal/console/x.go", fileLengthWarnAt, 0, false)
+	if !strings.Contains(msg, "pendingSplit") {
+		t.Errorf("warning message = %q, want it to mention the debt table", msg)
 	}
 }

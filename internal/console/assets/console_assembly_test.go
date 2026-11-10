@@ -75,3 +75,38 @@ func TestConsoleAssemblyRejectsAMissingPlaceholder(t *testing.T) {
 		t.Error("assembling a shell with a duplicated placeholder succeeded; the leftover marker would ship to the browser")
 	}
 }
+
+// TestConsoleAssemblyIgnoresMarkerTextInsidePartialBodies 锁定 partial 正文里
+// 出现的占位标记文本不会污染拼装。
+//
+// 旧实现拿"已经拼了一半的输出"去数占位标记，于是某个 partial 的正文里只要
+// 出现另一个分组的标记字面量（哪怕只是留给同事看的一行注释），整个文档就拼不
+// 出来 —— 每一个 GET /console 都变成 500，坏掉的不只是那一个标签页；而且真正
+// 的占位符还可能被正文里那份副本挤掉。现在所有标记先对着壳校验，再统一换成唯
+// 一哨兵，最后才把正文填进去，正文里的标记字面量原样留在文档里。
+func TestConsoleAssemblyIgnoresMarkerTextInsidePartialBodies(t *testing.T) {
+	body := map[string]string{
+		"a.html": "<div class=\"a\">A</div>\n",
+		"b.html": "<!--CONSOLE_MODALS-->\n<div class=\"b\">B</div>\n",
+	}
+	groups := []consolePartialGroup{
+		{marker: "<!--CONSOLE_PAGES-->", files: []string{"a.html"}},
+		{marker: "<!--CONSOLE_MODALS-->", files: []string{"b.html"}},
+	}
+	shell := "<html>\n<!--CONSOLE_PAGES-->\n<!--CONSOLE_MODALS-->\n</html>\n"
+
+	got, err := assembleShell(shell, groups, func(name string) (string, error) {
+		return body[name], nil
+	})
+	if err != nil {
+		t.Fatalf("assembleShell: %v", err)
+	}
+
+	want := "<html>\n" +
+		"<div class=\"a\">A</div>\n" +
+		"<!--CONSOLE_MODALS-->\n<div class=\"b\">B</div>\n" +
+		"</html>\n"
+	if got != want {
+		t.Errorf("assembled document does not match the original:\n got: %q\nwant: %q", got, want)
+	}
+}

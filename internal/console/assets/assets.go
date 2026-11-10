@@ -156,8 +156,33 @@ func assembleConsoleHTML(data []byte) ([]byte, error) {
 // read is the source of the partial bodies. It is a parameter so the
 // line-ending contract can be exercised without the embed FS.
 func assembleShell(shell string, groups []consolePartialGroup, read func(string) (string, error)) (string, error) {
-	out := shell
+	// Validate every placeholder against the shell, before anything is
+	// spliced.
+	//
+	// Counting a placeholder against the partially spliced output would let a
+	// partial body that happens to contain another group's placeholder break
+	// the whole document -- the console would answer 500 to every GET
+	// /console, not just to the page that owns the offending partial -- and
+	// the splice would replace the copy inside that body instead of the one
+	// in the shell.
 	for _, group := range groups {
+		if strings.Count(shell, group.marker) != 1 {
+			return "", fmt.Errorf("console placeholder %s must appear exactly once", group.marker)
+		}
+	}
+
+	// Swap every placeholder for a unique token first.  After this loop no
+	// placeholder text is left in the document, so a placeholder literal
+	// inside a partial body can never be mistaken for a placeholder.
+	tokens := make([]string, len(groups))
+	for i, group := range groups {
+		token := fmt.Sprintf("\x00console-partial-%d\x00", i)
+		tokens[i] = token
+		shell = strings.Replace(shell, group.marker, token, 1)
+	}
+
+	out := shell
+	for i, group := range groups {
 		parts := make([]string, 0, len(group.files))
 		terminator := ""
 		for _, name := range group.files {
@@ -171,10 +196,13 @@ func assembleShell(shell string, groups []consolePartialGroup, read func(string)
 			}
 			parts = append(parts, body)
 		}
-		if strings.Count(out, group.marker) != 1 {
-			return "", fmt.Errorf("console placeholder %s must appear exactly once", group.marker)
-		}
-		out = strings.Replace(out, group.marker, strings.Join(parts, terminator), 1)
+		out = strings.Replace(out, tokens[i], strings.Join(parts, terminator), 1)
+	}
+	// Every token must have been consumed.  A leftover would mean a
+	// placeholder was never spliced and the document still carries the
+	// sentinel.
+	if strings.ContainsRune(out, 0) {
+		return "", fmt.Errorf("console assembly left an unresolved placeholder token")
 	}
 	return out, nil
 }

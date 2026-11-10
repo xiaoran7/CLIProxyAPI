@@ -3,6 +3,32 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.80] - 2026-11-11
+
+### Fixed
+- **占位标记在"已经拼了一半的输出"里计数，一个 partial 正文里的标记字面量能拼垮整个控制台**：`assembleShell` 逐组拼装时用 `strings.Count(out, group.marker)` 校验占位符，而 `out` 已经被前几组的正文替换过了。于是：
+  - 只要**任何一个** partial 的正文里出现另一个分组的占位标记字面量（哪怕只是留给同事看的一行 HTML 注释），轮到那一组时计数就成了 2，组装直接失败，`GET /console` 对**每一个**标签页都返回 500——坏掉的不只是那一个页面；
+  - 更糟的是拼装会把**正文里那份副本**当成占位符替换掉，真正的占位符留在响应里，页面结构被彻底改写。
+  - 修复：所有占位标记**先对着壳校验**（每个必须恰好出现一次），再统一换成唯一哨兵，最后才把各组正文填进哨兵位。文档里不再残留任何占位标记文本，正文里出现的标记字面量原样保留成普通文本。拼装结果与修复前逐字节一致。
+  - 附带加了一道兜底：拼装完若哨兵还有残留，直接报错而不是把带哨兵的内容发出去。
+- **`internal/console/db/queries_auth_bucket.go` 切错了缝**：这个 48 行的文件（一个结构体 + 一个方法）是从 `queries_upstream.go` 切出来的，可它查的是 `request_events` 表——`request_events` 的天然归属是 `queries_request_events.go`（该文件里 `request_events` 出现 16 次，`upstream_events` 0 次）。这正是 AGENTS.md §2.8.4 说的"零散无实际职责的微碎屑文件"，而 v8.0.78 修 `api/provider_patterns.go` 时用的就是同一把尺子，这一个却漏了。现已并回 `queries_request_events.go`（312 → 353 行，落在 300~500 的健康区间）。
+  - 拆分另外产生的七个 db 文件（模型定价、服务商注册表、outbox、人机验证、上游聚合/基线/每日统计）每个都守着一个完整的查询域、各有独立文件头，属于正常拆分，**不动**。
+
+### Fixed (契约测试)
+- **partial 覆盖契约只认两个文件名前缀**：`TestConsolePartialsCoverEveryPartialFile` 用 `console-page-*` / `console-modal-*` 两个硬编码前缀判断"什么算 partial"，而 `//go:embed` 收的是 `console-*.html`。新增一个既不是 page 也不是 modal 的 `console-*.html`，它会被编进二进制、不在 `consolePartials` 表里、**永远进不了页面**，而测试照样是绿的。现在这个集合改由与 embed 通配符同一个 `console-*.html` 推导（`console.html` 不匹配该通配符，壳不会被卷进来），契约名副其实。
+- **标签平衡只数个数、不比名字**：`htmlTagScan` 弹出元素栈时不看闭合标签叫什么，于是"个数对得上、名字对不上"的错位（某个 partial 用 `</section>` 收掉前一个 partial 开的 `<div>`）照样能过。现在会比较闭合标签与它关闭的元素名，不一致即报错。实测当前两个 partial 分组的标签栈**名字完全自洽**，所以这条更严的断言直接成立。
+- **行数门禁的"欠账表不能买通"断言是个恒假合取**：原写法要求失败信息里**同时**出现 `not registered in pendingSplit` 和 `architectural degradation threshold`，而 `gateVerdict` 的这两句话来自**互斥**的两个分支，合取永远为假——这条断言从来没触发过，它守着的东西根本没在守。现在改为直接对硬上限分支的信息断言"必须要求拆分"且"不得提到欠账表"。
+
+### Added
+- **三条自证的回归测试**，把上面三个修复合同变成构建期可执行的断言：
+  - `TestConsoleAssemblyIgnoresMarkerTextInsidePartialBodies`：某个 partial 正文里出现另一个分组的标记字面量时，拼装必须成功，且真正占位符仍要拿到正确的正文；
+  - `TestHTMLTagScanReportsAMismatchedClosingTag`：`</div>` 收掉 `<section>` 必须被报成错位，配平的写法则必须不报；
+  - `TestGateHardLimitMessageDoesNotOfferTheDebtTable`：硬上限分支的信息必须要求拆分、不得提到 `pendingSplit`，同时警告分支必须提到 `pendingSplit`——两个分支保持可区分，证明这条断言真的能触发。
+
+### Verification
+- `gofmt -l internal/console/` 无输出；`go build ./...`、`go vet ./internal/console/...` 通过；`go test ./internal/console/...` 六个包全绿。
+- 资源版本号自增：`console.html` 的 57 处 `?v=v8.0.79` 全量改为 `?v=v8.0.80`。
+
 ## [v8.0.79] - 2026-11-11
 
 ### Fixed
