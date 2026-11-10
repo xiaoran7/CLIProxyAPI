@@ -1,0 +1,145 @@
+<!-- Gate Console · 页面：上游凭证 -->
+<div class="tab-page active" id="tab-page-quotas">
+<div class="panel auth-required-panel" role="status">
+<h2 data-i18n="member.connectTitle">连接 Console 控制台</h2>
+<p data-i18n="member.inputKeyTitle">输入管理密钥查看上游配额、服务状态与请求数据。成员也可以使用自己的 API Key 查看专属用量。</p>
+<button class="btn" onclick="openAuthModal()" type="button" data-i18n="member.inputKeyBtn">输入密钥</button>
+</div>
+<!-- 成员专属用量看板 (仅成员模式下显示) -->
+<div class="member-info-card" id="member-quota-panel" style="display:none;">
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+<div style="display:flex; align-items:center; gap:10px;">
+<div class="provider-icon-badge" style="background:linear-gradient(135deg, #e0f2fe, #dbeafe); color:#0284c7; border:1px solid #bae6fd; width:32px; height:32px;">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;" viewbox="0 0 24 24"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+<div>
+<div style="font-size:14px; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:8px;">
+<span id="member-alias-display" data-i18n="member.myKey">我的 API 密钥</span>
+<span class="chip chip-green" id="member-status-pill" data-i18n="status.normal">正常</span>
+</div>
+<div id="member-key-display" style="font-size:11.5px; color:var(--text-dim); font-family:var(--mono);">sk-cpa-***</div>
+</div>
+</div>
+<div style="font-size:11.5px; color:var(--text-dim);">
+<span data-i18n="member.supportedModels">支持模型: </span><span id="member-models-display" style="color:var(--text-muted);" data-i18n="member.fullAllowed">全量允许</span>
+</div>
+</div>
+<div class="member-stats-grid">
+<div class="member-stat-box">
+<span class="member-stat-label" data-i18n="member.todayTokens">今日总消耗 Tokens</span>
+<span class="member-stat-val" id="member-tokens-total">0</span>
+</div>
+<div class="member-stat-box">
+<span class="member-stat-label" data-i18n="member.inOutTokens">输入 / 输出 Tokens</span>
+<span class="member-stat-val" id="member-tokens-io" style="font-size:14px;">0 / 0</span>
+</div>
+<div class="member-stat-box">
+<span class="member-stat-label" data-i18n="member.cacheTokens">缓存命中 Tokens (率)</span>
+<span class="member-stat-val" id="member-tokens-cache" style="color:#38bdf8; font-size:15px;">0 (0.0%)</span>
+</div>
+<div class="member-stat-box">
+<span class="member-stat-label" data-i18n="member.todayCost">今日预估花费</span>
+<span class="member-stat-val" id="member-cost-total" style="color:#34d399;">$0.00</span>
+</div>
+</div>
+<div class="member-progress-wrap" id="member-limit-box" style="display:none;">
+<div class="member-progress-header">
+<div class="member-progress-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:#38bdf8;" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="member.dailyQuota">每日可用配额额度</span>
+          </div>
+<div class="member-progress-stats">
+<span class="member-progress-pct" id="member-limit-pct">0%</span>
+<span class="member-progress-fraction" id="member-limit-fraction">0 / 0</span>
+</div>
+</div>
+<div class="member-progress-bar">
+<div class="member-progress-fill" id="member-limit-bar" style="width: 0%;"></div>
+</div>
+<div class="member-progress-footer">
+<span><span data-i18n="member.todayConsumed">今日已消耗</span> <b id="member-limit-used-desc" style="color:var(--text-main); font-family:var(--mono);">0</b> Tokens</span>
+<span><span data-i18n="member.todayRemain">今日剩余可用:</span> <span class="member-progress-remaining" id="member-limit-remaining">--</span></span>
+</div>
+</div>
+</div>
+<section aria-label="上游与网关概况" data-i18n-aria-label="ops.ariaLabel" class="operations-strip">
+<div class="operation-metric"><span class="operation-label" data-i18n="nav.quotas">上游凭证</span><strong class="operation-value num" id="ops-total-accounts">--</strong></div>
+<div class="operation-metric"><span class="operation-label" data-i18n="member.availableCreds">可用凭证</span><strong class="operation-value num" id="ops-enabled-accounts">--</strong></div>
+<div class="operation-metric"><span class="operation-label" data-i18n="member.req24h">近 24 小时请求</span><strong class="operation-value num" id="ops-requests-24h">--</strong></div>
+<div class="operation-metric"><span class="operation-label" data-i18n="member.avail7d">近 7 日可用率</span><strong class="operation-value num" id="ops-availability-7d">--</strong></div>
+<div class="operation-metric" id="ops-validations-box" style="display:none;"><span class="operation-label" style="color:var(--danger);" data-i18n="member.pendingValidation">待验证账号</span><strong class="operation-value num" id="ops-validations-count" style="color:var(--danger);">0</strong></div>
+</section>
+<div class="quota-workspace">
+<!-- 服务状态 (Uptime Kuma 风格心跳卡) -->
+
+<!-- 上游凭证配额 (CPAMC 对齐面板) -->
+<div class="panel upstream-panel" id="upstream-panel">
+<div class="panel-header" style="flex-wrap: wrap; gap: 12px;">
+<div style="display:flex; align-items:center; gap:8px;">
+<button aria-controls="upstream-panel-body" aria-expanded="true" class="panel-fold-btn" id="upstream-panel-fold-btn" onclick="togglePanelFold('upstream-panel-body', this)" title="收起/展开上游凭证配额" data-i18n-title="quotas.foldTitle">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+<div>
+<div class="panel-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:#a855f7;" viewbox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              <span data-i18n="quotas.panelTitle">上游凭证配额 (Auth Files)</span>
+            </div>
+</div>
+</div>
+<div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+<!-- 搜索框 -->
+<div style="position:relative; display:flex; align-items:center;">
+<input class="logs-search-input" id="upstream-search-input" oninput="onUpstreamSearch(this.value)" placeholder="搜索邮箱或ID..." data-i18n-placeholder="quotas.searchPlaceholder" style="width:160px; padding-left:26px; font-size:11.5px; height:28px;" type="text"/>
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;position:absolute;left:8px;color:var(--text-dim);pointer-events:none;" viewbox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+<!-- 视图切换: 紧凑列表 vs 完整卡片 -->
+<div class="segmented-tabs" id="upstream-view-mode-tabs">
+<button class="active" onclick="switchUpstreamViewMode('compact')" title="单行紧凑模式，一屏浏览更多凭证" data-i18n-title="quotas.viewCompactTitle" data-i18n="quotas.viewCompact">紧凑列表</button>
+<button onclick="switchUpstreamViewMode('cards')" title="完整卡片模式，查看全部模型分桶" data-i18n-title="quotas.viewCardsTitle" data-i18n="quotas.viewCards">完整卡片</button>
+</div>
+<!-- Provider 过滤 -->
+<div class="segmented-tabs" id="upstream-filter-tabs">
+<button class="active" onclick="switchUpstreamFilter('all')" data-i18n="common.all">全部</button>
+<button onclick="switchUpstreamFilter('antigravity')">Antigravity</button>
+<button onclick="switchUpstreamFilter('codex')">Codex</button>
+<button onclick="switchUpstreamFilter('claude')">Claude</button>
+<button onclick="switchUpstreamFilter('workbuddy')">WorkBuddy</button>
+<button onclick="switchUpstreamFilter('qoder')">Qoder</button>
+<button onclick="switchUpstreamFilter('zcode')">ZCode</button>
+<button onclick="switchUpstreamFilter('zcode-cn')">BigModel</button>
+<button onclick="switchUpstreamFilter('openrouter')">OpenRouter</button>
+<button onclick="switchUpstreamFilter('opencode')">OpenCode</button>
+</div>
+<!-- 隐藏已停用 -->
+<label style="display:inline-flex; align-items:center; gap:4px; font-size:11.5px; color:var(--text-muted); cursor:pointer; user-select:none;">
+<input id="upstream-hide-disabled" onchange="toggleHideDisabled(this.checked)" style="cursor:pointer; accent-color:var(--accent);" type="checkbox"/>
+            <span data-i18n="quotas.hideDisabled">隐藏已停用</span>
+          </label>
+<button class="btn btn-activate-5h" id="btn-activate-provider" onclick="triggerActivateFilteredAccounts()" style="padding:4px 12px;" title="向当前筛选的凭据批量查询最新上游额度" data-i18n-title="quotas.refreshFilteredQuotaTitle">
+            <span data-i18n="quotas.refreshAllQuotaBtn">刷新全部额度</span>
+          </button>
+<button class="btn btn-secondary" id="btn-manage-openrouter" onclick="openOpenRouterModal()" style="display:none; padding:4px 10px; font-size:11.5px;" title="在 Console 原生管理 OpenRouter 账号与 Management Key" data-i18n-title="quotas.manageAccountsTitle">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;" viewbox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-linecap="round" stroke-linejoin="round"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="quotas.manageAccounts">管理账号</span>
+          </button>
+<button class="btn btn-secondary" id="btn-qoder-checkin" onclick="triggerQoderCheckin()" style="display:none; padding:4px 10px; font-size:11.5px; color:#6366f1; border-color:rgba(99,102,241,0.3); background:rgba(99,102,241,0.06);" title="批量为全部 Qoder 账号执行每日签到" data-i18n-title="quotas.qoderCheckinTitle">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;" viewbox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="quotas.qoderCheckinAll">每日签到</span>
+          </button>
+<button class="btn btn-secondary" id="btn-refresh-upstream-quotas" onclick="refreshUpstreamQuotas(true)" style="padding:4px 10px; font-size:11.5px;" title="强制重新拉取上游配额" data-i18n-title="quotas.refreshQuotaTitle">
+<svg class="refresh-icon" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="quotas.refreshQuota">刷新配额</span>
+          </button>
+</div>
+</div>
+<div class="panel-collapse-content" id="upstream-panel-body">
+<div class="upstream-compact-list" id="upstream-compact-container"></div>
+<div class="upstream-grid" id="upstream-cards-container" style="display:none;">
+<div class="upstream-empty-state" data-i18n="quotas.loadingQuota">正在拉取上游凭证配额...</div>
+</div>
+</div>
+</div>
+<!-- 上游凭证用量与成功率统计 (对齐 Keeper 统计视图) -->
+</div>
+
+</div>

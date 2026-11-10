@@ -12,16 +12,16 @@ import (
 // 节点框高度、图标缩放、行距三者必须成比例，否则图标会溢出节点框
 // 或缩到看不清（生产曾出现图标仅占节点高度 35%、用户反馈"图标不对"）。
 func TestTopologyNodeIconDoesNotOverflow(t *testing.T) {
-	raw, err := fs.ReadFile(embeddedAssets, "console-traffic.js")
+	raw, err := fs.ReadFile(embeddedAssets, "console-traffic-topology.js")
 	if err != nil {
-		t.Fatalf("read console-traffic.js: %v", err)
+		t.Fatalf("read console-traffic-topology.js: %v", err)
 	}
 	src := string(raw)
 
 	// 1) 不再允许在 SVG 内部再嵌套 <svg>（会造成第二坐标系、缩放失控）
 	nested := regexp.MustCompile(`(?s)<g transform="translate\(8, 9\)">\s*<svg `)
 	if nested.MatchString(src) {
-		t.Error("console-traffic.js still nests <svg> inside the topology <g>; " +
+		t.Error("console-traffic-topology.js still nests <svg> inside the topology <g>; " +
 			"the icon must be injected flat so the outer viewBox governs scaling")
 	}
 
@@ -61,13 +61,13 @@ func TestTopologyNodeIconDoesNotOverflow(t *testing.T) {
 	// 4) 必须带运行时 bbox 归一化：各品牌 path 的有效图形实测从 6x14 到 16x16 不等，
 	//    只统一 viewBox 盒子只能让容器等大，图形仍然大小不一。
 	if !strings.Contains(src, "normalizeNodeIcon") {
-		t.Error("console-traffic.js has no runtime bbox normalisation; " +
+		t.Error("console-traffic-topology.js has no runtime bbox normalisation; " +
 			"brands with small effective canvases (e.g. the gateway waveform) will render as thin lines")
 	}
 
 	// 5) 不得回退到旧的统一 scale 注入方式
 	if regexp.MustCompile(`translate\(7, 8\) scale\(`).MatchString(src) {
-		t.Error("console-traffic.js still scales every brand with one transform; " +
+		t.Error("console-traffic-topology.js still scales every brand with one transform; " +
 			"brands have different effective canvas sizes and must be normalised via viewBox")
 	}
 

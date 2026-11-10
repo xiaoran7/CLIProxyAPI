@@ -1,0 +1,66 @@
+<!-- Gate Console · 页面：TOS 封禁监控 -->
+<div class="tab-page" id="tab-page-tos-bans">
+<!-- 封禁监控：TOS 403 执法台账（日志为唯一权威来源，gate.db 提供 200/403 对比） -->
+<div class="summary-grid" id="tos-summary-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 20px;">
+<div class="summary-card">
+<div class="summary-label" data-i18n="tos.bannedAccounts">当前命中封禁账号</div>
+<div class="summary-value" id="tos-stat-accounts" style="color: var(--danger);">0</div>
+<div class="summary-sub" id="tos-stat-accounts-sub" data-i18n="tos.bannedAccountsSub">日志中确认存在 TOS 403 的账号数</div>
+</div>
+<div class="summary-card">
+<div class="summary-label" data-i18n="tos.forbidden24h">近 24h 封禁记录</div>
+<div class="summary-value" id="tos-stat-24h">0</div>
+<div class="summary-sub" data-i18n="tos.forbidden24hSub">来自应用日志的 TOS 403 记录数</div>
+</div>
+<div class="summary-card">
+<div class="summary-label" data-i18n="tos.forbidden7d">近 7 天封禁记录</div>
+<div class="summary-value" id="tos-stat-7d">0</div>
+<div class="summary-sub" data-i18n="tos.forbidden7dSub">含全部轮转归档日志</div>
+</div>
+</div>
+<div class="panel">
+<div class="panel-header">
+<div>
+<div class="panel-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--danger);" viewbox="0 0 24 24"><path d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+<span data-i18n="tos.panelTitle">TOS 封禁监控 (Terms of Service Enforcement)</span>
+</div>
+<div class="panel-subtitle" id="tos-scan-meta" data-i18n="tos.scanMetaIdle">等待扫描应用日志…</div>
+</div>
+<button class="btn btn-secondary btn-sm" onclick="fetchTOSBans(true)">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+<span data-i18n="tos.refresh">重新扫描日志</span>
+</button>
+</div>
+<div class="logs-controls" style="margin-bottom: 12px;">
+<div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+  <div class="filter-control-item">
+    <span class="filter-label" data-i18n="tos.filterAccount">账号:</span>
+    <div aria-label="按账号筛选封禁记录" class="dropdown" id="tos-account-dropdown" style="min-width:200px;"></div>
+  </div>
+  <div class="filter-control-item">
+    <span class="filter-label" data-i18n="tos.filterModel">模型:</span>
+    <div aria-label="按模型筛选封禁记录" class="dropdown" id="tos-model-dropdown" style="min-width:180px;"></div>
+  </div>
+  <button class="btn btn-secondary btn-sm" onclick="resetTOSFilters()" style="border-radius:9999px; padding:0 14px; height:36px; font-weight:600;" data-i18n="tos.reset">重置筛选</button>
+  <div class="live-sync-badge" id="tos-sync-badge">
+    <span class="live-pulse-dot"></span>
+    <span id="tos-sync-text" data-i18n="logs.liveSync">实时同步 · 全局 15s</span>
+  </div>
+</div>
+</div>
+<div id="tos-accounts-list">
+<div class="ui-skeleton-card-pad" style="display:flex;flex-direction:column;gap:10px;padding:18px;">
+<span class="ui-skeleton ui-skeleton-line" style="width:34%;height:14px;"></span>
+<span class="ui-skeleton ui-skeleton-line" style="width:88%;"></span>
+<span class="ui-skeleton ui-skeleton-line" style="width:72%;"></span>
+<span class="ui-skeleton ui-skeleton-line" style="width:56%;"></span>
+</div>
+<div class="ui-skeleton-card-pad" style="display:flex;flex-direction:column;gap:10px;padding:18px;">
+<span class="ui-skeleton ui-skeleton-line" style="width:41%;height:14px;"></span>
+<span class="ui-skeleton ui-skeleton-line" style="width:80%;"></span>
+<span class="ui-skeleton ui-skeleton-line" style="width:64%;"></span>
+</div>
+</div>
+</div>
+</div>

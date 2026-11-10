@@ -67,24 +67,14 @@ var fileLengthExemptCategories = []string{
 // and are queued for a split. Each entry pins the file to a ceiling: it may
 // shrink, never grow. Splitting a file removes its entry here.
 //
+// The table is empty as of v8.0.76: every file the gate ever flagged has been
+// split, so the gate is now a pure ceiling check over internal/console. The
+// map stays so that the next oversized file has an obvious place to be
+// registered, and so a file that is split without removing its entry fails
+// the build as a stale entry.
+//
 // Paths are relative to internal/console.
-var pendingSplit = map[string]int{
-	"assets/console.html":             1467,
-	"assets/console-i18n.js":          1401,
-	"assets/console-quotas-render.js": 1286,
-	"db/queries_events.go":            1233,
-	"api/api_test.go":                 1175,
-	"assets/console-traffic.js":       1114,
-	"assets/console-logs.js":          1037,
-	"api/quota_parse.go":              977,
-	"middleware/middleware_test.go":   975,
-	"assets/console-panels.css":       957,
-	"assets/console-overview.js":      937,
-	"assets/console-keys.js":          911,
-	"api/handlers_quotas_test.go":     887,
-	"api/provider_registry.go":        847,
-	"db/queries_upstream.go":          833,
-}
+var pendingSplit = map[string]int{}
 
 // consoleTreeRoot returns the root of the native Console tree.
 func consoleTreeRoot(t *testing.T) string {

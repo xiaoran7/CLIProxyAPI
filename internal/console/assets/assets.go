@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-//go:embed console.html console-*.css console-*.js images/*
+//go:embed console.html console-*.css console-*.js console-*.html images/*
 var embeddedAssets embed.FS
 
 // FileETags caches MD5 hashes for static assets.
@@ -48,6 +48,68 @@ func rewriteAssetVersions(data []byte) []byte {
 		return data
 	}
 	return assetVersionPattern.ReplaceAll(data, []byte("?v="+v))
+}
+
+// consolePartials lists the HTML partials that are injected into the console
+// shell, grouped by the placeholder marker they replace. The order inside a
+// group is the document order of the markup, so the assembled page is
+// byte-identical to the single-file console.html this replaced.
+//
+// The partials exist so that console.html itself stays a small, navigable
+// shell: every tab page and every modal owns one file instead of piling up
+// in one multi-thousand-line document (AGENTS.md §2.8).
+var consolePartials = []struct {
+	marker string
+	files  []string
+}{
+	{
+		marker: "<!--CONSOLE_PAGES-->",
+		files: []string{
+			"console-page-quotas.html",
+			"console-page-status.html",
+			"console-page-upstream-stats.html",
+			"console-page-overview.html",
+			"console-page-keys.html",
+			"console-page-traffic.html",
+			"console-page-logs.html",
+			"console-page-errors.html",
+			"console-page-tos-bans.html",
+			"console-page-validations.html",
+		},
+	},
+	{
+		marker: "<!--CONSOLE_MODALS-->",
+		files: []string{
+			"console-modal-validation.html",
+			"console-modal-account.html",
+			"console-modal-pricing.html",
+			"console-modal-openrouter.html",
+		},
+	},
+}
+
+// assembleConsoleHTML injects the embedded HTML partials into the console
+// shell. Every partial is trimmed of its trailing newline and the parts are
+// joined with a single "\n": the newline that terminates the placeholder line
+// in the shell becomes the separator between the last partial and the shell
+// content that follows it, which reproduces the original markup exactly.
+func assembleConsoleHTML(data []byte) ([]byte, error) {
+	out := string(data)
+	for _, group := range consolePartials {
+		parts := make([]string, 0, len(group.files))
+		for _, name := range group.files {
+			raw, err := embeddedAssets.ReadFile(name)
+			if err != nil {
+				return nil, fmt.Errorf("console partial %s: %w", name, err)
+			}
+			parts = append(parts, strings.TrimRight(string(raw), "\n"))
+		}
+		if strings.Count(out, group.marker) != 1 {
+			return nil, fmt.Errorf("console placeholder %s must appear exactly once", group.marker)
+		}
+		out = strings.Replace(out, group.marker, strings.Join(parts, "\n"), 1)
+	}
+	return []byte(out), nil
 }
 
 func init() {
@@ -91,6 +153,26 @@ func init() {
 		"console-member.js",
 		"console-refresh.js",
 		"console-init.js",
+		"console-panels-quota.css",
+		"console-panels-compact.css",
+		"console-panels-status.css",
+		"console-i18n-dict-common.js",
+		"console-i18n-dict-stats.js",
+		"console-i18n-dict-quotas.js",
+		"console-i18n-dict-keys.js",
+		"console-i18n-dict-logs.js",
+		"console-quotas-meter-single.js",
+		"console-quotas-meter-multi.js",
+		"console-quotas-cards-compact.js",
+		"console-quotas-cards-full.js",
+		"console-keys-modals.js",
+		"console-keys-picker.js",
+		"console-keys-pricing.js",
+		"console-logs-data.js",
+		"console-logs-errors.js",
+		"console-traffic-icons.js",
+		"console-traffic-topology.js",
+		"console-overview-charts.js",
 	}
 
 	for _, name := range entries {
@@ -144,54 +226,74 @@ func RegisterUI(r *gin.Engine) {
 
 	// Static JS and CSS assets under /console/*
 	assetFiles := map[string]string{
-		"/console/console-base.css":             "console-base.css",
-		"/console/console-panels.css":           "console-panels.css",
-		"/console/console-members.css":          "console-members.css",
-		"/console/console-tables.css":           "console-tables.css",
-		"/console/console-modals.css":           "console-modals.css",
-		"/console/console-feedback.css":         "console-feedback.css",
-		"/console/console-logs.css":             "console-logs.css",
-		"/console/console-theme-beszel.css":     "console-theme-beszel.css",
-		"/console/console-theme-v239.css":       "console-theme-v239.css",
-		"/console/console-theme-v2310.css":      "console-theme-v2310.css",
-		"/console/console-validations.css":      "console-validations.css",
-		"/console/console-upstream-stats.css":   "console-upstream-stats.css",
-		"/console/style.css":                    "console-base.css",
-		"/console/console-i18n.js":              "console-i18n.js",
-		"/console/i18n.js":                      "console-i18n.js",
-		"/console/console-keys.js":              "console-keys.js",
-		"/console/keys.js":                      "console-keys.js",
-		"/console/console-quotas-priority.js":   "console-quotas-priority.js",
-		"/console/console-quotas-validation.js": "console-quotas-validation.js",
-		"/console/console-quotas-fetch.js":      "console-quotas-fetch.js",
-		"/console/console-quotas-render.js":     "console-quotas-render.js",
-		"/console/console-quotas-workbuddy.js":  "console-quotas-workbuddy.js",
-		"/console/console-quotas-stats.js":      "console-quotas-stats.js",
-		"/console/console-stats.js":             "console-stats.js",
-		"/console/stats.js":                     "console-stats.js",
-		"/console/console-logs.js":              "console-logs.js",
-		"/console/logs.js":                      "console-logs.js",
-		"/console/console-traffic.css":          "console-traffic.css",
-		"/console/traffic.css":                  "console-traffic.css",
-		"/console/console-traffic.js":           "console-traffic.js",
-		"/console/traffic.js":                   "console-traffic.js",
-		"/console/console-cpa.js":               "console-cpa.js",
-		"/console/cpa-management.js":            "console-cpa.js",
-		"/console/console-cpa.css":              "console-cpa.css",
-		"/console/cpa-management.css":           "console-cpa.css",
-		"/console/console-overview.js":          "console-overview.js",
-		"/console/overview.js":                  "console-overview.js",
-		"/console/console-overview.css":         "console-overview.css",
-		"/console/overview.css":                 "console-overview.css",
-		"/console/console-state.js":             "console-state.js",
-		"/console/console-nav.js":               "console-nav.js",
-		"/console/console-auth.js":              "console-auth.js",
-		"/console/console-format.js":            "console-format.js",
-		"/console/console-polling.js":           "console-polling.js",
-		"/console/console-member.js":            "console-member.js",
-		"/console/console-refresh.js":           "console-refresh.js",
-		"/console/console-tos-bans.js":          "console-tos-bans.js",
-		"/console/console-init.js":              "console-init.js",
+		"/console/console-base.css":                "console-base.css",
+		"/console/console-panels.css":              "console-panels.css",
+		"/console/console-members.css":             "console-members.css",
+		"/console/console-tables.css":              "console-tables.css",
+		"/console/console-modals.css":              "console-modals.css",
+		"/console/console-feedback.css":            "console-feedback.css",
+		"/console/console-logs.css":                "console-logs.css",
+		"/console/console-theme-beszel.css":        "console-theme-beszel.css",
+		"/console/console-theme-v239.css":          "console-theme-v239.css",
+		"/console/console-theme-v2310.css":         "console-theme-v2310.css",
+		"/console/console-validations.css":         "console-validations.css",
+		"/console/console-upstream-stats.css":      "console-upstream-stats.css",
+		"/console/style.css":                       "console-base.css",
+		"/console/console-i18n.js":                 "console-i18n.js",
+		"/console/i18n.js":                         "console-i18n.js",
+		"/console/console-keys.js":                 "console-keys.js",
+		"/console/keys.js":                         "console-keys.js",
+		"/console/console-quotas-priority.js":      "console-quotas-priority.js",
+		"/console/console-quotas-validation.js":    "console-quotas-validation.js",
+		"/console/console-quotas-fetch.js":         "console-quotas-fetch.js",
+		"/console/console-quotas-render.js":        "console-quotas-render.js",
+		"/console/console-quotas-workbuddy.js":     "console-quotas-workbuddy.js",
+		"/console/console-quotas-stats.js":         "console-quotas-stats.js",
+		"/console/console-stats.js":                "console-stats.js",
+		"/console/stats.js":                        "console-stats.js",
+		"/console/console-logs.js":                 "console-logs.js",
+		"/console/logs.js":                         "console-logs.js",
+		"/console/console-traffic.css":             "console-traffic.css",
+		"/console/traffic.css":                     "console-traffic.css",
+		"/console/console-traffic.js":              "console-traffic.js",
+		"/console/traffic.js":                      "console-traffic.js",
+		"/console/console-cpa.js":                  "console-cpa.js",
+		"/console/cpa-management.js":               "console-cpa.js",
+		"/console/console-cpa.css":                 "console-cpa.css",
+		"/console/cpa-management.css":              "console-cpa.css",
+		"/console/console-overview.js":             "console-overview.js",
+		"/console/overview.js":                     "console-overview.js",
+		"/console/console-overview.css":            "console-overview.css",
+		"/console/overview.css":                    "console-overview.css",
+		"/console/console-state.js":                "console-state.js",
+		"/console/console-nav.js":                  "console-nav.js",
+		"/console/console-auth.js":                 "console-auth.js",
+		"/console/console-format.js":               "console-format.js",
+		"/console/console-polling.js":              "console-polling.js",
+		"/console/console-member.js":               "console-member.js",
+		"/console/console-refresh.js":              "console-refresh.js",
+		"/console/console-tos-bans.js":             "console-tos-bans.js",
+		"/console/console-init.js":                 "console-init.js",
+		"/console/console-panels-quota.css":        "console-panels-quota.css",
+		"/console/console-panels-compact.css":      "console-panels-compact.css",
+		"/console/console-panels-status.css":       "console-panels-status.css",
+		"/console/console-i18n-dict-common.js":     "console-i18n-dict-common.js",
+		"/console/console-i18n-dict-stats.js":      "console-i18n-dict-stats.js",
+		"/console/console-i18n-dict-quotas.js":     "console-i18n-dict-quotas.js",
+		"/console/console-i18n-dict-keys.js":       "console-i18n-dict-keys.js",
+		"/console/console-i18n-dict-logs.js":       "console-i18n-dict-logs.js",
+		"/console/console-quotas-meter-single.js":  "console-quotas-meter-single.js",
+		"/console/console-quotas-meter-multi.js":   "console-quotas-meter-multi.js",
+		"/console/console-quotas-cards-compact.js": "console-quotas-cards-compact.js",
+		"/console/console-quotas-cards-full.js":    "console-quotas-cards-full.js",
+		"/console/console-keys-modals.js":          "console-keys-modals.js",
+		"/console/console-keys-picker.js":          "console-keys-picker.js",
+		"/console/console-keys-pricing.js":         "console-keys-pricing.js",
+		"/console/console-logs-data.js":            "console-logs-data.js",
+		"/console/console-logs-errors.js":          "console-logs-errors.js",
+		"/console/console-traffic-icons.js":        "console-traffic-icons.js",
+		"/console/console-traffic-topology.js":     "console-traffic-topology.js",
+		"/console/console-overview-charts.js":      "console-overview-charts.js",
 	}
 
 	for routePath, assetName := range assetFiles {
@@ -330,7 +432,13 @@ func serveEmbeddedFile(c *gin.Context, assetName, contentType, cacheControl stri
 	// This must happen before the ETag is derived, so the ETag describes the
 	// bytes actually sent rather than the embedded original.
 	if assetName == "console.html" {
-		data = rewriteAssetVersions(data)
+		assembled, errAssemble := assembleConsoleHTML(data)
+		if errAssemble != nil {
+			c.String(http.StatusInternalServerError,
+				fmt.Sprintf("Console assembly failed: %v", errAssemble))
+			return
+		}
+		data = rewriteAssetVersions(assembled)
 	}
 
 	etag := fileETags[assetName]

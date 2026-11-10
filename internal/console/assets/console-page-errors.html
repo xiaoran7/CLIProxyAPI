@@ -1,0 +1,62 @@
+<!-- Gate Console · 页面：错误与熔断中心 -->
+<div class="tab-page" id="tab-page-errors">
+<!-- 错误与熔断中心面板 -->
+<div class="panel">
+<div class="panel-header">
+<div>
+<div class="panel-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--danger);" viewbox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="errors.panelTitle">错误与熔断中心 (Error &amp; Circuit Breaker Events)</span>
+          </div>
+</div>
+<button class="btn btn-secondary btn-sm" onclick="fetchErrorsData()">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span data-i18n="errors.refresh">刷新故障记录</span>
+        </button>
+</div>
+<div class="logs-controls" style="margin-bottom: 12px;">
+<div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+  <span style="font-size:12px; color:var(--text-dim);" id="errors-summary-tip" data-i18n="errors.footerNote">所有上游异常与熔断事件全量持久化留痕</span>
+  <div class="filter-control-item" id="errors-time-filter-container">
+    <span class="filter-label" data-i18n="logs.filterRange">时间跨度:</span>
+    <div aria-label="故障时间跨度筛选" data-i18n-aria-label="errors.filterRangeAria" class="dropdown" id="errors-time-dropdown" style="min-width:110px;"></div>
+  </div>
+  <div class="live-sync-badge" id="errors-sync-badge">
+    <span class="live-pulse-dot"></span>
+    <span id="errors-sync-text" data-i18n="logs.liveSync">实时同步 · 全局 15s</span>
+  </div>
+</div>
+<div class="pagination-bar">
+<div class="filter-control-item">
+<div aria-label="每页故障条数" data-i18n-aria-label="errors.pageSizeAria" class="dropdown" id="errors-page-size-dropdown"></div>
+</div>
+<span id="errors-page-info" style="font-family:var(--mono);" data-i18n="table.pagination">第 1 / 1 页 (共 0 条)</span>
+<button class="page-btn" id="errors-prev-btn" onclick="prevErrorsPage()" data-i18n="table.prevPage">上一页</button>
+<button class="page-btn" id="errors-next-btn" onclick="nextErrorsPage()" data-i18n="table.nextPage">下一页</button>
+</div>
+</div>
+<div style="overflow-x: auto;">
+<table>
+<thead>
+<tr>
+<th data-i18n="table.thTime">时间</th>
+<th data-i18n="table.thKeyAlias">Key / 别名</th>
+<th data-i18n="table.thAccountCredential">上游账号 / 凭据</th>
+<th data-i18n="table.thModel">模型</th>
+<th data-i18n="table.thStatus">状态</th>
+<th data-i18n="table.thErrorType">错误类型</th>
+<th data-i18n="table.thBackoff">退避与解封状态</th>
+<th data-i18n="table.thErrorDetail">报错详情</th>
+</tr>
+</thead>
+<tbody id="errors-tbody">
+<tr class="ui-skeleton-row"><td colspan="8"><span class="ui-skeleton ui-skeleton-line" style="width:24%;height:12px;display:inline-block;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:86%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:64%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:78%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:52%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:88%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:58%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:46%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:72%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:82%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:56%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:74%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:62%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:84%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:48%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:66%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:90%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:58%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:72%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:86%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:50%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:68%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:80%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:54%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:76%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:88%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:60%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:84%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:54%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:66%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:78%;"></span></td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>

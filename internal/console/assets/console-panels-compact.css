@@ -1,0 +1,132 @@
+/**
+ * Gate Admin Console - 上游凭证紧凑列表模式
+ * 从 console-panels.css 拆出：紧凑模式下的卡片与折叠控件样式。
+ */
+
+    /* ---- 上游凭证紧凑列表模式 (Compact Mode) ---- */
+    .upstream-compact-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 14px 20px;
+    }
+    .compact-account-row {
+      background: #ffffff;
+      border: 1px solid rgba(186, 215, 242, 0.5);
+      border-radius: 10px 10px 10px 3px;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: nowrap !important;
+      min-height: 52px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .compact-account-row:hover {
+      border-color: #a9c9ee;
+      background: #f8fbff;
+      box-shadow: 0 4px 14px rgba(100, 143, 188, 0.08);
+      transform: translateY(-1px);
+    }
+    .compact-account-row.is-disabled {
+      opacity: 0.55;
+      filter: grayscale(0.4);
+    }
+    .compact-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 0 0 320px;
+      min-width: 320px;
+      max-width: 320px;
+      width: 320px;
+      overflow: hidden;
+    }
+    .compact-mid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+      align-items: center;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .compact-mid > .account-health-warning,
+    .compact-mid > .account-quota-unknown {
+      grid-column: 1 / -1;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .compact-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 176px;
+      min-width: 176px;
+      width: 176px;
+      justify-content: flex-end;
+    }
+    .compact-meter-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+      width: 100%;
+    }
+    @media (max-width: 1024px) {
+      .compact-account-row {
+        flex-wrap: wrap !important;
+        gap: 12px;
+      }
+      .compact-left {
+        flex: 1 1 auto;
+        min-width: 240px;
+        max-width: 100%;
+        width: auto;
+      }
+      .compact-mid {
+        order: 3;
+        flex: 1 1 100%;
+        width: 100%;
+      }
+      .compact-right {
+        order: 2;
+        flex: 0 0 auto;
+        width: auto;
+      }
+    }
+    @media (max-width: 640px) {
+      .compact-mid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+    }
+    .panel-collapse-content {
+      transition: max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .panel-collapse-content.collapsed {
+      display: none !important;
+    }
+    .panel-fold-btn {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      color: var(--text-dim);
+      padding: 4px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+    .panel-fold-btn:hover {
+      color: var(--text-main);
+      background: rgba(186, 215, 242, 0.25);
+    }
+    .panel-fold-btn svg {
+      transition: transform 0.2s ease;
+    }
+    .panel-fold-btn.folded svg {
+      transform: rotate(-90deg);
+    }
+

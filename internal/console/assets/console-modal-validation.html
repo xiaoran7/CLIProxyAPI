@@ -1,0 +1,60 @@
+<!-- Gate Console · 弹窗：手动录入验证链接 -->
+<!-- 手动录入验证链接 Modal -->
+<div class="modal-backdrop" id="manual-val-modal">
+<div class="modal">
+<div class="modal-header">
+<div class="modal-title" data-i18n="valModal.title">手动录入 Google 验证链接</div>
+<button class="close-btn" onclick="closeModal('manual-val-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div class="form-group">
+<label for="manual-val-account" data-i18n="valModal.accountLabel">关联账号 / 邮箱 (可选)</label>
+<input class="form-control" id="manual-val-account" placeholder="如 user@example.com 或留空" data-i18n-placeholder="valModal.accountPlaceholder" type="text"/>
+</div>
+<div class="form-group">
+<label for="manual-val-url" data-i18n="valModal.urlLabel">验证链接 (validation_url) *</label>
+<textarea class="form-control" id="manual-val-url" placeholder="https://accounts.google.com/signin/continue?plt=..." rows="3"></textarea>
+</div>
+<div class="modal-actions">
+<button class="btn btn-secondary" data-i18n="common.cancel" onclick="closeModal('manual-val-modal')">取消</button>
+<button class="btn" onclick="submitManualValidation()" data-i18n="valModal.saveAndOpen">保存并打开验证 ↗</button>
+</div>
+</div>
+</div>
+<!-- 配额巡检与 Uptime Kuma 配置弹窗 -->
+<div class="modal-backdrop" id="quota-modal">
+<div class="modal modal-wide">
+<div class="modal-header">
+<div class="modal-title" data-i18n="quotaModal.title">配额状态巡检 &amp; Uptime Kuma 监控</div>
+<button class="close-btn" onclick="closeModal('quota-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div style="margin-bottom: 18px;">
+<div style="font-size: 13px; font-weight: 500; color: var(--text-main); margin-bottom: 6px;" data-i18n="quotaModal.kumaTitle">Uptime Kuma 监控探针配置</div>
+<div style="font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+          <span data-i18n="quotaModal.kumaIntro">Console 提供了专用的轻量级免密健康接口，可直接配置至 Uptime Kuma 的</span> <b>HTTP(s) - Keyword / Status</b> <span data-i18n="quotaModal.kumaIntroEnd">监控项：</span>
+        </div>
+<div class="probe-code-box">
+<span id="probe-url-text">https://your-domain.com/api/status/quota</span>
+<button class="btn btn-secondary btn-sm copy-probe-btn" onclick="copyProbeUrl()" data-i18n="quotaModal.copyLink">复制链接</button>
+</div>
+<div style="font-size: 11.5px; color: var(--text-dim); line-height: 1.5;">
+          • <b>HTTP 200</b><span data-i18n="quotaModal.http200">: 所有 Key 额度安全，网关持久化正常</span><br/>
+          • <b>HTTP 429</b><span data-i18n="quotaModal.http429">: 存在 Key 触及每日硬限额已被拦截（Uptime Kuma 自动告警）</span><br/>
+          • <b>HTTP 503</b><span data-i18n="quotaModal.http503">: 存储持久化 Outbox 队列积压或 Flush 连续失败</span><br/>
+          <span data-i18n="quotaModal.strictPrefix">• 支持追加参数</span> <code>?strict=1</code><span data-i18n="quotaModal.strictSuffix">，在达到 85% 预警阈值时立即返回 503 触发报警。</span>
+        </div>
+</div>
+<div style="border-top: 1px solid var(--card-border); padding-top: 16px;">
+<div style="font-size: 13px; font-weight: 500; color: var(--text-main); margin-bottom: 10px;" data-i18n="quotaModal.healthList">当前 Key 额度健康清单</div>
+<div id="quota-modal-list" style="max-height: 220px; overflow-y: auto; font-size: 12px;">
+<div style="color: var(--text-dim); text-align: center; padding: 20px;" data-i18n="quotaModal.checking">正在检查配额健康状况...</div>
+</div>
+</div>
+<div class="modal-actions">
+<button class="btn btn-secondary" data-i18n="common.close" onclick="closeModal('quota-modal')">关闭</button>
+</div>
+</div>
+</div>

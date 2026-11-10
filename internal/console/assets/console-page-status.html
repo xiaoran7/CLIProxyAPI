@@ -1,0 +1,24 @@
+<!-- Gate Console · 页面：服务状态 -->
+<div class="tab-page" id="tab-page-status"><div class="panel status-panel" style="margin-bottom: 20px;">
+<div class="panel-header">
+<div style="display:flex; align-items:center; gap:8px;">
+<button aria-controls="status-cards-container" aria-expanded="true" class="panel-fold-btn" id="status-panel-fold-btn" onclick="togglePanelFold('status-cards-container', this)" title="收起/展开服务状态" data-i18n-title="status.foldTitle">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+<div>
+<div class="panel-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:#34d399;" viewbox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              <span data-i18n="status.panelTitle">服务状态 (Service Status)</span>
+            </div>
+</div>
+</div>
+<span class="status-legend" style="display:flex; gap:12px; font-size:11px; color:var(--text-dim); align-items:center;">
+<span style="display:flex;align-items:center;gap:4px;"><i style="width:8px;height:8px;border-radius:2px;background:#10b981;display:inline-block;"></i><span data-i18n="status.normal">正常</span></span>
+<span style="display:flex;align-items:center;gap:4px;"><i style="width:8px;height:8px;border-radius:2px;background:#f59e0b;display:inline-block;"></i><span data-i18n="status.degraded">降级</span></span>
+<span style="display:flex;align-items:center;gap:4px;"><i style="width:8px;height:8px;border-radius:2px;background:#ef4444;display:inline-block;"></i><span data-i18n="status.outage">故障</span></span>
+<span style="display:flex;align-items:center;gap:4px;"><i style="width:8px;height:8px;border-radius:2px;background:rgba(148,163,184,0.2);display:inline-block;"></i><span data-i18n="status.legendNoData">无数据</span></span>
+</span>
+</div>
+<div class="status-grid panel-collapse-content" id="status-cards-container">
+<div class="status-empty" data-i18n="status.loading">正在采集服务状态...</div>
+</div>

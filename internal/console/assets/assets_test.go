@@ -1,8 +1,10 @@
 package assets
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 
@@ -49,6 +51,26 @@ func TestEmbeddedAssets(t *testing.T) {
 		"console-member.js",
 		"console-refresh.js",
 		"console-init.js",
+		"console-panels-quota.css",
+		"console-panels-compact.css",
+		"console-panels-status.css",
+		"console-i18n-dict-common.js",
+		"console-i18n-dict-stats.js",
+		"console-i18n-dict-quotas.js",
+		"console-i18n-dict-keys.js",
+		"console-i18n-dict-logs.js",
+		"console-quotas-meter-single.js",
+		"console-quotas-meter-multi.js",
+		"console-quotas-cards-compact.js",
+		"console-quotas-cards-full.js",
+		"console-keys-modals.js",
+		"console-keys-picker.js",
+		"console-keys-pricing.js",
+		"console-logs-data.js",
+		"console-logs-errors.js",
+		"console-traffic-icons.js",
+		"console-traffic-topology.js",
+		"console-overview-charts.js",
 		"images/routing-header.png",
 		"images/gate-sakura-mark-128.png",
 		"images/gate-sakura-mark-128.webp",
@@ -218,14 +240,21 @@ func TestStaticRoutesServing(t *testing.T) {
 // label formatter shipped with exactly that defect and kept rendering the
 // three-part "中国 · 湖南 · 株洲" until the literal was corrected.
 func TestConsoleJSRegexLiterals(t *testing.T) {
-	files := []string{
-		"console-logs.js",
-		"console-traffic.js",
-		"console-format.js",
-		"console-tos-bans.js",
-		"console-quotas-fetch.js",
-		"console-quotas-stats.js",
-		"console-quotas-validation.js",
+	// Every embedded JS file is covered: the hazard is invisible to a syntax
+	// check, so a file that is never listed is a file that is never guarded.
+	entries, errRead := fs.ReadDir(embeddedAssets, ".")
+	if errRead != nil {
+		t.Fatalf("read embedded assets: %v", errRead)
+	}
+	var files []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".js") {
+			files = append(files, entry.Name())
+		}
+	}
+	sort.Strings(files)
+	if len(files) == 0 {
+		t.Fatal("no embedded JS files found")
 	}
 	// A quoted string whose body contains \s, \d, \w or \b is almost certainly
 	// a regex that was meant to be a literal. Go string escaping doubles the
@@ -233,9 +262,9 @@ func TestConsoleJSRegexLiterals(t *testing.T) {
 	badEscapes := []string{`'\s`, `"\s`, `'\d`, `"\d`, `'\w`, `"\w`, `'\b`, `"\b`}
 
 	for _, name := range files {
-		data, errRead := embeddedAssets.ReadFile(name)
-		if errRead != nil {
-			t.Fatalf("read %s: %v", name, errRead)
+		data, errFile := embeddedAssets.ReadFile(name)
+		if errFile != nil {
+			t.Fatalf("read %s: %v", name, errFile)
 		}
 		src := string(data)
 		for _, pattern := range badEscapes {
@@ -243,6 +272,57 @@ func TestConsoleJSRegexLiterals(t *testing.T) {
 				line := 1 + strings.Count(src[:idx], "\n")
 				t.Errorf("%s:%d contains a regex escape inside a string literal (%q); use a /.../ literal", name, line, pattern)
 			}
+		}
+	}
+}
+
+// TestConsolePartialsAssembleIntoShell locks the server-side assembly of
+// console.html. console.html was one 1467-line document until it was split
+// into a small shell plus one partial per tab page and per modal
+// (AGENTS.md §2.8). The browser still receives a single document, so the
+// assembly has to be exact: every partial present, in document order, with no
+// placeholder left behind and no anchor lost.
+func TestConsolePartialsAssembleIntoShell(t *testing.T) {
+	shell, err := GetAsset("console.html")
+	if err != nil {
+		t.Fatalf("read console.html: %v", err)
+	}
+	assembled, err := assembleConsoleHTML(shell)
+	if err != nil {
+		t.Fatalf("assemble console.html: %v", err)
+	}
+	body := string(assembled)
+
+	for _, group := range consolePartials {
+		if strings.Contains(body, group.marker) {
+			t.Errorf("assembled console.html still contains the placeholder %s", group.marker)
+		}
+		offset := 0
+		for _, name := range group.files {
+			raw, errPart := GetAsset(name)
+			if errPart != nil {
+				t.Fatalf("read partial %s: %v", name, errPart)
+			}
+			needle := strings.TrimRight(string(raw), "\n")
+			idx := strings.Index(body[offset:], needle)
+			if idx < 0 {
+				t.Errorf("partial %s is missing from the assembled page or out of document order", name)
+				break
+			}
+			offset += idx
+		}
+	}
+
+	// every tab page and modal anchor must survive the split
+	for _, id := range []string{
+		"tab-page-quotas", "tab-page-status", "tab-page-upstream-stats",
+		"tab-page-overview", "tab-page-keys", "tab-page-traffic",
+		"tab-page-logs", "tab-page-errors", "tab-page-tos-bans",
+		"tab-page-validations", "manual-val-modal", "auth-modal",
+		"prices-modal", "modal-openrouter-accounts",
+	} {
+		if !strings.Contains(body, `id="`+id+`"`) {
+			t.Errorf("assembled console.html is missing the anchor #%s", id)
 		}
 	}
 }

@@ -3,6 +3,48 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.76] - 2026-11-10
+
+### Changed
+- **原生 Console 单文件超长治理：门禁登记的 15 个债务文件全部拆分落地（AGENTS.md §2.8）**:
+  - 背景：v8.0.75 把 AGENTS.md §2.8 的行数规则变成了可执行门禁，并把当时仍超 800 行预警线的 15 个文件登记进 `pendingSplit` 债务表。这一版把债务表清空——门禁的 `pendingSplit` 从 15 项变为 0 项，§2.8 从"写进文档的约定"变成"已经达成的基线"。拆分后 `internal/console/**` 内已无任何文件超过 800 行。
+  - 拆分手法（前端资产新增 34 个文件：17 个 JS + 3 个 CSS + 14 个 HTML partial，字节级等价）：
+    - **JS 经典脚本拆分**：`console-*.js` 全部是 classic script，共用同一套全局词法环境，顶层 `function` 声明与 `let/const` 在多个脚本间互相可见。据此把 6 个超长文件按职责切成独立脚本，拆分只搬运代码、不改语义：跨文件的顶层名不重复（机器扫描拆分后的 39 个脚本、34 个顶层名，重复名 0），被拆出的文件不含"调用后加载脚本里才定义的符号"这类顶层可执行语句（逐文件扫描顶层语句，跨文件前向引用 0）。
+    - **`console-traffic.js` 1114 → 427 + `console-traffic-icons.js` 326 + `console-traffic-topology.js` 373**：微标库（`TRAFFIC_ICONS` / `BRAND_ICON_PATHS` / `getBrandNodeVisual`）与拓扑渲染（`renderTrafficTopology` / `toggleHighlightTrafficNode`）各自成文件，主文件只留状态、SWR 拉取与 `renderTrafficUI`。
+    - **`console-logs.js` 1037 → 422 + `console-logs-data.js` 432 + `console-logs-errors.js` 195**：流水拉取与 Key/服务商/鉴权维度筛选归 `console-logs-data.js`，错误事件拉取、分页与熔断中心表格归 `console-logs-errors.js`。
+    - **`console-quotas-render.js` 1286 → 179 + `console-quotas-meter-single.js` 402 + `console-quotas-meter-multi.js` 227 + `console-quotas-cards-compact.js` 137 + `console-quotas-cards-full.js` 363**：单窗口上游额度计（OpenCode/OpenRouter/WorkBuddy/Qoder/ZCode）与多窗口上游额度计（Antigravity/Codex/Claude/回退）分开，紧凑列表模式与完整卡片模式各自成文件。
+    - **`console-keys.js` 911 → 344 + `console-keys-modals.js` 220 + `console-keys-picker.js` 235 + `console-keys-pricing.js` 129**：改名/编辑弹窗、上游模型选择器、模型定价规则三块独立。
+    - **`console-overview.js` 937 → 539 + `console-overview-charts.js` 438**：原文件整体包在 IIFE 里，作用域私有，直接切文件会丢符号。改用单向命名空间：图表文件持有共享基础件（状态、格式化、鉴权头）与图表簇，经 `window.GATE_OVW` 一次性导出 17 个符号，主文件在 IIFE 开头解构取用。导出表逐项核对，每个名字都在图表文件的 IIFE 作用域里有对应声明。
+    - **`console-i18n.js` 1401 → 123 + 5 个字典分片**：1194 条翻译原本是一个对象字面量，拆成 5 个按域分片的脚本（common / stats / quotas / keys / logs），每个分片用 `Object.assign(window.GATE_I18N_DICT || {}, {...})` 合并，核心文件运行时改为 `const DICT = window.GATE_I18N_DICT;`。分片必须先于核心文件加载，已写死在 `console.html` 的加载顺序里。校验：分片合并后的 key 集合、key 顺序、key 总数（1194）与原字面量逐项一致，跨分片重复 key 0 条（重复 key 在严格模式下本会是语法错误，静默覆盖则是语义倒退，故按"原样不可变"校验）。核心文件的运行时段落与原文件 14-17 行 + 1290-1401 行字节级一致。
+    - **`console-panels.css` 957 → 135 + `console-panels-quota.css` 528 + `console-panels-compact.css` 132 + `console-panels-status.css` 178**：配额卡细节、紧凑模式、服务状态心跳卡各自成文件，`<link>` 顺序与原文件分节顺序一致，层叠结果不变。
+  - **HTML 单体拆分（服务端装配，浏览器仍拿到单份文档）**：
+    - `console.html` 1467 → **165 行壳** + 14 个 partial（10 个页签页 + 4 个弹窗），每个 partial ≤ 178 行；壳体积 1467 行 → 165 行（15659 字节）。
+    - 壳里留两个占位标记 `<!--CONSOLE_PAGES-->` / `<!--CONSOLE_MODALS-->`；`internal/console/assets/assets.go` 新增 `consolePartials` 表与 `assembleConsoleHTML()`，在缓存击穿改写之前把 partial 注入壳里，每个 partial 去掉尾部换行后用单个 `\n` 连接，与占位行自身的换行首尾相接，**拼装结果与原单体 HTML 字节级一致**。
+    - 校验：把新壳 + 14 个 partial 按服务端同一规则拼回来，剔除 20 处新增资源引用并归一化 `?v=` 版本号后，与 git HEAD 的原 `console.html` 逐字节相同（归一化后同为 111785 字节，原文档 117769 字节）；新增 `TestConsolePartialsAssembleIntoShell` 长期锁住"每个 partial 都在、顺序正确、占位标记不残留、14 个页签与弹窗锚点一个不少"。
+  - **后端包拆分（Go）**：
+    - `internal/console/db/queries_events.go` 1233 → 5 个文件（请求明细 312 / 过滤分页 265 / 错误事件 311 / 流量聚合 276 / 出件箱 105），`internal/console/db/queries_upstream.go` 833 → 8 个文件（每日统计 153 / 窗口聚合 126 / 基线回填 133 / 模型定价 75 / 配额快照 169 / 验证记录 110 / 服务商注册表 77 / 凭证分桶 48），全部 ≤ 312 行，函数签名、SQL 与可见行为不变。
+    - `internal/console/middleware/middleware_test.go` 975 → `auth_quota_test.go` 322 / `model_guard_test.go` 237 / `accounting_writer_test.go` 451，13 个 `Test*` 名称与签名原样保留。
+    - `internal/console/api/` 4 个超大文件拆成 14 个（全部 ≤ 464 行）：`quota_parse.go` 977 → `quota_parse_common.go` 291 / `quota_parse_antigravity.go` 351 / `quota_parse_codex.go` 154 / `quota_parse_providers.go` 210；`provider_registry.go` 847 → `provider_seed.go` 320 / `provider_engine.go` 201 / `provider_inference.go` 178 / `provider_accounts.go` 122 / `provider_patterns.go` 49；`api_test.go` 1175 → `api_keys_test.go` 464 / `api_endpoints_test.go` 422 / `api_pipeline_test.go` 317；`handlers_quotas_test.go` 887 → `handlers_quotas_antigravity_test.go` 451 / `handlers_quotas_providers_test.go` 443。
+  - **资源注册面同步**：`assets.go` 的 `//go:embed` 增加 `console-*.html`，`entries`（ETag 预计算）与 `assetFiles`（静态路由）补齐 20 个新资源，新增资源全部经 `/console/<name>` 实测 200。
+  - **缓存击穿**：`console.html` 的资源版本号由 `?v=v8.0.75` 全量自增至 `?v=v8.0.76`，拼装后的文档共 57 处资源引用（37 处原有 + 20 处新拆分文件），全部携带同一版本号，实测服务端改写后无一残留旧版本。
+
+### Added
+- **原生 Console 行数门禁的债务表清零**：`pendingSplit` 由 15 项降至 0 项，门禁从"登记待拆"切换为"纯上限校验"——此后 `internal/console/**` 内任何文件超过 800 行即判失败，超过 1000 行即判架构劣化。
+
+### Fixed
+- **拓扑图契约测试指向已迁移的文件**：`topology-icon-contract_test.go` 原本读 `console-traffic.js` 校验节点尺寸契约，拓扑渲染迁到 `console-traffic-topology.js` 后断言目标同步改指新文件，契约本身（节点高 38、图标 22×22 归一化盒子、运行时 bbox 归一化、行距 56）一条不减。
+- **正则字面量守卫覆盖全部 Console JS**：原 `TestConsoleJSRegexLiterals` 只扫 7 个文件，改为遍历嵌入 FS 里的所有 `.js`（当前 39 个），实测全量命中 0 处，拆分后新增的文件自动纳入守卫。
+
+### Verification
+- `go build ./...`、`go vet ./internal/console/...`、`gofmt -l internal/console/` 均无输出；`go test ./internal/console/...` 全绿（含行数门禁本身，债务表已空）。
+- `node --check` 对全部 39 个 `console-*.js` 通过。
+- **资产字节级等价**：按拆分规格重建每一个新文件（prologue + 原文件逐行区间 + inserts + epilogue），与磁盘上的文件逐行比对，23 个 JS + 4 个 CSS + 14 个 partial 共 41 个文件全部一致；拆分规格的区间与 drop 并集完整覆盖原文件的每一行且互不重叠，无遗漏也无重复。`console.html` 走装配等价校验（见下条）。
+- **装配等价性**：以 `assets.go` 里的 `consolePartials` 表与占位顺序为准拼出的文档，与 git HEAD 原 `console.html` 剔除 20 处新增资源引用、归一化 `?v=` 后逐字节相同（归一化后同为 111785 字节）；原文档 37 处资源引用一处不少。
+- i18n 等价性：5 个字典分片合并后 1194 条 key 的集合、顺序、数量与原字面量完全一致，跨分片重复 0 条。
+- Go 拆分等价性：4 个 `internal/console/api/` 原始文件与拆分后的 14 个新文件逐个比对——顶层声明集合完全一致（24 / 12 / 13 / 12 个声明，一个不多一个不少）、`init()` 数量不变、原文件的每一行实质性代码都在新文件里、一行新代码都没有凭空多出来。
+- 浏览器实机走查（Playwright，sandbox 8318 实例，v8.0.76 构建，登录管理密钥后）：11 个导航页签逐个点开全部正常渲染（运行总览 / 上游凭证 / Google 验证 / 服务状态 / 凭证统计 / 用量趋势 / 可视化网关 / 请求流水 / 故障中心 / 封禁监控 / API 密钥），**JS 运行时错误 0 条**（仅登录前一次 401，与拆分前基线一致）；上游凭证页 21 张凭证卡 + 126 个额度计 + 22 个品牌胶囊正常渲染，凭证统计页 331 张卡片 + 40 个胶囊 + 18 行表格，API 密钥页 12 行；中英文切换双向可用且可回切（`en` → `zh-CN` → `en`，导航标签同步切换，"Upstream Credentials 22" ↔ "上游凭证 22"）。
+- README 上游溯源条目同步：`BRAND_ICON_PATHS` 已随微标库迁至 `console-traffic-icons.js`，README 的归属说明路径同步更新。
+
 ## [v8.0.75] - 2026-11-10
 
 ### Removed

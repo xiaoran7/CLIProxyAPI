@@ -1,0 +1,32 @@
+<!-- Gate Console · 页面：上游凭证统计 -->
+</div></div><div class="tab-page" id="tab-page-upstream-stats"><div class="panel" id="upstream-stats-panel" style="margin-top: 20px;">
+<div class="panel-header" style="flex-wrap: wrap; gap: 12px;">
+<div>
+<div class="panel-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:#38bdf8;" viewbox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="upstreamStats.panelTitle">上游凭证用量与成功率统计 (Upstream Identities Stats)</span>
+          </div>
+</div>
+<div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+<!-- 时间跨度切换 -->
+<div class="segmented-tabs" id="upstream-stats-range-tabs">
+<button onclick="switchUpstreamStatsRange('5h')" data-i18n="range.5h">5 小时</button>
+<button onclick="switchUpstreamStatsRange('24h')" data-i18n="range.24h">24 小时</button>
+<button onclick="switchUpstreamStatsRange('7d')" data-i18n="range.7d">7 天</button>
+<button class="active" onclick="switchUpstreamStatsRange('all')" data-i18n="upstreamStats.rangeAll">全部历史</button>
+</div>
+<input type="search" id="upstream-stats-filter" placeholder="筛选账号/模型/ID..." data-i18n-placeholder="upstreamStats.searchPlaceholder" oninput="renderUpstreamStatsTable()" style="padding:4px 10px; font-size:11.5px; height:28px; width:150px; border-radius:6px; border:1px solid #cedff1; background:#ffffff; color:var(--text-main); outline:none;" title="按账号名称、模型或凭证 ID 实时筛选卡片" data-i18n-title="upstreamStats.searchTitle">
+<button class="btn btn-secondary" onclick="fetchUpstreamAuthStats()" style="padding:4px 10px; font-size:11.5px;" title="刷新凭证用量与成功率统计" data-i18n-title="upstreamStats.refreshTitle">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="upstreamStats.refresh">刷新统计</span>
+          </button>
+</div>
+</div>
+<!-- 账号凭证卡片流网格容器 (Aozora UI) -->
+<div class="upstream-stats-cards-grid" id="upstream-stats-cards-container">
+  <div style="grid-column: 1 / -1; text-align:center; padding:36px 16px; color:var(--text-dim);" data-i18n="upstreamStats.loading">正在加载上游凭证用量统计...</div>
+</div>
+<!-- 已删除/历史留痕账号折叠归档区 (Aozora UI 弱化次级收纳) -->
+<div class="deleted-accounts-wrapper" id="upstream-stats-archive-container" style="display:none;"></div>
+<!-- 保留一个隐式元素以兼容旧代码引用 -->
+<table style="display:none;"><tbody id="upstream-stats-table-body"></tbody></table>

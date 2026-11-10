@@ -1,0 +1,178 @@
+<!-- Gate Console · 弹窗：鉴权 Secret 配置 -->
+<!-- 鉴权 Secret 配置 Modal -->
+<div class="modal-backdrop" id="auth-modal">
+<div class="modal">
+<div class="modal-header">
+<div class="modal-title" id="auth-modal-title" data-i18n="auth.title">身份凭据与鉴权</div>
+<button class="close-btn" onclick="closeModal('auth-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div class="form-group">
+<label for="auth-secret-input" data-i18n="auth.label">管理密钥 (GATE_ADMIN_SECRET) 或 成员 API Key</label>
+<div class="input-wrapper" style="position: relative; display: flex; align-items: center;">
+<input autocomplete="off" class="form-control" id="auth-secret-input" placeholder="输入管理密钥或 sk-cpa-... 成员 API Key" data-i18n-placeholder="auth.placeholder" style="padding-right: 42px;" type="password"/>
+<button class="eye-toggle-btn" id="auth-secret-eye-btn" onclick="toggleAuthInputVisibility()" title="查看明文 / 密文" data-i18n-title="auth.toggleVisibility" type="button">
+<svg fill="none" id="auth-eye-icon-open" stroke="currentColor" stroke-width="2" style="width: 18px; height: 18px; display: none;" viewbox="0 0 24 24">
+<path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round"></path>
+<path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+<svg fill="none" id="auth-eye-icon-closed" stroke="currentColor" stroke-width="2" style="width: 18px; height: 18px; display: block;" viewbox="0 0 24 24">
+<path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+</div>
+<div class="help-text">
+          <span data-i18n="auth.hintBullet">• 输入</span> <b>GATE_ADMIN_SECRET</b><span data-i18n="auth.hintAdminTail">：进入全功能管理员后台。</span><br/>
+          <span data-i18n="auth.hintBullet">• 输入</span> <b data-i18n="auth.memberKeyLabel">成员 API Key (sk-cpa-...)</b><span data-i18n="auth.hintMemberTail">：进入成员专属看板（仅查看服务状态、个人 Key 今日用量及专属流水）。</span>
+        </div>
+</div>
+<div class="modal-actions" style="display:flex; justify-content:space-between; align-items:center;">
+<button class="btn btn-secondary btn-sm" id="btn-clear-auth" onclick="clearAuthSecret()" style="color:var(--danger);" data-i18n="auth.clear">清除当前凭证</button>
+<div style="display:flex; gap:8px;">
+<button class="btn btn-secondary" data-i18n="common.cancel" onclick="closeModal('auth-modal')">取消</button>
+<button class="btn" onclick="saveAuthSecret()" data-i18n="auth.enter">进入看板</button>
+</div>
+</div>
+</div>
+</div>
+<!-- 新建 Key Modal -->
+<div class="modal-backdrop" id="create-modal">
+<div class="modal">
+<div class="modal-header">
+<div class="modal-title" data-i18n="top.createKeyAria">新建 API Key</div>
+<button class="close-btn" onclick="closeModal('create-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div id="create-form">
+<div class="form-group">
+<label for="create-alias" data-i18n="keysModal.aliasLabel">密钥备注 / 别名</label>
+<input class="form-control" id="create-alias" placeholder="如：ZCode / 沉浸式翻译 / 生产业务" data-i18n-placeholder="keysModal.aliasPlaceholder" type="text"/>
+</div>
+<div class="form-group"><label for="create-custom-key" data-i18n="keysModal.customKeyLabel">自定义 API Key（可选）</label><input class="form-control" id="create-custom-key" autocomplete="off" placeholder="留空则自动生成安全随机 Key" data-i18n-placeholder="keysModal.customKeyPlaceholder" type="text"/><div class="help-text" data-i18n="keysModal.customKeyHelp">可导入已有 Key；至少 16 位，不能包含空格。</div></div>
+<div class="form-group">
+<label class="switch-label">
+<span data-i18n="keysModal.enableQuota">启用每日额度</span>
+<label class="switch-toggle">
+<input id="create-enabled" onchange="toggleCreateLimit()" type="checkbox"/>
+<span class="slider"></span>
+</label>
+</label>
+</div>
+<div class="form-group" id="create-limit-group" style="display:none;">
+<label for="create-limit" data-i18n="keysModal.softLimitLabel">每日软限额 (Tokens)</label>
+<input class="form-control" id="create-limit" placeholder="如 5000000 (5M)" data-i18n-placeholder="keysModal.softLimitPlaceholder" type="number"/>
+</div>
+<div class="modal-actions">
+<button class="btn btn-secondary" data-i18n="common.cancel" onclick="closeModal('create-modal')">取消</button>
+<button class="btn" id="create-submit-btn" onclick="submitCreateKey()" data-i18n="keysModal.create">创建并生效</button>
+</div>
+</div>
+<div id="create-result" style="display:none; text-align: center;">
+<div style="color: var(--success); font-weight: 600; margin-bottom: 8px;" data-i18n="keysModal.successTitle">Key 创建成功！</div>
+<div style="font-size: 12px; color: var(--text-dim); margin-bottom: 12px;" data-i18n="keysModal.successHint">密钥已同步持久化，请妥善保管：</div>
+<div class="probe-code-box" id="created-key-val"></div>
+<div class="modal-actions" style="justify-content:center;">
+<button class="btn" onclick="copyCreatedKey()" data-i18n="keysModal.copyKey">复制 Key</button>
+<button class="btn btn-secondary" onclick="finishCreateKey()" data-i18n="keysModal.done">完成</button>
+</div>
+</div>
+</div>
+</div>
+<!-- 快捷修改别名 Modal -->
+<div class="modal-backdrop" id="rename-modal">
+<div class="modal" style="max-width: 420px;">
+<div class="modal-header">
+<div class="modal-title" id="rename-modal-title" data-i18n="renameModal.title">修改密钥别名</div>
+<button class="close-btn" onclick="closeModal('rename-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div class="form-group">
+<label for="rename-alias-input" data-i18n="renameModal.aliasLabel">新备注 / 别名</label>
+<input class="form-control" id="rename-alias-input" maxlength="60" placeholder="如：生产环境 / 沉浸式翻译" data-i18n-placeholder="renameModal.aliasPlaceholder" type="text"/>
+</div>
+<div class="modal-actions">
+<button class="btn btn-secondary" data-i18n="common.cancel" onclick="closeModal('rename-modal')">取消</button>
+<button class="btn" id="rename-save-btn" onclick="submitRenameKey()" data-i18n="renameModal.save">保存别名</button>
+</div>
+</div>
+</div>
+<!-- 配置 Key 规则 Modal -->
+<div class="modal-backdrop" id="edit-modal">
+<div class="modal">
+<div class="modal-header">
+<div class="modal-title" id="edit-modal-title" data-i18n="editModal.title">配置 Key 规则</div>
+<button class="close-btn" onclick="closeModal('edit-modal')">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</button>
+</div>
+<div class="form-group" id="edit-key-raw-group" style="display:none;">
+<label data-i18n="editModal.rawKeyLabel">完整 API 密钥 (Key)</label>
+<div style="display:flex; gap:8px; align-items:center;">
+<input class="form-control" id="edit-key-raw-input" onclick="copyToClipboard(this.value, 'API Key 已成功复制')" readonly="" style="font-family:var(--mono); color:var(--accent); font-size:12px; cursor:pointer;" title="点击全选复制" data-i18n-title="editModal.selectAllTitle" type="text"/>
+<button class="btn btn-secondary btn-sm" onclick="copyToClipboard(document.getElementById('edit-key-raw-input').value, 'API Key 已成功复制')" type="button" data-i18n="common.copy">复制</button>
+</div>
+</div>
+<div class="form-group">
+<label for="edit-alias" data-i18n="editModal.aliasLabel">备注 / 别名</label>
+<input class="form-control" id="edit-alias" maxlength="60" type="text"/>
+</div>
+<div class="form-group">
+<label data-i18n="editModal.whitelistLabel">允许访问模型 (白名单)</label>
+<div class="tag-container" id="edit-tags-box"></div>
+<div class="model-picker-dropdown" id="model-picker-container">
+  <div class="model-picker-trigger" id="model-picker-trigger" onclick="toggleModelPickerDropdown()">
+    <div class="model-picker-trigger-left">
+      <svg class="model-picker-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+      <span class="model-picker-label" data-i18n="editModal.modelPickerPlaceholder" id="model-picker-label">点击搜索或选择上游模型添加...</span>
+    </div>
+    <div class="model-picker-trigger-right">
+      <button class="model-picker-fetch-btn" id="btn-fetch-models" onclick="event.stopPropagation(); fetchUpstreamModelsForPicker();" title="重新从上游同步模型清单" data-i18n-title="editModal.resyncModelsTitle" type="button">
+        <svg class="fetch-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        <span data-i18n="editModal.syncModels">同步上游</span>
+      </button>
+      <svg class="picker-arrow-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </div>
+  </div>
+  <div class="model-picker-menu" id="model-picker-menu">
+    <div class="model-picker-search-bar" onclick="event.stopPropagation();">
+      <svg class="search-bar-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" x2="16.65" y1="21" y2="16.65"></line></svg>
+      <input autocomplete="off" class="model-picker-search-input" id="model-picker-search" oninput="filterUpstreamModels(this.value)" placeholder="快速过滤或输入任意模型ID..." data-i18n-placeholder="editModal.modelSearchPlaceholder" type="text"/>
+      <span class="model-picker-clear-search" id="model-picker-clear-btn" onclick="clearModelPickerSearch(event)" style="display:none;">&times;</span>
+    </div>
+    <div class="model-picker-list" id="model-picker-list">
+      <div class="model-picker-empty" data-i18n="editModal.loadingModels">正在加载上游模型...</div>
+    </div>
+  </div>
+</div>
+</div>
+<div class="form-group" style="display:flex; justify-content:space-between; align-items:center;">
+<div>
+<div style="font-size:12.5px; font-weight:500; color:var(--text-main);" data-i18n="editModal.enableHardCap">启用每日额度硬顶管控</div>
+<div style="font-size:11px; color:var(--text-dim); margin-top:2px;" data-i18n="editModal.hardCapHelp">开启后当今日 Token 达到每日限额时将严格返回 429 阻断超额请求；输入每日限额时将自动开启</div>
+</div>
+<label class="switch-toggle">
+<input id="edit-enabled" type="checkbox"/>
+<span class="slider"></span>
+</label>
+</div>
+<div class="form-group">
+<label for="edit-limit" data-i18n="editModal.dailyLimitLabel">每日限额 (Tokens)</label>
+<input class="form-control" id="edit-limit" placeholder="如 5000000" data-i18n-placeholder="editModal.dailyLimitPlaceholder" type="number"/>
+</div>
+<div class="form-group">
+<label for="edit-ratio" data-i18n="editModal.hardRatioLabel">硬截止容差比率 (默认 1.2 即 120%)</label>
+<input class="form-control" id="edit-ratio" max="3.0" min="1.0" step="0.05" type="number"/>
+</div>
+<div class="form-group">
+<label for="edit-rpm" data-i18n="editModal.rpmLabel">RPM 速率限制 (每分钟最多请求数，0 为不限)</label>
+<input class="form-control" id="edit-rpm" max="10000" min="0" placeholder="如 60" data-i18n-placeholder="editModal.rpmPlaceholder" type="number"/>
+</div>
+<div class="modal-actions">
+<button class="btn btn-secondary" data-i18n="common.cancel" onclick="closeModal('edit-modal')">取消</button>
+<button class="btn" onclick="saveKeyRule()" data-i18n="editModal.save">保存配置</button>
+</div>
+</div>
+</div>

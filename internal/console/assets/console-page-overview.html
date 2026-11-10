@@ -1,0 +1,151 @@
+<!-- Gate Console · 页面：总览 -->
+</div></div><div class="tab-page" id="tab-page-overview">
+<!-- 5 联核心指标卡片 -->
+<div class="summary-grid">
+<!-- 1. 区间 Tokens 总量 -->
+<div class="summary-card">
+<div class="summary-header">
+<span class="summary-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span id="card-tokens-title" data-i18n="overview.cardTokensTitle">近 7 天 / 累计 Tokens</span>
+          </span>
+<span class="summary-badge highlight" id="card-alltime-tokens" title="开天辟地历史累计总消耗" data-i18n-title="overview.accumTokensTitle" data-i18n="overview.accumTokens">累计 --</span>
+</div>
+<div class="summary-value num" id="card-total-tokens">--</div>
+<div class="token-breakdown-bar" title="蓝: 输入 / 亮蓝: 缓存 / 绿: 输出" data-i18n-title="overview.legendColors">
+<div class="token-segment-prompt" id="bar-prompt" style="width: 0%"></div>
+<div class="token-segment-cached" id="bar-cached" style="width: 0%"></div>
+<div class="token-segment-completion" id="bar-completion" style="width: 0%"></div>
+</div>
+<div class="summary-footer">
+<span><span data-i18n="overview.in">入</span> <b class="num" id="sub-prompt-tokens">0</b> <span data-i18n="overview.out">/ 出</span> <b class="num" id="sub-completion-tokens">0</b></span>
+<span id="card-tokens-ratio" style="font-weight:600; color:var(--text-dim);">--</span>
+</div>
+</div>
+<!-- 2. 缓存命中率 -->
+<div class="summary-card">
+<div class="summary-header">
+<span class="summary-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="overview.cacheHitRate">缓存命中率</span>
+          </span>
+<span class="summary-badge highlight" id="card-cache-hits-label">0 Tokens</span>
+</div>
+<div class="summary-value num" id="card-cache-rate">0.0%</div>
+<div class="summary-footer">
+<span data-i18n="overview.promptCacheRead">Prompt Cache 读取</span>
+<strong class="num" id="card-cache-tokens">0</strong>
+</div>
+</div>
+<!-- 3. 区间成本预估 -->
+<div class="summary-card">
+<div class="summary-header">
+<span class="summary-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span id="card-cost-title" data-i18n="overview.cardCostTitle">近 7 天预估花费</span>
+          </span>
+<span class="summary-badge" id="card-savings-badge" style="color:#34d399;" data-i18n="overview.savedAmount">节省 $0.00</span>
+</div>
+<div class="summary-value num" id="card-cost-total">$0.00</div>
+<div class="summary-footer">
+<span data-i18n="overview.cacheSavings">缓存节省收益</span>
+<strong class="num" id="card-cost-savings" style="color:#34d399;">$0.00</strong>
+</div>
+</div>
+<!-- 4. 区间请求量 -->
+<div class="summary-card">
+<div class="summary-header">
+<span class="summary-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span id="card-req-title" data-i18n="overview.cardReqTitle">近 7 天 / 累计请求</span>
+          </span>
+<span class="summary-badge" id="card-alltime-requests" title="开天辟地历史累计总请求" data-i18n-title="overview.accumReqTitle" data-i18n="overview.accumReq">累计 --</span>
+</div>
+<div class="summary-value num" id="card-total-requests">--</div>
+<div class="summary-footer">
+<span><span data-i18n="overview.successRate">成功率</span> <b id="card-req-success-rate">--</b></span>
+<strong id="card-requests-sub" data-i18n="overview.waitingData">等待数据</strong>
+</div>
+</div>
+<!-- 5. Key 配额健康 -->
+<div class="summary-card">
+<div class="summary-header">
+<span class="summary-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="overview.keyStatus">Key 状态</span>
+          </span>
+<span class="summary-badge" id="card-keys-total" data-i18n="overview.zeroActive">0 活跃</span>
+</div>
+<div class="summary-value num" id="card-blocked-count" style="color:var(--text-main);">0</div>
+<div class="summary-footer">
+<span data-i18n="overview.blockedOrWarn">硬顶阻断 / 85%预警</span>
+<strong id="card-keys-status-sub">0 / 0</strong>
+</div>
+</div>
+</div>
+<!-- 图表分析区 -->
+<div class="charts-grid">
+<!-- 左：多维度主趋势图 -->
+<div class="panel chart-panel">
+<div class="panel-header">
+<div>
+<div class="panel-title">
+<span id="chart-main-title" data-i18n="chart.title">用量趋势分析</span>
+</div>
+<div class="panel-subtitle" id="chart-main-subtitle" data-i18n="chart.subtitleDaily">近 7 天每日构成</div>
+</div>
+<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+<!-- Key 维度筛选下拉 -->
+<div style="display:flex; align-items:center; gap:6px;">
+<span style="font-size:11.5px; color:var(--text-dim); white-space:nowrap;" data-i18n="chart.credentialFilter">凭据:</span>
+<div aria-label="趋势凭据筛选" data-i18n-aria-label="chart.credentialFilterAria" class="dropdown" id="chart-key-dropdown" style="min-width:140px; max-width:200px;"></div>
+</div>
+<!-- 指标类型切换 -->
+<div class="segmented-tabs" id="chart-metric-tabs">
+<button class="active" onclick="switchChartMetric('tokens')" data-i18n="chart.metricTokens">Token 构成</button>
+<button onclick="switchChartMetric('cost')" data-i18n="chart.metricCost">花费 ($)</button>
+<button onclick="switchChartMetric('cache')" data-i18n="chart.metricCache">缓存率 (%)</button>
+</div>
+<!-- 时间跨度切换 -->
+<div class="segmented-tabs" id="chart-range-tabs">
+<button onclick="switchChartRange(1)" data-i18n="chart.rangeToday">今日</button>
+<button class="active" onclick="switchChartRange(7)">7D</button>
+<button onclick="switchChartRange(14)">14D</button>
+<button onclick="switchChartRange(30)">30D</button>
+<button onclick="switchChartRange('all')" data-i18n="common.all">全部</button>
+</div>
+</div>
+</div>
+<div class="chart-content">
+<div class="trend-chart" id="trend-chart">
+<div class="trend-empty" data-i18n="chart.loading">加载图表数据中...</div>
+</div>
+</div>
+</div>
+<!-- 右：模型分布与花费排行 -->
+<div class="panel chart-panel">
+<div class="panel-header">
+<div>
+<div class="panel-title" data-i18n="chart.modelsTitle">模型用量分布</div>
+<div class="panel-subtitle" data-i18n="chart.modelsSubtitle">区间内消耗与预估花费排行 (Top 10)</div>
+</div>
+<span class="tag-pill" id="models-summary-tag" data-i18n="chart.zeroModels">0 个模型</span>
+</div>
+<div class="chart-content" id="models-container" style="max-height: 330px; overflow-y: auto;">
+<div class="models-empty" data-i18n="chart.noModels">暂无模型记录</div>
+</div>
+</div>
+<!-- 下：AI 提供商 Token 构成与占比分布 -->
+<div class="panel chart-panel" style="grid-column: 1 / -1; margin-top: 10px;">
+<div class="panel-header">
+<div>
+<div class="panel-title" data-i18n="chart.providersTitle">AI 提供商 Token 分布与占比</div>
+</div>
+<span class="tag-pill" id="providers-summary-tag" data-i18n="chart.zeroProviders">0 个提供商</span>
+</div>
+<div class="chart-content" id="providers-container">
+<div class="models-empty" data-i18n="chart.noProviders">暂无提供商统计</div>
+</div>
+</div>
+</div>
+</div>

@@ -1,0 +1,108 @@
+<!-- Gate Console · 页面：Google 验证 -->
+<div class="tab-page" id="tab-page-validations">
+<!-- 顶部核心指标 -->
+<div class="summary-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 20px;">
+<div class="summary-card">
+<div class="summary-header">
+<span class="summary-label" data-i18n="validations.pendingTitle">待完成 Google 验证</span>
+<svg fill="none" stroke="currentColor" stroke-width="1.5" style="width:18px;height:18px;color:var(--danger);" viewbox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+<div class="summary-value" id="val-pending-count" style="color:var(--danger);">0</div>
+<div class="summary-footer"><span class="summary-subtext" data-i18n="validations.pendingHint">需在浏览器打开验证链接以解封</span></div>
+</div>
+<div class="summary-card">
+<div class="summary-header">
+<span class="summary-label" data-i18n="validations.totalAccounts">Antigravity 账号总数</span>
+<svg fill="none" stroke="currentColor" stroke-width="1.5" style="width:18px;height:18px;color:#3b82f6;" viewbox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+<div class="summary-value" id="val-total-antigravity-count">0</div>
+<div class="summary-footer"><span class="summary-subtext" data-i18n="validations.poolCount">负载池中的 Google 凭证数</span></div>
+</div>
+<div class="summary-card">
+<div class="summary-header">
+<span class="summary-label" data-i18n="validations.handledHistory">历史已处理验证</span>
+<svg fill="none" stroke="currentColor" stroke-width="1.5" style="width:18px;height:18px;color:var(--success);" viewbox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+<div class="summary-value" id="val-resolved-count" style="color:var(--success);">0</div>
+<div class="summary-footer"><span class="summary-subtext" data-i18n="validations.handledCount">已成功解除限制的记录次数</span></div>
+</div>
+</div>
+<!-- 待处理验证任务卡片区 (Action Required) -->
+<div class="panel" style="margin-bottom: 20px;">
+<div class="panel-header">
+<div>
+<div class="panel-title" style="display:flex; align-items:center; gap:8px;">
+<span data-i18n="validations.actionRequired">亟需人工验证 (Action Required)</span>
+<span class="chip chip-red" id="val-pending-chip" style="display:none;" data-i18n="validations.pendingCount">有待处理</span>
+</div>
+</div>
+<div style="display:flex; align-items:center; gap:8px;">
+<button class="btn btn-secondary btn-sm" onclick="openManualValidationModal()">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;" viewbox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="validations.manualEntry">手动录入验证链接</span>
+          </button>
+<button class="btn btn-sm" onclick="fetchUpstreamValidations(true)">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="validations.refreshListBtn">刷新列表</span>
+          </button>
+</div>
+</div>
+<div id="validations-pending-list" style="padding:14px 18px; display:flex; flex-direction:column; gap:12px;">
+<!-- 待验证卡片或空态 -->
+</div>
+</div>
+<!-- 所有 Google Antigravity 账号验证与健康清单 -->
+<div class="panel" style="margin-bottom: 20px;">
+<div class="panel-header">
+<div>
+<div class="panel-title" data-i18n="validations.monitorTitle">Google Antigravity 账号安全状态监控</div>
+</div>
+</div>
+<div style="overflow-x: auto;">
+<table>
+<thead>
+<tr>
+<th data-i18n="validations.thAccount">账号标识 / 邮箱</th>
+<th>Auth Index</th>
+<th data-i18n="validations.thStatus">当前状态</th>
+<th data-i18n="validations.thHealth">验证健康状况</th>
+<th data-i18n="validations.thUpdated">最近更新</th>
+<th style="text-align: right;" data-i18n="validations.thActions">快速操作</th>
+</tr>
+</thead>
+<tbody id="antigravity-accounts-tbody">
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:80%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:65%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:90%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:55%;"></span></td><td><span class="ui-skeleton ui-skeleton-pill" style="width:60px;height:20px;"></span></td><td style="text-align:right;"><span class="ui-skeleton ui-skeleton-line" style="width:40px;display:inline-block;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:75%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:85%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:60%;"></span></td><td><span class="ui-skeleton ui-skeleton-pill" style="width:60px;height:20px;"></span></td><td style="text-align:right;"><span class="ui-skeleton ui-skeleton-line" style="width:40px;display:inline-block;"></span></td></tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- 历史验证审计流水 -->
+<div class="panel">
+<div class="panel-header">
+<div>
+<div class="panel-title" data-i18n="validations.auditTitle">验证记录与审计历史 (Audit History)</div>
+</div>
+</div>
+<div style="overflow-x: auto;">
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th data-i18n="validations.thTriggeredAt">触发时间</th>
+<th data-i18n="or.thName">账号名称</th>
+<th>Auth Index</th>
+<th data-i18n="validations.thErrorMessage">错误信息</th>
+<th data-i18n="validations.thHandleStatus">处理状态</th>
+<th data-i18n="validations.thUpdatedAt">更新时间</th>
+<th style="text-align: right;" data-i18n="table.thActions">操作</th>
+</tr>
+</thead>
+<tbody id="validations-history-tbody">
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:40%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:60%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:80%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:75%;"></span></td><td><span class="ui-skeleton ui-skeleton-pill" style="width:56px;height:20px;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:65%;"></span></td><td style="text-align:right;"><span class="ui-skeleton ui-skeleton-line" style="width:40px;display:inline-block;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:50%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:65%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:75%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:60%;"></span></td><td><span class="ui-skeleton ui-skeleton-pill" style="width:56px;height:20px;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td style="text-align:right;"><span class="ui-skeleton ui-skeleton-line" style="width:40px;display:inline-block;"></span></td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>

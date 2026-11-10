@@ -1,0 +1,122 @@
+<!-- Gate Console · 页面：请求流水 -->
+<div class="tab-page" id="tab-page-logs">
+<!-- 最近请求流水 -->
+<div class="panel">
+<div class="panel-header">
+<div>
+<div class="panel-title">
+<svg fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:#38bdf8;" viewbox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            <span data-i18n="logs.panelTitle">实时请求流水</span>
+          </div>
+</div>
+<!-- 过滤器 -->
+<div class="segmented-tabs" id="events-filter-tabs">
+<button class="active" onclick="filterEvents('all')" data-i18n="common.all">全部</button>
+<button onclick="filterEvents('errors')" data-i18n="logs.filterAbnormal">异常错误</button>
+<button onclick="filterEvents('cached')" data-i18n="logs.filterCacheHit">缓存命中</button>
+<button onclick="filterEvents('2xx')" data-i18n="logs.filter2xx">2xx 成功</button>
+<button onclick="filterEvents('4xx')" data-i18n="logs.filter4xx">4xx 异常</button>
+<button onclick="filterEvents('5xx')" data-i18n="logs.filter5xx">5xx 错误</button>
+<button onclick="filterEvents('blocked')" data-i18n="logs.filterBlockedOnly">仅拦截</button>
+</div>
+</div>
+
+<!-- 时间范围过滤：单行常驻工具条（44px），不再挤压下方流水表格首行可见高度 -->
+<div class="logs-time-slider-wrap">
+  <div class="logs-slider-lead" title="当前生效的时间窗口">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#0284c7;flex:none;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    <span id="logs-time-label-current">全量跨度</span>
+  </div>
+  <div class="logs-slider-presets">
+    <button type="button" class="logs-preset-btn active" id="btn-logs-preset-all" onclick="setLogsTimePreset('all')">全量</button>
+    <button type="button" class="logs-preset-btn" id="btn-logs-preset-24h" onclick="setLogsTimePreset('24h')">24h</button>
+    <button type="button" class="logs-preset-btn" id="btn-logs-preset-6h" onclick="setLogsTimePreset('6h')">6h</button>
+    <button type="button" class="logs-preset-btn" id="btn-logs-preset-1h" onclick="setLogsTimePreset('1h')">1h</button>
+    <button type="button" class="logs-preset-btn" id="btn-logs-preset-15m" onclick="setLogsTimePreset('15m')">15m</button>
+    <button type="button" class="logs-preset-btn" id="btn-logs-preset-5m" onclick="setLogsTimePreset('5m')">5m</button>
+  </div>
+  <div class="logs-slider-track-wrap" style="display:none;">
+    <span class="logs-slider-edge" id="logs-time-label-start">最早记录</span>
+    <div class="logs-slider-canvas">
+      <div class="logs-slider-track">
+        <div class="logs-slider-progress" id="logs-slider-progress" style="left:0%;right:0%;"></div>
+      </div>
+      <input type="range" id="logs-time-min" min="0" max="100" value="0" step="1" class="logs-range-thumb" oninput="onLogsTimeSliderInput()" />
+      <input type="range" id="logs-time-max" min="0" max="100" value="100" step="1" class="logs-range-thumb" oninput="onLogsTimeSliderInput()" />
+    </div>
+    <span class="logs-slider-edge" id="logs-time-label-end">最新记录</span>
+  </div>
+</div>
+
+<!-- 搜索、容量、Key/IP/模型筛选与分页控制条 (现代定制轻量 Dropdown) -->
+<div class="logs-controls">
+<div class="logs-filter-row">
+<input class="logs-search-input" id="logs-search" oninput="onLogsSearch(this.value)" placeholder="搜索 IP / 模型 / 密钥 / 地域 / 上游账号..." data-i18n-placeholder="logs.searchPlaceholder" type="text"/>
+<div class="filter-control-item" id="logs-ip-filter-container">
+<span class="filter-label" style="display:none;">客户端 IP:</span>
+<div aria-label="客户端 IP 筛选" class="dropdown" id="logs-ip-dropdown" style="min-width:140px; max-width:190px;"></div>
+</div>
+<div class="filter-control-item" id="logs-key-filter-container">
+<span class="filter-label" style="display:none;" data-i18n="logs.filterKey">筛选密钥:</span>
+<div aria-label="请求密钥筛选" data-i18n-aria-label="logs.filterKeyAria" class="dropdown" id="logs-key-dropdown" style="max-width:200px;"></div>
+</div>
+<div class="filter-control-item" id="logs-model-filter-container">
+<span class="filter-label" style="display:none;">请求模型:</span>
+<div aria-label="请求模型筛选" class="dropdown" id="logs-model-dropdown" style="min-width:150px; max-width:210px;"></div>
+</div>
+<div class="filter-control-item" id="logs-provider-filter-container">
+<span class="filter-label" style="display:none;" data-i18n="logs.filterProvider">服务商:</span>
+<div aria-label="请求服务商筛选" data-i18n-aria-label="logs.filterProviderAria" class="dropdown" id="logs-provider-dropdown" style="min-width:140px; max-width:180px;"></div>
+</div>
+<button type="button" class="btn btn-secondary btn-sm" onclick="resetLogsFilters()" style="border-radius:9999px; padding:0 14px; height:36px; font-weight:600;">重置筛选</button>
+<div class="live-sync-badge" id="logs-sync-badge" title="当前实时跟随顶部全局定时器自动刷新" data-i18n-title="logs.liveSyncTitle">
+<span class="live-pulse-dot"></span>
+<span id="logs-sync-label" data-i18n="logs.liveSync">实时同步 · 全局 15s</span>
+</div>
+<div id="logs-auth-filter-notice" style="display:none; align-items:center; gap:6px; background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; font-size:11.5px; padding:3px 8px; border-radius:6px;">
+  <span><span data-i18n="logs.filteredAuth">当前已筛选上游账号:</span> <strong id="logs-auth-filter-name"></strong></span>
+  <button onclick="clearAuthFilter()" style="background:none; border:none; cursor:pointer; color:#1d4ed8; font-weight:700; padding:0 2px;" data-i18n="logs.clearFilter">清除</button>
+</div>
+</div>
+<div class="pagination-bar">
+<div class="filter-control-item">
+<div aria-label="每页请求条数" data-i18n-aria-label="logs.pageSizeAria" class="dropdown" id="logs-page-size-dropdown"></div>
+</div>
+<span id="logs-page-info" style="font-family:var(--mono);" data-i18n="table.pagination">第 1 / 1 页 (共 0 条)</span>
+<button class="page-btn" id="logs-prev-btn" onclick="prevLogsPage()" data-i18n="table.prevPage">上一页</button>
+<button class="page-btn" id="logs-next-btn" onclick="nextLogsPage()" data-i18n="table.nextPage">下一页</button>
+</div>
+</div>
+<div class="table-scroll-container">
+<table>
+<thead>
+<tr>
+<th data-i18n="table.thTime">时间</th>
+<th style="padding:10px 12px;">客户端真实 IP</th>
+<th style="padding:10px 12px;">来源地域</th>
+<th style="padding:10px 12px;">ASN 组织</th>
+<th data-i18n="table.thClientKey">客户端 Key</th>
+<th data-i18n="table.thUpstreamAccount">上游账号</th>
+<th data-i18n="table.thModel">模型</th>
+<th data-i18n="table.thReasoning">思考强度</th>
+<th data-i18n="table.thStatus">状态</th>
+<th data-i18n="table.thRate">速率 (tok/s)</th>
+<th data-i18n="table.thTokens">Tokens 构成 (入 / 出)</th>
+<th data-i18n="table.thCacheDetail">缓存明细</th>
+<th data-i18n="keys.thCost">预估花费</th>
+<th data-i18n="table.thLatency">延迟 (总/TTFT)</th>
+<th data-i18n="table.thTags">标签</th>
+</tr>
+</thead>
+<tbody id="events-tbody">
+<tr class="ui-skeleton-row"><td colspan="15"><span class="ui-skeleton ui-skeleton-line" style="width:28%;height:12px;display:inline-block;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:92%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:68%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:80%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:54%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:74%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:60%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:86%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:46%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:58%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:78%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:50%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:66%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:88%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:44%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:74%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:88%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:62%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:76%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:56%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:82%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:48%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:64%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:90%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:52%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:84%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:46%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:78%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:60%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:86%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:66%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:78%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:52%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:72%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:58%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:84%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:44%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:68%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:56%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:76%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:48%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:64%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:82%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:42%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:84%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:58%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:74%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:90%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:54%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:68%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:82%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:46%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:76%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:60%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:88%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:50%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:72%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:66%;"></span></td></tr>
+<tr class="ui-skeleton-row"><td><span class="ui-skeleton ui-skeleton-line" style="width:82%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:60%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:74%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:86%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:50%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:70%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:56%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:78%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:62%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:84%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:44%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:66%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:80%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:52%;"></span></td><td><span class="ui-skeleton ui-skeleton-line" style="width:68%;"></span></td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
