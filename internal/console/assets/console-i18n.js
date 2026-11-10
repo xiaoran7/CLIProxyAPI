@@ -8,7 +8,10 @@
   'use strict';
 
   // ---- 翻译字典（按域分节，随各前端文件改造增量补齐）----
-  const DICT = window.GATE_I18N_DICT;
+  // 兜底空对象：字典文件由 console.html 按顺序加载，但历史别名路由
+  // （/admin/i18n.js）单独取到的就是这个文件，此时字典一个都没进来。
+  // 没有兜底时 t(key) 会抛 "Cannot read properties of undefined"。
+  const DICT = window.GATE_I18N_DICT || {};
 
   // ---- 语言状态与持久化 ----
   const STORAGE_KEY = 'gate_lang';

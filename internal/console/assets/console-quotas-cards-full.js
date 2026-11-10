@@ -3,6 +3,8 @@
  * 从 console-quotas-render.js 拆出：分组明细渲染与各上游完整卡片区块。
  */
 
+    // 完整卡片的模型组区块：组标题 + 每组配额桶指示条
+
     function renderUpstreamGroupsHtml(acc, safeFilename) {
       const sortedGroups = [...(acc.groups || [])].filter(grp => Array.isArray(grp.buckets) && grp.buckets.some(bkt => Number.isFinite(bkt.remaining_percent)));
       sortedGroups.sort((a, b) => {
@@ -359,5 +361,3 @@
         cardsContainer.innerHTML = filtered.map(acc => renderUpstreamFullCard(acc)).join('');
       }
     }
-
-    // 上游凭证卡片入口：读取状态 → 过滤 → 空态 → 按视图模式分派

@@ -137,7 +137,7 @@
       return { gemini5hBucket, geminiWeeklyBucket, claude5hBucket, claudeWeeklyBucket, codex5hBucket, codexWeeklyBucket, fallbackBucket };
     }
 
-    // opencode 紧凑视图：渠道就绪状态
+    // 上游凭证卡片入口：读取状态 → 过滤 → 空态 → 按视图模式分派
 
     function renderUpstreamCards() {
       renderOperationsStrip();

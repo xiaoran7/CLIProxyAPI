@@ -3,13 +3,48 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.77] - 2026-11-11
+
+### Fixed
+- **Console 文档每次请求都重新拼装并重新哈希**：`assembleConsoleHTML()` 原来在每次 `GET /console` 时读 14 个 partial、拼一遍约 117 KB 的字符串、再做一次全量版本号正则改写和一次 MD5（每次请求约 756 KB 垃圾），而拼装结果在进程生命周期内恒定不变。改为在 `consoleHTML()` 里按构建版本号记忆化（`internal/console/assets/assets.go`），请求路径只做一次指针传递；条件请求（`If-None-Match`）在装配前就能短路。新增 `TestConsoleDocumentIsStableAcrossRequests` 锁住"两次请求 body 逐字节相同、ETag 相同、ETag 等于 body 的 MD5 前 8 字节、占位标记不残留"。
+- **`fileETags` 共享 map 的并发写风险**：`fileETags` 是包级 map，图片路由在缓存未命中时直接写它，而 `init()` 预计算的 ETag 列表并不覆盖 `images/*`——冷启动时两个并发图片请求会撞上 Go 的 `concurrent map writes` fatal panic。map 访问改为 `sync.RWMutex` 保护，并且图片 ETag 在 `init()` 里预计算完成，运行期不再有写路径。
+- **`init()` 给 `console.html` 预计算的 ETag 是壳的哈希，不是实际服务的字节**：真正下发给浏览器的是"壳 + partial + 版本号改写"后的文档，原来的 ETag 描述的是未拼装的壳，一旦被缓存就会让 304 返回错内容。`console.html` 从预计算列表里去掉，其 ETag 改由实际下发的字节推导。
+- **ETag 预计算清单与 embed FS 脱节**：`init()` 里那份 58 项手维护清单是 embed FS 的副本，加了新资源却忘了登记，就会落回运行期惰性计算路径。改为遍历 embed FS 推导，`entries` 这张手工表整张删除（并入了 `consolePartialGroup` 具名类型，替掉原来的匿名结构体）。
+- **行数门禁可被债务表豁免硬上限**：AGENTS.md §2.8.2 规定 ≥1000 行是架构劣化、必须拆开，但原实现先查 `pendingSplit` 登记状态，登记过的 ≥1000 行文件能直接过关。改为先判硬上限，再判棘轮，最后才判预警线；新增 `TestGateVerdictThresholdSemantics` 锁住决策表，并断言失败消息不把债务表当成出路。
+- **门禁失败消息把 800 说成架构劣化阈值**：原消息输出"exceeds the 800-line architectural degradation threshold"，而 800 是预警线、1000 才是架构劣化线；现在两条阈值各说各的。
+- **门禁对已缩到 800 行以下的已登记文件不再执行棘轮**：原实现在 `lines < 800` 时直接 `continue`，一个被拆小但路径还在的登记文件可以无约束地长回去。棘轮现在对所有登记文件生效，与行数高低无关。
+- **`assets_test.go` 的 partial 顺序断言形同虚设**：偏移量用的是 `offset += idx`（停在匹配片段的开头）而不是 `offset += idx + len(needle)`，下一次查找从上一个片段内部开始，任何"被挪到更靠前位置"的 partial 仍然能匹配上，顺序检查从来不会触发。改为跨过整个匹配片段。
+- **`assembleConsoleHTML` 只裁 LF 行尾**：原来用 `strings.TrimRight(raw, "
+")`，在 CRLF 检出的构建环境里每个 partial 结尾都会剩下一个 ``，拼接边界会留下回车并多插一个空行。行尾约定改为从 partial 自身探测（`splitTrailingTerminators`），拼装逻辑抽成可注入的 `assembleShell()`，新增 `TestConsoleAssemblyIsLineEndingSafe` 用 LF 与 CRLF 两种约定各断言一次拼装结果与原始文档逐字节一致。
+- **`console-i18n.js` 读字典没有空对象兜底**：`const DICT = window.GATE_I18N_DICT;` 在字典文件一个都没加载时（例如历史别名路由 `/admin/i18n.js` 单独取到该文件）会让每一次 `t(key)` 抛 `Cannot read properties of undefined`。改为 `window.GATE_I18N_DICT || {}`。
+- **7 处区段注释因按行切分而与代码分离**：拆分是按行切的，7 段"下一个模块"的标题注释被留在上一个文件的文件末尾（`console-keys.js`、`console-keys-modals.js`、`console-quotas-render.js`、`console-quotas-cards-full.js`、`console-quotas-cards-compact.js`、`console-quotas-meter-multi.js`、`console-quotas-meter-single.js`），打开对应文件的维护者会看到一段底下没有代码的说明。全部迁到真正持有该代码的文件里、放在对应函数上方。
+- **`api/provider_patterns.go` 是 49 行的碎屑文件**（AGENTS.md §2.8.4）：它只装 `ValidateProviderKey` 与 `GetProviderPatterns` 两个函数，而 `provider_engine.go` 才 201 行——两者合并后 243 行，仍在健康区间内，拆分收益为零、碎屑成本为实。内容并回 `provider_engine.go`，`provider_patterns.go` 删除。
+
+### Added
+- **拆分与资源路由的契约测试**（此前没有任何测试把 `console.html` 引用的资源与服务端实际注册的路由对起来）：
+  - `TestConsolePartialsCoverEveryPartialFile`：嵌入进二进制的每个 `console-page-*.html` / `console-modal-*.html` 都必须在 `consolePartials` 表里，表里每个文件也必须真的被嵌入——"文件在但表里没有"会静默丢掉一整个页签。
+  - `TestConsolePartialGroupsAreTagBalanced`：按声明顺序拼起来的一组 partial，标签栈过程中不得出现孤立闭合标签、结束时必须为空。原始单文件里有一行同时写着上一页的收尾标签和下一页的开头标签，按行切分后单个 partial 自身并不闭合；这条断言让"重排 / 漏掉一个 partial"在构建期就失败，而不是让 DOM 跨文件串位。
+  - `TestEveryReferencedAssetIsRouted`：壳里引用的 59 个资源路由逐个实测 200，漏注册路由的 404 不再是"测试全绿、页面白屏"。
+  - `TestOverviewNamespaceExportsMatchTheConsumer`：`window.GATE_OVW` 的 17 个导出名与 `console-overview.js` 的 17 个解构名必须逐项同集——两份清单各写一遍而仓库里没有 JS 测试工具链，漂移原本只会在页面上炸。
+  - `TestI18nDictionariesLoadBeforeTheRuntime` + `TestI18nRuntimeToleratesAMissingDictionary`：五个字典分片必须都排在 `console-i18n.js` 之前加载，且运行时读取字典必须带空对象兜底。
+  - `TestConsoleAssemblyIsLineEndingSafe` + `TestConsoleAssemblyRejectsAMissingPlaceholder`：拼装的行尾约定与占位标记唯一性。
+  - `TestConsoleDocumentIsStableAcrossRequests`：`/console` 两次请求的 body、ETag 稳定性，以及 ETag 与 body 的对应关系。
+
+### Changed
+- **资源版本号自增**：`console.html` 的 57 处 `?v=v8.0.76` 全量改为 `?v=v8.0.77`，保证本版发布后浏览器不会继续命中上一版资源缓存。
+- **v8.0.76 记录勘误**：该条目把壳写成"165 行"、把顶层名写成"34 个"。实测壳为 **185 行**（165 行原内容 + 20 行本次新增的资源引用行，15659 字节不变），跨 39 个脚本的顶层名为 **332 个**，与拆分前 22 个脚本的 332 个顶层名逐项同集、重复名 0。
+
+### Verification
+- `gofmt -l internal/console/` 无输出；`go build ./...`、`go vet ./internal/console/...` 通过；`go test ./internal/console/...` 全绿。
+- 拆分后的等价性复核（针对"解耦有没有把功能解坏"）：拼装文档与拆分前的单体 `console.html` 逐字节一致（剔除 20 处新增资源引用与 14 处新增分节注释后完全相同，两侧同为 117547 字节）；CSS 分片按 `<link>` 顺序拼接与原文件逐字节一致；JS 四个拆分组 0 行丢失 0 行新增，`console-overview.js` 仅多出 GATE_OVW 接缝的 27 行，`console-i18n.js` 仅多出字典分片接缝的 5 行；39 个脚本的顶层名集合拆分前后完全相同、重复名 0；跨文件前向引用 0；浏览器实测 11 个标签页渲染正常、0 条 JS 运行时错误。
+
 ## [v8.0.76] - 2026-11-10
 
 ### Changed
 - **原生 Console 单文件超长治理：门禁登记的 15 个债务文件全部拆分落地（AGENTS.md §2.8）**:
   - 背景：v8.0.75 把 AGENTS.md §2.8 的行数规则变成了可执行门禁，并把当时仍超 800 行预警线的 15 个文件登记进 `pendingSplit` 债务表。这一版把债务表清空——门禁的 `pendingSplit` 从 15 项变为 0 项，§2.8 从"写进文档的约定"变成"已经达成的基线"。拆分后 `internal/console/**` 内已无任何文件超过 800 行。
   - 拆分手法（前端资产新增 34 个文件：17 个 JS + 3 个 CSS + 14 个 HTML partial，字节级等价）：
-    - **JS 经典脚本拆分**：`console-*.js` 全部是 classic script，共用同一套全局词法环境，顶层 `function` 声明与 `let/const` 在多个脚本间互相可见。据此把 6 个超长文件按职责切成独立脚本，拆分只搬运代码、不改语义：跨文件的顶层名不重复（机器扫描拆分后的 39 个脚本、34 个顶层名，重复名 0），被拆出的文件不含"调用后加载脚本里才定义的符号"这类顶层可执行语句（逐文件扫描顶层语句，跨文件前向引用 0）。
+    - **JS 经典脚本拆分**：`console-*.js` 全部是 classic script，共用同一套全局词法环境，顶层 `function` 声明与 `let/const` 在多个脚本间互相可见。据此把 6 个超长文件按职责切成独立脚本，拆分只搬运代码、不改语义：跨文件的顶层名不重复（机器扫描拆分后的 39 个脚本、332 个顶层名，重复名 0（与拆分前 22 个脚本的 332 个顶层名逐项同集）），被拆出的文件不含"调用后加载脚本里才定义的符号"这类顶层可执行语句（逐文件扫描顶层语句，跨文件前向引用 0）。
     - **`console-traffic.js` 1114 → 427 + `console-traffic-icons.js` 326 + `console-traffic-topology.js` 373**：微标库（`TRAFFIC_ICONS` / `BRAND_ICON_PATHS` / `getBrandNodeVisual`）与拓扑渲染（`renderTrafficTopology` / `toggleHighlightTrafficNode`）各自成文件，主文件只留状态、SWR 拉取与 `renderTrafficUI`。
     - **`console-logs.js` 1037 → 422 + `console-logs-data.js` 432 + `console-logs-errors.js` 195**：流水拉取与 Key/服务商/鉴权维度筛选归 `console-logs-data.js`，错误事件拉取、分页与熔断中心表格归 `console-logs-errors.js`。
     - **`console-quotas-render.js` 1286 → 179 + `console-quotas-meter-single.js` 402 + `console-quotas-meter-multi.js` 227 + `console-quotas-cards-compact.js` 137 + `console-quotas-cards-full.js` 363**：单窗口上游额度计（OpenCode/OpenRouter/WorkBuddy/Qoder/ZCode）与多窗口上游额度计（Antigravity/Codex/Claude/回退）分开，紧凑列表模式与完整卡片模式各自成文件。
@@ -18,7 +53,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
     - **`console-i18n.js` 1401 → 123 + 5 个字典分片**：1194 条翻译原本是一个对象字面量，拆成 5 个按域分片的脚本（common / stats / quotas / keys / logs），每个分片用 `Object.assign(window.GATE_I18N_DICT || {}, {...})` 合并，核心文件运行时改为 `const DICT = window.GATE_I18N_DICT;`。分片必须先于核心文件加载，已写死在 `console.html` 的加载顺序里。校验：分片合并后的 key 集合、key 顺序、key 总数（1194）与原字面量逐项一致，跨分片重复 key 0 条（重复 key 在严格模式下本会是语法错误，静默覆盖则是语义倒退，故按"原样不可变"校验）。核心文件的运行时段落与原文件 14-17 行 + 1290-1401 行字节级一致。
     - **`console-panels.css` 957 → 135 + `console-panels-quota.css` 528 + `console-panels-compact.css` 132 + `console-panels-status.css` 178**：配额卡细节、紧凑模式、服务状态心跳卡各自成文件，`<link>` 顺序与原文件分节顺序一致，层叠结果不变。
   - **HTML 单体拆分（服务端装配，浏览器仍拿到单份文档）**：
-    - `console.html` 1467 → **165 行壳** + 14 个 partial（10 个页签页 + 4 个弹窗），每个 partial ≤ 178 行；壳体积 1467 行 → 165 行（15659 字节）。
+    - `console.html` 1467 → **185 行壳** + 14 个 partial（10 个页签页 + 4 个弹窗），每个 partial ≤ 178 行；壳体积 1467 行 → 185 行（15659 字节；其中 165 行是原壳内容，另 20 行是本次新增的资源引用行）。
     - 壳里留两个占位标记 `<!--CONSOLE_PAGES-->` / `<!--CONSOLE_MODALS-->`；`internal/console/assets/assets.go` 新增 `consolePartials` 表与 `assembleConsoleHTML()`，在缓存击穿改写之前把 partial 注入壳里，每个 partial 去掉尾部换行后用单个 `\n` 连接，与占位行自身的换行首尾相接，**拼装结果与原单体 HTML 字节级一致**。
     - 校验：把新壳 + 14 个 partial 按服务端同一规则拼回来，剔除 20 处新增资源引用并归一化 `?v=` 版本号后，与 git HEAD 的原 `console.html` 逐字节相同（归一化后同为 111785 字节，原文档 117769 字节）；新增 `TestConsolePartialsAssembleIntoShell` 长期锁住"每个 partial 都在、顺序正确、占位标记不残留、14 个页签与弹窗锚点一个不少"。
   - **后端包拆分（Go）**：

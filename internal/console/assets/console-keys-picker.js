@@ -6,6 +6,8 @@
     let cachedUpstreamModelsList = null;
     let isFetchingUpstreamModels = false;
 
+    // ---- 现代 Aozora UI 模型搜索与选择下拉交互 ----
+
     function toggleModelPickerDropdown() {
       const container = document.getElementById('model-picker-container');
       if (!container) return;

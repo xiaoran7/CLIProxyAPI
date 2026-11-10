@@ -3,6 +3,8 @@
  * 从 console-quotas-render.js 拆出：Antigravity / Codex / Claude 多窗口额度计、回退计与紧凑计量装配。
  */
 
+    // Codex 紧凑视图：5h 与周额度双指示条
+
     function renderCompactCodexMeters(codex5hBucket, codexWeeklyBucket, fallbackBucket, cooldownCompactNotice) {
       let metersHtml = '';
       const b1 = (codex5hBucket && Number.isFinite(codex5hBucket.remaining_percent)) ? codex5hBucket : fallbackBucket;
@@ -223,5 +225,3 @@
       `;
       return metersHtml;
     }
-
-    // 紧凑视图配额区：按提供商分派到对应的指示条渲染器

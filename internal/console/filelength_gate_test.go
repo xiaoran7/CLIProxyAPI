@@ -188,13 +188,106 @@ func exemptionReasonIsValid(reason string) bool {
 
 // TestConsoleFileLengthGate enforces the AGENTS.md §2.8 single-file size rule
 // over the native Console tree.
+// gateVerdict decides what the gate does with one file and returns the
+// failure message, or "" when the file is acceptable.
+//
+// AGENTS.md §2.8.2 makes a file at or above fileLengthFailAt architectural
+// degradation that MUST be split; only a header exemption under §2.8.3 can
+// waive it.  Registering a file in pendingSplit is NOT a waiver -- the debt
+// table exists to pin a file's ceiling while it waits to be split, so the
+// hard limit has to be evaluated before the registration lookup.  Evaluating it
+// afterwards lets the debt table buy a >=1000-line file a pass, which is
+// exactly the hole §2.8 was written to close.
+//
+// The order of the three rules matters:
+//
+//  1. The hard limit, which no registration can waive.
+//  2. The ratchet, which applies to every registered file.  It keeps applying
+//     after a file has dropped below the warning threshold: a file that was
+//     split but kept its path would otherwise regrow freely while its entry
+//     sat unused in the debt table.
+//  3. The warning threshold, which only unregistered files can trip.
+func gateVerdict(rel string, lines int, ceiling int, registered bool) string {
+	if lines >= fileLengthFailAt {
+		return fmt.Sprintf(
+			"%s: %d lines is at or above the %d-line architectural degradation threshold and must be split (only a header exemption under AGENTS.md §2.8.3 can waive it)",
+			rel, lines, fileLengthFailAt)
+	}
+	if registered {
+		if lines > ceiling {
+			return fmt.Sprintf(
+				"%s: %d lines grew past its recorded ceiling of %d - split it instead of growing it",
+				rel, lines, ceiling)
+		}
+		return ""
+	}
+	if lines < fileLengthWarnAt {
+		return ""
+	}
+	return fmt.Sprintf(
+		"%s: %d lines exceeds the %d-line warning threshold and is not registered in pendingSplit",
+		rel, lines, fileLengthWarnAt)
+}
+
+// TestGateVerdictThresholdSemantics locks the gate's decision table.
+//
+// The case that matters most is "fail threshold, registered": an oversized
+// file must not be able to buy itself a pass by being entered in the debt
+// table, and the failure message must not point the developer at the debt
+// table as the way out.
+func TestGateVerdictThresholdSemantics(t *testing.T) {
+	cases := []struct {
+		name       string
+		lines      int
+		ceiling    int
+		registered bool
+		wantFail   bool
+		wantSubstr string
+	}{
+		{"under the warning threshold", fileLengthWarnAt - 1, 0, false, false, ""},
+		{"warning threshold, unregistered", fileLengthWarnAt, 0, false, true, "warning threshold"},
+		{"warning threshold, registered within ceiling", fileLengthWarnAt, fileLengthWarnAt, true, false, ""},
+		{"registered file grew past its ceiling", fileLengthWarnAt + 10, fileLengthWarnAt, true, true, "grew past its recorded ceiling"},
+		{"registered file shrank then grew back", fileLengthWarnAt - 10, fileLengthWarnAt - 100, true, true, "grew past its recorded ceiling"},
+		{"registered file shrank below the threshold", fileLengthWarnAt - 100, fileLengthWarnAt - 100, true, false, ""},
+		{"fail threshold, unregistered", fileLengthFailAt, 0, false, true, "must be split"},
+		{"fail threshold, registered", fileLengthFailAt, fileLengthFailAt, true, true, "must be split"},
+		{"fail threshold, registered above ceiling", fileLengthFailAt + 50, fileLengthFailAt, true, true, "must be split"},
+	}
+
+	for _, tc := range cases {
+		msg := gateVerdict("internal/console/x.go", tc.lines, tc.ceiling, tc.registered)
+		if tc.wantFail {
+			if msg == "" {
+				t.Errorf("%s: gateVerdict accepted %d lines (registered=%v), want a failure",
+					tc.name, tc.lines, tc.registered)
+				continue
+			}
+			if !strings.Contains(msg, tc.wantSubstr) {
+				t.Errorf("%s: gateVerdict message = %q, want it to contain %q",
+					tc.name, msg, tc.wantSubstr)
+			}
+			if strings.Contains(msg, "not registered in pendingSplit") &&
+				strings.Contains(msg, "architectural degradation threshold") {
+				t.Errorf("%s: failure message must not offer the debt table as the way out of the hard limit: %q",
+					tc.name, msg)
+			}
+			continue
+		}
+		if msg != "" {
+			t.Errorf("%s: gateVerdict rejected %d lines (registered=%v): %q",
+				tc.name, tc.lines, tc.registered, msg)
+		}
+	}
+}
+
 func TestConsoleFileLengthGate(t *testing.T) {
 	root := consoleTreeRoot(t)
 	files := collectSourceFiles(t, root)
 	seen := make(map[string]bool, len(files))
 
 	var failures []string
-	var registered []string
+	var stillQueued []string
 	var exempted []string
 
 	for _, rel := range files {
@@ -216,28 +309,14 @@ func TestConsoleFileLengthGate(t *testing.T) {
 			continue
 		}
 
-		if lines < fileLengthWarnAt {
-			continue
-		}
-
 		ceiling, ok := pendingSplit[rel]
-		if !ok {
-			severity := "warning threshold"
-			if lines >= fileLengthFailAt {
-				severity = "architectural degradation threshold"
-			}
-			failures = append(failures, fmt.Sprintf(
-				"%s: %d lines exceeds the %d-line %s and is not registered in pendingSplit",
-				rel, lines, fileLengthWarnAt, severity))
+		if msg := gateVerdict(rel, lines, ceiling, ok); msg != "" {
+			failures = append(failures, msg)
 			continue
 		}
-		if lines > ceiling {
-			failures = append(failures, fmt.Sprintf(
-				"%s: %d lines grew past its recorded ceiling of %d - split it instead of growing it",
-				rel, lines, ceiling))
-			continue
+		if ok {
+			stillQueued = append(stillQueued, fmt.Sprintf("%-40s %5d / %5d lines", rel, lines, ceiling))
 		}
-		registered = append(registered, fmt.Sprintf("%-40s %5d / %5d lines", rel, lines, ceiling))
 	}
 
 	// A registered path that no longer exists means the file was split and the
@@ -254,9 +333,9 @@ func TestConsoleFileLengthGate(t *testing.T) {
 			"%s: registered in pendingSplit but the file no longer exists - remove the entry", rel))
 	}
 
-	if len(registered) > 0 {
+	if len(stillQueued) > 0 {
 		t.Logf("files still queued for a split (ratchet locked, may shrink but never grow):")
-		for _, line := range registered {
+		for _, line := range stillQueued {
 			t.Logf("  %s", line)
 		}
 	}

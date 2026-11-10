@@ -309,7 +309,12 @@ func TestConsolePartialsAssembleIntoShell(t *testing.T) {
 				t.Errorf("partial %s is missing from the assembled page or out of document order", name)
 				break
 			}
-			offset += idx
+			// Advance past the match, not to its start: leaving the offset on
+			// the first byte of the partial lets the next lookup start inside
+			// the partial it just found, so a partial that was moved earlier
+			// in the document would still match and the order check would
+			// never fire.
+			offset += idx + len(needle)
 		}
 	}
 

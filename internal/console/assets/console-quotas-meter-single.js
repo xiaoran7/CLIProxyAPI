@@ -3,6 +3,8 @@
  * 从 console-quotas-render.js 拆出：OpenCode / OpenRouter / WorkBuddy / Qoder / ZCode 紧凑额度计。
  */
 
+    // opencode 紧凑视图：渠道就绪状态
+
     function renderCompactOpenCodeMeter(acc) {
       return `
         <div class="compact-meter-wrap" style="display:flex; flex-direction:column; justify-content:center; gap:3px;">
@@ -398,5 +400,3 @@
       }
       return metersHtml;
     }
-
-    // Codex 紧凑视图：5h 与周额度双指示条

@@ -5,11 +5,13 @@ import (
 	"embed"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"mime"
 	"net/http"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,7 +20,30 @@ import (
 var embeddedAssets embed.FS
 
 // FileETags caches MD5 hashes for static assets.
-var fileETags = make(map[string]string)
+//
+// The map is written from request handlers (the image route computes an ETag
+// the first time an asset is served), so every access is guarded: an
+// unsynchronised map write from two concurrent requests is a fatal Go runtime
+// error, not a recoverable panic, and it would take the whole gateway down.
+var (
+	fileETagsMu sync.RWMutex
+	fileETags   = make(map[string]string)
+)
+
+// fileETag returns the cached ETag for name, if one was computed.
+func fileETag(name string) (string, bool) {
+	fileETagsMu.RLock()
+	defer fileETagsMu.RUnlock()
+	etag, ok := fileETags[name]
+	return etag, ok
+}
+
+// storeFileETag memoises the ETag of name.
+func storeFileETag(name, etag string) {
+	fileETagsMu.Lock()
+	fileETags[name] = etag
+	fileETagsMu.Unlock()
+}
 
 // BuildVersion is injected at link time via
 // -ldflags "-X '.../assets.BuildVersion=vX.Y.Z'".
@@ -50,6 +75,12 @@ func rewriteAssetVersions(data []byte) []byte {
 	return assetVersionPattern.ReplaceAll(data, []byte("?v="+v))
 }
 
+// consolePartialGroup is one placeholder marker and the partials that fill it.
+type consolePartialGroup struct {
+	marker string
+	files  []string
+}
+
 // consolePartials lists the HTML partials that are injected into the console
 // shell, grouped by the placeholder marker they replace. The order inside a
 // group is the document order of the markup, so the assembled page is
@@ -58,10 +89,7 @@ func rewriteAssetVersions(data []byte) []byte {
 // The partials exist so that console.html itself stays a small, navigable
 // shell: every tab page and every modal owns one file instead of piling up
 // in one multi-thousand-line document (AGENTS.md §2.8).
-var consolePartials = []struct {
-	marker string
-	files  []string
-}{
+var consolePartials = []consolePartialGroup{
 	{
 		marker: "<!--CONSOLE_PAGES-->",
 		files: []string{
@@ -88,100 +116,100 @@ var consolePartials = []struct {
 	},
 }
 
+// readEmbeddedText reads an embedded asset as text.
+func readEmbeddedText(name string) (string, error) {
+	raw, err := embeddedAssets.ReadFile(name)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
 // assembleConsoleHTML injects the embedded HTML partials into the console
-// shell. Every partial is trimmed of its trailing newline and the parts are
-// joined with a single "\n": the newline that terminates the placeholder line
-// in the shell becomes the separator between the last partial and the shell
-// content that follows it, which reproduces the original markup exactly.
+// shell.
 func assembleConsoleHTML(data []byte) ([]byte, error) {
-	out := string(data)
-	for _, group := range consolePartials {
-		parts := make([]string, 0, len(group.files))
-		for _, name := range group.files {
-			raw, err := embeddedAssets.ReadFile(name)
-			if err != nil {
-				return nil, fmt.Errorf("console partial %s: %w", name, err)
-			}
-			parts = append(parts, strings.TrimRight(string(raw), "\n"))
-		}
-		if strings.Count(out, group.marker) != 1 {
-			return nil, fmt.Errorf("console placeholder %s must appear exactly once", group.marker)
-		}
-		out = strings.Replace(out, group.marker, strings.Join(parts, "\n"), 1)
+	out, err := assembleShell(string(data), consolePartials, readEmbeddedText)
+	if err != nil {
+		return nil, err
 	}
 	return []byte(out), nil
 }
 
-func init() {
-	// Precalculate ETag hashes for embedded files
-	entries := []string{
-		"console.html",
-		"console-base.css",
-		"console-panels.css",
-		"console-members.css",
-		"console-tables.css",
-		"console-modals.css",
-		"console-feedback.css",
-		"console-logs.css",
-		"console-traffic.css",
-		"console-theme-beszel.css",
-		"console-theme-v239.css",
-		"console-theme-v2310.css",
-		"console-validations.css",
-		"console-upstream-stats.css",
-		"console-i18n.js",
-		"console-keys.js",
-		"console-quotas-priority.js",
-		"console-quotas-validation.js",
-		"console-quotas-fetch.js",
-		"console-quotas-render.js",
-		"console-quotas-workbuddy.js",
-		"console-quotas-stats.js",
-		"console-stats.js",
-		"console-logs.js",
-		"console-traffic.js",
-		"console-tos-bans.js",
-		"console-cpa.js",
-		"console-cpa.css",
-		"console-overview.js",
-		"console-overview.css",
-		"console-state.js",
-		"console-nav.js",
-		"console-auth.js",
-		"console-format.js",
-		"console-polling.js",
-		"console-member.js",
-		"console-refresh.js",
-		"console-init.js",
-		"console-panels-quota.css",
-		"console-panels-compact.css",
-		"console-panels-status.css",
-		"console-i18n-dict-common.js",
-		"console-i18n-dict-stats.js",
-		"console-i18n-dict-quotas.js",
-		"console-i18n-dict-keys.js",
-		"console-i18n-dict-logs.js",
-		"console-quotas-meter-single.js",
-		"console-quotas-meter-multi.js",
-		"console-quotas-cards-compact.js",
-		"console-quotas-cards-full.js",
-		"console-keys-modals.js",
-		"console-keys-picker.js",
-		"console-keys-pricing.js",
-		"console-logs-data.js",
-		"console-logs-errors.js",
-		"console-traffic-icons.js",
-		"console-traffic-topology.js",
-		"console-overview-charts.js",
-	}
-
-	for _, name := range entries {
-		data, err := embeddedAssets.ReadFile(name)
-		if err == nil {
-			h := md5.Sum(data)
-			fileETags[name] = `"` + hex.EncodeToString(h[:8]) + `"`
+// assembleShell injects the partial bodies into the shell document.
+//
+// Every partial is trimmed of its trailing line terminators and the parts are
+// joined with the same terminator: the newline that terminates the placeholder
+// line in the shell becomes the separator between the last partial and the
+// shell content that follows it, which reproduces the original markup exactly.
+//
+// The terminator is taken from the partials themselves rather than assumed to
+// be "\n": a checkout with CRLF line endings would otherwise leave a stray
+// "\r" on every join boundary and inject a blank line per partial.
+//
+// read is the source of the partial bodies. It is a parameter so the
+// line-ending contract can be exercised without the embed FS.
+func assembleShell(shell string, groups []consolePartialGroup, read func(string) (string, error)) (string, error) {
+	out := shell
+	for _, group := range groups {
+		parts := make([]string, 0, len(group.files))
+		terminator := ""
+		for _, name := range group.files {
+			raw, err := read(name)
+			if err != nil {
+				return "", fmt.Errorf("console partial %s: %w", name, err)
+			}
+			body, term := splitTrailingTerminators(raw)
+			if terminator == "" {
+				terminator = term
+			}
+			parts = append(parts, body)
 		}
+		if strings.Count(out, group.marker) != 1 {
+			return "", fmt.Errorf("console placeholder %s must appear exactly once", group.marker)
+		}
+		out = strings.Replace(out, group.marker, strings.Join(parts, terminator), 1)
 	}
+	return out, nil
+}
+
+// splitTrailingTerminators removes the trailing line terminators of s and
+// reports the terminator convention they used ("\n" or "\r\n"). A partial
+// that ends without any terminator keeps the default.
+func splitTrailingTerminators(s string) (string, string) {
+	terminator := "\n"
+	if strings.Contains(s, "\r\n") {
+		terminator = "\r\n"
+	}
+	for strings.HasSuffix(s, terminator) {
+		s = strings.TrimSuffix(s, terminator)
+	}
+	return s, terminator
+}
+
+func init() {
+	// Precalculate ETag hashes for every embedded asset.
+	//
+	// The list is derived from the embed FS instead of being hand-maintained:
+	// a console-*.js file that is added to the tree but forgotten in a list
+	// would silently fall back to hashing on its first request, and a list
+	// entry for a file that was renamed would hash nothing at all.
+	//
+	// "console.html" is deliberately skipped: the bytes actually served are the
+	// assembled document (shell + partials) with the asset versions rewritten,
+	// not the embedded shell, so its ETag is derived from the assembled bytes
+	// in consoleHTML() below.
+	_ = fs.WalkDir(embeddedAssets, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || path == "console.html" {
+			return nil
+		}
+		data, readErr := embeddedAssets.ReadFile(path)
+		if readErr != nil {
+			return nil
+		}
+		h := md5.Sum(data)
+		storeFileETag(path, `"`+hex.EncodeToString(h[:8])+`"`)
+		return nil
+	})
 }
 
 // GetAsset reads a named asset from the embedded filesystem.
@@ -380,11 +408,11 @@ func RegisterUI(r *gin.Engine) {
 			return
 		}
 
-		etag := fileETags[fullPath]
-		if etag == "" {
+		etag, ok := fileETag(fullPath)
+		if !ok {
 			h := md5.Sum(data)
 			etag = `"` + hex.EncodeToString(h[:8]) + `"`
-			fileETags[fullPath] = etag
+			storeFileETag(fullPath, etag)
 		}
 
 		if match := c.GetHeader("If-None-Match"); match != "" && (match == etag || match == "W/"+etag || match == "*") {
@@ -420,33 +448,84 @@ func RegisterUI(r *gin.Engine) {
 	registerGetHead("/admin/assets/*filepath", imageHandler)
 }
 
-func serveEmbeddedFile(c *gin.Context, assetName, contentType, cacheControl string) {
-	data, err := embeddedAssets.ReadFile(assetName)
-	if err != nil {
-		c.String(http.StatusNotFound, fmt.Sprintf("Asset %s not found: %v", assetName, err))
-		return
+// consoleHTMLMu guards the memoised console document.
+var (
+	consoleHTMLMu    sync.Mutex
+	consoleHTMLKey   string
+	consoleHTMLBytes []byte
+	consoleHTMLETag  string
+)
+
+// consoleHTML returns the assembled console document and its ETag.
+//
+// The document is the shell plus the 14 HTML partials, with every "?v="
+// rewritten to the build version.  All three steps depend only on the embedded
+// files and the build version, so the result cannot change while the process
+// runs.  Assembling it per request re-read 15 files from the embed FS and
+// allocated several copies of a ~112 KB document on every console page load;
+// doing it once keeps that work off the request path and lets a conditional
+// request (If-None-Match) be answered without touching the allocator at all.
+//
+// The memo is keyed by the build version: in a release BuildVersion is linked
+// in and never changes, but the version-rewrite contract test swaps it at
+// runtime, and a stale document would fail that contract.
+func consoleHTML() ([]byte, string, error) {
+	version := assetCacheVersion()
+
+	consoleHTMLMu.Lock()
+	defer consoleHTMLMu.Unlock()
+
+	if consoleHTMLBytes != nil && consoleHTMLKey == version {
+		return consoleHTMLBytes, consoleHTMLETag, nil
 	}
 
-	// The index HTML references every asset with a "?v=" cache-busting query.
-	// Rewrite it to the build version so a redeploy always yields fresh URLs.
-	// This must happen before the ETag is derived, so the ETag describes the
-	// bytes actually sent rather than the embedded original.
+	raw, err := embeddedAssets.ReadFile("console.html")
+	if err != nil {
+		return nil, "", fmt.Errorf("read console shell: %w", err)
+	}
+	assembled, err := assembleConsoleHTML(raw)
+	if err != nil {
+		return nil, "", err
+	}
+	body := rewriteAssetVersions(assembled)
+	h := md5.Sum(body)
+
+	consoleHTMLKey = version
+	consoleHTMLBytes = body
+	consoleHTMLETag = `"` + hex.EncodeToString(h[:8]) + `"`
+	return consoleHTMLBytes, consoleHTMLETag, nil
+}
+
+func serveEmbeddedFile(c *gin.Context, assetName, contentType, cacheControl string) {
+	var (
+		data []byte
+		etag string
+		err  error
+	)
+
 	if assetName == "console.html" {
-		assembled, errAssemble := assembleConsoleHTML(data)
-		if errAssemble != nil {
+		// The index HTML references every asset with a "?v=" cache-busting
+		// query.  Rewrite it to the build version so a redeploy always yields
+		// fresh URLs.  This must happen before the ETag is derived, so the
+		// ETag describes the bytes actually sent rather than the embedded
+		// original.
+		data, etag, err = consoleHTML()
+		if err != nil {
 			c.String(http.StatusInternalServerError,
-				fmt.Sprintf("Console assembly failed: %v", errAssemble))
+				fmt.Sprintf("Console assembly failed: %v", err))
 			return
 		}
-		data = rewriteAssetVersions(assembled)
-	}
-
-	etag := fileETags[assetName]
-	if etag == "" || assetName == "console.html" {
-		h := md5.Sum(data)
-		etag = `"` + hex.EncodeToString(h[:8]) + `"`
-		if assetName != "console.html" {
-			fileETags[assetName] = etag
+	} else {
+		data, err = embeddedAssets.ReadFile(assetName)
+		if err != nil {
+			c.String(http.StatusNotFound, fmt.Sprintf("Asset %s not found: %v", assetName, err))
+			return
+		}
+		etag, ok := fileETag(assetName)
+		if !ok {
+			h := md5.Sum(data)
+			etag = `"` + hex.EncodeToString(h[:8]) + `"`
+			storeFileETag(assetName, etag)
 		}
 	}
 

@@ -5,6 +5,8 @@
 
     let cachedModelPrices = [];
 
+    // ---- 模型定价与倍率管理 (Pricing Rules Modal) ----
+
     function openPricesModal() {
       resetPriceForm();
       fetchModelPrices();

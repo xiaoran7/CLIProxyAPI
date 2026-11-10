@@ -216,5 +216,3 @@
       renderModelTags();
       renderModelPickerList();
     }
-
-    // ---- 现代 Aozora UI 模型搜索与选择下拉交互 ----

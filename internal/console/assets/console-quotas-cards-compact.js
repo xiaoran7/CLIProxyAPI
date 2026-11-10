@@ -3,6 +3,8 @@
  * 从 console-quotas-render.js 拆出：紧凑列表行渲染与紧凑卡片装配。
  */
 
+    // 紧凑视图配额区：按提供商分派到对应的指示条渲染器
+
     function renderUpstreamCompactMeters(acc, buckets, health, cooldownCompactNotice, isCredentialBlocked) {
       const { gemini5hBucket, geminiWeeklyBucket, claude5hBucket, claudeWeeklyBucket, codex5hBucket, codexWeeklyBucket, fallbackBucket } = buckets;
       let metersHtml = '';
@@ -133,5 +135,3 @@
         compactContainer.innerHTML = filtered.map(acc => renderUpstreamCompactRow(acc)).join('');
       }
     }
-
-    // 完整卡片的模型组区块：组标题 + 每组配额桶指示条
