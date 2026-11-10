@@ -28,6 +28,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Verification
 - `gofmt -l internal/console/` 无输出；`go build ./...`、`go vet ./internal/console/...` 通过；`go test ./internal/console/...` 六个包全绿。
 - 资源版本号自增：`console.html` 的 57 处 `?v=v8.0.79` 全量改为 `?v=v8.0.80`。
+- **端到端对比拆分前的旧实例（8319）与修复后的新实例（8318，两边都是各自提交树里 build 出来的二进制）**：
+  - `/console` 文档：去掉拆分必然带来的 20 行资源引用与 14 行分段注释后，两边**逐字节相同**（117547 字节，md5 `534668ed1b921749c1f8ac6e82e822d9`）——浏览器在两边拿到的是同一份文档，partial 的顺序也就是原始文档的顺序；
+  - 39 条资源 URL：32 条响应体逐字节相同，7 条不同（正是被拆开的那 7 个"主文件"，内容整体搬进了各自的兄弟文件）；
+  - ETag：`/console/console-format.js`、`console-base.css`、`console-cpa.js`、`console-state.js`、图片资源在两边的 ETag **完全一致**（如 `"078319b2960a147e"`），且带上该 ETag 重新请求一律返回 **304**——v8.0.79 修掉的正是这条被拆丢的缓存链路。
+- 浏览器实测（1600×1000，`?key=` 登录，修复后的实例）：11 个标签页逐个点击，切换后各页均有真实内容且同时只有 1 个 `.tab-page` 可见，**0 条 JS 运行时错误、0 条失败请求**。
 
 ## [v8.0.79] - 2026-11-11
 
