@@ -1,0 +1,29 @@
+name: console-file-length-gate
+
+# AGENTS.md §2.8 caps the size of a single source file for the native Console
+# tree. The gate itself lives in internal/console/filelength_gate_test.go: it
+# fails the build when a file outgrows the ceiling recorded for it, when a new
+# file enters the oversized band unnoticed, or when a registered file reappears
+# under a stale name.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Console file-length gate
+        run: go test ./internal/console/ -run TestConsoleFileLengthGate -v

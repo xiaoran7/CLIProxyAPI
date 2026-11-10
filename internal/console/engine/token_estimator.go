@@ -132,14 +132,6 @@ func ExtractUsageFromJSON(body []byte) (prompt, completion, cached, total int64,
 	return 0, 0, 0, 0, false
 }
 
-// EstimateTokensFromChars computes an approximate token count assuming ~3 characters per token for CJK/multilingual.
-func EstimateTokensFromChars(charCount int) int64 {
-	if charCount <= 0 {
-		return 0
-	}
-	return int64(math.Ceil(float64(charCount) / 3.0))
-}
-
 // ExtractReasoningEffort extracts thinking effort parameter across four protocol specifications:
 // 1. OpenAI o-series: reasoning_effort, reasoning.effort, reasoningEffort
 // 2. Anthropic: output_config.effort, effort, thinking.budget_tokens

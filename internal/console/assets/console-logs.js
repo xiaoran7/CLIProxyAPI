@@ -464,11 +464,6 @@
       }, 300);
     }
 
-    function changeLogsLimit(limit) {
-      logsPage = 1;
-      fetchEventsData();
-    }
-
     function prevLogsPage() {
       if (logsPage > 1) {
         logsPage--;

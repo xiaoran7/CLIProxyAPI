@@ -147,10 +147,6 @@
       }
     }
 
-    function clearErrorsQueryCache() {
-      errorsQueryCache.clear();
-    }
-
     function invalidateKeysFrontendCache() {
       cachedKeysLoadedAt = 0;
       try { localStorage.removeItem(KEY_STORAGE_KEYS); } catch {}

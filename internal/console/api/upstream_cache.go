@@ -21,11 +21,6 @@ func InvalidateUpstreamQuotaCache() {
 	cachedUpstreamAt = time.Time{}
 }
 
-// ActiveBackgroundProbeCount returns the count of in-flight background probes
-func ActiveBackgroundProbeCount() int32 {
-	return activeBackgroundProbes.Load()
-}
-
 // CachedAccountQuota stores parsed on-demand quota snapshots in memory
 type CachedAccountQuota struct {
 	Groups           []CpaQuotaGroup

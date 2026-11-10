@@ -423,20 +423,6 @@
       renderModelPickerList();
     }
 
-    function setPreset(type) {
-      if (type === 'all') currentSelectedModels = [];
-      else if (type === 'flash') currentSelectedModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gpt-4o-mini', 'claude-3-5-haiku', 'deepseek-chat'];
-      else if (type === 'claude') currentSelectedModels = ['claude-3-7-sonnet', 'claude-3-5-sonnet', 'claude-3-5-haiku'];
-      else if (type === 'reasoning') currentSelectedModels = ['deepseek-reasoner', 'o1', 'o3-mini', 'claude-3-7-sonnet'];
-      renderModelTags();
-      renderModelPickerList();
-    }
-    function clearModels() {
-      currentSelectedModels = [];
-      renderModelTags();
-      renderModelPickerList();
-    }
-
     // ---- 现代 Aozora UI 模型搜索与选择下拉交互 ----
     let cachedUpstreamModelsList = null;
     let isFetchingUpstreamModels = false;

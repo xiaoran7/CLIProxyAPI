@@ -1,8 +1,6 @@
 package api
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -587,9 +585,4 @@ func forwardCpa(c *gin.Context, cpa *CpaClient, method, path string, body []byte
 		contentType = "application/json; charset=utf-8"
 	}
 	c.Data(resp.StatusCode, contentType, resp.Bytes)
-}
-
-func computeETag(b []byte) string {
-	h := sha256.Sum256(b)
-	return hex.EncodeToString(h[:])
 }

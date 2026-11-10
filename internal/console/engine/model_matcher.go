@@ -30,19 +30,6 @@ func isChannelNamespace(prefix string) bool {
 	return p != "" && !isManufacturerPrefix(p)
 }
 
-// NormalizeModelWhitelist parses and formats raw whitelist input into a canonical JSON array string.
-func NormalizeModelWhitelist(raw string) string {
-	parsed := ParseModelWhitelist(raw)
-	if len(parsed) == 0 {
-		return ""
-	}
-	bytes, err := json.Marshal(parsed)
-	if err != nil {
-		return ""
-	}
-	return string(bytes)
-}
-
 // ParseModelWhitelist converts a raw whitelist (JSON array, comma-separated, or whitespace-separated)
 // into a slice of lowercase model names. Returns nil if wildcard '*' is present (meaning all models allowed).
 func ParseModelWhitelist(raw string) []string {

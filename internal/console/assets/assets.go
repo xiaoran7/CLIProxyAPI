@@ -5,7 +5,6 @@ import (
 	"embed"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"mime"
 	"net/http"
 	"path/filepath"
@@ -101,11 +100,6 @@ func init() {
 			fileETags[name] = `"` + hex.EncodeToString(h[:8]) + `"`
 		}
 	}
-}
-
-// FS returns the underlying embedded filesystem.
-func FS() embed.FS {
-	return embeddedAssets
 }
 
 // GetAsset reads a named asset from the embedded filesystem.
@@ -362,14 +356,4 @@ func serveEmbeddedFile(c *gin.Context, assetName, contentType, cacheControl stri
 		return
 	}
 	c.Data(http.StatusOK, contentType, data)
-}
-
-// ServeAssetWriter provides direct io.Writer output.
-func ServeAssetWriter(w io.Writer, assetName string) error {
-	data, err := embeddedAssets.ReadFile(assetName)
-	if err != nil {
-		return err
-	}
-	_, err = w.Write(data)
-	return err
 }

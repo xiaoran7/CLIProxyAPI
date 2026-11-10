@@ -3,6 +3,31 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.75] - 2026-11-10
+
+### Removed
+- **原生 Console 死代码清理（JS 17 函数 / 8 变量 / 2 处 window 导出 / CSS 284 行 / Go 8 函数，合计 -709 行）**:
+  - 根因：流量页早期版本提供"时间范围双滑条 + IP/模型/状态三维筛选 + 流水表格"联动能力，改版为"IP/属地/Key 三维关联视图"后旧实现只摘掉了 HTML 标记与入口函数，函数体、状态变量、事件绑定与配套 CSS 全量遗留在产物里；另有一批早期格式化、骨架屏与缓存工具函数在重构后失去唯一调用点。这些代码对运行时零贡献，却直接推高文件行数、稀释检索噪声，并让后续按 AGENTS.md §2.8 拆分时无法判断真实业务边界。
+  - 判定方法：三重证据交叉，不靠人工通读拍脑袋。可达性分析按调用图从"顶层执行语句 / 内联 `on*` 事件属性 / `window.*` 导出"三个根做遍历，剔除字符串、模板、注释与正则字面量以保证花括号配对准确；再对每个候选做全量 `console-*.js` + `console.html` 跨文件引用计数；最后人工核验 DOM 锚点与 `addEventListener` 绑定，确认元素根本不会被创建、监听器也不存在，三项齐备才判定为死代码。
+  - 删除清单（JS，17 函数 + 8 变量 + 2 导出）：`console-traffic.js` 删 `updateTrafficTimeSliderLimits` / `onTrafficTimeSliderInput` / `updateTrafficSliderProgressUI` / `setTrafficTimePreset` / `renderTrafficTable` / `updateTrafficFilterDropdowns` / `onTrafficIPChange` / `onTrafficModelChange` / `onTrafficStatusChange` / `onTrafficSearchChange` / `resetTrafficFilters`，及 8 个配套状态变量 `trafficSelectedModel` / `trafficSelectedStatus` / `trafficSearchQuery` / `trafficTimeMinPercent` / `trafficTimeMaxPercent` / `trafficBufferMinTs` / `trafficBufferMaxTs` / `trafficActiveTimePreset`；`console-format.js` 删 `formatCstDate` / `renderSkeletonCards` 及其两处 `window.*` 导出；`console-keys.js` 删 `setPreset` / `clearModels`；`console-logs.js` 删 `changeLogsLimit`；`console-state.js` 删 `clearErrorsQueryCache`。
+  - 删除清单（CSS，284 行）：`console-traffic.css` 整段删除第 4 节"时间范围滑动条 (Dual-Thumb Slider)"与第 5 节"实时调用流水明细表 (Stream Table)"，后续章节序号顺延重排。
+  - 删除清单（Go，8 函数）：`internal/console/api/handlers_cpa.go` 的 `computeETag`；`internal/console/api/provider_registry.go` 的 `RegisterAuthAccounts` / `GetAllAuthAccounts`；`internal/console/api/upstream_cache.go` 的 `ActiveBackgroundProbeCount`；`internal/console/assets/assets.go` 的 `FS` / `ServeAssetWriter`；`internal/console/engine/model_matcher.go` 的 `NormalizeModelWhitelist`；`internal/console/engine/token_estimator.go` 的 `EstimateTokensFromChars`。
+  - 误报排除：可达性分析初版把 `toggleHighlightTrafficNode` 判为死代码，但它经 `nodeGroup.setAttribute('onclick', ...)` 内联字符串调用，属活代码，已保留并修正分析器对 `setAttribute('onclick', ...)` 根节点的识别；`internal/console/config.go` 的 `LoadConfig` 被 `console_test.go` 直接引用，同样保留不动。
+  - 安全性：所有删除按符号锚点在原文件文本上计算行区间，再按逆序偏移套用，避免陈旧区间误伤后续代码；删除后由脚本机器校验"无悬空引用"与"活符号仍全部定义"两条不变量。
+  - 验收：`node --check` 对 5 个改动 JS 文件全部通过；`go build ./...` 与 `go vet ./internal/console/...` 通过；`go test ./internal/console/...` 6 个包全绿；线上部署产物与本地重建产物的 `console.html` 归一化 `?v=` 后字节一致；Playwright 实机走查 7 个导航标签页，控制台零 JS 错误（仅登录前 401），"封禁监控""可视化网关"页面渲染正常，时间尺度按钮点击无异常。
+  - 附带修正 `console-traffic.js` 头部注释"IP/属地/Key 三维关联与时间滑动条流水"→"IP/属地/Key 三维关联"，与实际保留能力对齐。
+  - 资源缓存击穿：`console.html` 37 处静态资源版本号全量自增至 `?v=v8.0.75`。
+
+### Added
+- **原生 Console 单文件行数门禁（可执行 + CI 接入）**:
+  - 背景：AGENTS.md §2.8 把 300~500 行定为健康区间、800 行定为重构预警线、1000 行定为架构劣化线，但这条规则此前只存在于文档里，任何人都能随手把文件撑大而没有任何东西拦下来。
+  - 实现：新增 `internal/console/filelength_gate_test.go`，把规则变成可执行门禁，三层强制力：① 硬上限——无豁免标记的文件达到 1000 行直接判失败；② 登记制——超过 800 行且未登记在 `pendingSplit` 的文件直接判失败，登记是"承诺去拆"而不是"合法化现状"；③ 棘轮——已登记文件被钉死在登记时的行数上，只许缩小不许增长，文件被拆掉后必须清理登记项，登记项指向的文件消失同样判失败。
+  - 豁免机制：按 AGENTS.md §2.8.3，只有核心算法、密集状态机、连续数学/物理计算、底层位操作、第三方 DSL、代码生成器输出等确实不可拆分的场景才允许豁免，且必须在文件头部写明豁免原因与架构说明；豁免原因需包含上述类别之一且不少于 12 字，防止用一句"待拆分"敷衍过去。
+  - 生效范围：仅覆盖 `internal/console/**`（自研原生控制台）。上游 `router-for-me/CLIProxyAPI` 的 `internal/api`、`sdk/` 等目录不在门禁范围内，本仓也不改写上游代码。
+  - 债务清单：门禁上线时把 15 个仍超预警线的文件登记进 `pendingSplit`（其中 6 个已达 1000 行），并在测试输出中打印债务表，保证"还差多少、下一刀切哪里"始终可见。
+  - CI 接入：新增 `.github/workflows/console-file-length-gate.yml`（pull_request 与 push 到 main 均触发，只跑门禁本身，反馈快）；同时在 `.github/workflows/pr-test-build.yml` 补 `go test ./internal/console/...` 步骤，并把触发器从仅 pull_request 扩到 push main，覆盖本项目直推 main 的提交方式。
+  - 验收：门禁三个负例均实测判失败——已登记文件增长 1 行、新增 900 行未登记文件、登记项指向已不存在的文件；还原后复测通过，`gofmt` 与 `go vet ./internal/console/` 均无输出。
+
 ## [v8.0.74] - 2026-11-09
 
 ### Fixed

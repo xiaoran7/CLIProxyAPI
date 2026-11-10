@@ -547,38 +547,6 @@ func (pe *ProviderRegistryEngine) RegisterAuthAccount(authIndex, providerKey, na
 	}
 }
 
-// RegisterAuthAccounts registers multiple authoritative upstream account mappings.
-func (pe *ProviderRegistryEngine) RegisterAuthAccounts(accounts []AuthAccountInfo) {
-	if len(accounts) == 0 {
-		return
-	}
-	pe.mu.Lock()
-	defer pe.mu.Unlock()
-
-	for _, a := range accounts {
-		idx := strings.ToLower(strings.TrimSpace(a.AuthIndex))
-		if idx == "" {
-			continue
-		}
-		prov := strings.ToLower(strings.TrimSpace(a.ProviderKey))
-		nm := strings.TrimSpace(a.Name)
-		existing, exists := pe.authAccounts[idx]
-		if exists {
-			if prov == "" {
-				prov = existing.ProviderKey
-			}
-			if nm == "" {
-				nm = existing.Name
-			}
-		}
-		pe.authAccounts[idx] = AuthAccountInfo{
-			AuthIndex:   idx,
-			ProviderKey: prov,
-			Name:        nm,
-		}
-	}
-}
-
 // GetAuthAccount retrieves account metadata for a specific auth_index.
 func (pe *ProviderRegistryEngine) GetAuthAccount(authIndex string) (AuthAccountInfo, bool) {
 	idx := strings.ToLower(strings.TrimSpace(authIndex))
@@ -628,18 +596,6 @@ func (pe *ProviderRegistryEngine) GetExcludeAuthIndexes(providerKey string) []st
 	}
 	sort.Strings(res)
 	return res
-}
-
-// GetAllAuthAccounts returns a copy of all registered account mappings.
-func (pe *ProviderRegistryEngine) GetAllAuthAccounts() map[string]AuthAccountInfo {
-	pe.mu.RLock()
-	defer pe.mu.RUnlock()
-
-	copyMap := make(map[string]AuthAccountInfo, len(pe.authAccounts))
-	for k, v := range pe.authAccounts {
-		copyMap[k] = v
-	}
-	return copyMap
 }
 
 // RegisterChannel registers or updates a custom channel display name mapping.
