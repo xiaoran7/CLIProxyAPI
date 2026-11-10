@@ -31,12 +31,18 @@ var (
 	fileETags   = make(map[string]string)
 )
 
-// fileETag returns the cached ETag for name, if one was computed.
-func fileETag(name string) (string, bool) {
+// fileETag returns the cached ETag for name, or "" if none was computed yet.
+//
+// A stored ETag is never empty (it is a quoted hex digest), so "" unambiguously
+// means "not computed".  The single-value shape matters: a two-value
+// (string, bool) helper invites `etag, ok := fileETag(x)` inside a scope that
+// already has an `etag` variable, and the `:=` then SHADOWS it -- the outer
+// variable stays empty, gin drops a header whose value is empty, and the ETag
+// silently disappears from the response.
+func fileETag(name string) string {
 	fileETagsMu.RLock()
 	defer fileETagsMu.RUnlock()
-	etag, ok := fileETags[name]
-	return etag, ok
+	return fileETags[name]
 }
 
 // storeFileETag memoises the ETag of name.
@@ -508,8 +514,8 @@ func RegisterUI(r *gin.Engine) {
 			return
 		}
 
-		etag, ok := fileETag(fullPath)
-		if !ok {
+		etag := fileETag(fullPath)
+		if etag == "" {
 			h := md5.Sum(data)
 			etag = `"` + hex.EncodeToString(h[:8]) + `"`
 			storeFileETag(fullPath, etag)
@@ -697,8 +703,12 @@ func serveEmbeddedFile(c *gin.Context, assetName, contentType, cacheControl stri
 			c.String(http.StatusNotFound, fmt.Sprintf("Asset %s not found: %v", assetName, err))
 			return
 		}
-		etag, ok := fileETag(assetName)
-		if !ok {
+		// Assign to the outer etag.  Using ":=" here would declare a new
+		// etag that shadows it, and the outer one would stay empty --
+		// gin drops a header whose value is empty, so the ETag would
+		// never reach the client and 304 revalidation would be dead.
+		etag = fileETag(assetName)
+		if etag == "" {
 			h := md5.Sum(data)
 			etag = `"` + hex.EncodeToString(h[:8]) + `"`
 			storeFileETag(assetName, etag)

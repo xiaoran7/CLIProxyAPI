@@ -3,6 +3,28 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.79] - 2026-11-11
+
+### Fixed
+- **控制台静态资源丢失 ETag，条件请求全部失效**：`serveEmbeddedFile` 里写的是 `etag, ok := fileETag(assetName)`，可这个函数上方已经声明过 `var etag string`——`:=` 在 else 分支里**新建**了一个 `etag`，把外层的**遮蔽**（shadow）掉了，外层那个自始至终是空字符串。于是：
+  - `c.Header("ETag", etag)` 递进去的是空串，而 gin 的 `Context.Header()` 对空值是 `Del`（**删表头**）而不是 `Set`——**所有单文件资源路由（console 的全部 JS 与 CSS）下发时都不带 ETag**；
+  - 紧接着的 `If-None-Match` 比较拿空串去比，**304 重新验证永远命不中**。
+  - 这是拆分之后那轮加固（v8.0.77）引入的回归：拆分前的 bf3a6a02 上资源是有 ETag 的、也能正常回 304，现在控制台每打开一次都要把整套 JS/CSS 整包重下，缓存彻底失效。
+  - 根因不在那一行，而在 `fileETag()` 的**双返回值签名**：`(string, bool)` 天然诱导调用方写 `etag, ok := fileETag(x)`；而 ETag 存进去时从不为空，空串本来就能唯一表示"还没算出来"。修复把 `fileETag()` 改回**单返回值 `string`**（空串 = 未计算），两个调用点同步改写，遮蔽的写法再也写不出来。
+  - 图片路由 `/console/assets/*` 用的是同一个 helper，一并改成单返回，两处口径一致。
+  - `/console` 文档路由、`serveEmbeddedBundle()` 下发的模块包不受影响（前者用 `=` 赋值、后者用结构体字段，本来就没有遮蔽），所以老测试全绿——这正是这条回归能溜过去的原因。
+
+### Added
+- **`console_asset_etag_test.go` 两条回归测试**：
+  - `TestAssetRoutesServeETag`：遍历 `consoleAssetRoutes` / `legacyAdminAssetRoutes` / `splitModuleRoutes` 的**每一条**路由，断言响应带非空 ETag，且拿该 ETag 再请求一次必须返回 304。之前的 ETag 测试只覆盖 `/console` 文档路由，资源路由从未被断言过。
+  - `TestAssetRoutesServeETagUnderConcurrency`：16 个 goroutine 并发打全部资源路由，断言 ETag 始终非空——ETag 缓存是请求处理器写的，并发写 map 是 Go 运行时的 fatal panic，不是可恢复的 error。
+
+### Verification
+- `gofmt -l internal/console/` 无输出；`go build ./...`、`go vet ./internal/console/...` 通过；`go test ./internal/console/...` 六个包全绿。
+- 修复前实测（HEAD 034104d5 自建实例 8318）：`/console/console-format.js`、`/console/console-base.css`、`/console/console-i18n-dict-common.js` 等**全部单文件资源响应里没有 ETag 表头**，带 `If-None-Match` 再请求也不回 304；对照拆分前的 8319 实例，同一路径 ETag 为 `"078319b2960a147e"`，可正常 304。
+- 修复后实测：`fileETag("console-format.js")` 返回 `"078319b2960a147e"`，资源路由响应带 ETag，`If-None-Match` 命中返回 304。
+- 资源版本号自增：`console.html` 的 57 处 `?v=v8.0.78` 全量改为 `?v=v8.0.79`。
+
 ## [v8.0.78] - 2026-11-11
 
 ### Fixed
