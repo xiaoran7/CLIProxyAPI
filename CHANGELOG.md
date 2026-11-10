@@ -3,6 +3,32 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.78] - 2026-11-11
+
+### Fixed
+- **拆分把历史别名 URL 变成了"半个模块"**：`/console/overview.js`、`/admin/keys.js`、`/admin/logs.js`、`/admin/traffic.js`、`/admin/quotas-render.js`、`/admin/i18n.js`、`/admin/console-panels.css` 等 16 条别名路由在 v8.0.76 拆分前各自指向一个自包含脚本（整份 i18n 字典、整份 keys 模块、整份面板样式），拆分后它们只指向"沿用旧文件名的那个碎片"，于是：
+  - `/console/overview.js` 与 `/admin/overview.js` **单独加载即抛异常**——碎片在 IIFE 顶部解构 `window.GATE_OVW`，而该命名空间由兄弟文件 `console-overview-charts.js` 建立，碎片单独加载时 `window.GATE_OVW` 为 `undefined`，直接 `TypeError: Cannot destructure property 'PAGE_ID' of 'window.GATE_OVW' as it is undefined`；
+  - 其余别名（keys / logs / traffic / quotas-render / i18n / console-panels.css）静默少掉一半代码：编辑 Key 弹窗、模型选择器、定价规则、请求流水与错误分片、流量图标与拓扑、额度仪表与卡片分组、五份 i18n 字典、面板样式分区在旧 URL 下全部取不到。
+  - 修复：新增 `splitModules` / `splitModuleRoutes` 两张表与 `serveEmbeddedBundle()`，别名路由按 `console.html` 的加载顺序把模块的各个文件拼成一个脚本/样式表再下发，**旧 URL 重新拿回完整模块**。规范路径 `/console/console-*.js` 保持"一个 URL 一个文件"（`console.html` 正是这么加载的），两条路径互不重叠。
+  - 拼装结果按模块名记忆化（`assembleBundle`），并带独立 ETag，条件请求（`If-None-Match`）照常 304。
+- **资源版本号自增**：`console.html` 的 57 处 `?v=v8.0.77` 全量改为 `?v=v8.0.78`。
+
+### Added
+- **`console_legacy_module_test.go` 六条契约测试**，把"拆分后的模块"和"对外 URL"之间的契约变成构建期可执行的断言：
+  - `TestSplitModuleMembersAreEmbedded`：模块成员必须真的被 embed，且不能被两个模块同时认领；
+  - `TestSplitModuleOrderMatchesTheConsoleLoadOrder`：模块的拼装顺序必须与 `console.html` 的加载顺序一致（这些是共享同一全局词法环境的经典脚本，顺序决定谁先跑）；
+  - `TestAliasRoutesServeTheWholeModule`：每条别名路由下发的内容必须包含模块的每一个成员；
+  - `TestAliasRoutesCoverEverySplitAsset`：凡是"指向被拆分模块、且 `console.html` 不加载"的路由，都必须登记在 `splitModuleRoutes` 里，否则就是历史 URL 少发了一半代码；
+  - `TestPageLoadedRoutesServeExactlyOneFile`：`console.html` 加载的每条路由必须精确下发那一个文件；
+  - `TestSplitModuleRoutesDoNotCollideWithAssetRoutes`：一条路由只能登记在一张表里（重复注册会让 gin 在启动时 panic）。
+
+### Verification
+- `gofmt -l internal/console/` 无输出；`go build ./...`、`go vet ./internal/console/...` 通过；`go test ./internal/console/...` 全绿。
+- 端到端对比拆分前的旧实例（8319）与修复后的新实例（8318）：
+  - `/console/overview.js`：旧 44382 字节（0 处 `GATE_OVW` 引用，自包含）→ 新 45491 字节（4 处引用，`window.GATE_OVW = {` 在解构之前）；六个模块包 `node --check` 全部通过；
+  - `/console/keys.js`：旧 42840 字节 → 新 43391 字节；`/admin/console-panels.css`：旧 27140 字节 → 新 27697 字节；`/console/console-overview.js` 保持 25184 字节（`console.html` 按单文件加载，规范路径语义不变）。
+- 浏览器实测（1600×1000，`?key=` 登录）：11 个标签页逐个点击，切换后各页均有真实内容且同时只有 1 个 `.tab-page` 可见，**0 条 JS 运行时错误、0 条失败请求**。
+
 ## [v8.0.77] - 2026-11-11
 
 ### Fixed

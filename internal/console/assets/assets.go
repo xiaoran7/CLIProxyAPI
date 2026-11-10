@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"bytes"
 	"crypto/md5"
 	"embed"
 	"encoding/hex"
@@ -217,6 +218,213 @@ func GetAsset(name string) ([]byte, error) {
 	return embeddedAssets.ReadFile(name)
 }
 
+// consoleAssetRoutes maps a /console/* URL to the embedded asset it serves.
+//
+// The canonical URL of an asset is "/console/console-" plus its file name;
+// the shorter spellings ("/console/keys.js") are aliases kept for backwards
+// compatibility.
+var consoleAssetRoutes = map[string]string{
+	"/console/console-base.css":                "console-base.css",
+	"/console/console-panels.css":              "console-panels.css",
+	"/console/console-members.css":             "console-members.css",
+	"/console/console-tables.css":              "console-tables.css",
+	"/console/console-modals.css":              "console-modals.css",
+	"/console/console-feedback.css":            "console-feedback.css",
+	"/console/console-logs.css":                "console-logs.css",
+	"/console/console-theme-beszel.css":        "console-theme-beszel.css",
+	"/console/console-theme-v239.css":          "console-theme-v239.css",
+	"/console/console-theme-v2310.css":         "console-theme-v2310.css",
+	"/console/console-validations.css":         "console-validations.css",
+	"/console/console-upstream-stats.css":      "console-upstream-stats.css",
+	"/console/style.css":                       "console-base.css",
+	"/console/console-i18n.js":                 "console-i18n.js",
+	"/console/console-keys.js":                 "console-keys.js",
+	"/console/console-quotas-priority.js":      "console-quotas-priority.js",
+	"/console/console-quotas-validation.js":    "console-quotas-validation.js",
+	"/console/console-quotas-fetch.js":         "console-quotas-fetch.js",
+	"/console/console-quotas-render.js":        "console-quotas-render.js",
+	"/console/console-quotas-workbuddy.js":     "console-quotas-workbuddy.js",
+	"/console/console-quotas-stats.js":         "console-quotas-stats.js",
+	"/console/console-stats.js":                "console-stats.js",
+	"/console/stats.js":                        "console-stats.js",
+	"/console/console-logs.js":                 "console-logs.js",
+	"/console/console-traffic.css":             "console-traffic.css",
+	"/console/traffic.css":                     "console-traffic.css",
+	"/console/console-traffic.js":              "console-traffic.js",
+	"/console/console-cpa.js":                  "console-cpa.js",
+	"/console/cpa-management.js":               "console-cpa.js",
+	"/console/console-cpa.css":                 "console-cpa.css",
+	"/console/cpa-management.css":              "console-cpa.css",
+	"/console/console-overview.js":             "console-overview.js",
+	"/console/console-overview.css":            "console-overview.css",
+	"/console/overview.css":                    "console-overview.css",
+	"/console/console-state.js":                "console-state.js",
+	"/console/console-nav.js":                  "console-nav.js",
+	"/console/console-auth.js":                 "console-auth.js",
+	"/console/console-format.js":               "console-format.js",
+	"/console/console-polling.js":              "console-polling.js",
+	"/console/console-member.js":               "console-member.js",
+	"/console/console-refresh.js":              "console-refresh.js",
+	"/console/console-tos-bans.js":             "console-tos-bans.js",
+	"/console/console-init.js":                 "console-init.js",
+	"/console/console-panels-quota.css":        "console-panels-quota.css",
+	"/console/console-panels-compact.css":      "console-panels-compact.css",
+	"/console/console-panels-status.css":       "console-panels-status.css",
+	"/console/console-i18n-dict-common.js":     "console-i18n-dict-common.js",
+	"/console/console-i18n-dict-stats.js":      "console-i18n-dict-stats.js",
+	"/console/console-i18n-dict-quotas.js":     "console-i18n-dict-quotas.js",
+	"/console/console-i18n-dict-keys.js":       "console-i18n-dict-keys.js",
+	"/console/console-i18n-dict-logs.js":       "console-i18n-dict-logs.js",
+	"/console/console-quotas-meter-single.js":  "console-quotas-meter-single.js",
+	"/console/console-quotas-meter-multi.js":   "console-quotas-meter-multi.js",
+	"/console/console-quotas-cards-compact.js": "console-quotas-cards-compact.js",
+	"/console/console-quotas-cards-full.js":    "console-quotas-cards-full.js",
+	"/console/console-keys-modals.js":          "console-keys-modals.js",
+	"/console/console-keys-picker.js":          "console-keys-picker.js",
+	"/console/console-keys-pricing.js":         "console-keys-pricing.js",
+	"/console/console-logs-data.js":            "console-logs-data.js",
+	"/console/console-logs-errors.js":          "console-logs-errors.js",
+	"/console/console-traffic-icons.js":        "console-traffic-icons.js",
+	"/console/console-traffic-topology.js":     "console-traffic-topology.js",
+	"/console/console-overview-charts.js":      "console-overview-charts.js",
+}
+
+// legacyAdminAssetRoutes maps a /admin/* URL to the embedded asset it serves.
+// The /admin/* URLs predate the native console and are kept so that an old
+// page that still points at them keeps working.
+var legacyAdminAssetRoutes = map[string]string{
+	"/admin/cpa-management.js":          "console-cpa.js",
+	"/admin/admin-cpa.js":               "console-cpa.js",
+	"/admin/cpa-management.css":         "console-cpa.css",
+	"/admin/admin-cpa.css":              "console-cpa.css",
+	"/admin/overview.css":               "console-overview.css",
+	"/admin/admin-overview.css":         "console-overview.css",
+	"/admin/console-base.css":           "console-base.css",
+	"/admin/console-members.css":        "console-members.css",
+	"/admin/console-tables.css":         "console-tables.css",
+	"/admin/console-modals.css":         "console-modals.css",
+	"/admin/console-feedback.css":       "console-feedback.css",
+	"/admin/console-logs.css":           "console-logs.css",
+	"/admin/console-theme-beszel.css":   "console-theme-beszel.css",
+	"/admin/console-theme-v239.css":     "console-theme-v239.css",
+	"/admin/console-theme-v2310.css":    "console-theme-v2310.css",
+	"/admin/console-validations.css":    "console-validations.css",
+	"/admin/console-upstream-stats.css": "console-upstream-stats.css",
+	"/admin/style.css":                  "console-base.css",
+	"/admin/admin-style.css":            "console-base.css",
+	"/admin/quotas-priority.js":         "console-quotas-priority.js",
+	"/admin/quotas-validation.js":       "console-quotas-validation.js",
+	"/admin/quotas-fetch.js":            "console-quotas-fetch.js",
+	"/admin/quotas-workbuddy.js":        "console-quotas-workbuddy.js",
+	"/admin/quotas-stats.js":            "console-quotas-stats.js",
+	"/admin/stats.js":                   "console-stats.js",
+	"/admin/admin-stats.js":             "console-stats.js",
+	"/admin/traffic.css":                "console-traffic.css",
+	"/admin/state.js":                   "console-state.js",
+	"/admin/nav.js":                     "console-nav.js",
+	"/admin/auth.js":                    "console-auth.js",
+	"/admin/format.js":                  "console-format.js",
+	"/admin/polling.js":                 "console-polling.js",
+	"/admin/member.js":                  "console-member.js",
+	"/admin/refresh.js":                 "console-refresh.js",
+	"/admin/init.js":                    "console-init.js",
+}
+
+// The modules the v8.0.76 console split carved out of a single file, keyed by
+// the name of the file that used to hold the whole module. The value is the
+// ordered list of files that carry its contents today, in the order
+// console.html loads them.
+//
+// The alias routes (/console/keys.js, /admin/keys.js, ...) used to serve the
+// monolith, so they used to hand out the whole module. After the split they
+// would hand out only the fragment that kept the old file name, which
+// silently drops code: the overview fragment even throws "TypeError: Cannot
+// destructure property 'PAGE_ID' of 'window.GATE_OVW'" the moment it is
+// loaded on its own, because the namespace it reads is set up by a sibling
+// file.
+//
+// The alias routes therefore serve the whole module again, concatenated in
+// load order. The canonical /console/console-*.js routes keep serving one
+// file each, because that is what console.html loads and what the file
+// length gate counts.
+var (
+	i18nModule = []string{
+		"console-i18n-dict-common.js",
+		"console-i18n-dict-stats.js",
+		"console-i18n-dict-quotas.js",
+		"console-i18n-dict-keys.js",
+		"console-i18n-dict-logs.js",
+		"console-i18n.js",
+	}
+	quotasRenderModule = []string{
+		"console-quotas-meter-single.js",
+		"console-quotas-meter-multi.js",
+		"console-quotas-cards-compact.js",
+		"console-quotas-cards-full.js",
+		"console-quotas-render.js",
+	}
+	keysModule = []string{
+		"console-keys-modals.js",
+		"console-keys-picker.js",
+		"console-keys-pricing.js",
+		"console-keys.js",
+	}
+	logsModule = []string{
+		"console-logs-data.js",
+		"console-logs-errors.js",
+		"console-logs.js",
+	}
+	trafficModule = []string{
+		"console-traffic-icons.js",
+		"console-traffic-topology.js",
+		"console-traffic.js",
+	}
+	overviewModule = []string{
+		"console-overview-charts.js",
+		"console-overview.js",
+	}
+	panelsModule = []string{
+		"console-panels.css",
+		"console-panels-quota.css",
+		"console-panels-compact.css",
+		"console-panels-status.css",
+	}
+)
+
+// splitModules maps the name of a file that used to hold a whole module to
+// the files that carry its contents today.
+var splitModules = map[string][]string{
+	"console-i18n.js":          i18nModule,
+	"console-quotas-render.js": quotasRenderModule,
+	"console-keys.js":          keysModule,
+	"console-logs.js":          logsModule,
+	"console-traffic.js":       trafficModule,
+	"console-overview.js":      overviewModule,
+	"console-panels.css":       panelsModule,
+}
+
+// splitModuleRoutes maps a legacy alias route to the module it has to serve
+// in full. These routes are absent from consoleAssetRoutes and
+// legacyAdminAssetRoutes on purpose: one route lives in exactly one table.
+var splitModuleRoutes = map[string][]string{
+	"/console/i18n.js":          i18nModule,
+	"/admin/i18n.js":            i18nModule,
+	"/admin/admin-i18n.js":      i18nModule,
+	"/admin/quotas-render.js":   quotasRenderModule,
+	"/console/keys.js":          keysModule,
+	"/admin/keys.js":            keysModule,
+	"/admin/admin-keys.js":      keysModule,
+	"/console/logs.js":          logsModule,
+	"/admin/logs.js":            logsModule,
+	"/admin/admin-logs.js":      logsModule,
+	"/console/traffic.js":       trafficModule,
+	"/admin/traffic.js":         trafficModule,
+	"/console/overview.js":      overviewModule,
+	"/admin/overview.js":        overviewModule,
+	"/admin/admin-overview.js":  overviewModule,
+	"/admin/console-panels.css": panelsModule,
+}
+
 // RegisterUI mounts all Console UI routes, static assets, and backward-compatible admin aliases.
 func RegisterUI(r *gin.Engine) {
 	registerGetHead := func(path string, handler gin.HandlerFunc) {
@@ -252,79 +460,8 @@ func RegisterUI(r *gin.Engine) {
 	registerGetHead("/member", memberRedirectHandler)
 	registerGetHead("/member/", memberRedirectHandler)
 
-	// Static JS and CSS assets under /console/*
-	assetFiles := map[string]string{
-		"/console/console-base.css":                "console-base.css",
-		"/console/console-panels.css":              "console-panels.css",
-		"/console/console-members.css":             "console-members.css",
-		"/console/console-tables.css":              "console-tables.css",
-		"/console/console-modals.css":              "console-modals.css",
-		"/console/console-feedback.css":            "console-feedback.css",
-		"/console/console-logs.css":                "console-logs.css",
-		"/console/console-theme-beszel.css":        "console-theme-beszel.css",
-		"/console/console-theme-v239.css":          "console-theme-v239.css",
-		"/console/console-theme-v2310.css":         "console-theme-v2310.css",
-		"/console/console-validations.css":         "console-validations.css",
-		"/console/console-upstream-stats.css":      "console-upstream-stats.css",
-		"/console/style.css":                       "console-base.css",
-		"/console/console-i18n.js":                 "console-i18n.js",
-		"/console/i18n.js":                         "console-i18n.js",
-		"/console/console-keys.js":                 "console-keys.js",
-		"/console/keys.js":                         "console-keys.js",
-		"/console/console-quotas-priority.js":      "console-quotas-priority.js",
-		"/console/console-quotas-validation.js":    "console-quotas-validation.js",
-		"/console/console-quotas-fetch.js":         "console-quotas-fetch.js",
-		"/console/console-quotas-render.js":        "console-quotas-render.js",
-		"/console/console-quotas-workbuddy.js":     "console-quotas-workbuddy.js",
-		"/console/console-quotas-stats.js":         "console-quotas-stats.js",
-		"/console/console-stats.js":                "console-stats.js",
-		"/console/stats.js":                        "console-stats.js",
-		"/console/console-logs.js":                 "console-logs.js",
-		"/console/logs.js":                         "console-logs.js",
-		"/console/console-traffic.css":             "console-traffic.css",
-		"/console/traffic.css":                     "console-traffic.css",
-		"/console/console-traffic.js":              "console-traffic.js",
-		"/console/traffic.js":                      "console-traffic.js",
-		"/console/console-cpa.js":                  "console-cpa.js",
-		"/console/cpa-management.js":               "console-cpa.js",
-		"/console/console-cpa.css":                 "console-cpa.css",
-		"/console/cpa-management.css":              "console-cpa.css",
-		"/console/console-overview.js":             "console-overview.js",
-		"/console/overview.js":                     "console-overview.js",
-		"/console/console-overview.css":            "console-overview.css",
-		"/console/overview.css":                    "console-overview.css",
-		"/console/console-state.js":                "console-state.js",
-		"/console/console-nav.js":                  "console-nav.js",
-		"/console/console-auth.js":                 "console-auth.js",
-		"/console/console-format.js":               "console-format.js",
-		"/console/console-polling.js":              "console-polling.js",
-		"/console/console-member.js":               "console-member.js",
-		"/console/console-refresh.js":              "console-refresh.js",
-		"/console/console-tos-bans.js":             "console-tos-bans.js",
-		"/console/console-init.js":                 "console-init.js",
-		"/console/console-panels-quota.css":        "console-panels-quota.css",
-		"/console/console-panels-compact.css":      "console-panels-compact.css",
-		"/console/console-panels-status.css":       "console-panels-status.css",
-		"/console/console-i18n-dict-common.js":     "console-i18n-dict-common.js",
-		"/console/console-i18n-dict-stats.js":      "console-i18n-dict-stats.js",
-		"/console/console-i18n-dict-quotas.js":     "console-i18n-dict-quotas.js",
-		"/console/console-i18n-dict-keys.js":       "console-i18n-dict-keys.js",
-		"/console/console-i18n-dict-logs.js":       "console-i18n-dict-logs.js",
-		"/console/console-quotas-meter-single.js":  "console-quotas-meter-single.js",
-		"/console/console-quotas-meter-multi.js":   "console-quotas-meter-multi.js",
-		"/console/console-quotas-cards-compact.js": "console-quotas-cards-compact.js",
-		"/console/console-quotas-cards-full.js":    "console-quotas-cards-full.js",
-		"/console/console-keys-modals.js":          "console-keys-modals.js",
-		"/console/console-keys-picker.js":          "console-keys-picker.js",
-		"/console/console-keys-pricing.js":         "console-keys-pricing.js",
-		"/console/console-logs-data.js":            "console-logs-data.js",
-		"/console/console-logs-errors.js":          "console-logs-errors.js",
-		"/console/console-traffic-icons.js":        "console-traffic-icons.js",
-		"/console/console-traffic-topology.js":     "console-traffic-topology.js",
-		"/console/console-overview-charts.js":      "console-overview-charts.js",
-	}
-
-	for routePath, assetName := range assetFiles {
+	// registerAssetRoute wires a URL to a single embedded asset.
+	registerAssetRoute := func(routePath, assetName string) {
 		name := assetName
 		contentType := "text/javascript; charset=utf-8"
 		if strings.HasSuffix(name, ".css") {
@@ -335,65 +472,28 @@ func RegisterUI(r *gin.Engine) {
 		})
 	}
 
-	// Legacy /admin/* static JS/CSS aliases for seamless backward compatibility
-	legacyAliases := map[string]string{
-		"/admin/i18n.js":                    "console-i18n.js",
-		"/admin/admin-i18n.js":              "console-i18n.js",
-		"/admin/cpa-management.js":          "console-cpa.js",
-		"/admin/admin-cpa.js":               "console-cpa.js",
-		"/admin/cpa-management.css":         "console-cpa.css",
-		"/admin/admin-cpa.css":              "console-cpa.css",
-		"/admin/overview.js":                "console-overview.js",
-		"/admin/admin-overview.js":          "console-overview.js",
-		"/admin/overview.css":               "console-overview.css",
-		"/admin/admin-overview.css":         "console-overview.css",
-		"/admin/console-base.css":           "console-base.css",
-		"/admin/console-panels.css":         "console-panels.css",
-		"/admin/console-members.css":        "console-members.css",
-		"/admin/console-tables.css":         "console-tables.css",
-		"/admin/console-modals.css":         "console-modals.css",
-		"/admin/console-feedback.css":       "console-feedback.css",
-		"/admin/console-logs.css":           "console-logs.css",
-		"/admin/console-theme-beszel.css":   "console-theme-beszel.css",
-		"/admin/console-theme-v239.css":     "console-theme-v239.css",
-		"/admin/console-theme-v2310.css":    "console-theme-v2310.css",
-		"/admin/console-validations.css":    "console-validations.css",
-		"/admin/console-upstream-stats.css": "console-upstream-stats.css",
-		"/admin/style.css":                  "console-base.css",
-		"/admin/admin-style.css":            "console-base.css",
-		"/admin/quotas-priority.js":         "console-quotas-priority.js",
-		"/admin/quotas-validation.js":       "console-quotas-validation.js",
-		"/admin/quotas-fetch.js":            "console-quotas-fetch.js",
-		"/admin/quotas-render.js":           "console-quotas-render.js",
-		"/admin/quotas-workbuddy.js":        "console-quotas-workbuddy.js",
-		"/admin/quotas-stats.js":            "console-quotas-stats.js",
-		"/admin/keys.js":                    "console-keys.js",
-		"/admin/admin-keys.js":              "console-keys.js",
-		"/admin/stats.js":                   "console-stats.js",
-		"/admin/admin-stats.js":             "console-stats.js",
-		"/admin/logs.js":                    "console-logs.js",
-		"/admin/admin-logs.js":              "console-logs.js",
-		"/admin/traffic.js":                 "console-traffic.js",
-		"/admin/traffic.css":                "console-traffic.css",
-		"/admin/state.js":                   "console-state.js",
-		"/admin/nav.js":                     "console-nav.js",
-		"/admin/auth.js":                    "console-auth.js",
-		"/admin/format.js":                  "console-format.js",
-		"/admin/polling.js":                 "console-polling.js",
-		"/admin/member.js":                  "console-member.js",
-		"/admin/refresh.js":                 "console-refresh.js",
-		"/admin/init.js":                    "console-init.js",
+	for routePath, assetName := range consoleAssetRoutes {
+		registerAssetRoute(routePath, assetName)
+	}
+	for routePath, assetName := range legacyAdminAssetRoutes {
+		registerAssetRoute(routePath, assetName)
 	}
 
-	for routePath, assetName := range legacyAliases {
-		name := assetName
+	// registerModuleRoute wires a legacy alias to the whole module it used to
+	// serve as one file.
+	registerModuleRoute := func(routePath string, members []string) {
+		files := members
 		contentType := "text/javascript; charset=utf-8"
-		if strings.HasSuffix(name, ".css") {
+		if strings.HasSuffix(files[len(files)-1], ".css") {
 			contentType = "text/css; charset=utf-8"
 		}
 		registerGetHead(routePath, func(c *gin.Context) {
-			serveEmbeddedFile(c, name, contentType, "no-cache, must-revalidate")
+			serveEmbeddedBundle(c, files, contentType, "no-cache, must-revalidate")
 		})
+	}
+
+	for routePath, members := range splitModuleRoutes {
+		registerModuleRoute(routePath, members)
 	}
 
 	// Image assets handler for /console/assets/* and /admin/assets/*
@@ -494,6 +594,82 @@ func consoleHTML() ([]byte, string, error) {
 	consoleHTMLBytes = body
 	consoleHTMLETag = `"` + hex.EncodeToString(h[:8]) + `"`
 	return consoleHTMLBytes, consoleHTMLETag, nil
+}
+
+// embeddedBundle is a set of embedded assets served as one document.
+type embeddedBundle struct {
+	body []byte
+	etag string
+}
+
+// bundleCache memoises the assembled bundles. A bundle is static, so it is
+// assembled and hashed once instead of on every request.
+var (
+	bundleCacheMu sync.RWMutex
+	bundleCache   = map[string]*embeddedBundle{}
+)
+
+// assembleBundle concatenates the named assets into one document and returns
+// it with its ETag.
+//
+// The members are joined with a newline so that a file that ends without a
+// line terminator cannot swallow the comment on the first line of the next
+// one.
+func assembleBundle(names []string) (*embeddedBundle, error) {
+	key := strings.Join(names, "\x00")
+
+	bundleCacheMu.RLock()
+	cached, ok := bundleCache[key]
+	bundleCacheMu.RUnlock()
+	if ok {
+		return cached, nil
+	}
+
+	parts := make([][]byte, 0, len(names))
+	for _, name := range names {
+		data, err := embeddedAssets.ReadFile(name)
+		if err != nil {
+			return nil, fmt.Errorf("bundle member %s: %w", name, err)
+		}
+		parts = append(parts, data)
+	}
+	body := bytes.Join(parts, []byte("\n"))
+	h := md5.Sum(body)
+	bundle := &embeddedBundle{body: body, etag: `"` + hex.EncodeToString(h[:8]) + `"`}
+
+	bundleCacheMu.Lock()
+	bundleCache[key] = bundle
+	bundleCacheMu.Unlock()
+	return bundle, nil
+}
+
+// serveEmbeddedBundle serves an ordered set of embedded assets as one
+// document.
+//
+// It backs the legacy routes that used to serve a self-contained script: the
+// console split moved part of that script into sibling files, so the alias
+// has to serve the parts together again to keep the URL's contract.
+func serveEmbeddedBundle(c *gin.Context, names []string, contentType, cacheControl string) {
+	bundle, err := assembleBundle(names)
+	if err != nil {
+		c.String(http.StatusNotFound, fmt.Sprintf("Asset bundle not found: %v", err))
+		return
+	}
+
+	if match := c.GetHeader("If-None-Match"); match != "" && (match == bundle.etag || match == "W/"+bundle.etag || match == "*") {
+		c.Status(http.StatusNotModified)
+		return
+	}
+
+	c.Header("ETag", bundle.etag)
+	c.Header("Cache-Control", cacheControl)
+	c.Header("Content-Type", contentType)
+	c.Header("X-Content-Type-Options", "nosniff")
+	if c.Request.Method == http.MethodHead {
+		c.Status(http.StatusOK)
+		return
+	}
+	c.Data(http.StatusOK, contentType, bundle.body)
 }
 
 func serveEmbeddedFile(c *gin.Context, assetName, contentType, cacheControl string) {
