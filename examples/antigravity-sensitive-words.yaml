@@ -1,0 +1,43 @@
+# Antigravity 混淆词表 —— 唯一真源 (single source of truth)
+#
+# 本文件不含任何密钥，可安全入库。运行期 config.yaml 受 .gitignore 管理
+# (config.yaml)，它里面的这份词表是从这里同步过去的。
+#
+# 应用方式：
+#     python3 tools/antigravity-words/apply.py apply   --config /path/to/config.yaml
+#     python3 tools/antigravity-words/apply.py check  --config /path/to/config.yaml
+# 校验模式在词表与运行期配置不一致时返回非零退出码。
+#
+# 落点：oauth.providers.antigravity
+#   CPA 的 v8 配置解析（internal/config/config_v8.go 的 v8Paths
+#   {"antigravity", "oauth.providers.antigravity"}）会把这个 v8 新布局搬回
+#   旧扁平键 antigravity，正好落进 Config.Antigravity（AntigravityConfig），
+#   由 internal/watcher/diff/config_diff.go 在词表变化时触发热重载。
+#
+# 为什么要这张表：
+#   2026-11-10 19:00 UTC 起，上游 Antigravity 端点会先剥掉 U+200B 再做匹配，
+#   旧版"零宽字符"混淆因此变成空操作；只要系统指令里出现 AI 工具身份短语，
+#   上游就直接返回 429 RESOURCE_EXHAUSTED。CPA 把这个合成 429 当成配额耗尽，
+#   跨健康凭据重试并把它们冷却掉，对外表现成 503 "auth_not_found: no auth
+#   available"。
+#   修复来自上游 commit 9a7e1e6b412747729dedecefd7e23bd2e3ee1d3d
+#   ("feat(executor): add sensitive-words-replace and harden Antigravity
+#   obfuscation", 2026-11-11)：混淆字符改为逐词 U+034F（CGJ），并新增字面替换表。
+#   本 fork 于 f633c2216 采纳该上游提交。
+#   上游仓库：https://github.com/router-for-me/CLIProxyAPI
+#
+# 运行时生效的地点（东京生产机）：
+#   /opt/1panel/docker/compose/cliproxyapi/config.yaml  ->  bind mount 进
+#   容器的 /CLIProxyAPI/config.yaml
+
+oauth:
+    providers:
+        antigravity:
+            sensitive-words:
+                - "Claude Agent SDK"
+                - "GPT-5"
+                - "Codex"
+                - "x-anthropic-billing-header"
+                - "Coding Assistant"
+            sensitive-words-replace:
+                "You are Codex, an agent based on GPT-5.": "You are a helpful coding assistant."

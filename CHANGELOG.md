@@ -3,6 +3,24 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.83] - 2026-11-11
+
+### Added
+- **Antigravity 混淆词表纳入 git 纳管**：词表原先只活在东京宿主机的 `/opt/1panel/docker/compose/cliproxyapi/config.yaml` 里，而运行期 `config.yaml` 受 `.gitignore` 管理（里面是管理密钥和上游 API key，不能入库）。换机、重建宿主目录就会把词表悄悄弄丢——v8.0.82 那个合成 429 的故障模式会原样回来，而且事后没有任何版本留痕可查。
+  - 新增 `examples/antigravity-sensitive-words.yaml`：**唯一真源**，只含词表、不含任何密钥，可以安全入库。内容是 `oauth.providers.antigravity` 下的 `sensitive-words` 与 `sensitive-words-replace` 两个键，值与东京线上现役配置一致。
+  - 新增 `tools/antigravity-words/apply.py`：把词表落到运行期 `config.yaml`。它**只改那两个键**，`oauth.providers.antigravity` 块以外的每一字节都不动——管理密钥、上游 API key、运维手写的注释、同级的 `connection-pool` 全部原样保留；已经同步过的文件**一个字节都不会写**。
+    - `check` 发现漂移即返回非零并打印差异，可直接当 CI / cron 门禁用；
+    - `show` 打印当前生效值；
+    - `apply` 幂等，支持 `--dry-run`。
+  - 新增 `tools/antigravity-words/selftest.py`：在临时目录造样本，断言"只改托管键、文件仍是合法 YAML、缺键要补、apply 幂等、词表里出现工具不托管的键要报错"。
+  - 新增 `docs/antigravity-sensitive-words.md`：词表在哪、怎么落到运行期配置、东京的实际路径、CPA 怎么读它（`config_v8.go` 的 v8 路径表把 `oauth.providers.antigravity` 搬回扁平键 `antigravity` → `Config.Antigravity` → `watcher/diff` 负责热重载），以及为什么这张表必须跟着仓库走。
+  - README 的 Documentation 与 Upstream attribution 两节都补了指向。上游 `9a7e1e6b` 的归属说明 README 里已有，这里补的是**词表本身**归本 fork 管的部分。
+
+### Verification
+- 工具自检 30 项全过（本地 Python 3.13 + PyYAML 6.0.3；东京 Python 3.11 + PyYAML 6.0）。
+- **对东京线上真实 `config.yaml` 实测**：`check` 返回 0 并报 `in sync`（词表与运行期配置完全一致）；把它复制成副本再跑 `apply`，前后 md5 均为 `a97e1dc60aeb8eed5932fe2fea2d0e7f`，**逐字节一致**——工具不会去动生产文件。
+- 本次只新增受管文件与文档，**不改动任何运行期行为**；东京生产机全程只读，没有任何写操作。
+
 ## [v8.0.82] - 2026-11-11
 
 ### Fixed
