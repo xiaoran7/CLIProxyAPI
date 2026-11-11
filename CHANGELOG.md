@@ -3,6 +3,34 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.81] - 2026-11-11
+
+### Fixed
+- **凭据卡片把"周额度已耗尽"的账号显示成"剩余 100%"**（假满额）：Antigravity 凭据卡片渲染器（打包在 `static/management.html` 里的上游 React 面板）直接吃上游 `retrieveUserQuotaSummary` 的 `remainingFraction`，**把上游的 `disabled` 字段整个丢掉了**。而上游在周额度归零时给 5 小时桶回的是 `remainingFraction: 1` + `disabled: true` + description *"You have hit your weekly limit, the 5-hour limit does not currently apply."*——所以一旦模型冷却解除、卡片回落成上游的 `1.0`，这个账号实际上一点 Gemini 额度都没有，卡片却显示"额度可用 / 剩余 100%"加满格绿条。
+  - 现场（2026-11-11 东京实测，账号 `ap4526706@gmail.com`）：上游原始响应 `gemini-weekly` `remainingFraction=0`、`gemini-5h` `remainingFraction=1` + `disabled=true`（description 原文 *"the 5-hour limit does not currently apply"*），卡片仍显示 100%。
+  - 修复三处，都在打包产物内：
+    1. 解析层保留上游 `disabled` 字段（此前被丢弃）；
+    2. 凭据卡片按同组周桶收敛——`disabled===true` 或同组周桶 `remainingFraction<=0` 时该桶按 **0%** 渲染，并标注原因（`周限额已用完` / `上游已停用`），重置时间改用**周额度的真实回补时刻**，不再显示上游合成的"探测时刻+5h"；
+    3. 额度已耗尽且刷新点已过的行不再显示误导性的"可刷新"，改显示"回补中"——滚动窗口是随请求逐条老化回补，不是到点一次性到账。
+  - 影响面只限 Antigravity 凭据卡片的 Gemini/Argon 桶：Claude/GPT 池（`3p-*`）、Argon 池、周额度 > 0 的健康账号一律不受影响（单测逐条断言）。
+- 按 §2.7 双写 `static/management.html` 与 `internal/managementasset/assets/management.html`，两份副本 MD5 门禁一致。
+
+### 上游溯源（AGENTS.md §2.6）
+- 官方 `router-for-me/CLIProxyAPI` 与 `router-for-me/Cli-Proxy-API-Management-Center` **都没有**这个修复，且维护者明确判定"周额度耗尽时 5 小时桶仍显示自己的数"是**有意设计**：
+  - issue #356 "incorrect quota"（5h 用完仍显示 100%）→ 关闭时的结论是"两个窗口互相独立，周额度耗尽优先，5h 显示 100% 属预期，并不代表账号现在能用模型"；
+  - PR #470 "fix(quota): disable Antigravity 5h window when the weekly limit is spent"（社区贡献者写的同款修复）→ **被维护者驳回**：*"the 5-hour quota still refreshes independently. This behavior is intentional in our design"*；
+  - 上游 main 的 `shouldShowAntigravityQuotaAvailable()` 只用在**额度管理页**（把"额度可用"降级成"剩余 100%"），**凭据卡片页 `AuthFileQuotaSection.tsx` 完全没有周额度感知**；
+  - 上游 `formatAntigravityResetLabel` 至今仍是"`resetTime<=now` → 可刷新"，未改。
+  - 故按 §2.6"上游未解决才自修"自修，语义与本仓原生控制台 2026-10-22 的 `effectiveRem` 收敛保持一致（同一个仓、两个面板面此前口径不一致）。
+
+### Verification
+- 打包产物语法检查：抽出内联 `<script type="module">` 跑 `node --check` 通过。
+- **18 条单测全绿**：直接抽取**补丁后打包文件里的真实代码**来跑（不重写逻辑），夹具是东京上游原始响应。断言覆盖：周额度归零账号的 5h 桶收敛为 0% / 打周限额标签 / 重置时间换成周额度回补时刻；健康账号（周额度 31%）的 5h 桶保持 100% 不被误伤；Claude/GPT 池与 Argon 池不受影响；5h 真耗尽（周额度健康）不误打周标签；上游 `disabled` 但周额度健康时打"上游已停用"；倒计时文案三态（回补中 / 可刷新 / 倒计时）。
+- us-zenix 沙箱热加载验证（`static/` 是 bind mount，改盘即生效，不重启）：`/console/upstream/management.html` 实际返回 200 且响应体含新文案（`周限额已用完` / `回补中` / `weekly_exhausted` / `upstream_disabled` / `refilling` / `disabled:e.disabled===true`）。
+- 东京生产热补丁：容器**没有**挂载 `static/`，面板走的是二进制内嵌副本；`upstream_proxy.go` 是"磁盘优先、内嵌兜底"，因此把补丁文件放进容器 `/CLIProxyAPI/static/` 即可生效，**不重启容器、不动 CPA**。改前改后 `/console`、`/console/upstream/management.html`、`/v0/management/config` 同口径复验均为 200。
+  - 与仓库基线同源核验：东京改前服务出来的面板（剥离注入脚本后）MD5 = `9ca4610755e3a97999e246f5763cd93a`，与本仓原文件逐字节一致 → 落盘补丁不是版本回退。
+  - 回滚：删除容器内 `/CLIProxyAPI/static/` 即回落到二进制内嵌副本（`docker exec cliproxyapi rm -rf /CLIProxyAPI/static`）。
+
 ## [v8.0.80] - 2026-11-11
 
 ### Fixed
@@ -94,7 +122,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **门禁对已缩到 800 行以下的已登记文件不再执行棘轮**：原实现在 `lines < 800` 时直接 `continue`，一个被拆小但路径还在的登记文件可以无约束地长回去。棘轮现在对所有登记文件生效，与行数高低无关。
 - **`assets_test.go` 的 partial 顺序断言形同虚设**：偏移量用的是 `offset += idx`（停在匹配片段的开头）而不是 `offset += idx + len(needle)`，下一次查找从上一个片段内部开始，任何"被挪到更靠前位置"的 partial 仍然能匹配上，顺序检查从来不会触发。改为跨过整个匹配片段。
 - **`assembleConsoleHTML` 只裁 LF 行尾**：原来用 `strings.TrimRight(raw, "
-")`，在 CRLF 检出的构建环境里每个 partial 结尾都会剩下一个 ``，拼接边界会留下回车并多插一个空行。行尾约定改为从 partial 自身探测（`splitTrailingTerminators`），拼装逻辑抽成可注入的 `assembleShell()`，新增 `TestConsoleAssemblyIsLineEndingSafe` 用 LF 与 CRLF 两种约定各断言一次拼装结果与原始文档逐字节一致。
+")`，在 CRLF 检出的构建环境里每个 partial 结尾都会剩下一个 `
+`，拼接边界会留下回车并多插一个空行。行尾约定改为从 partial 自身探测（`splitTrailingTerminators`），拼装逻辑抽成可注入的 `assembleShell()`，新增 `TestConsoleAssemblyIsLineEndingSafe` 用 LF 与 CRLF 两种约定各断言一次拼装结果与原始文档逐字节一致。
 - **`console-i18n.js` 读字典没有空对象兜底**：`const DICT = window.GATE_I18N_DICT;` 在字典文件一个都没加载时（例如历史别名路由 `/admin/i18n.js` 单独取到该文件）会让每一次 `t(key)` 抛 `Cannot read properties of undefined`。改为 `window.GATE_I18N_DICT || {}`。
 - **7 处区段注释因按行切分而与代码分离**：拆分是按行切的，7 段"下一个模块"的标题注释被留在上一个文件的文件末尾（`console-keys.js`、`console-keys-modals.js`、`console-quotas-render.js`、`console-quotas-cards-full.js`、`console-quotas-cards-compact.js`、`console-quotas-meter-multi.js`、`console-quotas-meter-single.js`），打开对应文件的维护者会看到一段底下没有代码的说明。全部迁到真正持有该代码的文件里、放在对应函数上方。
 - **`api/provider_patterns.go` 是 49 行的碎屑文件**（AGENTS.md §2.8.4）：它只装 `ValidateProviderKey` 与 `GetProviderPatterns` 两个函数，而 `provider_engine.go` 才 201 行——两者合并后 243 行，仍在健康区间内，拆分收益为零、碎屑成本为实。内容并回 `provider_engine.go`，`provider_patterns.go` 删除。
