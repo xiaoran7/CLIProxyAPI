@@ -27,9 +27,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - 打包产物语法检查：抽出内联 `<script type="module">` 跑 `node --check` 通过。
 - **18 条单测全绿**：直接抽取**补丁后打包文件里的真实代码**来跑（不重写逻辑），夹具是东京上游原始响应。断言覆盖：周额度归零账号的 5h 桶收敛为 0% / 打周限额标签 / 重置时间换成周额度回补时刻；健康账号（周额度 31%）的 5h 桶保持 100% 不被误伤；Claude/GPT 池与 Argon 池不受影响；5h 真耗尽（周额度健康）不误打周标签；上游 `disabled` 但周额度健康时打"上游已停用"；倒计时文案三态（回补中 / 可刷新 / 倒计时）。
 - us-zenix 沙箱热加载验证（`static/` 是 bind mount，改盘即生效，不重启）：`/console/upstream/management.html` 实际返回 200 且响应体含新文案（`周限额已用完` / `回补中` / `weekly_exhausted` / `upstream_disabled` / `refilling` / `disabled:e.disabled===true`）。
-- 东京生产热补丁：容器**没有**挂载 `static/`，面板走的是二进制内嵌副本；`upstream_proxy.go` 是"磁盘优先、内嵌兜底"，因此把补丁文件放进容器 `/CLIProxyAPI/static/` 即可生效，**不重启容器、不动 CPA**。改前改后 `/console`、`/console/upstream/management.html`、`/v0/management/config` 同口径复验均为 200。
+- **东京生产热补丁（待点头执行，此刻尚未落盘）**：实测东京容器内**没有** `/CLIProxyAPI/static/`（`ls` 报 No such file or directory），且服务出来的面板 `grep` 新文案计数为 0 → **东京此刻仍在显示旧的假满额**。`upstream_proxy.go` 是“磁盘优先、内嵌兜底”，所以把补丁文件放进容器 `/CLIProxyAPI/static/` 即可生效，**不重启容器、不动 CPA**。
+  - 改动前基线（同一口径，改后复验用）：`/console` = 200；`/console/upstream/management.html` 无 key = 302 → `/console?error=auth_required`（带 key = 200）；`/v0/management/config` 无 key = 401（预期：缺少管理密钥）。
   - 与仓库基线同源核验：东京改前服务出来的面板（剥离注入脚本后）MD5 = `9ca4610755e3a97999e246f5763cd93a`，与本仓原文件逐字节一致 → 落盘补丁不是版本回退。
   - 回滚：删除容器内 `/CLIProxyAPI/static/` 即回落到二进制内嵌副本（`docker exec cliproxyapi rm -rf /CLIProxyAPI/static`）。
+
+### 补充验收：沙箱浏览器端到端实证（2026-11-11 下午）
+
+`us-zenix` 沙箱上用**真实面板 + 真实上游响应**复现假满额并确认修复生效（浏览器实际渲染结果，非代码推断）：
+
+- **复现方式**：沙箱与东京并非同一个 Google 账号（沙箱 `ap4526706` 周额度实测 74.8%、重置 11-14；东京同邮箱账号周额度 0%、重置 11-11T11:23Z），因此在本地加一层转发代理，只改写 `requests/api-call` 响应里的桶位，构造出与东京**完全一致**的上游形状：`gemini-5h` frac=1 + `disabled=true`，`gemini-weekly` frac=0。
+- **修复后卡片实际渲染**（账号 `ap4526706`）：GEMINI 模型 / 5 小时限额 → **剩余 0%（周限额已用完）**，倒计时切到周桶（2 天 21 小时 后刷新），绿条清空；**同一张卡内** Claude/GPT 池仍为剩余 100%、Argon 池剩余 99%，未被误伤。
+- **第三个修复实证**：构造“5h 真耗尽且重置点已过、周额度健康 50%”的场景，行尾标签由误导性的“可刷新”改为 **回补中**（渲染为 剩余 0% 回补中）。
+- **东京现场仍在**：11-11T05:15Z 实测东京 `ap4526706` 仍为 `gemini-weekly` frac=0、`gemini-5h` frac=1 + `disabled=true`，重置 11-11T11:23Z，补丁上线后可当场复验。
 
 ## [v8.0.80] - 2026-11-11
 
