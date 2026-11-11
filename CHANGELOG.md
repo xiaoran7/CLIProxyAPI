@@ -44,6 +44,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **全仓 `go test ./...` 无回归**（73+ 包全 ok）。
 - `gofmt -l internal/` 干净。
 
+### Verification（us-zenix 沙箱端到端）
+- 沙箱换上新镜像 `cliproxyapi:v8.0.82-f633c221`（compose 改 tag + 容器重建，沙箱允许）→ **同样五句话，D/E 由 429 变 200**：
+
+  | system 内容 | v8.0.74（改前） | v8.0.82（改后） |
+  |---|---|---|
+  | 无 system（对照） | 200 OK | 200 OK |
+  | `You are a helpful assistant.` | 200 OK | 200 OK |
+  | `You are Claude Code, Anthropic's official CLI for Claude.` | 200 OK | 200 OK |
+  | `You are Codex, an agent based on GPT-5.` | **429 RESOURCE_EXHAUSTED** | **200 OK** |
+  | `Powered by Claude Agent SDK.` | **429 RESOURCE_EXHAUSTED** | **200 OK** |
+
+  两个账号各跑一轮（`luuminh932740@gmail.com`、`cooperlacey95@gmail.com`，模型 `gemini-3.8-flash-high`），结果一致。
+- **新配置项在真二进制上生效**：沙箱配置加入 `oauth.providers.antigravity.sensitive-words-replace` 的整句替换后热加载成功（日志 `config successfully reloaded, triggering client reload`），D 用例仍 200。
+- 沙箱改前/改后同口径基线：`/console` 200、`/v1/models` 200。
+- **东京改前基线（已取）**：`/console` 200、`/v1/models` 200、`/console/upstream/management.html` 无 key 302；同一账号同一模型的触发词复测 **D/E 均 429**——与沙箱完全一致，确认东京与沙箱是同一个问题、同一套修法。
+
+### Deployment status
+- 代码已 push 到 origin（`xiaoran7/CLIProxyAPI` 的 main）：`f633c2216`。
+- 镜像 `cliproxyapi:v8.0.82-f633c221` 已在 us-zenix 构建完成，并 `docker load` 进东京生产机（**仅入库，未动服务**，东京容器 `StartedAt`/`RestartCount` 仍是 `2026-11-09T08:29:58Z` / `0`）。
+- **东京上线待用户点头**：本修复是二进制变更，必须重建容器（东京 CPA 在线，§2.5.2 红线）。计划：备份 compose + config → 改 image tag → `docker compose up -d` → 同口径复验（`/console`、`/v1/models`、触发词 D/E 转 200、面板假满额修复随新镜像固化进二进制）→ 回滚 = image tag 改回 `v8.0.74-c8680162` 再 `docker compose up -d`。
+
 ## [v8.0.81] - 2026-11-11
 
 ### Fixed
