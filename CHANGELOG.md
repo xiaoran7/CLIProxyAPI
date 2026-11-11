@@ -98,6 +98,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **面板假满额修复已固化进二进制**：东京容器没有 `/CLIProxyAPI/static` 挂载，重建后走二进制内嵌副本，实测服务出的面板含 `周限额已用完`、`回补中`、`weekly_exhausted`、`upstream_disabled`——此前那次容器内热补丁由此自然失效，不必再手工清理。
   - **回滚**：compose 的 image tag 改回 `v8.0.74-c8680162` 再 `docker compose up -d`（旧镜像仍在东京机上），并把 `config.yaml` 从 `config.yaml.bak-v8082-20261111-145010` 还原。
 
+### 账号池维护（东京生产，2026-11-11）
+- 复核东京 18 个 antigravity 账号：2 个 `disabled` —— `01224808755a` 是**上游 TOS 403 封禁**（`This service has been disabled in this account for violation of Terms of Service`，只能申诉，重启用无用）；`adryanlin381` 为东京独有账号、尚未单独验证。其余 16 个可用。
+- `a19892155689` 此前被标 `disabled`，但实测上游正常（沙箱固定该账号调用 200），判定为**本地误标** → 经管理接口 `PATCH /v0/management/auth-files/status`（body `{"name":"antigravity-a19892155689@gmail.com.json","disabled":false}`）重新启用，**热生效、无容器重启**。
+- 改后复验（东京，固定该账号）：中性句 200、触发句 `You are Codex, an agent based on GPT-5.` 200；容器 `StartedAt=2026-11-11T06:50:22Z`、`RestartCount=0` 未变；`/v1/models` 200、`/console` 200；近 15 分钟日志无 4xx/5xx。账号池由 15 可用增至 **16 可用**。
+- 留档（东京）：`auths/antigravity-a19892155689@gmail.com.json.bak-20261111-073555`；回滚 = 同一接口 `PATCH` 回 `{"disabled":true}`。
+
 ## [v8.0.81] - 2026-11-11
 
 ### Fixed
