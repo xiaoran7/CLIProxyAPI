@@ -60,10 +60,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - 沙箱改前/改后同口径基线：`/console` 200、`/v1/models` 200。
 - **东京改前基线（已取）**：`/console` 200、`/v1/models` 200、`/console/upstream/management.html` 无 key 302；同一账号同一模型的触发词复测 **D/E 均 429**——与沙箱完全一致，确认东京与沙箱是同一个问题、同一套修法。
 
-### Deployment status
-- 代码已 push 到 origin（`xiaoran7/CLIProxyAPI` 的 main）：`f633c2216`。
-- 镜像 `cliproxyapi:v8.0.82-f633c221` 已在 us-zenix 构建完成，并 `docker load` 进东京生产机（**仅入库，未动服务**，东京容器 `StartedAt`/`RestartCount` 仍是 `2026-11-09T08:29:58Z` / `0`）。
-- **东京上线待用户点头**：本修复是二进制变更，必须重建容器（东京 CPA 在线，§2.5.2 红线）。计划：备份 compose + config → 改 image tag → `docker compose up -d` → 同口径复验（`/console`、`/v1/models`、触发词 D/E 转 200、面板假满额修复随新镜像固化进二进制）→ 回滚 = image tag 改回 `v8.0.74-c8680162` 再 `docker compose up -d`。
+### Deployment status（东京生产已上线）
+- 代码已 push 到 origin（`xiaoran7/CLIProxyAPI` 的 main）：`f633c2216`（代码 + 验收）、`0fc751ce0`（本节）。
+- 镜像 `cliproxyapi:v8.0.82-f633c221` 在 us-zenix 构建完成，并 `docker load` 进东京生产机。
+- **东京生产已上线**（用户确认后执行，2026-11-11 下午）：
+  - **改前基线**：容器 `v8.0.74-c8680162`、`StartedAt=2026-11-09T08:29:58Z`、`RestartCount=0`；`/console` 200、`/v1/models` 200、`/console/upstream/management.html` 无 key 302；同一账号同一模型的触发词对照 **D/E 均 429**。
+  - **备份**：`docker-compose.yml.bak-v8082-20261111-145010`、`config.yaml.bak-v8082-20261111-145010`。
+  - **变更**：compose 的 image tag 改为 `v8.0.82-f633c221` → `docker compose up -d`（容器重建，`StartedAt=2026-11-11T06:50:22Z`，启动日志 `CLIProxyAPI Version: v8.0.82, Commit: f633c2216`，47 个客户端加载正常）；随后把 `oauth.providers.antigravity` 段改成含 `GPT-5`、`Codex` 的 `sensitive-words` + `sensitive-words-replace` 整句替换（热加载，日志 `config successfully reloaded`）。
+  - **改后复验**：`/console` 200、`/v1/models` 200、`/console/upstream` 302；**触发词 D/E 由 429 变 200 OK**（`luuminh932740@gmail.com` + `gemini-3.8-flash-high`，五项对照全 200）；部署后窗口内 HTTP 状态 **41×200 / 1×302，零 429、零 5xx**。
+  - **面板假满额修复已固化进二进制**：东京容器没有 `/CLIProxyAPI/static` 挂载，重建后走二进制内嵌副本，实测服务出的面板含 `周限额已用完`、`回补中`、`weekly_exhausted`、`upstream_disabled`——此前那次容器内热补丁由此自然失效，不必再手工清理。
+  - **回滚**：compose 的 image tag 改回 `v8.0.74-c8680162` 再 `docker compose up -d`（旧镜像仍在东京机上），并把 `config.yaml` 从 `config.yaml.bak-v8082-20261111-145010` 还原。
 
 ## [v8.0.81] - 2026-11-11
 
