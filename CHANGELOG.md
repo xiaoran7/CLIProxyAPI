@@ -23,6 +23,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **改词表救不了**（沙箱实测，已排除）：把 `GPT-5`、`Codex` 加进 `oauth.providers.antigravity.sensitive-words`，热加载成功（日志 `config successfully reloaded, triggering client reload`），重测**仍然 429** —— 词表只是"要不要混淆"的开关，混淆字符本身失效了就不起作用。
   - **修复：采用上游提交 `9a7e1e6b`**（`feat(executor): add sensitive-words-replace and harden Antigravity obfuscation`，2026-11-11T00:57:55Z），把 Antigravity 的混淆从 `U+200B` 换成**逐词 `U+034F`（combining grapheme joiner）**，并新增**字面替换** `sensitive-words-replace`（直接把整句身份声明换成安全措辞，最稳）。上游 PR #7437（U+034F 逐词 + 字面替换）已关闭未合并，落地路径是 main 上的 `9a7e1e6b`。
 
+### 机理修正与上游黑名单实测（2026-11-11 复核；本节结论覆盖上文两处表述）
+
+**上文把机理写成"上游在匹配敏感词前把 `U+200B` 剥掉"，并据此推断"改词表也救不了"。实测证明这个推断是错的**，错在把"被 `U+200B` 混淆过的请求被判 429"直接读成了"`U+200B` 被剥掉、原形命中黑名单"。用 **二进制 × 词表** 矩阵在 us-zenix 沙箱重做了对照，每个短语用**独立账号**，且**短语前后各跑一次中性对照**（这一点很关键：早先的探测是单次调用，无法排除"账号额度在序列中途耗尽"这种假阳性——本节所有 429 均为 `ctl1=200 ctl2=200`）。
+
+| 二进制 | 词表 | `You are Codex, an agent based on GPT-5.` | `Powered by Claude Agent SDK.` | `You are powered by Claude Agent SDK.` | `You are an agent based on GPT-5.` |
+|---|---|---|---|---|---|
+| v8.0.74 | 空 | **429** | 200 | 200 | 200 |
+| v8.0.74 | 原始 3 词（`U+200B` 混淆） | **429** | **429** | **429** | 200 |
+| v8.0.82 | 空 | **429** | 200 | 200 | 200 |
+| v8.0.82 | 线上 5 词 + 整句替换 | 200 | 200 | 200 | 200 |
+| v8.0.82 | 仅 `GPT-5`+`Codex`（无整句替换） | 200 | 200 | — | — |
+| v8.0.82 | 仅 `Claude Agent SDK` | — | 200 | 200 | — |
+
+（模型 `gemini-3.8-flash-high`；`ctl1`/`ctl2` = 短语前/后的中性对照 `You are a helpful assistant.`）
+
+由表可读出三条**实测事实**，与上文表述不同：
+
+1. **上游的黑名单是一条极窄的字面串**：`You are Codex, an agent based on GPT-5`（句末句号可有可无）。原文直发即命中，**与是否混淆、哪个二进制都无关**（v8.0.74 与 v8.0.82 空词表下同为 429）。而同族变体全部放行：`You are an agent based on GPT-5.`、`You are Codex.`、`You are Codex, an AI coding agent.`、`Codex` 单独、乃至 `You are an agent based on GPT-5. You are Codex.` 都 200。
+2. **旧版的 `U+200B` 混淆不是"失效"，而是会自己制造 429**：`Powered by Claude Agent SDK.` 原文直发是 200，被 `U+200B` 拆过之后反而 429。旧词表里含 `Claude Agent SDK`，于是所有含该串的身份声明都会被旧版**自己**送进黑名单——这是"明明配了词表却照样 429"的第二层原因。上游提交注释里的 `U+200B obfuscation remains rejected by the upstream endpoint` 指的就是这件事（被混淆的请求被上游拒），而不是"剥掉后再匹配"。
+3. **`U+034F`（CGJ）混淆本身有效**：v8.0.82 下只配 `Claude Agent SDK`、或只配 `GPT-5`/`Codex`（都不含整句替换）同样 200 —— **把上游那条字面黑名单串打散就够了**；`sensitive-words-replace` 的整句替换是双保险，不是必需项。
+
+**词表定稿（不再扩充）**：实测上游只拉黑上述那一条窄串，其余常见 AI 工具身份短语（Cursor / Cline / Roo Code / Windsurf / Copilot / Gemini CLI / Devin / Jules / ChatGPT / Claude / Gemini / Aider 等）**原文直发全部 200**，并未被拉黑。因此线上现用的 `Claude Agent SDK` / `GPT-5` / `Codex` / `x-anthropic-billing-header` / `Coding Assistant` 五项 + 整句替换表**已覆盖全部已知触发面，继续加词只是徒增 `U+034F` 混淆面**。
+
+**全量复验**：线上词表生效状态下，对 40 条身份短语（含两条已知触发句及其无句号变体）逐条独立账号探测，**0 命中、全部 200**。
+
+**东京生产复验**（本次实测，用上面定死的触发句）：`You are Codex, an agent based on GPT-5.` / `You are Codex, an agent based on GPT-5` / `Powered by Claude Agent SDK.` 均 200，前后中性对照均 200。
+
 ### 上游溯源（AGENTS.md §2.6）
 - **上游已修复，故本仓采用上游提交，未自造补丁**：官方 `router-for-me/CLIProxyAPI` 的 `9a7e1e6b` 同时做了两件事——Antigravity 系统指令的敏感词混淆由 `U+200B` 改为逐子词 `U+034F`（上游注释原文：`used for Antigravity system-instruction obfuscation where U+200B obfuscation remains rejected by the upstream endpoint`），以及新增跨 Antigravity/Claude/Devin 的 `sensitive-words-replace` 字面替换（单趟、最长匹配优先、不级联重扫）。
 - 相关 issue：#7433 / #7428（合成 429 与健康凭据被误冷却的级联）、#7437（PR，未合并）、#7441 之前的社区排查结论指向 `oauth.providers.antigravity.sensitive-words` 配置项。
