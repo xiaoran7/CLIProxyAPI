@@ -3,6 +3,47 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.82] - 2026-11-11
+
+### Fixed
+- **有额度却一直 429：上游在匹配敏感词前把 `U+200B` 剥掉，本仓的零宽混淆自 2026-11-10 起变成空操作**（合成 429，与额度无关，也不是显示问题）。
+  - 现象：Antigravity 账号的 5h/周额度都是 100%，真调用却返回 `429 {"error":{"code":429,"message":"Resource has been exhausted (e.g. check quota).","status":"RESOURCE_EXHAUSTED"}}`；紧接着健康账号被卷进冷却，控制台出现 `503 auth_not_found: no auth available (providers=antigravity, model=...)`（上游账号/凭据栏显示"—"，因为并不是任何单个账号真的坏了）。
+  - 机制：本仓用 `U+200B`（零宽空格）把敏感词拆开再发给上游（`internal/runtime/executor/helps/cloak_obfuscate.go`，`obfuscateWord()` 在首字符后插入 `U+200B`）。上游自 2026-11-10 19:00 UTC 起，在做敏感词匹配之前**先把 `U+200B` 剥掉**，被拆开的词重新拼回原样 → 命中"AI 工具身份"黑名单 → 返回合成的 429。CPA 把这个 429 当成额度耗尽 → 跨健康凭据重试 → 把健康账号写进该模型的冷却 → 后续请求 503 `auth_not_found`。**一个合成 429 放大成了整池不可用。**
+  - **决定性对照实验**（东京与美西沙箱同为 v8.0.74 二进制；沙箱账号 `luuminh932740`，模型 `gemini-3.8-flash-high`，**只改 system 一句话**，其余完全相同）：
+
+    | system 内容 | 结果 |
+    |---|---|
+    | 无 system（对照） | 200 OK |
+    | `You are a helpful assistant.` | 200 OK |
+    | `You are Claude Code, Anthropic's official CLI for Claude.` | 200 OK |
+    | `You are Codex, an agent based on GPT-5.` | **429 RESOURCE_EXHAUSTED** |
+    | `Powered by Claude Agent SDK.` | **429 RESOURCE_EXHAUSTED** |
+
+    最后一行是硬证据：**`Claude Agent SDK` 本来就在线上词表里、已经被 `U+200B` 混淆过**，照样 429 → 混淆字符被上游剥掉，整个混淆机制失效；不是词表漏配的问题。
+  - **改词表救不了**（沙箱实测，已排除）：把 `GPT-5`、`Codex` 加进 `oauth.providers.antigravity.sensitive-words`，热加载成功（日志 `config successfully reloaded, triggering client reload`），重测**仍然 429** —— 词表只是"要不要混淆"的开关，混淆字符本身失效了就不起作用。
+  - **修复：采用上游提交 `9a7e1e6b`**（`feat(executor): add sensitive-words-replace and harden Antigravity obfuscation`，2026-11-11T00:57:55Z），把 Antigravity 的混淆从 `U+200B` 换成**逐词 `U+034F`（combining grapheme joiner）**，并新增**字面替换** `sensitive-words-replace`（直接把整句身份声明换成安全措辞，最稳）。上游 PR #7437（U+034F 逐词 + 字面替换）已关闭未合并，落地路径是 main 上的 `9a7e1e6b`。
+
+### 上游溯源（AGENTS.md §2.6）
+- **上游已修复，故本仓采用上游提交，未自造补丁**：官方 `router-for-me/CLIProxyAPI` 的 `9a7e1e6b` 同时做了两件事——Antigravity 系统指令的敏感词混淆由 `U+200B` 改为逐子词 `U+034F`（上游注释原文：`used for Antigravity system-instruction obfuscation where U+200B obfuscation remains rejected by the upstream endpoint`），以及新增跨 Antigravity/Claude/Devin 的 `sensitive-words-replace` 字面替换（单趟、最长匹配优先、不级联重扫）。
+- 相关 issue：#7433 / #7428（合成 429 与健康凭据被误冷却的级联）、#7437（PR，未合并）、#7441 之前的社区排查结论指向 `oauth.providers.antigravity.sensitive-words` 配置项。
+- 本仓采用方式：`git cherry-pick 9a7e1e6b` 到 `xiaoran7/CLIProxyAPI`（本仓 origin），**10 处冲突逐块人工解**（`config_yaml.go` 两边都留，其余取上游侧）。
+
+### 本仓适配（与上游的差异，逐一记录）
+- 上游的 `9a7e1e6b` 是叠在它自己的 `gjson/sjson → MoeForge/moego/ojson` 全仓重构（`6e6afab99`）之上的，**本次修复本身并不依赖那次重构**。本仓仍用 `gjson/sjson`，因此把上游因重构引入的 5 处 `ojson.Doc` 调用点适配回本仓的字节 API（`helps.ObfuscateSensitiveWords` / `ObfuscateSensitiveWordsInSystemInstruction`），**混淆算法、替换算法、配置语义完全沿用上游，未改一行逻辑**。
+- 同步剔除 2 个上游测试函数：它们覆盖的是本仓没有的上游特性（`config.KVStoreConfig`、`connection-pool` 逐 key 注入 `auth_index`），与本次修复无关：`internal/watcher/diff/config_diff_test.go` 的 `TestBuildConfigChangeDetails_KVStore`、`internal/api/handlers/management/config_v8_test.go` 的 `TestConfigV8InjectsDistinctAuthIndexesForDistinctConnectionPools`。
+- 上游那个针对 `ojson.Doc` 的用例按**同样断言**移植到字节 API：`TestObfuscateSensitiveWordsReplacementsOnlyAndBillingHeaderSkip`（替换生效、`x-anthropic-billing-header` 行不被动、空替换=删除）。
+
+### 新增配置
+- `oauth.providers.antigravity.sensitive-words-replace`：系统指令里的字面替换表（`"target": "replacement"`），上游示例即 `"You are Codex, an agent based on GPT-5.": "You are a helpful coding assistant."`。
+- `oauth.providers.antigravity.sensitive-words` 的语义**变了**：不再是"零宽空格"，而是**逐子词 `U+034F`**（见 `config.example.yaml` 注释同步更新）。
+- 同步支持 `devin.sensitive-words-replace` 与 Claude cloak 的 `sensitive-words-replace`（可来自 auth attributes / metadata，键 `cloak_sensitive_words_replace`）。
+- 注意：**词表仍需覆盖实际被上游拉黑的身份短语**（本仓线上词表此前只有 `Claude Agent SDK`、`x-anthropic-billing-header`、`Coding Assistant`，**没有 `Codex`/`GPT-5`**）——混淆只对配了的词生效，配了才会被 `U+034F` 拆开。
+
+### Verification
+- **上游单测全绿**：`internal/runtime/executor/helps` 的 8 项（`TestBuildAntigravitySensitiveWordMatcherSubwordsAndPunctuation` 断言 `Codex`/`GPT-5`/`Claude Code` 逐子词 `U+034F` 且结果里不含 `U+200B`、二次混淆幂等；`TestSensitiveWordMatcherReplacementsPrecedenceAndEmptyDeletion` 断言最长匹配优先与空替换删除；`TestBuildSensitiveWordMatcherPreservesZeroWidthSpaceDefault` 断言 Claude/Devin 侧仍保持 `U+200B`）；`internal/runtime/executor` 的 `TestAntigravityExecuteObfuscatesCodexIdentityWithCGJ`（**正是本故障的回归用例**）、`TestAntigravitySensitiveWordsObfuscatesSystemInstructionOnly`、`TestAntigravityStreamObfuscatesSensitiveSystemInstruction`、`TestClaudeExecutor_CountTokensCloakRelocatesCallerSystemAndObfuscates` 全绿。
+- **全仓 `go test ./...` 无回归**（73+ 包全 ok）。
+- `gofmt -l internal/` 干净。
+
 ## [v8.0.81] - 2026-11-11
 
 ### Fixed

@@ -225,9 +225,10 @@ func (e *ClaudeExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
 			return resp, err
 		}
 	}
-	if cloaked && len(wireSettings.sensitiveWords) > 0 {
-		matcher := helps.BuildSensitiveWordMatcher(wireSettings.sensitiveWords)
-		bodyForUpstream = helps.ObfuscateSensitiveWords(bodyForUpstream, matcher)
+	if cloaked {
+		if matcher := wireSettings.buildSensitiveWordMatcher(); matcher != nil {
+			bodyForUpstream = helps.ObfuscateSensitiveWords(bodyForUpstream, matcher)
+		}
 	}
 	cchBilling := ""
 	if cchSigning {
