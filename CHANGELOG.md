@@ -32,7 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - 改动后同口径复验：`/console` = 200；`/console/upstream/management.html` 无 key = 302；`/v0/management/config` 带 key = 200；面板新文案计数 = **1**（整包为单行压缩文件，同一行内含 `周限额已用完` 与 `回补中`），且含 `disabled:e.disabled===true` 标记。
   - **未重启证据**：`docker inspect` 的 `StartedAt` 改动前后均为 `2026-11-09T08:29:58.70748504Z`，`RestartCount=0`，`status=running`。
   - **现场复验（东京真账号 + 真上游响应，全程无任何改写）**：`ap4526706@gmail.com` 卡片渲染为 **剩余 0%（周限额已用完）**，倒计时切到周桶真实回补时刻（5 小时 51 分钟）；同一张卡内 Claude/GPT 池仍为剩余 100%、Argon 池剩余 99%，未误伤。
-  - **版本说明**：本次只热替换静态资源，**未构建镜像、未 push、未打 tag**；运行中的二进制仍是 v8.0.74（built 2026-11-09T07:54:37Z），下次构建镜像时会把本仓 v8.0.81 段的记录带进去。
+  - **版本说明**：本次只热替换静态资源，**未构建镜像、未打 tag**；运行中的二进制仍是 v8.0.74（built 2026-11-09T07:54:37Z），下次构建镜像时会把本仓 v8.0.81 段的记录带进去。**源代码已 push 到 origin（`xiaoran7/CLIProxyAPI` 的 main）：`23fb07cb` 代码、`b8db3c4f` 沙箱验收与状态纠正、`5476fb2b` 东京落盘记录。**
   - 与仓库基线同源核验：东京改前服务出来的面板（剥离注入脚本后）MD5 = `9ca4610755e3a97999e246f5763cd93a`，与本仓原文件逐字节一致 → 落盘补丁不是版本回退。
   - 回滚：删除容器内 `/CLIProxyAPI/static/` 即回落到二进制内嵌副本（`docker exec cliproxyapi rm -rf /CLIProxyAPI/static`）。
 
