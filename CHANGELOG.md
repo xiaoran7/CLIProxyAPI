@@ -27,8 +27,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - 打包产物语法检查：抽出内联 `<script type="module">` 跑 `node --check` 通过。
 - **18 条单测全绿**：直接抽取**补丁后打包文件里的真实代码**来跑（不重写逻辑），夹具是东京上游原始响应。断言覆盖：周额度归零账号的 5h 桶收敛为 0% / 打周限额标签 / 重置时间换成周额度回补时刻；健康账号（周额度 31%）的 5h 桶保持 100% 不被误伤；Claude/GPT 池与 Argon 池不受影响；5h 真耗尽（周额度健康）不误打周标签；上游 `disabled` 但周额度健康时打"上游已停用"；倒计时文案三态（回补中 / 可刷新 / 倒计时）。
 - us-zenix 沙箱热加载验证（`static/` 是 bind mount，改盘即生效，不重启）：`/console/upstream/management.html` 实际返回 200 且响应体含新文案（`周限额已用完` / `回补中` / `weekly_exhausted` / `upstream_disabled` / `refilling` / `disabled:e.disabled===true`）。
-- **东京生产热补丁（待点头执行，此刻尚未落盘）**：实测东京容器内**没有** `/CLIProxyAPI/static/`（`ls` 报 No such file or directory），且服务出来的面板 `grep` 新文案计数为 0 → **东京此刻仍在显示旧的假满额**。`upstream_proxy.go` 是“磁盘优先、内嵌兜底”，所以把补丁文件放进容器 `/CLIProxyAPI/static/` 即可生效，**不重启容器、不动 CPA**。
-  - 改动前基线（同一口径，改后复验用）：`/console` = 200；`/console/upstream/management.html` 无 key = 302 → `/console?error=auth_required`（带 key = 200）；`/v0/management/config` 无 key = 401（预期：缺少管理密钥）。
+- **东京生产热补丁：已执行（用户点头后，2026-11-11 下午）**，走 `upstream_proxy.go` 的“磁盘优先、内嵌兜底”，**不重启容器、不动 CPA**：落盘命令 `docker exec -u 0 cliproxyapi mkdir -p /CLIProxyAPI/static` + `docker cp /tmp/panel-patched.html cliproxyapi:/CLIProxyAPI/static/management.html`；落盘后容器内文件 MD5 = `bdc6ac15637356f7be329ae7a227ff8a`（与本仓补丁文件逐字节一致）。
+  - 改动前基线：`/console` = 200；`/console/upstream/management.html` 无 key = 302 → `/console?error=auth_required`；`/v0/management/config` 带 key = 200；服务出来的面板新文案计数 = **0**（仍在显示旧的假满额）。
+  - 改动后同口径复验：`/console` = 200；`/console/upstream/management.html` 无 key = 302；`/v0/management/config` 带 key = 200；面板新文案计数 = **1**（整包为单行压缩文件，同一行内含 `周限额已用完` 与 `回补中`），且含 `disabled:e.disabled===true` 标记。
+  - **未重启证据**：`docker inspect` 的 `StartedAt` 改动前后均为 `2026-11-09T08:29:58.70748504Z`，`RestartCount=0`，`status=running`。
+  - **现场复验（东京真账号 + 真上游响应，全程无任何改写）**：`ap4526706@gmail.com` 卡片渲染为 **剩余 0%（周限额已用完）**，倒计时切到周桶真实回补时刻（5 小时 51 分钟）；同一张卡内 Claude/GPT 池仍为剩余 100%、Argon 池剩余 99%，未误伤。
+  - **版本说明**：本次只热替换静态资源，**未构建镜像、未 push、未打 tag**；运行中的二进制仍是 v8.0.74（built 2026-11-09T07:54:37Z），下次构建镜像时会把本仓 v8.0.81 段的记录带进去。
   - 与仓库基线同源核验：东京改前服务出来的面板（剥离注入脚本后）MD5 = `9ca4610755e3a97999e246f5763cd93a`，与本仓原文件逐字节一致 → 落盘补丁不是版本回退。
   - 回滚：删除容器内 `/CLIProxyAPI/static/` 即回落到二进制内嵌副本（`docker exec cliproxyapi rm -rf /CLIProxyAPI/static`）。
 
