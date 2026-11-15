@@ -364,6 +364,96 @@ func (e *authUnavailableError) Headers() http.Header {
 	return safeRetryAfterHeader(e.retryAfter)
 }
 
+// poolCooldownTerminalError wraps a terminal upstream 429 when every eligible
+// candidate credential for the requested model is blocked and at least one is
+// in a timed cooldown. It keeps the upstream error text, body, status, and
+// passthrough headers while marking the error as a model cooldown and exposing
+// the pool's earliest recovery deadline via Retry-After.
+//
+// Ported from upstream commit 4da9f6852 (closes upstream issue #7521).
+type poolCooldownTerminalError struct {
+	cause    error
+	deadline time.Time
+}
+
+func (e *poolCooldownTerminalError) Error() string {
+	if e == nil || e.cause == nil {
+		return ""
+	}
+	return e.cause.Error()
+}
+
+func (e *poolCooldownTerminalError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
+}
+
+// As exposes the wrapped core error so the existing *Error probes keep
+// working through this wrapper.
+func (e *poolCooldownTerminalError) As(target any) bool {
+	if e == nil {
+		return false
+	}
+	if t, ok := target.(**Error); ok {
+		var base *Error
+		if errors.As(e.cause, &base) && base != nil {
+			*t = base
+			return true
+		}
+	}
+	return false
+}
+
+// IsModelCooldown marks the failure as a model-wide cooldown so the handler
+// appends the pool reset time to the client-visible error.
+func (e *poolCooldownTerminalError) IsModelCooldown() bool {
+	return e != nil && !e.deadline.IsZero()
+}
+
+func (e *poolCooldownTerminalError) StatusCode() int {
+	if e == nil {
+		return 0
+	}
+	return statusCodeFromError(e.cause)
+}
+
+// RetryAfter reports the remaining time until the pool frees up.
+func (e *poolCooldownTerminalError) RetryAfter() *time.Duration {
+	if e == nil || e.deadline.IsZero() {
+		return nil
+	}
+	remaining := time.Until(e.deadline)
+	if remaining <= 0 {
+		return nil
+	}
+	return &remaining
+}
+
+func (e *poolCooldownTerminalError) SafeResponseHeaders() http.Header {
+	if e == nil || e.deadline.IsZero() {
+		return nil
+	}
+	return safeRetryAfterHeader(time.Until(e.deadline))
+}
+
+// Headers keeps the upstream response headers (for example a Codex websocket
+// failure) so header passthrough keeps working.
+func (e *poolCooldownTerminalError) Headers() http.Header {
+	if e == nil || e.cause == nil {
+		return nil
+	}
+	for cur := e.cause; cur != nil; cur = errors.Unwrap(cur) {
+		if carrier, ok := cur.(interface{ Headers() http.Header }); ok && carrier != nil {
+			if hdr := carrier.Headers(); len(hdr) > 0 {
+				return hdr
+			}
+		}
+	}
+	return nil
+}
+
 // trustedRetryAfterError annotates a terminal upstream rejection whose
 // locally recorded cooldown deadline governs the client-visible Retry-After.
 // The wrapped error keeps its own status, body, identity and retry hint; the
@@ -513,6 +603,10 @@ func HasTrustedRetryDeadline(err error) bool {
 	if SafeResponseHeaders(err).Get("Retry-After") != "" {
 		return true
 	}
+	var poolCooldown *poolCooldownTerminalError
+	if errors.As(err, &poolCooldown) && poolCooldown != nil && !poolCooldown.deadline.IsZero() {
+		return true
+	}
 	var trusted *trustedRetryAfterError
 	return errors.As(err, &trusted) && trusted != nil && !trusted.deadline.IsZero()
 }
@@ -523,6 +617,12 @@ func HasTrustedRetryDeadline(err error) bool {
 func trustedRetryAfterFromError(err error) *time.Duration {
 	if err == nil {
 		return nil
+	}
+	var poolCooldown *poolCooldownTerminalError
+	if errors.As(err, &poolCooldown) && poolCooldown != nil {
+		if remaining := poolCooldown.RetryAfter(); remaining != nil && *remaining > 0 {
+			return remaining
+		}
 	}
 	var trusted *trustedRetryAfterError
 	if errors.As(err, &trusted) && trusted != nil {
