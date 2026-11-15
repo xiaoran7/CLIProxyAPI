@@ -81,6 +81,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - 探测完毕后 18 个凭据全部恢复 `disabled=true`，与运维原有设置一致；`/console` 200，镜像 `v8.0.84-cba3472` 未变。
   - **对自动禁用功能的实证**：v8.0.84 在真实生产环境（不止沙箱）上成功识别 TOS 并自动禁用、落盘申诉链接——7 个死号全部命中，11 个健康号一个都没误伤。
 
+- **Argon 权限核查（同日，为用户申诉筛选）**：7 个被 TOS 封禁的账号里，只有 **5 个真正拥有 Argon 权限**，另外 2 个（`01224808755a`、`adryanlin381`）凭据里只有占位符 `gemini-4-argon-disabled`。
+  - `argon-disabled` 字面像"有但关着"，实测证明它是"没有"：对照组（全禁用）argon 模型为空；健康号 `01224482866a`（凭据写 `argon-disabled`）启用后网关暴露 argon = 无；健康号 `spearmonviste810`（凭据写 `argon-high/low/medium`）启用后暴露 `gemini-4-argon-high`。
+  - 有 Argon 的 5 个号（`ap4526706` / `cooperlacey95` / `ellaking638` / `es5873575` / `nhanh7pfbnhung4586`）逐个启用并实调 `gemini-4-argon-high`，返回 **403 TOS_VIOLATION** 而非"模型不存在"——证明请求确实打到了 Argon 端点，属账号级封禁。
+  - 健康号里另有 3 个具备 Argon：`danijunior638` / `spearmonviste810` / `tangwg089`。
+
 ## [v8.0.83] - 2026-11-11
 
 ### Added
