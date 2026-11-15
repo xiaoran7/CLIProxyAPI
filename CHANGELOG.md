@@ -58,7 +58,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - 上线后复验（与变更前同口径）：`/console` 200、镜像 `cliproxyapi:v8.0.84-cba3472`、启动日志 `CLIProxyAPI Version: v8.0.84, Commit: cba3472, BuiltAt: 2026-11-15T06:49:15Z`、加载 27 个 auth entry、18 个 antigravity 凭据文件不变、8 个 `disabled=true` 凭据**跨重启保持禁用**。
   - 功能实测：`/v1/models` 返回 110 个模型；真实推理 `gemini-3.8-flash-high` 200（4.05s，TOS 高发模型，antigravity 通道正常）、`deepseek-v3` 200（1.26s，返回 `ok`）；管理接口单次探测返回 `401 {"error":"missing management key"}`（链路通，未触发封禁）；重启后日志无新增 error/panic/TOS 命中。
   - 回滚：`cd /opt/1panel/docker/compose/cliproxyapi && cp docker-compose.yml.bak-v8084-20261115-154733 docker-compose.yml && docker compose up -d cliproxyapi`（旧镜像 `cliproxyapi:v8.0.82-f633c221` 仍在东京机上，回滚不需要重新拉取）。
-    - 部署后 20 分钟实测（16:02–16:03）：`gemini-3.8-flash-high` 的冷却告警从部署前 **144 条降到 0 条**（此前池规模反复在 `10 of 15` / `9 of 14` / `8 of 13` 之间被打穿，还出现过 12 次 `10 of 10` 全池冷却）；同窗口的 429 全部换成了另一件事 —— `MiniMax-M3.1-Flash` 的唯一凭据（claude API key）撞上"Token Plan 用量上限"进入计时冷却，这是**容量问题不是本版本能修的**，正好复现了池级冷却终局错误要覆盖的场景：客户端 429 附带全池恢复时间，而不是继续盲锤。
+  - **美西生产机 `us-zenix99` 同步升级到 v8.0.84**（2026-11-15 19:32 CST，与东京保持版本一致）。
+  - 镜像从 `us-zenix` 沙箱经 Tailnet 直传（82MB，`docker save | gzip | ssh <host> 'gunzip | docker load'`），image id `e46c15c019a8` 与东京一致。
+  - compose 栈在 `/opt/prod/compose/cliproxyapi/`，改前备份 `docker-compose.yml.bak-v8084-20261115-113219`；`config.yaml` 零改动。
+  - 中断窗口：容器重建到 `/console` 恢复 200 约 **2 秒**（比东京更快，该机负载更轻）。
+  - 上线后复验：`/console` 8316/8317 均 200、镜像 `cliproxyapi:v8.0.84-cba3472`、`Version: v8.0.84, Commit: cba3472`、重启次数 0、加载 27 个 auth entry；推理实测 `step-5-preview` 200（0.96s）；同机其余 15 个生产容器（Gitea、openresty、PostgreSQL、MySQL、openGauss、emailengine、beszel 等）未受影响。
+  - **该机 18 个 antigravity 凭据此前已由运维全部手工置 `disabled=true`**（与东京共用同一批 Google 账号，同一个 TOS 停服会同时命中两边）。因此本版本的"自动禁用"在这台机上短期看不出效果——没有账号可禁了；等账号池补充后即与东京同行为。
+  - 回滚：`cd /opt/prod/compose/cliproxyapi && cp docker-compose.yml.bak-v8084-20261115-113219 docker-compose.yml && docker compose up -d cliproxyapi`。
+- **东京 ↔ `us-zenix99` 的 Tailnet 直连不稳（2026-11-15）**：`us-zenix` 侧 `tailscale status` 显示 `vps-tokyo-02` 走 `relay "tok"` 且 `tx 8580 rx 0`、ping 100% 丢包。本次镜像传输靠 `us-zenix` 单跳成功，但从 `us-zenix` 再跳东京不通。东京侧操作需改走本机直连或其他路径。
+
+
+  - 部署后 20 分钟实测（16:02–16:03）：`gemini-3.8-flash-high` 的冷却告警从部署前 **144 条降到 0 条**（此前池规模反复在 `10 of 15` / `9 of 14` / `8 of 13` 之间被打穿，还出现过 12 次 `10 of 10` 全池冷却）；同窗口的 429 全部换成了另一件事 —— `MiniMax-M3.1-Flash` 的唯一凭据（claude API key）撞上"Token Plan 用量上限"进入计时冷却，这是**容量问题不是本版本能修的**，正好复现了池级冷却终局错误要覆盖的场景：客户端 429 附带全池恢复时间，而不是继续盲锤。
 - 脚本瑕疵记录：部署脚本的就绪轮询写成 `code=$(curl ...)`，在 `set -e` 下 curl 连不上时返回非零、导致脚本以退出码 56 提前中止（**部署本身已成功**，是轮询写法的问题）。已改为 `code=$(curl ... || true)`，就绪轮询不该被瞬时连接拒绝打断。
 
 
