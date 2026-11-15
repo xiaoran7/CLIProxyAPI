@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Fixed
+- **`go test ./...` 两个测试包失败（`internal/watcher` 编译失败 + `internal/pluginhost` 断言过期）**。
+  - `internal/watcher/snapshot_traffic_test.go`：直接对 `coreauth.Error` 做 `*got.LastError != *want.LastError` 结构体比较，而 `Error` 含 `Metadata map[string]string`，Go 不允许比较含 map 的结构体 —— 该测试包**整个编译不过**。新增 `trafficErrorsEqual()` 逐字段比较（`Code`/`Message`/`Retryable`/`HTTPStatus`/`maps.Equal(Metadata)`），与上游 `router-for-me/CLIProxyAPI` 同文件同修法一致（上游在 `snapshot_traffic_test.go` 亦定义同名 helper）。
+  - `internal/pluginhost/rpc_client_error_test.go`：`TestPluginErrorCarriesRetryAfterIntoCooldownAndHTTPHeader` 断言 `Retry-After == "7"`，实得 `"10"`。**这不是代码缺陷**：`MarkResult` 的 429 分支按设计把上游 `Retry-After` 提示抬到 `minQuotaCooldownFloor`（10s，`sdk/cliproxy/auth/conductor_refresh.go:39`，源自上游 issue #5265 防亚秒级 `Retry-After` 引发重试风暴），`SafeResponseHeaders` 必须如实广播这个真实恢复时刻。上游 `sdk/cliproxy/auth/conductor_pool_cooldown_test.go:146` 对此有明确注释与断言（`want 10 (minQuotaCooldownFloor)`），本仓该测试属于未跟上该设计的过期断言，已按上游口径修正为 10s。
+
 ## [v8.0.84] - 2026-11-15
 
 ### Fixed
