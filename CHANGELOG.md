@@ -3,6 +3,53 @@
 All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [v8.0.84] - 2026-11-15
+
+### Fixed
+- **Antigravity 账号被 Google TOS 停服后仍留在轮转里挨打（403 封号）**。
+  - 现象（东京生产 v8.0.82，2026-11-15 实测）：
+    - 5 个账号被 Google 以 `403 PERMISSION_DENIED` + `ErrorInfo reason=TOS_VIOLATION` 停服 —— `nhanh7pfbnhung4586`(24 次)、`es5873575`(22)、`ellaking638`(22)、`ap4526706`(22)、`cooperlacey95`(20)，合计 **110 次**命中，最后一次 13:03:53；
+    - 单个请求 `c6510461` 在 **5.955s** 内依次尝试 5 个账号，每个约 600–1000ms 后被 403 拒回；
+    - 紧接着全池进入冷却：`auth unavailable: 10 of 10 candidate(s) for model "gemini-3.8-flash-high" (provider=antigravity) are in cooldown`。
+  - 机制：本仓**没有执行期 TOS 识别**。403 落进通用 `payment_required` 分支，只写 30 分钟冷却 —— 而 TOS 停服是**永久**的，冷却会过期，死号一过期就重新进轮转，继续被拒、继续拖慢每个请求。控制台侧那次 TOS 识别是**事后**扫日志文本的，救不了运行时。
+  - 上游做法：`router-for-me/CLIProxyAPI` 提交 [`5a351d957`](https://github.com/router-for-me/CLIProxyAPI/commit/5a351d957091351541c0170a20f1ee064cb7690b)（Closes #7515）在执行期识别该签名，把凭据**永久禁用**（`StatusDisabled` + `disabled=true` 落盘，跨重启不回轮转），并把上游返回的申诉链接写进凭据 metadata 供运维取用。
+  - 本仓移植（本地 fork 与上游**没有 merge base**（4689 个本地独有提交 vs 4875 个上游独有提交），只能按提交逐个移植）：
+    - 新增 `internal/runtime/executor/antigravity_tos.go`：按 `error.code=403` + `error.status=PERMISSION_DENIED` + `details[].@type=google.rpc.ErrorInfo` + `details[].reason=TOS_VIOLATION` 判定，并抽出 `metadata.appeal_url`；
+    - 新增 `sdk/cliproxy/auth/conductor_tos.go`：新增 `tos_violation` 错误码、申诉 metadata 落盘、以及"迟到结果不算陈旧"的判定（同账号只换了 access token 时，TOS 结果不能当陈旧丢弃；换了 refresh token 则是另一个账号，不能误伤新凭据）；
+    - `sdk/cliproxy/auth/errors.go`：`Error` 增 `Metadata map[string]string`，并补 `Clone()` 深拷贝；
+    - `sdk/cliproxy/auth/conductor_cooldown.go`：`MarkResult` 的模型级与凭据级分支遇到 `tos_violation` 时改走禁用路径（`StatusDisabled` + `Disabled=true` + `Unavailable=true`），普通 403 的 `payment_required` 行为保持不变；
+    - `internal/runtime/executor/antigravity_executor_credits.go` / `antigravity_executor_tokens.go`：403 走新的 TOS 分类，`CountTokens` 路径也补上（原先它自己造 `statusErr`，会漏判）。
+  - **上游的池级保护性暂停没有移植**：`5a351d957` 还带了 `upstream.antigravity.tos-pause-window`，触发后整个 antigravity 池暂停。按本次决定**不开**，故未引入该开关；上游随后在 [`e96d4c481`](https://github.com/router-for-me/CLIProxyAPI/commit/e96d4c4818851cf0e96d27b2bc8b67379e449d9e) 把它的默认值也改成了关闭。
+- **池级 429 撞限时，客户端拿不到池子的真实恢复时间（429 撞限）**。
+  - 现象（东京生产 v8.0.82，2026-11-15 实测）：
+    - 429 集中在 `gemini-3.8-flash-high`（324 次）与 `gemini-4-hydrogen-xhigh`（24 次）；
+    - 同一模型同期有 **538 次 200** 与 **73 次 429** —— 是突发性 429，不是这个模型彻底没额度；
+    - 83 个面向客户端的 429 **全部**来自同一个客户端 `100.79.74.121`，其他客户端一个都没有；
+    - 但代价是整个池被拖下水：一个请求把 5 个账号依次打成冷却后，后续请求直接命中 `10 of 10 candidate(s) ... are in cooldown`。
+  - 机制：池级冷却本身是**正确**行为（不该继续捶打已耗尽的账号），但 CPA 把最后一个账号自己那条 `Retry-After` 原样透传给客户端，客户端于是按一个远晚于池子真实恢复时间的时刻去重试 —— 既看不到"这个模型整体要等到几点"，又让池子在恢复前被反复捶打。
+  - 上游做法：`router-for-me/CLIProxyAPI` 提交 [`4da9f6852`](https://github.com/router-for-me/CLIProxyAPI/commit/4da9f68527611a2d88b3cc6a9d30e38e1d0b846a)（Closes #7521）把终局 429 包进 `poolCooldownTerminalError`：上游的响应体、状态码、headers 全部保留，但标记 `IsModelCooldown`，`Retry-After` 改用**全池最早自动恢复时刻**计算，Claude handler 就会在错误末尾追加 `(reset after …)`。
+  - 本仓移植：
+    - 新增 `sdk/cliproxy/auth/conductor_pool_cooldown.go`：`earliestPoolCooldownForModelAt` 按选择层同一套过滤条件扫描候选凭据，算出全池最早恢复时刻；`observeSelectionCooldownDeadline` 记录选择层观察到的冷却；`annotatePoolCooldownTerminalError` 在"全池都被堵 + 至少一个处于计时冷却"时把终局 429 包起来；
+    - `sdk/cliproxy/auth/errors.go`：新增 `poolCooldownTerminalError`（保留上游错误体，`As` 让既有 `*Error` 探针继续可用）；
+    - `sdk/cliproxy/auth/conductor_execution.go`：`Execute` / `ExecuteCount` / `ExecuteStream` 三个出口接入（流式路径按上游口径用 `!m.HomeEnabled()` 守卫，Home 路径有自己的聚合期限）；
+    - `sdk/cliproxy/auth/conductor_cooldown.go` / `home_concurrency.go`：`retryAfterFromError` 与 `SafeResponseHeaders` 把池级期限纳入可信期限链。
+  - **注意**：这个改动**不增加容量**，只让客户端知道"整个池什么时候恢复"，从而停止无效重试。真正的额度问题仍要靠账号池规模与模型分流解决。
+
+### Changed
+- **测试隔离修复（既有缺陷，与本次功能无关）**：`sdk/cliproxy/auth/scheduler_zcode_realm_test.go` 的三个并行 subtest 里有两个共用同一个 client ID（`qoder-auth-qoder-cn`），而模型注册表按 client ID 索引 —— 后注册的那个会把前一个的 model 注册撤掉，导致另一个 subtest 偶发 `auth_not_found: no auth available`。给每个 case 独立的 client ID 即可。
+  - 该缺陷在**未改动的基线**上就能复现（`go test -run TestSchedulerPick_QoderRealmProviderKeys -count=30` 挂 5/30），与本次改动无关；修掉是为了让本包测试结果可信。
+
+### Known issues
+- **`TestSessionAffinityGuardianParentCredential` 在并行负载下偶发失败**：已在**未改动的基线**工作树上复现（`go test -run TestSessionAffinityGuardianParentCredential -count=3` 挂），确认是**既有缺陷**、与本次改动无关。因该用例守的是选择器的安全语义（父凭据亲和判定），不做盲目修补，留待单独定位后再动。
+
+### Verification
+- `gofmt -l ./sdk/ ./internal/` 无输出；`go build ./...` 退出码 0；`go vet ./sdk/cliproxy/auth/` 退出码 0。
+- `go test -count=2 ./sdk/cliproxy/auth/` 通过；`go test ./internal/runtime/executor/` 通过；`go test ./sdk/api/handlers/` 通过；`go test -race ./sdk/cliproxy/auth/` 通过。
+- 新增测试：`sdk/cliproxy/auth/conductor_tos_test.go`（判定与分类单测）、`sdk/cliproxy/auth/conductor_tos_integration_test.go`（端到端：TOS 结果 → 凭据永久禁用 → 申诉 metadata 落盘 → `disabled=true` 写进 auth 文件；另有普通 403 只冷却不禁用的反向用例）、`internal/runtime/executor/antigravity_tos_test.go`（按**东京线上原文**复刻的响应体做解析与分类）、`sdk/cliproxy/auth/conductor_pool_cooldown_test.go`（池级冷却包装、可用凭据时不包装、非 429 不包装、选择期限兜底、已有冷却错误不重复包装）。
+- 端口与生产响应的对齐已核对：东京日志里 TOS 错误体原文为 `{ "error": { "code": 403, "message": "This service has been disabled in this account for violation of Terms of Service. …", "status": "PERMISSION_DENIED", "details": [ { "@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "TOS_VIOLATION", … } ] } }`，与本仓解析器要求的四个条件逐条一致。
+- 生产处置：5 个 TOS 停服账号（`nhanh7pfbnhung4586` / `es5873575` / `ellaking638` / `ap4526706` / `cooperlacey95`）已由运维在 13:15–13:23 手工置 `disabled=true`，本版本让同类停服**自动**发生，不再依赖人工。
+- 东京生产机全程只读，未做任何写操作；上线需另行授权。
+
 ## [v8.0.83] - 2026-11-11
 
 ### Added
