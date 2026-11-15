@@ -59,15 +59,19 @@ func TestSchedulerPick_QoderRealmProviderKeys(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name      string
+		name string
+		// authID must be unique per case: the cases run in parallel and the
+		// model registry keys its registrations by client ID, so two cases
+		// sharing one ID would retract each other's model registration.
+		authID    string
 		authProv  string
 		reqProv   string
 		model     string
 		registryP string
 	}{
-		{name: "cn realm", authProv: "qoder-cn", reqProv: "qoder-cn", model: "deepseek-flash", registryP: "qoder-cn"},
-		{name: "intl realm", authProv: "qoder", reqProv: "qoder", model: "deepseek-flash", registryP: "qoder"},
-		{name: "bare model via cn", authProv: "qoder-cn", reqProv: "qoder-cn", model: "deepseek-v4.1-flash", registryP: "qoder-cn"},
+		{name: "cn realm", authID: "qoder-auth-cn", authProv: "qoder-cn", reqProv: "qoder-cn", model: "deepseek-flash", registryP: "qoder-cn"},
+		{name: "intl realm", authID: "qoder-auth-intl", authProv: "qoder", reqProv: "qoder", model: "deepseek-flash", registryP: "qoder"},
+		{name: "bare model via cn", authID: "qoder-auth-cn-bare", authProv: "qoder-cn", reqProv: "qoder-cn", model: "deepseek-v4.1-flash", registryP: "qoder-cn"},
 	}
 
 	for _, tc := range cases {
@@ -75,10 +79,10 @@ func TestSchedulerPick_QoderRealmProviderKeys(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			registerSchedulerModels(t, tc.registryP, tc.model, "qoder-auth-"+tc.authProv)
+			registerSchedulerModels(t, tc.registryP, tc.model, tc.authID)
 			scheduler := newSchedulerForTest(
 				&RoundRobinSelector{},
-				&Auth{ID: "qoder-auth-" + tc.authProv, Provider: tc.authProv},
+				&Auth{ID: tc.authID, Provider: tc.authProv},
 			)
 
 			got, errPick := scheduler.pickSingle(context.Background(), tc.reqProv, tc.model, cliproxyexecutor.Options{}, nil)
