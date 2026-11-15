@@ -58,7 +58,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - 上线后复验（与变更前同口径）：`/console` 200、镜像 `cliproxyapi:v8.0.84-cba3472`、启动日志 `CLIProxyAPI Version: v8.0.84, Commit: cba3472, BuiltAt: 2026-11-15T06:49:15Z`、加载 27 个 auth entry、18 个 antigravity 凭据文件不变、8 个 `disabled=true` 凭据**跨重启保持禁用**。
   - 功能实测：`/v1/models` 返回 110 个模型；真实推理 `gemini-3.8-flash-high` 200（4.05s，TOS 高发模型，antigravity 通道正常）、`deepseek-v3` 200（1.26s，返回 `ok`）；管理接口单次探测返回 `401 {"error":"missing management key"}`（链路通，未触发封禁）；重启后日志无新增 error/panic/TOS 命中。
   - 回滚：`cd /opt/1panel/docker/compose/cliproxyapi && cp docker-compose.yml.bak-v8084-20261115-154733 docker-compose.yml && docker compose up -d cliproxyapi`（旧镜像 `cliproxyapi:v8.0.82-f633c221` 仍在东京机上，回滚不需要重新拉取）。
-  - 脚本瑕疵记录：部署脚本的就绪轮询写成 `code=$(curl ...)`，在 `set -e` 下 curl 连不上时返回非零、导致脚本以退出码 56 提前中止（**部署本身已成功**，是轮询写法的问题）。已改为 `code=$(curl ... || true)`，就绪轮询不该被瞬时连接拒绝打断。
+    - 部署后 20 分钟实测（16:02–16:03）：`gemini-3.8-flash-high` 的冷却告警从部署前 **144 条降到 0 条**（此前池规模反复在 `10 of 15` / `9 of 14` / `8 of 13` 之间被打穿，还出现过 12 次 `10 of 10` 全池冷却）；同窗口的 429 全部换成了另一件事 —— `MiniMax-M3.1-Flash` 的唯一凭据（claude API key）撞上"Token Plan 用量上限"进入计时冷却，这是**容量问题不是本版本能修的**，正好复现了池级冷却终局错误要覆盖的场景：客户端 429 附带全池恢复时间，而不是继续盲锤。
+- 脚本瑕疵记录：部署脚本的就绪轮询写成 `code=$(curl ...)`，在 `set -e` 下 curl 连不上时返回非零、导致脚本以退出码 56 提前中止（**部署本身已成功**，是轮询写法的问题）。已改为 `code=$(curl ... || true)`，就绪轮询不该被瞬时连接拒绝打断。
 
 
 ## [v8.0.83] - 2026-11-11
