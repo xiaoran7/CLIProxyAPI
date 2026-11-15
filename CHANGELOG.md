@@ -72,6 +72,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - 脚本瑕疵记录：部署脚本的就绪轮询写成 `code=$(curl ...)`，在 `set -e` 下 curl 连不上时返回非零、导致脚本以退出码 56 提前中止（**部署本身已成功**，是轮询写法的问题）。已改为 `code=$(curl ... || true)`，就绪轮询不该被瞬时连接拒绝打断。
 
 
+### Account sweep (2026-11-15)
+- **逐个探测 18 个 antigravity 凭据，纠正了此前的判断**：此前记录"5 个账号 TOS 停服、其余待查"，实测下来真正被 TOS 停服的是 **7 个**，另有 **11 个账号完全健康**（上游返回 HTTP 200）。
+  - 方法：在 `us-zenix99` 上一次只启用一个凭据 → 打一次真实 `gemini-3.8-flash-high` 请求 → 读回 CPA 落盘结果 → 立即恢复 `disabled=true`。探测前整个 auths 目录已备份到 `/root/auths-backup-20261115-115636`。
+  - 双重核验：① 凭据文件里的 `tos_appeal_url` 落盘 ② 主机日志按 `auth_file` 归属独立统计状态码。两种口径 18/18 完全一致。
+  - 结果：`01224808755a` / `adryanlin381` / `ap4526706` / `cooperlacey95` / `ellaking638` / `es5873575` / `nhanh7pfbnhung4586` → 403 TOS，已自动禁用并落盘 `tos_appeal_url`；其余 11 个 → 200 健康。
+  - **发现**：申诉链接对所有账号是同一个 Google 表单 `https://forms.gle/hGzM9MEUv2azZsrb9`，不是每号一个专属链接——先前推断"按账号区分"是错的。表单内需填写具体 Gmail 账号，故仍需逐个提交。
+  - 探测完毕后 18 个凭据全部恢复 `disabled=true`，与运维原有设置一致；`/console` 200，镜像 `v8.0.84-cba3472` 未变。
+  - **对自动禁用功能的实证**：v8.0.84 在真实生产环境（不止沙箱）上成功识别 TOS 并自动禁用、落盘申诉链接——7 个死号全部命中，11 个健康号一个都没误伤。
+
 ## [v8.0.83] - 2026-11-11
 
 ### Added
