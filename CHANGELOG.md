@@ -86,6 +86,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - 有 Argon 的 5 个号（`ap4526706` / `cooperlacey95` / `ellaking638` / `es5873575` / `nhanh7pfbnhung4586`）逐个启用并实调 `gemini-4-argon-high`，返回 **403 TOS_VIOLATION** 而非"模型不存在"——证明请求确实打到了 Argon 端点，属账号级封禁。
   - 健康号里另有 3 个具备 Argon：`danijunior638` / `spearmonviste810` / `tangwg089`。
 
+- **`loadCodeAssist` 直连对比：排除了上游 issue #7552 的"客户端身份弃用"解释**（2026-11-15）。该 issue 认为 403 其实是 Google 弃用了旧版 Code Assist OAuth client，被 CPA 误报成 `TOS_VIOLATION`，并称响应里会出现 `reasonCode: UNSUPPORTED_CLIENT`。
+  - 实测 18 个账号直连 `v1internal:loadCodeAssist`，**全部返回 HTTP 200，没有任何一个出现 `UNSUPPORTED_CLIENT`**。
+  - 关键反证：11 个健康账号与 7 个被封账号**共用同一个 OAuth client 身份**，健康号照常出 200。客户端身份若真被弃用，不可能一半能用一半不能用。
+  - 观察到的分层差异：被封的 7 个里有 4 个是 `standard-tier`（`ap4526706` / `cooperlacey95` / `ellaking638` / `es5873575`，恰好就是有 Argon 的那 4 个），`free-tier` 条目带 `UNSUPPORTED_LOCATION`（仅表示所在地区不提供免费层，非错误）；其余 3 个被封号与全部 11 个健康号均为 `free-tier`。
+  - 结论：该池的 403 是**真实的账号级 TOS 停服**，不是客户端身份问题；走申诉是正确路径，改 client 身份解决不了。
+- **申诉表单实况**：`https://forms.gle/hGzM9MEUv2azZsrb9` 只有两个必填项 —— 邮箱输入框 + 一个"我理解以下行为违反条款"的确认勾选（唯一选项 `Yes, I understand`）。**没有自由文本字段**，无法填写申诉陈述。表单本身即"保证书"性质，承诺内容包含：不再通过第三方软件/工具/服务访问 Antigravity/Gemini CLI 登录态、不转售服务，并声明若解封后再犯将永久封禁。此前关于"申诉理由怎么写"的建议不适用于该表单。
+
 ## [v8.0.83] - 2026-11-11
 
 ### Added
