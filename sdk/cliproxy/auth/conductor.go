@@ -92,6 +92,11 @@ type Result struct {
 	SkipQuotaObservation bool
 	// AccessToken captures the active access token under which the request was executed.
 	AccessToken string
+	// RefreshToken captures the refresh credential of the account under which the
+	// request was executed. It identifies the account behind a late result, so a
+	// terminal TOS suspension is not applied to a replacement credential that
+	// reused the same auth ID.
+	RefreshToken string
 	// CredentialVersion captures the credential version under which the request was executed.
 	CredentialVersion uint64
 	// RegistrationEpoch captures the registration epoch under which the request was executed.

@@ -355,6 +355,13 @@ func newAntigravityStatusErr(statusCode int, body []byte) statusErr {
 		if retryAfter, parseErr := helps.ParseRetryDelay(body); parseErr == nil && retryAfter != nil {
 			err.retryAfter = retryAfter
 		}
+	} else if statusCode == http.StatusForbidden {
+		if violation := parseAntigravityTOSViolation(body); violation != nil {
+			err.tosViolation = true
+			err.credentialScoped = true
+			err.tosAppealURL = violation.AppealURL
+			err.tosAppealURLText = violation.AppealURLText
+		}
 	}
 	return err
 }
