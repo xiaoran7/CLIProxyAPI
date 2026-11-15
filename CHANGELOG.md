@@ -48,7 +48,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - 新增测试：`sdk/cliproxy/auth/conductor_tos_test.go`（判定与分类单测）、`sdk/cliproxy/auth/conductor_tos_integration_test.go`（端到端：TOS 结果 → 凭据永久禁用 → 申诉 metadata 落盘 → `disabled=true` 写进 auth 文件；另有普通 403 只冷却不禁用的反向用例）、`internal/runtime/executor/antigravity_tos_test.go`（按**东京线上原文**复刻的响应体做解析与分类）、`sdk/cliproxy/auth/conductor_pool_cooldown_test.go`（池级冷却包装、可用凭据时不包装、非 429 不包装、选择期限兜底、已有冷却错误不重复包装）。
 - 端口与生产响应的对齐已核对：东京日志里 TOS 错误体原文为 `{ "error": { "code": 403, "message": "This service has been disabled in this account for violation of Terms of Service. …", "status": "PERMISSION_DENIED", "details": [ { "@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "TOS_VIOLATION", … } ] } }`，与本仓解析器要求的四个条件逐条一致。
 - 生产处置：5 个 TOS 停服账号（`nhanh7pfbnhung4586` / `es5873575` / `ellaking638` / `ap4526706` / `cooperlacey95`）已由运维在 13:15–13:23 手工置 `disabled=true`，本版本让同类停服**自动**发生，不再依赖人工。
-- 东京生产机全程只读，未做任何写操作；上线需另行授权。
+- 移植与沙箱验证阶段，东京生产机全程只读、未做任何写操作；正式上线动作见下方 `Deployment` 小节（经用户明确授权后执行）。
+
+### Deployment
+- **东京生产已升级到 v8.0.84**（2026-11-15 15:47 CST，用户明确授权后执行）。
+  - 镜像：`cliproxyapi:v8.0.84-cba3472`（image id `e46c15c019a8`），在 `us-zenix` 从本仓提交 `cba3472e9` 构建，经 Tailnet 传输 82MB 后在东京 `docker load` 落地；镜像 id 两端一致。
+  - compose：`/opt/1panel/docker/compose/cliproxyapi/docker-compose.yml` 改前已备份为 `docker-compose.yml.bak-v8084-20261115-154733`；`config.yaml` **零改动**。
+  - 中断窗口：容器重建到 `/console` 恢复 200 约 **13 秒**（容器 StartedAt `2026-11-15T07:47:35Z`）。
+  - 上线后复验（与变更前同口径）：`/console` 200、镜像 `cliproxyapi:v8.0.84-cba3472`、启动日志 `CLIProxyAPI Version: v8.0.84, Commit: cba3472, BuiltAt: 2026-11-15T06:49:15Z`、加载 27 个 auth entry、18 个 antigravity 凭据文件不变、8 个 `disabled=true` 凭据**跨重启保持禁用**。
+  - 功能实测：`/v1/models` 返回 110 个模型；真实推理 `gemini-3.8-flash-high` 200（4.05s，TOS 高发模型，antigravity 通道正常）、`deepseek-v3` 200（1.26s，返回 `ok`）；管理接口单次探测返回 `401 {"error":"missing management key"}`（链路通，未触发封禁）；重启后日志无新增 error/panic/TOS 命中。
+  - 回滚：`cd /opt/1panel/docker/compose/cliproxyapi && cp docker-compose.yml.bak-v8084-20261115-154733 docker-compose.yml && docker compose up -d cliproxyapi`（旧镜像 `cliproxyapi:v8.0.82-f633c221` 仍在东京机上，回滚不需要重新拉取）。
+  - 脚本瑕疵记录：部署脚本的就绪轮询写成 `code=$(curl ...)`，在 `set -e` 下 curl 连不上时返回非零、导致脚本以退出码 56 提前中止（**部署本身已成功**，是轮询写法的问题）。已改为 `code=$(curl ... || true)`，就绪轮询不该被瞬时连接拒绝打断。
+
 
 ## [v8.0.83] - 2026-11-11
 
