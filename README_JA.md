@@ -1,5 +1,10 @@
 # CLI Proxy API (Enhanced Fork)
 
+> [!IMPORTANT]
+> **このフォークのメンテナンスは終了しました。** 最新版、修正、サポートについては、上流の [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) を参照してください。
+>
+> このフォークでは、cpa-gate の機能を Go 製の管理コンソールに移植し、テナント別キー、リクエスト・トークン制限、モデルの許可リスト、SQLite での使用量集計を追加しました。WorkBuddy / CodeBuddy と OpenCode への対応、アカウントの割り当てやストリーム復旧の変更も含まれます。詳しくは[変更履歴](CHANGELOG.md)を参照してください。
+
 [English](README.md) | [中文](README_CN.md) | 日本語
 
 [![Go Version](https://img.shields.io/badge/go-1.26+-00ADD8.svg?style=flat-square&logo=go)](https://golang.org)

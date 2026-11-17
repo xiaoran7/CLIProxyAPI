@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- 各语言 README 明确标注本 fork 已停止维护，链接最上游 router-for-me/CLIProxyAPI，并概述本分支保留的控制台、上游适配和调度改动。
+
 ### Fixed
 - **`go test ./...` 两个测试包失败（`internal/watcher` 编译失败 + `internal/pluginhost` 断言过期）**。
   - `internal/watcher/snapshot_traffic_test.go`：直接对 `coreauth.Error` 做 `*got.LastError != *want.LastError` 结构体比较，而 `Error` 含 `Metadata map[string]string`，Go 不允许比较含 map 的结构体 —— 该测试包**整个编译不过**。新增 `trafficErrorsEqual()` 逐字段比较（`Code`/`Message`/`Retryable`/`HTTPStatus`/`maps.Equal(Metadata)`），与上游 `router-for-me/CLIProxyAPI` 同文件同修法一致（上游在 `snapshot_traffic_test.go` 亦定义同名 helper）。

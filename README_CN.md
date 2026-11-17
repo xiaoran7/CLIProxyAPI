@@ -1,5 +1,10 @@
 # CLI Proxy API (Enhanced Fork)
 
+> [!IMPORTANT]
+> **本 fork 已停止维护。** 最新版本、修复和支持请到最上游 [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)。
+>
+> 本 fork 将 cpa-gate 的能力迁入 Go 原生控制台，加入多租户密钥、请求与 Token 配额、模型白名单和 SQLite 用量记账。另外适配了 WorkBuddy / CodeBuddy 和 OpenCode，并定制了账号池调度与流式请求恢复。下文为历史实现，细节见 [fork 更新日志](CHANGELOG.md)。
+
 [English](README.md) | 中文 | [日本語](README_JA.md)
 
 [![Go Version](https://img.shields.io/badge/go-1.26+-00ADD8.svg?style=flat-square&logo=go)](https://golang.org)

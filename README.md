@@ -1,5 +1,10 @@
 # CLI Proxy API (Enhanced Fork)
 
+> [!IMPORTANT]
+> **This fork is no longer maintained.** For current releases, fixes, and support, use the original upstream [router-for-me/CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI).
+>
+> This fork added the native Go console that absorbed cpa-gate, including tenant keys, request and token quotas, model allowlists, and SQLite usage accounting. It also added WorkBuddy/CodeBuddy and OpenCode integrations and customized account scheduling and streaming recovery. The sections below describe the historical implementation. See the [fork changelog](CHANGELOG.md) for details.
+
 English | [中文](README_CN.md) | [日本語](README_JA.md)
 
 [![Go Version](https://img.shields.io/badge/go-1.26+-00ADD8.svg?style=flat-square&logo=go)](https://golang.org)
